@@ -119,10 +119,14 @@ func runHeadlessReal(args []string) {
 	if *thinking != "" {
 		cfg.Thinking = string(llm.ParseThinking(*thinking))
 	}
-	if *cavemanLvl != "" {
+	cavemanArg := *cavemanLvl
+	if cavemanArg == "" {
+		cavemanArg = os.Getenv("BEE_CAVEMAN") // global --caveman flag
+	}
+	if cavemanArg != "" {
 		// validate so a typo fails fast instead of silently falling back to
 		// profile default in ApplyProfile.
-		lvl, err := caveman.ParseLevel(*cavemanLvl)
+		lvl, err := caveman.ParseLevel(cavemanArg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "bee run: %v\n", err)
 			os.Exit(2)
