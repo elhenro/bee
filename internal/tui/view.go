@@ -392,9 +392,9 @@ func (m Model) renderIntro() string {
 	rowColors := []lipgloss.AdaptiveColor{accentHoney, accentBee, fgSquid, fgOyster}
 	lines := strings.Split(f.Text, "\n")
 	for i, ln := range lines {
-		col := rowColors[i]
-		if i >= len(rowColors) {
-			col = rowColors[len(rowColors)-1]
+		col := rowColors[len(rowColors)-1]
+		if i < len(rowColors) {
+			col = rowColors[i]
 		}
 		lines[i] = lipgloss.NewStyle().Foreground(col).Render(ln)
 	}
