@@ -18,8 +18,10 @@ type KeyMap struct {
 	CavemanCycle  key.Binding
 	ThinkingCycle key.Binding
 	ModeCycle     key.Binding
-	ApproveAllow key.Binding
-	ApproveDeny  key.Binding
+	ApproveAllow   key.Binding
+	ApproveSession key.Binding
+	ApproveAlways  key.Binding
+	ApproveDeny    key.Binding
 	// SteerNow: enter while streaming — injects a mid-turn user steer.
 	// shares the "enter" key with Submit; dispatch is state-dependent.
 	SteerNow key.Binding
@@ -90,7 +92,15 @@ func DefaultKeyMap() KeyMap {
 		),
 		ApproveAllow: key.NewBinding(
 			key.WithKeys("a", "y", "enter"),
-			key.WithHelp("a/y", "allow"),
+			key.WithHelp("a/y", "allow once"),
+		),
+		ApproveSession: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "allow this session"),
+		),
+		ApproveAlways: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "allow forever (saved)"),
 		),
 		ApproveDeny: key.NewBinding(
 			key.WithKeys("d", "n", "esc"),

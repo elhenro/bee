@@ -186,10 +186,15 @@ func TestRenderMessage_AssistantWithToolUse(t *testing.T) {
 		},
 	}
 	out := stripANSI(r.RenderMessage(m))
-	for _, want := range []string{"⬡", "running bash", "◇", "bash", "cmd"} {
+	for _, want := range []string{"running bash", "◇", "bash", "cmd"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
+	}
+	// assistant prose no longer carries a ⬢ prefix — only the tool block
+	// keeps its ◇ marker.
+	if strings.Contains(out, "⬢") {
+		t.Fatalf("unexpected ⬢ on assistant turn in %q", out)
 	}
 }
 
@@ -385,12 +390,16 @@ func TestShortenPath(t *testing.T) {
 }
 
 func TestRenderStreaming_EmptyShowsPlaceholder(t *testing.T) {
-	// empty partial → loader animation row. swarm phase-0 uses honeycombFrames.
+	// empty partial → loader animation row. swarm phase-0 emits braille
+	// glyphs; no leading ⬢ since the animation alone signals activity.
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	r.SetLoaderStyle(LoaderStyleSwarm)
 	out := stripANSI(r.RenderStreaming("", 0))
-	if !strings.Contains(out, "⬡") {
-		t.Fatalf("expected hex glyph in loader row: %q", out)
+	if strings.TrimSpace(out) == "" {
+		t.Fatalf("expected non-empty loader row: %q", out)
+	}
+	if strings.Contains(out, "⬢") {
+		t.Fatalf("loader row should not carry the role glyph: %q", out)
 	}
 }
 
@@ -444,7 +453,7 @@ func TestRenderMessage_InlineShellStyled(t *testing.T) {
 		}
 	}
 	// glyph replaced by `$` prompt — neither role glyph should appear.
-	for _, glyph := range []string{"▸", "⬡", "◇"} {
+	for _, glyph := range []string{"▸", "⬢", "◇"} {
 		if strings.Contains(plain, glyph) {
 			t.Fatalf("unexpected role glyph %q in %q", glyph, plain)
 		}
@@ -465,6 +474,75 @@ func TestRenderMessage_InlineShellError(t *testing.T) {
 	}
 	if !strings.Contains(plain, "exit 1") {
 		t.Fatalf("missing output in %q", plain)
+	}
+}
+
+// failing bash tool: tool-result preview should swap the bare "exit N" line
+// for the originating command (so the user sees *what* failed, not just
+// that something did). The exit code stays visible as a dim suffix.
+func TestRenderToolResult_BashErrorSurfacesCmd(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	cmd := `grep -rn "needle" internal/`
+	m := types.Message{
+		Role: types.RoleAssistant,
+		Content: []types.ContentBlock{
+			{Type: types.BlockToolUse, Use: &types.ToolUse{
+				ID:    "u1",
+				Name:  "bash",
+				Input: map[string]any{"command": cmd},
+			}},
+		},
+	}
+	// register the tool use, then render the matching tool result.
+	_ = r.RenderMessage(m)
+	res := types.Message{
+		Role: types.RoleTool,
+		Content: []types.ContentBlock{{Type: types.BlockToolResult, Result: &types.ToolResult{
+			UseID:   "u1",
+			Content: "exit 1\n",
+			IsError: true,
+		}}},
+	}
+	plain := stripANSI(r.RenderMessage(res))
+	if !strings.Contains(plain, "$ "+cmd) {
+		t.Fatalf("missing failed-cmd header in %q", plain)
+	}
+	if !strings.Contains(plain, "(exit 1)") {
+		t.Fatalf("missing exit tag in %q", plain)
+	}
+}
+
+// refused/denied bash tool: tool-result preview should swap the bare
+// "refused …" line for the originating command rendered with a yellow-bg
+// warn badge — distinguishes "blocked, not broken" from a real failure.
+func TestRenderToolResult_RefusedSurfacesCmdYellow(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	cmd := `bash -c 'rm -rf /tmp/x'`
+	m := types.Message{
+		Role: types.RoleAssistant,
+		Content: []types.ContentBlock{
+			{Type: types.BlockToolUse, Use: &types.ToolUse{
+				ID:    "u1",
+				Name:  "bash",
+				Input: map[string]any{"command": cmd},
+			}},
+		},
+	}
+	_ = r.RenderMessage(m)
+	res := types.Message{
+		Role: types.RoleTool,
+		Content: []types.ContentBlock{{Type: types.BlockToolResult, Result: &types.ToolResult{
+			UseID:   "u1",
+			Content: "refused by user: nested shell -c invocation (shell-dash-c). Try a different approach.\n",
+			IsError: true,
+		}}},
+	}
+	plain := stripANSI(r.RenderMessage(res))
+	if !strings.Contains(plain, "$ "+cmd) {
+		t.Fatalf("missing refused-cmd header in %q", plain)
+	}
+	if !strings.Contains(plain, "refused by user") {
+		t.Fatalf("missing refusal body line in %q", plain)
 	}
 }
 

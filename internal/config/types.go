@@ -150,9 +150,14 @@ type Profile struct {
 //
 // Scope: read-only | workspace-write | danger-full-access.
 // Approval: untrusted | on-request | on-failure | never.
+//
+// CommandAllowlist holds safety.DangerousPattern keys the user has granted
+// AllowAlways. Loaded into the approval.Cache at startup; appended via
+// PersistSetting when the user picks AllowAlways at a prompt.
 type SandboxConfig struct {
-	Scope    string `toml:"scope"`
-	Approval string `toml:"approval"`
+	Scope            string   `toml:"scope"`
+	Approval         string   `toml:"approval"`
+	CommandAllowlist []string `toml:"command_allowlist"`
 }
 
 // MemoryConfig gates the heuristic memory loop. Enabled=false skips both

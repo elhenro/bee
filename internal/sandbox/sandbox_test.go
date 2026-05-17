@@ -83,6 +83,29 @@ func TestWrap_MacOS_ReadOnly(t *testing.T) {
 	}
 }
 
+func TestWrap_MacOS_AllowsLoopback(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin-only")
+	}
+	withLookPath(t, func(string) (string, error) { return "/usr/bin/sandbox-exec", nil })
+	for _, scope := range []Scope{ReadOnly, WorkspaceWrite} {
+		p := Policy{Scope: scope, Cwd: "/tmp/work"}
+		got, err := Wrap(p, []string{"ls"})
+		if err != nil {
+			t.Fatalf("scope=%s: %v", scope, err)
+		}
+		profile := got[2]
+		for _, want := range []string{
+			`(allow network-bind (local ip "localhost:*"))`,
+			`(allow network-outbound (remote ip "localhost:*"))`,
+		} {
+			if !strings.Contains(profile, want) {
+				t.Errorf("scope=%s missing %q", scope, want)
+			}
+		}
+	}
+}
+
 func TestWrap_MacOS_WorkspaceWrite_RequiresCwd(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin-only")

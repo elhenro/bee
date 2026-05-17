@@ -75,6 +75,9 @@ type Model struct {
 
 	// approval modal
 	approval ApprovalModel
+	// approver is the channel adapter the shell tool talks to. nil disables
+	// the dangerous-command prompt flow (legacy behavior).
+	approver *Approver
 
 	// slash command registry + palette
 	cmds          *commands.Registry
@@ -398,6 +401,14 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 // top bar and the /cost pane can read it.
 func (m Model) WithCostTracker(t *cost.Tracker) Model {
 	m.costs = t
+	return m
+}
+
+// WithApprover attaches the channel adapter that routes dangerous-command
+// prompts through the TUI modal. The shell tool holds the same handle and
+// blocks on Request until Resolve fires.
+func (m Model) WithApprover(a *Approver) Model {
+	m.approver = a
 	return m
 }
 
@@ -772,12 +783,27 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 			}
 		}
 	}
+	// Dangerous-command prompt arrives from the engine goroutine via the
+	// Approver adapter. Surface the modal so the user can pick.
+	if ask, ok := msg.(ApprovalAskMsg); ok {
+		m.approval.Show(ApprovalRequest{
+			ToolName: "bash",
+			Action:   ask.Cmd,
+			Reason:   ask.Reason,
+			Key:      ask.Key,
+			UseID:    ask.UseID,
+		})
+		return m, nil
+	}
 	// modal first: it consumes keys when active.
 	if m.approval.Active {
 		newApp, cmd := m.approval.Update(msg)
 		m.approval = newApp
-		if _, ok := msg.(ApprovalDecisionMsg); ok {
+		if dec, ok := msg.(ApprovalDecisionMsg); ok {
 			m.state = StateIdle
+			if m.approver != nil {
+				m.approver.Resolve(dec.UseID, dec.Decision)
+			}
 		}
 		return m, cmd
 	}
@@ -1846,6 +1872,13 @@ func RunWithCommands(ctx context.Context, eng *loop.Engine, reg *commands.Regist
 // RunWithCommandsAndKeyMap is RunWithCommands plus a caller-supplied keymap.
 // Pass DefaultKeyMap() to keep stock bindings.
 func RunWithCommandsAndKeyMap(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap) error {
+	return RunWithCommandsKeyMapApprover(ctx, eng, reg, km, nil)
+}
+
+// RunWithCommandsKeyMapApprover is RunWithCommandsAndKeyMap plus the channel
+// approver that surfaces dangerous-command prompts in the modal. Pass nil for
+// the legacy no-gating behavior.
+func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver) error {
 	cwd := ""
 	modelName := ""
 	scope := ""
@@ -1856,6 +1889,9 @@ func RunWithCommandsAndKeyMap(ctx context.Context, eng *loop.Engine, reg *comman
 		scope = eng.Cfg.Sandbox.Scope
 	}
 	m := NewModel(eng, cwd, modelName, scope, lvl)
+	if app != nil {
+		m = m.WithApprover(app)
+	}
 	if reg != nil {
 		m = m.WithCommands(reg)
 	}
@@ -1928,6 +1964,9 @@ func RunWithCommandsAndKeyMap(ctx context.Context, eng *loop.Engine, reg *comman
 	input, restoreKeys := InstallModifyOtherKeys(os.Stdout)
 	defer restoreKeys()
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(input))
+	if m.approver != nil {
+		m.approver.SetProgram(p)
+	}
 	_, err := p.Run()
 	return err
 }

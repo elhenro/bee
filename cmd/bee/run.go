@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/bgreg"
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
@@ -62,6 +63,8 @@ func runHeadlessReal(args []string) {
 	extraTools := fs.String("extra-tools", "", "comma-list of expert-mode tools to add to the manifest (e.g. apply_patch,hashline_edit). default: off")
 	verbose := fs.Bool("verbose", false, "show full tool output (default: compact one-line preview)")
 	bgLoop := fs.Bool("bg-loop", false, "persist after first turn: write status sidecar, poll inbox for follow-ups")
+	yes := fs.Bool("yes", false, "auto-approve any dangerous shell command without prompting (still blocks hardline-refused commands)")
+	yolo := fs.Bool("yolo", false, "alias for --yes: auto-approve dangerous commands")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
@@ -149,11 +152,12 @@ func runHeadlessReal(args []string) {
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
+	app := buildHeadlessApprover(cfg, *yes || *yolo)
 	var reg *tools.Registry
 	if writeRe != nil {
-		reg, err = buildToolsFiltered(cwd, cfg, writeRe, prov, storeDir)
+		reg, err = buildToolsFilteredWithApprover(cwd, cfg, writeRe, prov, storeDir, app)
 	} else {
-		reg, err = buildTools(cwd, cfg, prov, storeDir)
+		reg, err = buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee run: tools: %v\n", err)
@@ -477,10 +481,42 @@ func filterTools(reg *tools.Registry, csv string) (*tools.Registry, error) {
 }
 
 func buildTools(cwd string, cfg config.Config, prov llm.Provider, storeDir string) (*tools.Registry, error) {
+	return buildToolsWithApprover(cwd, cfg, prov, storeDir, nil)
+}
+
+// newShellTool returns a shell tool with optional approval gating. nil app =
+// no gating (matches pre-approval behavior).
+func newShellTool(app approval.Approver) tools.Tool {
+	if app == nil {
+		return shell.New()
+	}
+	return shell.NewWithApprover(app)
+}
+
+// buildHeadlessApprover wires the dangerous-command approval gate for the
+// headless CLI.
+//
+//	autoYes=true → Static{AllowOnce}: every flagged command runs without prompt
+//	                (hardline patterns still refuse).
+//	autoYes=false → Cache wrapping a stdin CLI prompt. Persistent grants come
+//	                from cfg.Sandbox.CommandAllowlist; AllowAlways picks append
+//	                to that list on disk via PersistAllowlistEntry.
+func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
+	if autoYes {
+		return approval.Static{Verdict: approval.AllowOnce}
+	}
+	cli := approval.NewCLI(os.Stdin, os.Stderr)
+	return approval.NewCache(cli, cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
+}
+
+// buildToolsWithApprover is buildTools that wires app into the shell tool so
+// safety.DetectDangerous matches consult the user before running. Pass nil to
+// disable gating.
+func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver) (*tools.Registry, error) {
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
 	all := []tools.Tool{
-		shell.New(),
+		newShellTool(app),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),
 		grep.NewWithMax(cwd, prof.GrepMaxMatches),
 		find.New(cwd),
@@ -508,10 +544,16 @@ func buildTools(cwd string, cfg config.Config, prov llm.Provider, storeDir strin
 // buildToolsFiltered is buildTools with a path-regex constraint threaded into
 // every mutation tool. Read-only tools are unaffected.
 func buildToolsFiltered(cwd string, cfg config.Config, writeRe *regexp.Regexp, prov llm.Provider, storeDir string) (*tools.Registry, error) {
+	return buildToolsFilteredWithApprover(cwd, cfg, writeRe, prov, storeDir, nil)
+}
+
+// buildToolsFilteredWithApprover combines buildToolsFiltered with the shell
+// approval hook.
+func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *regexp.Regexp, prov llm.Provider, storeDir string, app approval.Approver) (*tools.Registry, error) {
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
 	all := []tools.Tool{
-		shell.New(),
+		newShellTool(app),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),
 		grep.NewWithMax(cwd, prof.GrepMaxMatches),
 		find.New(cwd),

@@ -115,6 +115,29 @@ func TestWrapShellInput_WorkspaceWrite(t *testing.T) {
 	}
 }
 
+func TestWrapShellInput_StashesOriginal(t *testing.T) {
+	input := map[string]any{"command": "rm -rf ./tmp"}
+	cfg := config.SandboxConfig{Scope: "workspace-write", Approval: "on-request"}
+	got := wrapShellInput(input, cfg, "/tmp")
+	orig, ok := got["_orig_command"].(string)
+	if !ok || orig != "rm -rf ./tmp" {
+		t.Errorf("_orig_command = %v, want %q", got["_orig_command"], "rm -rf ./tmp")
+	}
+	cmd, _ := got["command"].(string)
+	if cmd == "rm -rf ./tmp" {
+		t.Errorf("command not wrapped: %q", cmd)
+	}
+}
+
+func TestWrapShellInput_NoOrigWhenUnwrapped(t *testing.T) {
+	input := map[string]any{"command": "echo hi"}
+	cfg := config.SandboxConfig{Scope: "danger-full-access"}
+	got := wrapShellInput(input, cfg, "/tmp")
+	if _, present := got["_orig_command"]; present {
+		t.Errorf("_orig_command set when nothing was wrapped: %v", got)
+	}
+}
+
 func TestWrapShellInput_PreservesExtraKeys(t *testing.T) {
 	input := map[string]any{"command": "echo hi", "extra": "data", "count": 42}
 	cfg := config.SandboxConfig{Scope: "workspace-write", Approval: "on-request"}

@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/muesli/termenv"
 
+	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
@@ -96,7 +97,9 @@ func runTUIWithSession(resumeID string) {
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
-	reg, err := buildTools(cwd, cfg, prov, storeDir)
+	tuiApprover := tui.NewApprover()
+	app := approval.NewCache(tuiApprover, cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
+	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tools: %v\n", err)
 		os.Exit(1)
@@ -199,7 +202,7 @@ func runTUIWithSession(resumeID string) {
 	}
 	km := tui.LoadKeyMap(beeHome)
 
-	if err := tui.RunWithCommandsAndKeyMap(context.Background(), eng, cmdReg, km); err != nil {
+	if err := tui.RunWithCommandsKeyMapApprover(context.Background(), eng, cmdReg, km, tuiApprover); err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tui: %v\n", err)
 		os.Exit(1)
 	}

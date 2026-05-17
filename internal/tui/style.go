@@ -30,6 +30,17 @@ var (
 	// terminals. Either way the eye locks onto past user turns when
 	// scanning scrollback without the block looking like a brutal slab.
 	bgUserHl = lipgloss.AdaptiveColor{Light: "#FFE9B8", Dark: "#3A2E14"}
+
+	// soft red bg for the failed-command badge that replaces the bare
+	// "exit N" preview on bash errors. Picked so it sits subtly on both
+	// terminal themes — pale rose over cream, deep wine over charcoal.
+	bgErrorHl = lipgloss.AdaptiveColor{Light: "#FFD7DC", Dark: "#5A1F2C"}
+
+	// soft yellow bg for refusal/denial badges. Same role as bgErrorHl but
+	// for permission-denied / refused-by-user / safety-rejected results —
+	// reads "this was blocked, not broken". Pale cream over light, warm
+	// amber-brown over dark, so it sits adjacent to honey without clashing.
+	bgWarnHl = lipgloss.AdaptiveColor{Light: "#FFEAB8", Dark: "#5A4214"}
 )
 
 // Brand + semantic accents. Light-mode pairs darken the hue so it carries
@@ -80,6 +91,9 @@ type Styles struct {
 	Button     lipgloss.Style
 	ButtonHot  lipgloss.Style
 	Error      lipgloss.Style
+	ErrorCmd   lipgloss.Style // failed-bash command rendered on red bg highlight
+	Warn       lipgloss.Style // refused/denied body text (permission blocked, not broken)
+	WarnCmd    lipgloss.Style // refused command rendered on yellow bg highlight
 	Dim        lipgloss.Style
 	Body       lipgloss.Style // base prose
 	UserBubble lipgloss.Style // (legacy) full-width warm tint — retained for callers
@@ -126,7 +140,15 @@ func DefaultStyles() Styles {
 		ButtonHot:  lipgloss.NewStyle().Foreground(fgButter).Background(accentHoney).Bold(true).Padding(0, 2),
 
 		Error: lipgloss.NewStyle().Foreground(semError).Bold(true),
-		Dim:   lipgloss.NewStyle().Foreground(fgOyster),
+		// failed-bash command: keep the cmd readable (body fg) on the soft
+		// red bg so the eye reads "this command failed" instead of just
+		// "exit 1". Bold so it stands out from any trailing stderr lines.
+		ErrorCmd: lipgloss.NewStyle().Foreground(fgAsh).Background(bgErrorHl).Bold(true),
+		// refusal/denial body — mustard fg, bold. Sits next to ErrorCmd as
+		// "blocked, not broken": permission denied, safety reject, user n.
+		Warn:    lipgloss.NewStyle().Foreground(semWarning).Bold(true),
+		WarnCmd: lipgloss.NewStyle().Foreground(fgAsh).Background(bgWarnHl).Bold(true),
+		Dim:     lipgloss.NewStyle().Foreground(fgOyster),
 		Body:  lipgloss.NewStyle().Foreground(fgAsh),
 
 		// legacy user-bubble — kept so callers that referenced it still compile.

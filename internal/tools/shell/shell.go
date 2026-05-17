@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/safety"
 	"github.com/elhenro/bee/internal/tools"
@@ -27,10 +28,22 @@ const (
 )
 
 // Tool is the shell executor.
-type Tool struct{}
+//
+// approver, when non-nil, is consulted whenever safety.DetectDangerous flags
+// the command. nil approver = no gating (legacy behavior). Hardline checks in
+// safety.CheckShellCommand always run regardless of approver.
+type Tool struct {
+	approver approval.Approver
+}
 
-// New returns a fresh shell tool.
+// New returns a shell tool with no approval gating. Use NewWithApprover to
+// enable the dangerous-pattern prompt flow.
 func New() tools.Tool { return &Tool{} }
+
+// NewWithApprover returns a shell tool that consults app before running any
+// command flagged by safety.DetectDangerous. A Deny verdict aborts execution
+// and returns an explanatory IsError result.
+func NewWithApprover(app approval.Approver) tools.Tool { return &Tool{approver: app} }
 
 // Spec advertises the tool to the model.
 func (t *Tool) Spec() llm.ToolSpec {
@@ -65,8 +78,28 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	if !ok || strings.TrimSpace(cmdStr) == "" {
 		return tools.Result{Content: "missing or empty 'command' field", IsError: true}, nil
 	}
-	if err := safety.CheckShellCommand(cmdStr); err != nil {
+	// display command = unwrapped form when engine pre-wrapped with sandbox-exec;
+	// otherwise the modal would show the helper profile, not the user's intent.
+	displayCmd := cmdStr
+	if v, ok := input["_orig_command"].(string); ok && v != "" {
+		displayCmd = v
+	}
+	if err := safety.CheckShellCommand(displayCmd); err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
+	}
+	if t.approver != nil {
+		if key, desc, hit := safety.DetectDangerous(displayCmd); hit {
+			d, err := t.approver.Request(ctx, displayCmd, key, desc)
+			if err != nil {
+				return tools.Result{Content: fmt.Sprintf("approval error: %v", err), IsError: true}, nil
+			}
+			if d == approval.Deny {
+				return tools.Result{
+					Content: fmt.Sprintf("refused by user: %s (%s). Try a different approach.", desc, key),
+					IsError: true,
+				}, nil
+			}
+		}
 	}
 
 	timeout := defaultTimeout

@@ -13,7 +13,7 @@ import (
 // Hex glyphs (PLAN §8b.1) and honey palette.
 const (
 	HexFilled      = "⬢"
-	HexHollow      = "⬡"
+	HexHollow      = "⬢"
 	ColorHoneyGold = "#F2B233"
 	ColorAmber     = "#E08A1E"
 	ColorDim       = "#5F5F5F"

@@ -151,7 +151,7 @@ func (a *AgentView) Render(width, height int) string {
 			if i == a.selected {
 				marker = avSelStyle.Render("▸")
 			}
-			lines = append(lines, fmt.Sprintf("%s %s  %-10s  %-8s  ⬡ %s",
+			lines = append(lines, fmt.Sprintf("%s %s  %-10s  %-8s  ⬢ %s",
 				marker,
 				fmt.Sprintf("%-40s", agentTruncate(r.Task, 40)),
 				stateLabel(r.State),

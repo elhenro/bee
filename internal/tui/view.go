@@ -377,7 +377,9 @@ func overlayCenter(base, modal string, w int) string {
 }
 
 // renderIntro draws the current frame of the non-blocking startup animation.
-// Empty string once the animation finishes or before width is known.
+// Each row is colored via a honey gradient (bright honey → soft amber →
+// quiet squid) so the braille pixel art reads as molten gold rather than
+// flat dim text. Empty before width is known or after animation ends.
 func (m Model) renderIntro() string {
 	if !m.introActive || len(m.introFrames) == 0 {
 		return ""
@@ -386,12 +388,22 @@ func (m Model) renderIntro() string {
 		return ""
 	}
 	f := m.introFrames[m.introIdx]
-	dim := lipgloss.NewStyle().Foreground(fgOyster)
-	art := dim.Render(f.Text)
+	// gradient palette top→bottom — top sits brightest, fades to subtle
+	rowColors := []lipgloss.AdaptiveColor{accentHoney, accentBee, fgSquid, fgOyster}
+	lines := strings.Split(f.Text, "\n")
+	for i, ln := range lines {
+		col := rowColors[i]
+		if i >= len(rowColors) {
+			col = rowColors[len(rowColors)-1]
+		}
+		lines[i] = lipgloss.NewStyle().Foreground(col).Render(ln)
+	}
+	art := strings.Join(lines, "\n")
 	if f.Subtitle == "" {
 		return art
 	}
-	return art + "\n" + dim.Render("  "+f.Subtitle)
+	sub := lipgloss.NewStyle().Foreground(fgOyster).Italic(true).Render("  " + f.Subtitle)
+	return art + "\n" + sub
 }
 
 // renderWarning returns a tiny dim notice line for transient engine events

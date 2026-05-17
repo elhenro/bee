@@ -188,6 +188,11 @@ type StreamRenderer struct {
 	// compact strips the pi-spacing layer for terminals where vertical
 	// density matters more than focus. Default false = clean mode.
 	compact bool
+	// toolUses indexes tool calls by ID so renderToolResult can recover the
+	// originating cmd/args (e.g. surface the failed bash command in place of
+	// the bare "exit N" preview). Populated lazily as RenderMessage walks
+	// each turn.
+	toolUses map[string]types.ToolUse
 }
 
 // SetLoaderStyle picks which pre-token loader animation to render.
@@ -435,6 +440,17 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 	}
 	glyph := r.roleGlyph(m.Role)
 
+	// pre-pass: index tool-use blocks so a later renderToolResult can look up
+	// the originating command (used by the bash error-card path).
+	for _, b := range m.Content {
+		if b.Type == types.BlockToolUse && b.Use != nil {
+			if r.toolUses == nil {
+				r.toolUses = make(map[string]types.ToolUse)
+			}
+			r.toolUses[b.Use.ID] = *b.Use
+		}
+	}
+
 	parts := make([]string, 0, len(m.Content))
 	for _, b := range m.Content {
 		var rendered string
@@ -484,6 +500,15 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 			}
 			rendered = strings.Join(bodyLines, "\n")
 		}
+	} else if m.Role == types.RoleAssistant {
+		// assistant turns render without a role glyph — the user prompt
+		// above already anchors the conversation, and stripping the prefix
+		// gives prose full column width without a leading hex distraction.
+		// tool-use/result blocks inside still get their own ◇ markers.
+		if bodyStr == "" {
+			return ""
+		}
+		rendered = bodyStr
 	} else if bodyStr == "" {
 		rendered = glyph
 	} else {
@@ -541,7 +566,7 @@ func (r *StreamRenderer) roleGlyph(role types.Role) string {
 	case types.RoleUser:
 		return r.styles.RoleYou.Render("▸")
 	case types.RoleAssistant:
-		return r.styles.RoleBee.Render("⬡")
+		return r.styles.RoleBee.Render("⬢")
 	case types.RoleTool:
 		return r.styles.RoleTool.Render("◇")
 	default:
@@ -574,11 +599,12 @@ func indentContinuation(s, indent string) string {
 // is applied once the turn finishes in RenderMessage. Continuation lines are
 // indented 2 cols so they align under the body column, not the role glyph.
 func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
-	glyph := r.styles.RoleBee.Render("⬡")
 	if partial == "" {
 		// no right caret while loading — keeps the row visually minimal.
-		// blank line above so loader breathes; user prompt isn't squashed against animation.
-		head := glyph + " " + r.renderLoader(frame)
+		// blank line above so loader breathes; user prompt isn't squashed
+		// against animation. Loader animation alone signals "bee working" —
+		// the prefix ⬢ was redundant with the animated braille payload.
+		head := r.renderLoader(frame)
 		if r.compact {
 			return "\n" + head
 		}
@@ -588,7 +614,7 @@ func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
 	// trim trailing whitespace so the caret sits flush with the last visible
 	// char instead of floating on an indented blank line under the prose.
 	trimmed := strings.TrimRight(partial, " \t\n")
-	body := glyph + " " + indentContinuation(trimmed, "  ") + " " + caret
+	body := trimmed + " " + caret
 	if r.compact {
 		return body
 	}
@@ -609,7 +635,7 @@ func (r *StreamRenderer) pulseStyle(nf int) lipgloss.Style {
 // so we deduct those before clamping. Tiny terminals fall back to the
 // minimum cell count.
 func (r *StreamRenderer) loaderCells() int {
-	prefix := 2 // glyph + space
+	prefix := 3 // glyph + 2 spaces
 	if !r.compact {
 		prefix++ // outer gutter
 	}
@@ -1216,10 +1242,46 @@ func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
 	if len(lines) == 0 {
 		return ""
 	}
+	// refusal/denial: tool ran the safety/approval path and was blocked
+	// rather than failing. Marker prefixes come from shell.go ("refused by
+	// user:"), safety/shell.go + safety/paths.go ("refused: …"), and write
+	// filters ("path … denied by write filter"). These read as "blocked,
+	// not broken" — use the yellow warn palette so the eye distinguishes
+	// them from real bash errors at a glance.
+	isRefusal := res.IsError && len(lines) > 0 && (strings.HasPrefix(lines[0], "refused") || strings.Contains(lines[0], "denied by"))
+
 	style := r.styles.ToolPrev
-	if res.IsError {
+	switch {
+	case isRefusal:
+		style = r.styles.Warn
+	case res.IsError:
 		style = r.styles.Error
 	}
+
+	// bash error/refusal preview: replace the leading "exit N" or
+	// "refused …" line with the originating command rendered on a colored
+	// bg badge. Reads "this cmd failed/was blocked" at a glance instead of
+	// forcing the user to scroll up and correlate the bare exit/refusal with
+	// the originating tool call.
+	var headerOverride string
+	if res.IsError && len(lines) > 0 && strings.HasPrefix(lines[0], "exit ") {
+		if use, ok := r.toolUses[res.UseID]; ok && use.Name == "bash" {
+			if cmd, _ := use.Input["command"].(string); cmd != "" {
+				exitTag := lines[0]
+				lines = lines[1:]
+				cmdRendered := r.styles.ErrorCmd.Render("$ " + shortenPathsInline(cmd))
+				headerOverride = cmdRendered + " " + r.styles.Dim.Render("("+exitTag+")")
+			}
+		}
+	} else if isRefusal {
+		if use, ok := r.toolUses[res.UseID]; ok && use.Name == "bash" {
+			if cmd, _ := use.Input["command"].(string); cmd != "" {
+				cmdRendered := r.styles.WarnCmd.Render("$ " + shortenPathsInline(cmd))
+				headerOverride = cmdRendered
+			}
+		}
+	}
+
 	hidden := 0
 	cap := r.previewLines()
 	if cap >= 0 && len(lines) > cap {
@@ -1227,10 +1289,14 @@ func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
 		lines = lines[:cap]
 	}
 	rail := r.styles.ToolRail.Render("▎")
-	for i, ln := range lines {
-		lines[i] = rail + " " + style.Render(shortenPathsInline(ln))
+	rendered := make([]string, 0, len(lines)+1)
+	if headerOverride != "" {
+		rendered = append(rendered, rail+" "+headerOverride)
 	}
-	out := strings.Join(lines, "\n")
+	for _, ln := range lines {
+		rendered = append(rendered, rail+" "+style.Render(shortenPathsInline(ln)))
+	}
+	out := strings.Join(rendered, "\n")
 	switch {
 	case hidden > 0:
 		// surface both hidden-row count *and* total payload size — `+1 more`

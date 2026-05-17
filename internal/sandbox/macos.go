@@ -24,8 +24,22 @@ const seatbeltDevNodes = `(allow file-write*
     (literal "/dev/stderr"))
 `
 
-// seatbeltReadOnly denies all real file writes and network but still allows
-// the dev/stdio nodes so subprocesses (notably git) can run.
+// seatbeltLoopback allows network on loopback only — needed so httptest /
+// dev-server bind+connect to 127.0.0.1 / ::1 don't fail with EPERM. External
+// network is still denied; defense at this point is the approval modal +
+// safety.CheckShellCommand, not the sandbox.
+//
+// Use targeted ops (bind/inbound/outbound) instead of `network*` — the broad
+// form with a `(local ip "localhost:*")` filter ends up matching outbound
+// sockets whose ephemeral local end is on lo, which silently re-allows
+// connections to the open internet. tested empirically.
+const seatbeltLoopback = `(allow network-bind (local ip "localhost:*"))
+(allow network-inbound (local ip "localhost:*"))
+(allow network-outbound (remote ip "localhost:*"))
+`
+
+// seatbeltReadOnly denies file writes and external network but still allows
+// loopback + dev/stdio nodes so subprocesses (notably git) can run.
 const seatbeltReadOnly = `(version 1)
 (deny default)
 (allow process-exec)
@@ -36,7 +50,7 @@ const seatbeltReadOnly = `(version 1)
 (allow mach-lookup)
 (deny network*)
 (deny file-write*)
-` + seatbeltDevNodes
+` + seatbeltLoopback + seatbeltDevNodes
 
 // seatbeltWorkspaceWriteHead/Tail wrap a dynamic block of (subpath ...) rules.
 // The middle is built per-call so dev-tool caches under $HOME (go-build, go
@@ -53,7 +67,7 @@ const seatbeltWorkspaceWriteHead = `(version 1)
 (allow mach-lookup)
 (deny network*)
 (deny file-write*)
-` + seatbeltDevNodes + `(allow file-write*
+` + seatbeltLoopback + seatbeltDevNodes + `(allow file-write*
     (subpath "/private/tmp")
     (subpath "/private/var/folders")
     (subpath "/tmp")`
@@ -139,11 +153,16 @@ func devCacheDirs() []string {
 		return nil
 	}
 	dirs := []string{
-		filepath.Join(home, "Library", "Caches", "go-build"),
+		// whole macOS per-user cache tree: covers go-build, golangci-lint,
+		// pip, Homebrew, etc. without playing whack-a-mole on every tool.
+		filepath.Join(home, "Library", "Caches"),
 		filepath.Join(home, "go", "pkg", "mod"),
 		filepath.Join(home, ".cache"),
 		filepath.Join(home, ".npm"),
 		filepath.Join(home, ".cargo", "registry"),
+		filepath.Join(home, ".rustup"),
+		filepath.Join(home, ".gradle", "caches"),
+		filepath.Join(home, ".m2"),
 		filepath.Join(home, ".bee"),
 	}
 	if gc := strings.TrimSpace(os.Getenv("GOCACHE")); gc != "" {

@@ -19,7 +19,7 @@ Three wedges incumbents miss:
 
 1. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. No REPL incantations. `bee calc` just works, from any directory, in any shell.
 2. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint, all four are equally callable tools the model can invoke mid-task. Your daily driver Hermes runs as a sub-agent. No IPC dance.
-3. **Tiny-context friendly.** Caveman-compressed system prompt, three tools, top-k memory. Works on a 4k-context local Ollama, DeepSeek v4 Flash, and small fine-tunes like Qwen3.6-35B-A3B-4bit alike.
+3. **Tiny-context friendly.** Caveman-compressed system prompt, three tools, top-k memory. Same harness scales from a 4k-context local Ollama to small fine-tunes like Qwen3.6-35B-A3B-4bit up to DeepSeek v4 Flash's 1M window.
 
 Built light. Shrinks itself when context gets tight. Stays small.
 
@@ -46,9 +46,14 @@ bee runs against any OpenAI-compatible local server. Confirmed working:
 - **Ollama** (`localhost:11434/v1`) with `llama3.1:8b`, `qwen2.5-coder:7b`.
 - **LM Studio** (`localhost:1234/v1`).
 
-For sub-8k-context models, use the tiny profile:
+For sub-8k-context models, switch to the tiny profile. `--profile` is not a CLI flag — set it via env or `~/.bee/config.toml`:
 
-    bee --profile tiny --provider omlx --model Qwen3.6-35B-A3B-4bit
+    BEE_PROFILE=tiny bee run --provider omlx --model Qwen3.6-35B-A3B-4bit -- "..."
+
+    # or persist in ~/.bee/config.toml
+    profile = "tiny"
+    default_provider = "omlx"
+    default_model = "Qwen3.6-35B-A3B-4bit"
 
 ## Caveman mode
 

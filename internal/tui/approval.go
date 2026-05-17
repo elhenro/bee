@@ -12,15 +12,19 @@ import (
 type ApprovalDecision string
 
 const (
-	ApprovalAllow ApprovalDecision = "allow"
-	ApprovalDeny  ApprovalDecision = "deny"
+	ApprovalAllow   ApprovalDecision = "allow"   // run once
+	ApprovalSession ApprovalDecision = "session" // run + cache for session
+	ApprovalAlways  ApprovalDecision = "always"  // run + persist to config
+	ApprovalDeny    ApprovalDecision = "deny"
 )
 
 // ApprovalRequest is what the Engine (eventually) hands to the modal.
 type ApprovalRequest struct {
 	ToolName string
 	Action   string // human-readable: "run shell: rm -rf /tmp/x"
-	UseID    string // tool_use id, echoed back in the decision
+	Reason   string // why the cmd was flagged, e.g. "recursive delete"
+	Key      string // safety.DangerousPattern key, for session + persistent cache
+	UseID    string // request id, echoed back in the decision
 }
 
 // ApprovalDecisionMsg is the tea.Msg published once the user chooses.
@@ -37,15 +41,15 @@ type ApprovalModel struct {
 	keys    KeyMap
 	Active  bool
 	Request ApprovalRequest
-	// focusAllow toggles which button is highlighted (default: allow)
-	focusAllow bool
+	// focus is the highlighted button index: 0=allow 1=session 2=always 3=deny.
+	focus int
 	// out is the channel the parent passes for Engine wakeup.
 	out chan<- ApprovalDecisionMsg
 }
 
 // NewApprovalModel returns a fresh, inactive modal.
 func NewApprovalModel(styles Styles, keys KeyMap) ApprovalModel {
-	return ApprovalModel{styles: styles, keys: keys, focusAllow: true}
+	return ApprovalModel{styles: styles, keys: keys}
 }
 
 // SetOutput wires the engine-facing channel. Pass nil to detach.
@@ -57,7 +61,7 @@ func (m *ApprovalModel) SetOutput(ch chan<- ApprovalDecisionMsg) {
 func (m *ApprovalModel) Show(req ApprovalRequest) {
 	m.Request = req
 	m.Active = true
-	m.focusAllow = true
+	m.focus = 0
 }
 
 // Hide closes the modal without publishing a decision.
@@ -78,14 +82,38 @@ func (m ApprovalModel) Update(msg tea.Msg) (ApprovalModel, tea.Cmd) {
 	}
 	switch {
 	case key.Matches(km, m.keys.ApproveAllow):
+		// "enter" submits the focused button; explicit a/y still picks allow-once.
+		if km.String() == "enter" {
+			return m.decide(m.decisionFor(m.focus))
+		}
 		return m.decide(ApprovalAllow)
+	case key.Matches(km, m.keys.ApproveSession):
+		return m.decide(ApprovalSession)
+	case key.Matches(km, m.keys.ApproveAlways):
+		return m.decide(ApprovalAlways)
 	case key.Matches(km, m.keys.ApproveDeny):
 		return m.decide(ApprovalDeny)
-	case km.String() == "tab" || km.String() == "right" || km.String() == "left":
-		m.focusAllow = !m.focusAllow
+	case km.String() == "tab" || km.String() == "right":
+		m.focus = (m.focus + 1) % 4
+		return m, nil
+	case km.String() == "shift+tab" || km.String() == "left":
+		m.focus = (m.focus + 3) % 4
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m ApprovalModel) decisionFor(idx int) ApprovalDecision {
+	switch idx {
+	case 1:
+		return ApprovalSession
+	case 2:
+		return ApprovalAlways
+	case 3:
+		return ApprovalDeny
+	default:
+		return ApprovalAllow
+	}
 }
 
 func (m ApprovalModel) decide(d ApprovalDecision) (ApprovalModel, tea.Cmd) {
@@ -117,23 +145,30 @@ func (m ApprovalModel) View() string {
 	if action == "" {
 		action = "(no detail)"
 	}
-
-	var allowBtn, denyBtn string
-	if m.focusAllow {
-		allowBtn = m.styles.ButtonHot.Render("[a]llow")
-		denyBtn = m.styles.Button.Render("[d]eny")
-	} else {
-		allowBtn = m.styles.Button.Render("[a]llow")
-		denyBtn = m.styles.ButtonHot.Render("[d]eny")
+	reason := m.Request.Reason
+	if reason == "" {
+		reason = "(unspecified)"
 	}
+
+	labels := []string{"[a]llow once", "[s]ession", "[f]orever", "[d]eny"}
+	btns := make([]string, 4)
+	for i, lbl := range labels {
+		if i == m.focus {
+			btns[i] = m.styles.ButtonHot.Render(lbl)
+		} else {
+			btns[i] = m.styles.Button.Render(lbl)
+		}
+	}
+	row := lipgloss.JoinHorizontal(lipgloss.Top, btns[0], "  ", btns[1], "  ", btns[2], "  ", btns[3])
 
 	body := strings.Join([]string{
 		title,
 		"",
 		"tool:   " + tool,
+		"reason: " + reason,
 		"action: " + action,
 		"",
-		lipgloss.JoinHorizontal(lipgloss.Top, allowBtn, "  ", denyBtn),
+		row,
 	}, "\n")
 	return m.styles.Modal.Render(body)
 }

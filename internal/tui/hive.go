@@ -133,7 +133,7 @@ func (h *Hive) Upsert(b Bee) {
 // idle, then done. Truncates to maxStrip entries; further capped by width.
 func (h *Hive) Render(width int) string {
 	if len(h.bees) == 0 {
-		return StyleLabel.Render("⬡ no bees yet")
+		return StyleLabel.Render("⬢ no bees yet")
 	}
 	ordered := sortForStrip(h.bees)
 	if h.maxStrip > 0 && len(ordered) > h.maxStrip {

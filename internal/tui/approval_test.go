@@ -62,14 +62,51 @@ func TestApproval_DenyKey(t *testing.T) {
 	}
 }
 
-func TestApproval_TabTogglesFocus(t *testing.T) {
+func TestApproval_TabCyclesFocus(t *testing.T) {
 	m := newApprovalFixture()
-	if !m.focusAllow {
-		t.Fatal("expected allow to start focused")
+	if m.focus != 0 {
+		t.Fatalf("expected focus=0 (allow), got %d", m.focus)
 	}
+	for want := 1; want < 4; want++ {
+		m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		if m2.focus != want {
+			t.Fatalf("after %d tabs focus=%d, want %d", want, m2.focus, want)
+		}
+		m = m2
+	}
+	// Wrap back to 0.
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if m2.focusAllow {
-		t.Fatal("tab should toggle focus")
+	if m2.focus != 0 {
+		t.Fatalf("expected wrap to 0, got %d", m2.focus)
+	}
+}
+
+func TestApproval_SessionKey(t *testing.T) {
+	m := newApprovalFixture()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	dec := cmd().(ApprovalDecisionMsg)
+	if dec.Decision != ApprovalSession {
+		t.Fatalf("got %+v", dec)
+	}
+}
+
+func TestApproval_AlwaysKey(t *testing.T) {
+	m := newApprovalFixture()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	dec := cmd().(ApprovalDecisionMsg)
+	if dec.Decision != ApprovalAlways {
+		t.Fatalf("got %+v", dec)
+	}
+}
+
+func TestApproval_EnterSubmitsFocused(t *testing.T) {
+	m := newApprovalFixture()
+	// Cycle to "session" (focus=1) then press enter.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	dec := cmd().(ApprovalDecisionMsg)
+	if dec.Decision != ApprovalSession {
+		t.Fatalf("enter on focus=1 should pick session, got %+v", dec)
 	}
 }
 

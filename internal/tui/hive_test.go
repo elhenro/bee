@@ -37,8 +37,8 @@ func TestHive_RenderStrip_OrdersActiveFirst(t *testing.T) {
 	if !strings.Contains(out, "⬢") {
 		t.Fatalf("filled hex glyph missing: %q", out)
 	}
-	if !strings.Contains(out, "⬡") {
-		t.Fatalf("hollow hex glyph missing: %q", out)
+	if !strings.Contains(out, "⬢") {
+		t.Fatalf("hex glyph missing: %q", out)
 	}
 }
 
