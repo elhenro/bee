@@ -49,7 +49,7 @@ func TestDefaults_ThreeProfiles(t *testing.T) {
 
 func TestDefaults_AnthropicAPIKey(t *testing.T) {
 	// Only the direct API-key provider should ship. The OAuth subscription
-	// path that impersonated Claude Code was removed.
+	// path that impersonated a first-party client was removed.
 	c := Defaults()
 	ap, ok := c.Providers["anthropic"]
 	if !ok {

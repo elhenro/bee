@@ -2,7 +2,7 @@
 //
 // 5 Critic engines attack a plan from distinct angles (security, perf,
 // complexity, scope, edge cases), then a Synthesizer (Queen) consolidates
-// the critiques into a refined plan. Inspired by oh-my-openagent hyperplan.
+// the critiques into a refined plan.
 package main
 
 import (

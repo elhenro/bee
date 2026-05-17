@@ -34,7 +34,7 @@ type KeyMap struct {
 	ImagePaste key.Binding
 }
 
-// DefaultKeyMap matches the chord set in PLAN.md §8b.4.
+// DefaultKeyMap returns the default keyboard chord set.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		Submit: key.NewBinding(

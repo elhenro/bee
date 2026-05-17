@@ -1,8 +1,8 @@
 // Package shell implements the shell tool: bash -c execution with timeout
 // and output truncation. No sandboxing here — slice 1F adds that layer.
 //
-// non-login non-interactive bash skips ~/.bash_profile and ~/.bashrc, matching
-// pi's behavior. avoids tripping over user rc files that misbehave under sandbox.
+// non-login non-interactive bash skips ~/.bash_profile and ~/.bashrc to
+// avoid tripping over user rc files that misbehave under sandbox.
 package shell
 
 import (

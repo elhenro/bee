@@ -175,8 +175,8 @@ func hardcodedFallback(name string) []Model {
 			{ID: "o1-mini", Name: "o1 mini"},
 		}
 	case "chatgpt":
-		// chatgpt.com/backend-api/codex backend (subscription auth, /responses
-		// only). Models match what the official codex CLI exposes today.
+		// chatgpt.com subscription backend (auth, /responses only). Curated
+		// list of models exposed by the responses endpoint.
 		return []Model{
 			{ID: "gpt-5-codex", Name: "GPT-5 Codex", ContextLength: 272000},
 			{ID: "gpt-5", Name: "GPT-5", ContextLength: 272000},

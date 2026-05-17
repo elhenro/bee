@@ -89,7 +89,7 @@ func TestBuildAnthropicMessages_ToolAdvert(t *testing.T) {
 }
 
 func TestBuildAnthropicMessages_ToolNamesPassThrough(t *testing.T) {
-	// bee-native tool names must be sent verbatim. No claude-code remap.
+	// bee-native tool names must be sent verbatim. No vendor-specific remap.
 	tools := []ToolAdvert{
 		{Name: "shell", Schema: map[string]any{"type": "object"}},
 		{Name: "read", Schema: map[string]any{"type": "object"}},

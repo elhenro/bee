@@ -1,6 +1,6 @@
 // claude.go is the native Anthropic Messages provider. Auth is direct
 // API-key only (ANTHROPIC_API_KEY via x-api-key header). bee identifies
-// itself honestly as bee/0.1; impersonating Claude Code to access
+// itself honestly as bee/0.1; impersonating first-party clients to access
 // subscription pricing is out of scope.
 package llm
 

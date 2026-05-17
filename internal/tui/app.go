@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -202,9 +203,9 @@ type Model struct {
 	// the loop. Default false. Toggle via /settings; persists to config.
 	showNudges bool
 
-	// compact strips the pi-spacing layer (gutter, inter-turn blank line,
-	// user bg-tint, OSC 133 zones) for the dense pre-pi layout.
-	// Default false = clean mode. Toggle via /settings; persists to config.
+	// compact strips the spacing layer (gutter, inter-turn blank line,
+	// user bg-tint, OSC 133 zones) for a denser layout. Default false =
+	// clean mode. Toggle via /settings; persists to config.
 	compact bool
 
 	// showContextBar reveals the bottom-edge thin context-fill strip. Default
@@ -1007,10 +1008,21 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 
 	case turnDoneMsg:
 		m.cancelRun = nil
-		if msg.err != nil {
+		switch {
+		case errors.Is(msg.err, context.Canceled):
+			// user pressed esc — clean cancel, not a failure. preserve any
+			// messages the engine flushed before the cancel landed so the
+			// scrollback isn't blanked, and stay idle (StateError would
+			// gate the `/` palette and `@` picker behind error-recovery).
+			if len(msg.result.Messages) > 0 {
+				m.messages = msg.result.Messages
+			}
+			m.partial = ""
+			m.state = StateIdle
+		case msg.err != nil:
 			m.state = StateError
 			m.lastErr = msg.err.Error()
-		} else {
+		default:
 			m.messages = msg.result.Messages
 			m.partial = ""
 			m.state = StateIdle

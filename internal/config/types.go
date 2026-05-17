@@ -49,10 +49,10 @@ type Config struct {
 	// Loop behavior is unaffected; this is a render-time filter only.
 	ShowNudges bool `toml:"show_nudges"`
 
-	// Compact strips the pi-spacing layer from the TUI (no outer gutter, no
+	// Compact strips the spacing layer from the TUI (no outer gutter, no
 	// blank line between turns, no user bg-tint, no OSC 133 prompt zones).
-	// Default false = clean mode. Set true on small terminals or for the
-	// dense pre-pi layout. Toggle via /settings; persists across launches.
+	// Default false = clean mode. Set true on small terminals or for a
+	// denser layout. Toggle via /settings; persists across launches.
 	Compact bool `toml:"compact"`
 
 	// ShowContextBar reveals the thin context-fill progress strip pinned to
@@ -63,13 +63,13 @@ type Config struct {
 
 	// ExtraTools opts specific tools into the manifest beyond the active
 	// profile's allowlist. Names match tool Spec().Name (e.g. "apply_patch",
-	// "hashline_edit"). Pi-aligned default keeps the surface minimal; this
-	// is the escape hatch for power users who want expert-mode mutators
-	// without bumping to the `large` profile.
+	// "hashline_edit"). The default keeps the surface minimal; this is the
+	// escape hatch for power users who want expert-mode mutators without
+	// bumping to the `large` profile.
 	ExtraTools []string `toml:"extra_tools"`
 }
 
-// ProviderConfig mirrors the codex base_url + wire_api design. One adapter
+// ProviderConfig pairs a base_url with a wire_api selector. One adapter
 // per wire format handles every OpenAI-compatible service.
 type ProviderConfig struct {
 	BaseURL      string       `toml:"base_url"`
@@ -94,9 +94,9 @@ type OAuthConfig struct {
 	Scope             string `toml:"scope"`
 	// RedirectPath defaults to /callback when empty.
 	RedirectPath string `toml:"redirect_path"`
-	// RedirectPort pins the loopback to a fixed port. Some providers (notably
-	// the official openai codex client) only allow an EXACT redirect_uri match
-	// so a random port fails authorize. 0 = random.
+	// RedirectPort pins the loopback to a fixed port. Some providers only
+	// allow an EXACT redirect_uri match so a random port fails authorize.
+	// 0 = random.
 	RedirectPort int `toml:"redirect_port"`
 	// ExtraAuthorizeParams are added to the authorize URL verbatim. Use for
 	// vendor-specific knobs like audience, prompt, id_token_hint.
@@ -146,7 +146,7 @@ type Profile struct {
 	GrepMaxMatches int `toml:"grep_max_matches"`
 }
 
-// SandboxConfig is the codex two-axis sandbox policy.
+// SandboxConfig is a two-axis sandbox policy.
 //
 // Scope: read-only | workspace-write | danger-full-access.
 // Approval: untrusted | on-request | on-failure | never.

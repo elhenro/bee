@@ -14,8 +14,8 @@ func Defaults() Config {
 		// config.toml: caveman = "off".
 		Caveman: "auto",
 		// "auto" picks tiny/normal/large by model class. Small/fast models
-		// (flash/mini/nano/haiku/8b…) get the 4-tool tiny surface to match
-		// pi-coding-agent's effective tool budget for the same class.
+		// (flash/mini/nano/haiku/8b…) get the 4-tool tiny surface — a
+		// minimal budget tuned for that class.
 		Profile: "auto",
 		// "auto" = medium when model supports reasoning_effort/thinking-budget
 		// (o-series, gpt-5, claude-4.x, gemini-2.5, deepseek reasoner, qwq …),
@@ -90,14 +90,14 @@ func Defaults() Config {
 				DefaultModel: "qwen2.5-coder-7b",
 			},
 			// chatgpt: leverage a ChatGPT Plus/Pro/Team subscription via the
-			// same backend the official `codex` CLI uses. No API-key billing.
-			// Run `/login chatgpt` to drive the PKCE flow.
+			// chatgpt.com responses backend. No API-key billing. Run
+			// `/login chatgpt` to drive the PKCE flow.
 			//
 			// TOS CAVEAT: OpenAI's terms restrict the chatgpt.com backend to
-			// their first-party clients. Reusing codex's published client_id
-			// works today (every third-party codex clone does the same) but
-			// is rate-limited per plan tier and may be revoked. Use at your
-			// own risk. The /login chatgpt output surfaces this warning.
+			// their first-party clients. Reusing a public client_id works
+			// today but is rate-limited per plan tier and may be revoked.
+			// Use at your own risk. The /login chatgpt output surfaces this
+			// warning.
 			"chatgpt": {
 				BaseURL:      "https://chatgpt.com/backend-api/codex",
 				WireAPI:      "responses",
@@ -107,9 +107,9 @@ func Defaults() Config {
 					ClientID:          "app_EMoamEEZ73f0CkXaXp7hrann",
 					AuthorizeEndpoint: "https://auth.openai.com/oauth/authorize",
 					TokenEndpoint:     "https://auth.openai.com/oauth/token",
-					// Mirrors upstream codex-rs/login/src/server.rs build_authorize_url.
-					// Hydra rejects deviations: wrong scope or unknown params (e.g.
-					// audience) -> authorize_hydra_invalid_request.
+					// Exact scope/params required by the chatgpt auth server.
+					// Hydra rejects deviations: wrong scope or unknown params
+					// (e.g. audience) -> authorize_hydra_invalid_request.
 					Scope:        "openid profile email offline_access api.connectors.read api.connectors.invoke",
 					RedirectPath: "/auth/callback",
 					RedirectPort: 1455,

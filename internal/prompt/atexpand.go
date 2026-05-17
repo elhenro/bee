@@ -1,9 +1,9 @@
 // Inline @path file expansion for user prompts.
 //
 // Tokens like `@cmd/bee/main.go` in a user message get replaced with the
-// file contents wrapped in a fenced block. Mirrors claw-code's "@path"
-// affordance — same ergonomics, same caveats: paths must exist relative
-// to cwd, binaries are skipped, files larger than MaxFileBytes truncate.
+// file contents wrapped in a fenced block. Caveats: paths must exist
+// relative to cwd, binaries are skipped, files larger than MaxFileBytes
+// truncate.
 package prompt
 
 import (

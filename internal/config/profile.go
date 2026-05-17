@@ -31,10 +31,9 @@ func ResolveAutoProfile(model string) string {
 // local model fumbles a wide tool surface and benefits from plain-english
 // prompts. Heuristic, not exhaustive; falls back to "normal".
 //
-// Why: pi-coding-agent works well with the same local models because it
-// advertises 4 plain-named tools (read/bash/edit/write) in normal english.
-// Mirror that for local runs while keeping richer surfaces for frontier
-// hosted models.
+// Why: small local models work best with a narrow, plain-named tool set
+// (read/bash/edit/write) described in normal english. Local runs get
+// that surface; richer surfaces stay for frontier hosted models.
 func ResolveAutoProfileForProvider(provider, model string) string {
 	if IsLocalProvider(provider) {
 		return "tiny"

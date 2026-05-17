@@ -4,8 +4,7 @@
 // providers' creds, active config/profile/caveman level. Prints a
 // human-readable table by default; --json emits one machine record.
 //
-// Inspired by `claw doctor` (claw-code/ultraworkers) but adapted for
-// bee's pure-Go subcommand-dispatch model — no shim sprays to check.
+// Pure-Go subcommand-dispatch model — no shim sprays to check.
 package main
 
 import (

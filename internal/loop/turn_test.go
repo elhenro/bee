@@ -118,7 +118,7 @@ func TestFilterToolSpecsForProfile(t *testing.T) {
 			t.Errorf("tiny profile missing %s", want)
 		}
 	}
-	// normal: pi-shaped 7-tool surface + knowledge_search.
+	// normal: 7-tool surface + knowledge_search.
 	// Drops apply_patch + hashline_edit (large-profile extras).
 	normal := filterToolSpecsForProfile(specs, "normal")
 	keepNormal := map[string]bool{}
@@ -168,20 +168,17 @@ func TestFilterToolSpecsForProfile_ExtrasUnionWithAllowlist(t *testing.T) {
 	}
 }
 
-// Pi parity check: the canonical bee tool names must match the pi coding-agent
-// vocabulary so users moving between bees and pi don't have to relearn.
-// Source: github.com/earendil-works/pi packages/coding-agent/src/core/tools/.
-func TestPiAlignedToolNames(t *testing.T) {
-	// pi exposes: bash, edit, edit-diff, find, grep, ls, read, write.
-	// bee normal profile is a strict subset: drop edit-diff (one canonical
-	// edit only) plus the knowledge_search bee extension.
+// Canonical bee tool names: a stable 7-tool surface for the normal profile.
+func TestCanonicalToolNames(t *testing.T) {
+	// canonical set: bash, edit, find, grep, ls, read, write. normal profile
+	// also exposes knowledge_search as a bee extension.
 	want := map[string]bool{
 		"bash": true, "read": true, "write": true, "edit": true,
 		"grep": true, "find": true, "ls": true,
 	}
 	for name := range want {
 		if !profileToolAllowlist["normal"][name] {
-			t.Errorf("normal profile missing pi-aligned tool %q", name)
+			t.Errorf("normal profile missing canonical tool %q", name)
 		}
 	}
 }

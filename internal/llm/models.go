@@ -105,8 +105,8 @@ func ListModels(ctx context.Context, name string, cfg config.ProviderConfig) ([]
 		return models, nil
 	}
 	// Responses-wire backends (chatgpt subscription) don't expose /models —
-	// the codex backend only serves /responses. Skip the GET that would
-	// 401 with no token and use the curated list for `name` instead.
+	// the backend only serves /responses. Skip the GET that would 401 with
+	// no token and use the curated list for `name` instead.
 	if cfg.WireAPI == "responses" {
 		models := hardcodedFallback(name)
 		if models == nil {

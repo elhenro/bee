@@ -585,12 +585,12 @@ func isTransientStreamErr(err error) bool {
 
 // profileToolAllowlist trims the tool surface advertised per profile. Registry
 // stays full so any explicit call still executes, but the manifest + request
-// schema only carry the listed tools. Pi-aligned defaults: tiny converges on
-// {bash,read,write,edit}; normal on the pi 7-tool surface; large adds the
+// schema only carry the listed tools. Defaults: tiny converges on
+// {bash,read,write,edit}; normal on a 7-tool surface; large adds the
 // expert-mode patch tools.
 //
 //   - tiny: 4-tool minimum for 4k-ctx models. No grep/find — bash covers them.
-//   - normal: pi-shaped 7-tool surface (bash, read, write, edit, grep, find, ls).
+//   - normal: 7-tool surface (bash, read, write, edit, grep, find, ls).
 //   - large: full surface incl. apply_patch + hashline_edit for capable models.
 //
 // A profile absent from this map passes through unfiltered.

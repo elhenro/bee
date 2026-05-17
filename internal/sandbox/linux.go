@@ -11,8 +11,8 @@ import (
 //   - tmpfs on /tmp
 //   - cwd bound writable for WorkspaceWrite
 //   - --unshare-net for ReadOnly (no network)
-//   - --unshare-all minus net for WorkspaceWrite (network still off; matches
-//     codex default — agents should not exfiltrate during writes)
+//   - --unshare-all minus net for WorkspaceWrite (network still off —
+//     agents should not exfiltrate during writes)
 //
 // If bwrap is not on PATH the original cmd is returned with ErrHelperMissing.
 func wrapLinux(p Policy, cmd []string) ([]string, error) {

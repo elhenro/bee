@@ -90,7 +90,7 @@ func TestClaude_APIKey_HeadersAndStream(t *testing.T) {
 	if gotVer != claudeAPIVersion {
 		t.Errorf("anthropic-version = %q", gotVer)
 	}
-	// claude-code identity headers must NEVER appear.
+	// first-party-client identity headers must NEVER appear.
 	if gotAuth != "" {
 		t.Errorf("api-key path must not set Authorization: %q", gotAuth)
 	}
@@ -143,7 +143,7 @@ func TestClaude_APIKey_NoCacheControlOrRemap(t *testing.T) {
 		t.Errorf("native tool name 'shell' missing: %s", body)
 	}
 	if strings.Contains(body, "You are Claude Code") {
-		t.Errorf("api-key path must not inject Claude Code identity: %s", body)
+		t.Errorf("api-key path must not inject first-party-client identity: %s", body)
 	}
 }
 

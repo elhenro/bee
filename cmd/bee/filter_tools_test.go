@@ -67,17 +67,17 @@ func TestFilterTools_emptyPassthrough(t *testing.T) {
 	}
 }
 
-// buildTools must register the pi-aligned vocabulary so the canonical names
-// are dispatchable. Profile filtering trims what the *model* sees; the
-// registry itself stays complete for non-tiny profiles.
-func TestBuildTools_PiAlignedNames(t *testing.T) {
+// buildTools must register the canonical tool vocabulary so the names are
+// dispatchable. Profile filtering trims what the *model* sees; the registry
+// itself stays complete for non-tiny profiles.
+func TestBuildTools_CanonicalNames(t *testing.T) {
 	reg, err := buildTools(t.TempDir(), normalCfg(), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"bash", "read", "write", "edit", "grep", "find", "ls"} {
 		if _, ok := reg.Get(want); !ok {
-			t.Errorf("registry missing pi-aligned tool %q", want)
+			t.Errorf("registry missing canonical tool %q", want)
 		}
 	}
 	// non-tiny keeps apply_patch + hashline_edit.

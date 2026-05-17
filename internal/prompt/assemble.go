@@ -98,7 +98,7 @@ func identityBlock(_ config.Config, level caveman.Level) string {
 
 func identityBlockFor(cwd, gitRoot string, level caveman.Level) string {
 	if level == caveman.Off {
-		// pi-coding-agent shape: name the action verbs, ban narration. Small
+		// minimal-prompt shape: name the action verbs, ban narration. Small
 		// local models (qwen, llama, ds-coder) drift into describing what
 		// they'd do unless explicitly told to invoke tools.
 		header := "You are the bee coding agent. You help by reading files, running shell commands, and editing or writing code. Always invoke tools to act; do not narrate intent."

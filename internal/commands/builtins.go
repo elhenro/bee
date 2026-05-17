@@ -409,7 +409,7 @@ func renderSettingsStatus(s Side) string {
 	b.WriteString("  show loop [nudge] recovery turns\n")
 	b.WriteString("  compact       ")
 	b.WriteString(onOff(s.GetCompact()))
-	b.WriteString("  drop pi-spacing (gutter, blank, tint, OSC 133)\n\n")
+	b.WriteString("  drop tui spacing (gutter, blank, tint, OSC 133)\n\n")
 	b.WriteString("usage: /settings <key> <on|off>\n")
 	b.WriteString("       /settings              (open pane)\n")
 	return b.String()

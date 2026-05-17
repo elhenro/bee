@@ -103,7 +103,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 }
 
 // isDiffContent reports whether content looks like a unified diff or
-// codex-style patch envelope rather than full file content. Conservative:
+// Begin/End Patch envelope rather than full file content. Conservative:
 // only matches canonical headers so we don't false-positive on docs that
 // happen to start with `---` (YAML frontmatter starts the same way but
 // continues with a key:value line, not `+++`).

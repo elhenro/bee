@@ -164,8 +164,8 @@ func TestRenderMessage_UserText(t *testing.T) {
 		Content: []types.ContentBlock{{Type: types.BlockText, Text: "hello bee"}},
 	}
 	out := stripANSI(r.RenderMessage(m))
-	if !strings.Contains(out, "▸") {
-		t.Fatalf("missing you marker in %q", out)
+	if !strings.Contains(out, "┃") {
+		t.Fatalf("missing you rail in %q", out)
 	}
 	if !strings.Contains(out, "hello bee") {
 		t.Fatalf("missing text in %q", out)
@@ -186,15 +186,17 @@ func TestRenderMessage_AssistantWithToolUse(t *testing.T) {
 		},
 	}
 	out := stripANSI(r.RenderMessage(m))
-	for _, want := range []string{"running bash", "◇", "bash", "cmd"} {
+	for _, want := range []string{"running bash", "bash", "cmd"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
 	}
-	// assistant prose no longer carries a ⬢ prefix — only the tool block
-	// keeps its ◇ marker.
-	if strings.Contains(out, "⬢") {
-		t.Fatalf("unexpected ⬢ on assistant turn in %q", out)
+	// neither assistant prose nor the tool block should carry a glyph
+	// prefix anymore.
+	for _, glyph := range []string{"⬢", "◇"} {
+		if strings.Contains(out, glyph) {
+			t.Fatalf("unexpected glyph %q on assistant turn in %q", glyph, out)
+		}
 	}
 }
 
@@ -227,7 +229,7 @@ func TestRenderMessage_ToolResultTruncates(t *testing.T) {
 
 func TestRenderMessage_TextAndToolUseSeparated(t *testing.T) {
 	// regression: text block + tool_use must NOT share a row. Prior bug
-	// rendered `<text>◇ write` because renderText omitted a trailing \n.
+	// rendered `<text>write` because renderText omitted a trailing \n.
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	m := types.Message{
 		Role: types.RoleAssistant,
@@ -364,6 +366,34 @@ func TestSummarizeArgs_UnknownKeyKeepsJSON(t *testing.T) {
 	got := summarizeArgs(map[string]any{"weird_key": "v"}, argsSummaryCompact)
 	if !strings.HasPrefix(got, "{") {
 		t.Fatalf("expected JSON fallback for unknown key, got %q", got)
+	}
+}
+
+func TestSummarizeBash_DropsCommandPrefix(t *testing.T) {
+	got := summarizeToolArgs("bash", map[string]any{"command": "go test ./..."}, argsSummaryCompact)
+	if got != "go test ./..." {
+		t.Fatalf("want bare command, got %q", got)
+	}
+}
+
+func TestSummarizeBash_AppendsCwd(t *testing.T) {
+	pathRootsOnce.Do(func() {})
+	cachedCwd = "/Users/x/projects/bee"
+	cachedHome = "/Users/x"
+	defer func() { cachedCwd = ""; cachedHome = "" }()
+	got := summarizeToolArgs("bash", map[string]any{
+		"command": "go test ./...",
+		"cwd":     "/Users/x/projects/bee",
+	}, argsSummaryCompact)
+	if got != "go test ./...  · ./" {
+		t.Fatalf("want command + cwd suffix, got %q", got)
+	}
+}
+
+func TestSummarizeBash_FallsBackForNonBash(t *testing.T) {
+	got := summarizeToolArgs("read", map[string]any{"path": "x.go"}, argsSummaryCompact)
+	if got != "path: x.go" {
+		t.Fatalf("want generic single-key path, got %q", got)
 	}
 }
 
@@ -561,7 +591,7 @@ func TestRenderToolUse_EditShowsDiffNotJSON(t *testing.T) {
 		}}},
 	}
 	out := stripANSI(r.RenderMessage(m))
-	for _, want := range []string{"◇", "edit", "README.md", "- alpha", "+ beta"} {
+	for _, want := range []string{"edit", "README.md", "- alpha", "+ beta"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}

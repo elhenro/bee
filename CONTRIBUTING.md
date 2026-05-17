@@ -5,8 +5,6 @@ minimal. Keep contributions in that spirit.
 
 ## Repo layout
 
-The full design doc is in the distributed `PLAN.md`. The short version:
-
 ```
 cmd/bee/         entry, headless, TUI, fan, swarm, install-shims
 internal/loop/   agent turn loop
@@ -59,8 +57,7 @@ BEE_HOME=/tmp/bee-dev go run ./cmd/bee install-shims
   (`fmt.Errorf("foo: %w", err)`). Never swallow without a reason.
 - Imports grouped stdlib / third-party / project.
 - Tests next to code as `*_test.go`. Prefer table-driven.
-- No new deps unless absolutely necessary. The dep audit in PLAN §12 is
-  load-bearing.
+- No new deps unless absolutely necessary. Keep the dep tree small.
 
 ## Commits
 

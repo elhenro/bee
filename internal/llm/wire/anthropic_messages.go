@@ -5,9 +5,9 @@
 // and tool results live as tool_result blocks in user turns.
 //
 // Auth is API-key only (x-api-key). The OAuth subscription path and its
-// Claude Code identity headers, tool-name impersonation, and ephemeral
-// prompt caching are deliberately not implemented — bee uses the public
-// Anthropic API on its own terms.
+// first-party-client identity headers, tool-name impersonation, and
+// ephemeral prompt caching are deliberately not implemented — bee uses
+// the public Anthropic API on its own terms.
 package wire
 
 import (

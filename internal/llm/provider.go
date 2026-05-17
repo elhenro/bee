@@ -99,7 +99,7 @@ func ResolveThinking(t Thinking, modelID string) Thinking {
 // ToolSpec is the agent-side advertisement of a tool to the model.
 //
 // Description goes to the provider's tool-spec (API) — full sentence is fine.
-// PromptSnippet is the short prompt-manifest line (≤60 chars, pi-style).
+// PromptSnippet is the short prompt-manifest line (≤60 chars).
 // When PromptSnippet is empty, the prompt manifest falls back to the first
 // line of Description, truncated by the profile's ToolDescChars budget.
 type ToolSpec struct {

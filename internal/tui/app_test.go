@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -122,6 +123,36 @@ func TestModel_EscCancelsStreaming(t *testing.T) {
 	m = m2.(Model)
 	if m.state != StateIdle {
 		t.Fatalf("esc should drop to idle, got %v", m.state)
+	}
+}
+
+// Regression: pressing esc to cancel a streaming turn leaves an in-flight
+// engine goroutine that eventually returns turnDoneMsg{err: context.Canceled}.
+// Before the fix this dropped the model into StateError, which gates `/`
+// behind error-recovery — so the next `/` keypress did nothing and the
+// palette appeared "stuck" until the user blindly submitted to reset.
+func TestModel_EscCancel_KeepsSlashPaletteWorking(t *testing.T) {
+	m := newTestModel(t)
+	m.state = StateStreaming
+
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = m2.(Model)
+	if m.state != StateIdle {
+		t.Fatalf("after esc: want StateIdle, got %v", m.state)
+	}
+
+	// late-arriving cancelled engine result must not flip us to StateError.
+	m2, _ = m.Update(turnDoneMsg{err: context.Canceled})
+	m = m2.(Model)
+	if m.state != StateIdle {
+		t.Fatalf("after cancelled turnDoneMsg: want StateIdle, got %v (lastErr=%q)", m.state, m.lastErr)
+	}
+
+	// `/` on empty input now opens the palette as expected.
+	m2, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = m2.(Model)
+	if !m.palette.Active {
+		t.Fatal("palette should activate after `/` keystroke post-cancel")
 	}
 }
 

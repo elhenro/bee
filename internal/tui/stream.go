@@ -44,7 +44,7 @@ const (
 )
 
 // outerGutter is the single-space left padding prepended to every rendered
-// line. Mirrors pi's universal paddingX=1 so content never touches col 0.
+// line. Universal paddingX=1 so content never touches col 0.
 const outerGutter = " "
 
 // applyGutter prefixes every non-empty line of s with outerGutter. Empty
@@ -185,7 +185,7 @@ type StreamRenderer struct {
 	// loop still emits + persists these turns; the filter is render-only.
 	showNudges  bool
 	loaderStyle LoaderStyle
-	// compact strips the pi-spacing layer for terminals where vertical
+	// compact strips the spacing layer for terminals where vertical
 	// density matters more than focus. Default false = clean mode.
 	compact bool
 	// toolUses indexes tool calls by ID so renderToolResult can recover the
@@ -226,15 +226,15 @@ func (r *StreamRenderer) argsSummary() int {
 }
 
 // argsBudget computes a width-aware rune budget for the tool-card args
-// summary. Card looks like `◇ <name>  <key>: <value>`; we give the value
+// summary. Card looks like `<name>  <key>: <value>`; we give the value
 // the rest of the row instead of a fixed 40 chars — the old cap was hiding
 // bash commands like `cmd: find /Users/userX/web/b…` before the
 // actual interesting flags showed up. Floor at argsSummaryCompact so narrow
 // terminals still get something readable; verbose mode raises the ceiling
 // but still respects width.
 func (r *StreamRenderer) argsBudget(toolName string) int {
-	// ◇(1) + space + name + 2 spaces + key (~9 "command: ") = ~14 overhead
-	const overhead = 14
+	// name + 2 spaces + key (~9 "command: ") = ~12 overhead
+	const overhead = 12
 	b := r.width - overhead - len(toolName)
 	if b < argsSummaryCompact {
 		b = argsSummaryCompact
@@ -416,10 +416,10 @@ func firstTextBlock(m types.Message) *types.ContentBlock {
 //
 // Each ContentBlock renders independently; results are right-trimmed and
 // joined on a single newline so neighbouring blocks never collide on the
-// same row (the original concat-without-separator caused `text◇ tool` to
-// share a line). Interior blank runs are collapsed so glamour padding or
-// stray `\n\n\n` from the model can't spill hundreds of empty rows into
-// terminal scrollback.
+// same row (the original concat-without-separator caused text to share a
+// line with the following tool card). Interior blank runs are collapsed
+// so glamour padding or stray `\n\n\n` from the model can't spill
+// hundreds of empty rows into terminal scrollback.
 func (r *StreamRenderer) RenderMessage(m types.Message) string {
 	// hide synthetic [nudge] user messages unless explicitly enabled. the
 	// loop still injects + persists these turns; we only suppress the visual
@@ -479,24 +479,18 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 
 	var rendered string
 	if m.Role == types.RoleUser {
-		rail := r.styles.UserRail.Render("▎")
-		glyph := r.styles.RoleYou.Render("▸")
-		// warm-amber bg tint behind user body text is part of the pi-spacing
-		// layer; in compact mode the rail+glyph reads the role on its own.
-		var bodyDecorate func(string) string
-		if r.compact {
-			bodyDecorate = func(s string) string { return s }
-		} else {
-			tint := lipgloss.NewStyle().Background(bgUserHl)
-			bodyDecorate = func(s string) string { return tint.Render(s) }
-		}
+		rail := r.styles.UserRail.Render("┃")
+		// drop the role glyph: rail + bold-blue body is enough to anchor
+		// the turn and reads like a quoted prompt. body color matches the
+		// rail so the whole block reads as one unit.
+		bodyDecorate := func(s string) string { return r.styles.UserBody.Render(s) }
 		if bodyStr == "" {
-			rendered = rail + " " + glyph
+			rendered = rail
 		} else {
 			bodyLines := strings.Split(bodyStr, "\n")
-			bodyLines[0] = rail + " " + glyph + " " + bodyDecorate(bodyLines[0])
+			bodyLines[0] = rail + " " + bodyDecorate(bodyLines[0])
 			for i := 1; i < len(bodyLines); i++ {
-				bodyLines[i] = rail + "   " + bodyDecorate(bodyLines[i])
+				bodyLines[i] = rail + " " + bodyDecorate(bodyLines[i])
 			}
 			rendered = strings.Join(bodyLines, "\n")
 		}
@@ -504,20 +498,21 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 		// assistant turns render without a role glyph — the user prompt
 		// above already anchors the conversation, and stripping the prefix
 		// gives prose full column width without a leading hex distraction.
-		// tool-use/result blocks inside still get their own ◇ markers.
 		if bodyStr == "" {
 			return ""
 		}
 		rendered = bodyStr
 	} else if bodyStr == "" {
 		rendered = glyph
+	} else if glyph == "" {
+		rendered = bodyStr
 	} else {
 		rendered = glyph + " " + indentContinuation(bodyStr, "  ")
 	}
 
-	// compact mode skips the pi-spacing layer entirely (no gutter, no OSC
+	// compact mode skips the spacing layer entirely (no gutter, no OSC
 	// 133 zones, no leading blank). Useful on small terminals or for users
-	// who prefer the dense pre-pi layout.
+	// who prefer a denser layout.
 	if r.compact {
 		return rendered
 	}
@@ -530,7 +525,7 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 		rendered = osc133Start + rendered + osc133End
 	}
 
-	// Leading blank line above every message — pi's `Spacer(1)` so each
+	// Leading blank line above every message — `Spacer(1)` so each
 	// turn breathes vertically. tea.Println adds the trailing \n.
 	return "\n" + rendered
 }
@@ -568,7 +563,7 @@ func (r *StreamRenderer) roleGlyph(role types.Role) string {
 	case types.RoleAssistant:
 		return r.styles.RoleBee.Render("⬢")
 	case types.RoleTool:
-		return r.styles.RoleTool.Render("◇")
+		return ""
 	default:
 		return r.styles.Dim.Render("·")
 	}
@@ -982,29 +977,58 @@ func stripLeadingSpacesPreservingANSI(l string, n int) string {
 	return b.String()
 }
 
-// renderToolUse renders the compact card: ◇ name  args-summary. Lilac
-// glyph + name so tool activity reads as a distinct lane vs honey-AI
-// prose and blue-user input. Args are omitted entirely (no trailing
-// whitespace) when the tool was called with no input.
+// renderToolUse renders the compact card: name  args-summary. Lilac
+// name so tool activity reads as a distinct lane vs honey-AI prose and
+// blue-user input. Args are omitted entirely (no trailing whitespace)
+// when the tool was called with no input.
 //
 // File-mutation tools (edit / hashline_edit / apply_patch / write) skip
 // the json summary and instead drop a colored diff card under the header
 // so the reader sees the change itself, not `{"new":"...","old":"..."}`.
 func (r *StreamRenderer) renderToolUse(u types.ToolUse) string {
-	marker := r.styles.ToolName.Render("◇")
 	name := r.styles.ToolName.Render(u.Name)
 	if header, body, ok := r.renderEditPreview(u); ok {
-		head := fmt.Sprintf("%s %s  %s", marker, name, header)
+		head := fmt.Sprintf("%s  %s", name, header)
 		if body == "" {
 			return head + "\n"
 		}
 		return head + "\n" + body + "\n"
 	}
-	args := summarizeArgs(u.Input, r.argsBudget(u.Name))
+	args := summarizeToolArgs(u.Name, u.Input, r.argsBudget(u.Name))
 	if args == "" {
-		return fmt.Sprintf("%s %s\n", marker, name)
+		return fmt.Sprintf("%s\n", name)
 	}
-	return fmt.Sprintf("%s %s  %s\n", marker, name, r.styles.ToolArgs.Render(args))
+	return fmt.Sprintf("%s  %s\n", name, r.styles.ToolArgs.Render(args))
+}
+
+// summarizeToolArgs routes per-tool pretty summaries before falling back to
+// the generic json/single-key path. bash gets its `command` pulled out bare
+// (tool name already says "bash", so `command:` prefix would be redundant)
+// with cwd folded in as a compact `· <cwd>` suffix when set.
+func summarizeToolArgs(toolName string, in map[string]any, budget int) string {
+	if toolName == "bash" {
+		if s, ok := summarizeBash(in, budget); ok {
+			return s
+		}
+	}
+	return summarizeArgs(in, budget)
+}
+
+// summarizeBash renders a bash tool call as `<command> · <cwd>` (cwd
+// suffix dropped when empty). Command paths shorten inline so cd targets
+// don't waste card width on /Users/<name>/projects/... prefixes. Returns
+// (_, false) when the input has no `command` field so the caller falls
+// back to the generic json summary path.
+func summarizeBash(in map[string]any, budget int) (string, bool) {
+	cmd, ok := in["command"].(string)
+	if !ok || cmd == "" {
+		return "", false
+	}
+	out := shortenPathsInline(cmd)
+	if cwd, ok := in["cwd"].(string); ok && cwd != "" {
+		out += "  · " + shortenPath(cwd)
+	}
+	return truncateRunes(out, budget), true
 }
 
 // diffPreviewLinesCompact caps body height for compact-mode edit previews.

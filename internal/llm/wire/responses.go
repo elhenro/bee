@@ -1,5 +1,5 @@
-// responses.go covers OpenAI's Responses API — the schema used by the
-// official `codex` CLI when talking to chatgpt.com/backend-api/codex.
+// responses.go covers the Responses API schema used by the chatgpt.com
+// subscription backend.
 //
 // The shape is different from /chat/completions: messages are a flat "input"
 // list of items (each role+content array of typed parts, plus function_call
@@ -25,12 +25,12 @@ type ResponsesRequest struct {
 	MaxOutput    int                `json:"max_output_tokens,omitempty"`
 	Temperature  *float64           `json:"temperature,omitempty"`
 	Reasoning    *ResponsesReason   `json:"reasoning,omitempty"`
-	// Store=false keeps the call ephemeral on the server side. The codex
+	// Store=false keeps the call ephemeral on the server side. The
 	// backend appears to default to false but we set it explicitly.
 	Store *bool `json:"store,omitempty"`
 }
 
-// ResponsesReason carries the reasoning-effort hint for o-series / codex.
+// ResponsesReason carries the reasoning-effort hint for reasoning models.
 type ResponsesReason struct {
 	Effort string `json:"effort,omitempty"`
 }

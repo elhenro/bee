@@ -10,7 +10,7 @@ This file provides guidance when working with code in this repository.
 2. **Skills are agent endpoints.** Four kinds: `prompt` | `exec` | `mcp` | `http`. The same skill is surfaced both as a `bee <name>` subcommand AND a model-callable tool the agent can invoke mid-task.
 3. **Tiny-context friendly.** System-prompt budget is configurable per-profile (`tiny|normal|large`); memory injection is lazy top-k; tool descriptions and skill manifest are token-budgeted. Designed to run against a 4k-context local Ollama as well as deepseek-v4-flash.
 
-Full design rationale and the wave-based build plan: see **`PLAN.md`** (distributed with the repo). Read it before any non-trivial change — it explains *why* the architecture looks the way it does (collapse of read/write/edit into `apply_patch`, codex-style two-axis sandbox, frontmatter knowledge store with lazy top-K selection, etc.).
+The architecture leans on a few load-bearing choices: read/write/edit collapsed into `apply_patch`, codex-style two-axis sandbox, frontmatter knowledge store with lazy top-K selection. Read the package docs in `internal/` before any non-trivial change.
 
 ## Commands
 
@@ -59,7 +59,7 @@ The agent has a clean **types → provider → tools → loop → ui** stack. In
 
 - **`internal/cost/`** — process-local thread-safe tracker for per-turn token usage and dollar cost. Consumed by the TUI status bar (live session total) and the cost-monitor pane (historical breakdown). Prices come from `llm/models.go`.
 
-- **`internal/safety/`** — defense-in-depth guards on top of the sandbox: secret redaction on tool output, path/shell-command checks that refuse obviously sensitive targets (`~/.ssh`, `.env`, etc.) even when sandbox scope would allow it. Patterns inspired by crynta/terax-ai (Apache-2.0) — see `NOTICE`.
+- **`internal/safety/`** — defense-in-depth guards on top of the sandbox: secret redaction on tool output, path/shell-command checks that refuse obviously sensitive targets (`~/.ssh`, `.env`, etc.) even when sandbox scope would allow it.
 
 - **`internal/jsonmode/`** — NDJSON event emitter for `bee run --json`. Decoupled from `llm.Usage` to avoid an import cycle.
 
@@ -77,7 +77,7 @@ The agent has a clean **types → provider → tools → loop → ui** stack. In
 
 - **`internal/hive/`** — multi-bee swarm. `Pool` (fan-out, semaphore-bounded, ctx-cancellable) and `Queen` (planner decomposes a task into ≤8 sub-tasks → workers execute → planner synthesizes). The runtime concept (`hive.Worker`) is intentionally separate from the UI concept (`tui.Bee`).
 
-- **`internal/tui/`** — Bubbletea. `app.go` is the root model; `view.go` renders top bar + scrollback + bottom bar; `stream.go` does role glyphs (`▸ ⬡ ◇`), markdown via glamour, and **ANSI-strips tool output** before display (raw escapes from subprocesses like `go test` would otherwise blit over chrome in altscreen). `palette.go`/`picker.go` is the fzf-style `Ctrl+P` palette (provider/model/skills/slash-commands in one); `hive.go`/`workspace.go`/`session_tree.go` are auxiliary panes (`Ctrl+H`/`Ctrl+W`/`Ctrl+T`). `csi_input.go` decodes CSI-u keyboard input. Slash commands route through `internal/commands` via the `Side` adapter in `side.go`.
+- **`internal/tui/`** — Bubbletea. `app.go` is the root model; `view.go` renders top bar + scrollback + bottom bar; `stream.go` does role glyphs (`▸` for user; tool turns intentionally have none), markdown via glamour, and **ANSI-strips tool output** before display (raw escapes from subprocesses like `go test` would otherwise blit over chrome in altscreen). `palette.go`/`picker.go` is the fzf-style `Ctrl+P` palette (provider/model/skills/slash-commands in one); `hive.go`/`workspace.go`/`session_tree.go` are auxiliary panes (`Ctrl+H`/`Ctrl+W`/`Ctrl+T`). `csi_input.go` decodes CSI-u keyboard input. Slash commands route through `internal/commands` via the `Side` adapter in `side.go`.
 
 ## Conventions
 

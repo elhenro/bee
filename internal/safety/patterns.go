@@ -3,8 +3,8 @@ package safety
 import "regexp"
 
 // DangerousPattern flags commands that should prompt the user before running.
-// Distinct from hardline rules in shell.go which refuse outright. Inspired by
-// hermes-agent's DANGEROUS_PATTERNS — match → "ask first", not "deny".
+// Distinct from hardline rules in shell.go which refuse outright. Match →
+// "ask first", not "deny".
 type DangerousPattern struct {
 	Re   *regexp.Regexp
 	Key  string // stable id for session cache + persistent allowlist

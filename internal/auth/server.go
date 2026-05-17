@@ -34,7 +34,7 @@ func StartLoopback(ctx context.Context, path string) (*LoopbackServer, error) {
 }
 
 // StartLoopbackOn is like StartLoopback but binds to a fixed port. Pass 0 for
-// random. Used by clients (codex) that require an exact redirect_uri match.
+// random. Used when the provider requires an exact redirect_uri match.
 func StartLoopbackOn(ctx context.Context, path string, fixedPort int) (*LoopbackServer, error) {
 	if path == "" {
 		path = "/callback"

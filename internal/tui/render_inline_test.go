@@ -21,8 +21,8 @@ func TestRenderMessage_InlineSingleLine(t *testing.T) {
 	if strings.Contains(body, "\n") {
 		t.Fatalf("expected single-line render after leading spacer, got newline in: %q", body)
 	}
-	// user turns render with outer gutter + left rail + glyph: ` ▎ ▸ text`.
-	if got := strings.TrimRight(body, " "); got != " ▎ ▸ hey hoo" {
-		t.Fatalf("expected %q, got %q", " ▎ ▸ hey hoo", got)
+	// user turns render with outer gutter + heavy left rail: ` ┃ text`.
+	if got := strings.TrimRight(body, " "); got != " ┃ hey hoo" {
+		t.Fatalf("expected %q, got %q", " ┃ hey hoo", got)
 	}
 }

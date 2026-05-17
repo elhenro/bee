@@ -6,7 +6,7 @@
 // a tag which no longer matches the live content are rejected, which
 // catches stale or hallucinated line numbers before they corrupt files.
 //
-// Algorithm (ported from oh-my-openagent's hashline-edit):
+// Algorithm:
 //  1. normalize: strip \r, trim trailing space/tab.
 //  2. seed: 0 if the line contains any Unicode letter or digit, else
 //     the 1-based line number (so blanks and pure-punctuation lines

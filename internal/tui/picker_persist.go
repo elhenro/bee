@@ -11,12 +11,11 @@ import (
 )
 
 // PersistPick rewrites ~/.bee/config.toml so the next launch defaults to the
-// chosen provider+model. Wave 3A wires this to PickedMsg.
+// chosen provider+model.
 //
-// Trade-off documented in PLAN.md §9: we do NOT recreate the live Engine
-// mid-session. The choice is durable, but takes effect on the next bee run.
-// Doing live swap requires draining tool-call state cleanly, which lives in
-// loop/turn.go and is out of scope for slice 3C.
+// Trade-off: we do NOT recreate the live Engine mid-session. The choice is
+// durable, but takes effect on the next bee run. Live swap would require
+// draining tool-call state cleanly in loop/turn.go.
 func PersistPick(path string, provider, model string) error {
 	if path == "" {
 		path = config.ConfigPath()

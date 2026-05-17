@@ -256,7 +256,7 @@ func (s *tuiSide) Login(ctx context.Context, provider string) error {
 		return err
 	}
 	if provider == "chatgpt" {
-		fmt.Fprintln(os.Stderr, "note: /login chatgpt uses OpenAI's first-party codex client_id against chatgpt.com.")
+		fmt.Fprintln(os.Stderr, "note: /login chatgpt uses a public OpenAI first-party client_id against chatgpt.com.")
 		fmt.Fprintln(os.Stderr, "      sanctioned for ChatGPT Plus/Pro/Team accounts; rate-limited per plan; may be revoked.")
 	}
 	tok, err := auth.Login(ctx, auth.LoginConfig{
@@ -473,7 +473,7 @@ func (s *tuiSide) GetShowNudges() bool {
 }
 
 // SetCompact toggles compact TUI mode live and persists it. Compact strips
-// the pi-spacing layer (gutter, inter-turn blank, bg-tint, OSC 133).
+// the spacing layer (gutter, inter-turn blank, bg-tint, OSC 133).
 func (s *tuiSide) SetCompact(v bool) error {
 	if s.m == nil {
 		return errors.New("compact: no tui state")

@@ -98,6 +98,7 @@ type Styles struct {
 	Body       lipgloss.Style // base prose
 	UserBubble lipgloss.Style // (legacy) full-width warm tint — retained for callers
 	UserRail   lipgloss.Style // blue left rail beside user-turn lines
+	UserBody   lipgloss.Style // bold blue prose for the user-turn body
 }
 
 // DefaultStyles returns the layered honey-on-charmtone palette.
@@ -157,5 +158,8 @@ func DefaultStyles() Styles {
 		// blue rail beside every user-turn line. Mirrors ToolRail's role for
 		// tool output — one column wide, role-colored, no background.
 		UserRail: lipgloss.NewStyle().Foreground(accentYou),
+		// user-turn body: bold + blue. Mirrors the rail color so prompt
+		// reads as one prominent quoted block, no bg highlight needed.
+		UserBody: lipgloss.NewStyle().Foreground(accentYou).Bold(true),
 	}
 }
