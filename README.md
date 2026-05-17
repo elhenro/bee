@@ -79,6 +79,12 @@ Runs fast, handles small tasks reliably, doesn't choke on context. Good enough f
 
 Caveman prompt-compression rules adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman).
 
+## Screenshots
+
+![bee run](./screenshots/bee-run.png)
+![bee skill](./screenshots/bee-skill.png)
+![bee hyperplan](./screenshots/bee-hyperplan.png)
+
 ## License
 
 MIT.
