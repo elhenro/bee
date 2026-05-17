@@ -1,5 +1,7 @@
 # 🐝 bee
 
+![bee](./bee.png)
+
 bee coding agent harness
 
 ```sh
@@ -47,6 +49,22 @@ bee runs against any OpenAI-compatible local server. Confirmed working:
 For sub-8k-context models, use the tiny profile:
 
     bee --profile tiny --provider omlx --model Qwen3.6-35B-A3B-4bit
+
+## Caveman mode
+
+Token-compression rules injected into the system prompt. Default `caveman = "auto"` resolves per profile: `full` on `normal`, `lite` on `large`, `off` on `tiny` (small models tend to narrate instead of tool-call when caveman-nudged).
+
+Force a level regardless of profile:
+
+    bee run --caveman full -- "..."           # one-off
+    BEE_CAVEMAN=full bee --profile tiny ...   # session-wide
+    # or set caveman = "full" in ~/.bee/config.toml
+
+Explicit value beats profile, so `--caveman full` works even on `tiny`.
+
+## Credits
+
+Caveman prompt-compression rules adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman).
 
 ## License
 

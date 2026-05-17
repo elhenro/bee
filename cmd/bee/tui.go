@@ -174,11 +174,11 @@ func runTUIWithSession(resumeID string) {
 		return nil
 	}
 
-	// print startup banner (config-gated). BEE_BANNER picks variant —
-	// "hex" / "swarm" / "comb" / "flower" / "random" (default = random).
+	// Print the startup intro animation (config-gated).
+	// BEE_BANNER picks variant — "lifecycle" / "swarm" / "hex" / "random".
+	// BEE_NO_INTRO=1 skips the animation entirely.
 	if cfg.ShowBanner {
-		bv := tui.ParseBannerVariant(os.Getenv("BEE_BANNER"))
-		fmt.Fprint(os.Stderr, tui.RenderBannerVariant(bv, version, cfg.DefaultModel))
+		tui.PrintIntro(version)
 	}
 
 	// Build the slash command registry up front so callers/plugins can

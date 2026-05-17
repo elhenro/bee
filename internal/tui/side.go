@@ -375,7 +375,7 @@ func (s *tuiSide) SetThinking(level string) error {
 	if s.m.eng != nil {
 		s.m.eng.Cfg.Thinking = string(canonical)
 	}
-	return nil
+	return PersistSetting("", "thinking", string(canonical))
 }
 
 // GetThinking returns the current reasoning-effort level as a string.

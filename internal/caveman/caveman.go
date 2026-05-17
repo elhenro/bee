@@ -3,6 +3,9 @@
 // Caveman is prompt-injection, not code. The four levels (off/lite/full/ultra)
 // produce progressively terser model output. Rules text is embedded at build
 // time from rules/*.md so the binary stays self-contained.
+//
+// Compression rules adapted from JuliusBrussee/caveman
+// (https://github.com/JuliusBrussee/caveman).
 package caveman
 
 import (

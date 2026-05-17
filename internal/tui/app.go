@@ -1137,7 +1137,9 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		case "show_context_bar":
 			err = m.side().SetShowContextBar(msg.value)
 		}
-		if err != nil {
+		if err != nil && m.state != StateStreaming {
+			// don't kill an in-flight turn over a persist hiccup; surface the
+			// error only when idle.
 			m.lastErr = err.Error()
 			m.state = StateError
 		}
@@ -1274,8 +1276,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.ImagePaste):
 		return m.handleImagePaste()
 	case key.Matches(msg, m.keys.Submit):
-		// state-dependent: idle = submit, streaming = steer.
-		if m.state == StateStreaming {
+		// state-dependent: idle = submit, streaming = steer. Slash commands
+		// always route to handleSubmit so AllowDuringRun ones (/settings,
+		// /effort, /model, …) work mid-stream instead of being captured as
+		// steer text.
+		if m.state == StateStreaming && !strings.HasPrefix(strings.TrimSpace(m.input.Value()), "/") {
 			return m.handleSteer()
 		}
 		return m.handleSubmit()
@@ -1319,6 +1324,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.eng != nil {
 			m.eng.Cfg.Thinking = m.thinking
 		}
+		_ = PersistSetting("", "thinking", m.thinking)
 		return m, nil
 	case key.Matches(msg, m.keys.ModeCycle):
 		prov := ""

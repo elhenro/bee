@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/elhenro/bee/internal/bgreg"
+	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/jsonmode"
@@ -53,6 +54,7 @@ func runHeadlessReal(args []string) {
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|danger-full-access)")
 	skillName := fs.String("skill", "", "run a skill as the user message (prompt-kind only in Wave 2)")
 	thinking := fs.String("thinking", "", "thinking level: off|low|medium|high (default: from config)")
+	cavemanLvl := fs.String("caveman", "", "force caveman level: off|lite|full|ultra (overrides profile, even on tiny)")
 	jsonOut := fs.Bool("json", false, "emit NDJSON events to stdout instead of text")
 	allowedTools := fs.String("allowed-tools", "", "comma-list of tool names to expose (default: all)")
 	sessionID := fs.String("session", "", "use this session id instead of a fresh uuid")
@@ -116,6 +118,16 @@ func runHeadlessReal(args []string) {
 	applyOverrides(&cfg, *model, *providerName, *sandboxScope)
 	if *thinking != "" {
 		cfg.Thinking = string(llm.ParseThinking(*thinking))
+	}
+	if *cavemanLvl != "" {
+		// validate so a typo fails fast instead of silently falling back to
+		// profile default in ApplyProfile.
+		lvl, err := caveman.ParseLevel(*cavemanLvl)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bee run: %v\n", err)
+			os.Exit(2)
+		}
+		cfg.Caveman = string(lvl)
 	}
 	if *extraTools != "" {
 		for _, p := range strings.Split(*extraTools, ",") {
