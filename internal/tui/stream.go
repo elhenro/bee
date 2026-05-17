@@ -68,11 +68,18 @@ type StreamRenderer struct {
 	// highlight gates chroma syntax-highlighting on tool output, file
 	// content, edit/write diffs, and bash command summaries. Default true.
 	highlight bool
+	// showLoader gates the braille "generating" animation (pre-token loader
+	// + in-stream animated caret). Off renders a single static ⬢ row while
+	// waiting and drops the caret while text streams. Default true.
+	showLoader bool
 	// toolUses indexes tool calls by ID so renderToolResult can recover the
 	// originating cmd/args (e.g. surface the failed bash command in place of
 	// the bare "exit N" preview). Populated lazily as RenderMessage walks
 	// each turn.
 	toolUses map[string]types.ToolUse
+	// compactingVariant selects one of the three /compact swarm animations.
+	// Picked at frame 0 of each compacting run, sticks for the duration.
+	compactingVariant int
 }
 
 // SetLoaderStyle picks which pre-token loader animation to render.
@@ -95,6 +102,11 @@ func (r *StreamRenderer) SetShowNudges(v bool) { r.showNudges = v }
 // SetHighlight toggles chroma syntax-highlighting across diff/file/bash
 // previews. Off returns raw content; on (default) emits ANSI-colored tokens.
 func (r *StreamRenderer) SetHighlight(v bool) { r.highlight = v }
+
+// SetShowLoader toggles the streaming "generating" animation. Off swaps the
+// braille loader/caret for a static ⬢ marker so the row still signals
+// activity without motion.
+func (r *StreamRenderer) SetShowLoader(v bool) { r.showLoader = v }
 
 // hl returns content with chroma highlighting using the lexer matching
 // path. Returns the input unchanged when r.highlight is off or no lexer
@@ -208,6 +220,7 @@ func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 		width:        width,
 		showThoughts: true,
 		highlight:    true,
+		showLoader:   true,
 		loaderStyle:  ParseLoaderStyle(envLoaderStyle()),
 	}
 }

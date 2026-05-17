@@ -61,6 +61,9 @@ type PaletteModel struct {
 	pool []PaletteEntry
 	// cached match indices into pool, in rank order
 	matches []fuzzy.Match
+	// frecency tracker; nil-safe — when empty the pool falls back to
+	// alphabetical via stable sort tiebreak.
+	usage *cmdUsage
 }
 
 // SetWidth tells the palette how wide a row may be. Set from the app's
@@ -75,7 +78,7 @@ func NewPalette(cmds *commands.Registry, sk SkillsLister) PaletteModel {
 	ti.Prompt = "› "
 	ti.CharLimit = 64
 	ti.Focus()
-	return PaletteModel{input: ti, cmds: cmds, skills: sk}
+	return PaletteModel{input: ti, cmds: cmds, skills: sk, usage: loadCmdUsage()}
 }
 
 // Show activates the palette, rebuilds the entry pool, and applies an
@@ -105,8 +108,10 @@ func (p *PaletteModel) SetFilter(s string) {
 	p.recomputeMatches()
 }
 
-// rebuildPool merges commands and skills into a single entry list. Commands
-// come first, then skills — fuzzy ranking takes over for non-empty input.
+// rebuildPool merges commands and skills into a single entry list. With an
+// empty filter the pool is ranked by frecency (most-used first, alpha
+// tiebreak) so typing only "/" shows the user's most likely picks at top.
+// fuzzy ranking takes over for non-empty input.
 func (p *PaletteModel) rebuildPool() {
 	p.pool = p.pool[:0]
 	if p.cmds != nil {
@@ -119,7 +124,13 @@ func (p *PaletteModel) rebuildPool() {
 			p.pool = append(p.pool, PaletteEntry{Name: s.Name, Description: s.Description, Kind: EntrySkill})
 		}
 	}
+	sortPaletteByUsage(p.pool, p.usage)
 }
+
+// Bump records that name was just dispatched so future palette openings
+// rank it higher. Called by the slash dispatcher for both commands and
+// skills.
+func (p *PaletteModel) Bump(name string) { p.usage.bump(name) }
 
 // recomputeMatches runs fuzzy.Find against the current input. With empty
 // input we synthesize a match list preserving pool order so the renderer

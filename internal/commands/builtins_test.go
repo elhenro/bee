@@ -152,6 +152,10 @@ func (f *fakeSide) SetShowGitBranch(bool) error           { return nil }
 func (f *fakeSide) GetShowGitBranch() bool                { return false }
 func (f *fakeSide) SetShowTotalTokens(bool) error         { return nil }
 func (f *fakeSide) GetShowTotalTokens() bool              { return false }
+func (f *fakeSide) SetShowBanner(bool) error              { return nil }
+func (f *fakeSide) GetShowBanner() bool                   { return true }
+func (f *fakeSide) SetShowLoader(bool) error              { return nil }
+func (f *fakeSide) GetShowLoader() bool                   { return true }
 
 // OpenSettings returns an error so /settings (no args) falls back to its
 // inline text status — matches the headless-fallback pattern used elsewhere.
@@ -195,7 +199,7 @@ func (f *fakeSide) OpenToolsPane() error {
 func TestRegisterBuiltins_Names(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
-	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "settings", "tools", "bg", "agent", "attach"}
+	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "settings", "tools", "bg", "agent", "attach", "agents"}
 	for _, n := range want {
 		if _, ok := r.Get(n); !ok {
 			t.Errorf("missing builtin %q", n)

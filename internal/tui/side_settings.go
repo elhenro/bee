@@ -210,6 +210,50 @@ func (s *tuiSide) GetShellBangSilent() bool {
 	return s.m.shellBangSilent
 }
 
+// SetShowBanner toggles the startup intro animation + bee logo and persists.
+// Takes effect on the next launch (intro is one-shot).
+func (s *tuiSide) SetShowBanner(v bool) error {
+	if s.m == nil {
+		return errors.New("show_banner: no tui state")
+	}
+	s.m.showBanner = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowBanner = v
+	}
+	return PersistSetting("", "show_banner", v)
+}
+
+// GetShowBanner returns the current show-banner flag.
+func (s *tuiSide) GetShowBanner() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showBanner
+}
+
+// SetShowLoader toggles the streaming "generating" animation live + persists.
+func (s *tuiSide) SetShowLoader(v bool) error {
+	if s.m == nil {
+		return errors.New("show_loader: no tui state")
+	}
+	s.m.showLoader = v
+	if s.m.stream != nil {
+		s.m.stream.SetShowLoader(v)
+	}
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowLoader = v
+	}
+	return PersistSetting("", "show_loader", v)
+}
+
+// GetShowLoader returns the current show-loader flag.
+func (s *tuiSide) GetShowLoader() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showLoader
+}
+
 // OpenSettings flips a sentinel that Model.Update consumes to display the
 // settings pane modal. Errors in headless contexts.
 func (s *tuiSide) OpenSettings() error {

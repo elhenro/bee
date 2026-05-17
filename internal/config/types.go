@@ -28,9 +28,15 @@ type Config struct {
 	// from os.Getenv(provider.EnvKey). Not persisted to disk.
 	APIKey string `toml:"-"`
 
-	// ShowBanner controls the ASCII/emoji bee logo printed at TUI startup.
-	// Set false in config to suppress.
+	// ShowBanner controls the ASCII/emoji bee logo printed at TUI startup
+	// AND the braille intro animation. Toggle via /settings; takes effect
+	// on next launch (intro is a one-shot startup animation).
 	ShowBanner bool `toml:"show_banner"`
+
+	// ShowLoader controls the braille "generating" animation shown while
+	// the model is producing the next turn (pre-token loader + animated
+	// caret). Default true. Toggle via /settings; persists across launches.
+	ShowLoader bool `toml:"show_loader"`
 
 	// MaxIterations caps tool-use rounds per Run. 0 = use loop default (50).
 	// Raise for tool-heavy agents; lower to fail fast on runaway loops.

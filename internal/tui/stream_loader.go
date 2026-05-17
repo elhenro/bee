@@ -244,45 +244,33 @@ func (r *StreamRenderer) painterFor(nf int) func(frame, cells int) string {
 	}
 }
 
-// RenderCompacting draws the /compact-specific loader: a braille bar
-// that folds inward from both edges to the center, then bounces back.
-// Reads as memory being squeezed into a summary.
+// compactPainters lists the three /compact swarm animations. One is
+// chosen at random on frame 0 of each compacting run and sticks until
+// the run finishes.
+var compactPainters = []func(frame, cells int) string{
+	renderBrailleCompactConverge,
+	renderBrailleCompactVortex,
+	renderBrailleCompactFunnel,
+}
+
+// RenderCompacting draws the /compact-specific loader. Three braille
+// swarm variants reuse the same particle/sine techniques as the
+// "generating" loaders so memory-being-squeezed reads as live bees, not
+// a static bar. The variant is rolled on frame 0 per run.
 func (r *StreamRenderer) RenderCompacting(frame int) string {
 	nf := frame
 	if nf < 0 {
 		nf = -nf
 	}
+	if nf == 0 {
+		r.compactingVariant = rand.Intn(len(compactPainters))
+	}
+	if r.compactingVariant < 0 || r.compactingVariant >= len(compactPainters) {
+		r.compactingVariant = 0
+	}
 	cells := r.loaderCells()
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
-	// triangle wave: edges → center → edges over 2*half frames.
-	half := w / 2
-	if half < 4 {
-		half = 4
-	}
-	step := (nf / 2) % (half * 2)
-	gap := step
-	if gap > half {
-		gap = half*2 - step
-	}
-	// fill from each edge inward up to (half - gap) pixels.
-	fill := half - gap
-	if fill < 0 {
-		fill = 0
-	}
-	y := braillePxH / 2
-	for x := 0; x < fill; x++ {
-		c.SetPixel(x, y, true)
-		c.SetPixel(w-1-x, y, true)
-		// inner glow rows for thickness
-		if x < fill-1 {
-			c.SetPixel(x, y-1, true)
-			c.SetPixel(w-1-x, y+1, true)
-		}
-	}
-	// single bright center dot — always lit so the bar never goes dark.
-	c.SetPixel(half, y, true)
-	body := r.styles.RoleBee.Render("⬢") + " " + r.pulseStyle(nf).Render(c.ToBraille())
+	art := compactPainters[r.compactingVariant](nf, cells)
+	body := r.styles.RoleBee.Render("⬢") + " " + r.pulseStyle(nf).Render(art)
 	if r.compact {
 		return body
 	}

@@ -25,17 +25,26 @@ func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
 		// blank line above so loader breathes; user prompt isn't squashed
 		// against animation. Loader animation alone signals "bee working" —
 		// the prefix ⬢ was redundant with the animated braille payload.
-		head := r.renderLoader(frame)
+		var head string
+		if r.showLoader {
+			head = r.renderLoader(frame)
+		} else {
+			head = r.styles.RoleBee.Render("⬢")
+		}
 		if r.compact {
 			return "\n" + head
 		}
 		return "\n" + outerGutter + head
 	}
-	caret := r.animatedCaret(frame)
 	// trim trailing whitespace so the caret sits flush with the last visible
 	// char instead of floating on an indented blank line under the prose.
 	trimmed := strings.TrimRight(partial, " \t\n")
-	body := trimmed + " " + caret
+	var body string
+	if r.showLoader {
+		body = trimmed + " " + r.animatedCaret(frame)
+	} else {
+		body = trimmed
+	}
 	if r.compact {
 		return body
 	}

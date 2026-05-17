@@ -127,6 +127,13 @@ type Side interface {
 	GetShowGitBranch() bool
 	SetShowTotalTokens(v bool) error
 	GetShowTotalTokens() bool
+	// SetShowBanner toggles the startup intro animation + bee logo. Persists.
+	// Takes effect on next launch (intro is one-shot).
+	SetShowBanner(v bool) error
+	GetShowBanner() bool
+	// SetShowLoader toggles the streaming "generating" animation live + persists.
+	SetShowLoader(v bool) error
+	GetShowLoader() bool
 	// OpenSettings asks the TUI to display the settings pane. Returns an
 	// error in headless contexts so the slash command can fall back to text.
 	OpenSettings() error

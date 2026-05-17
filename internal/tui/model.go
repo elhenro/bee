@@ -267,9 +267,23 @@ type Model struct {
 	quitArmedAt time.Time
 
 	// intro animation — plays above the input bar without blocking. Frames
-	// are built lazily on the first tick once width is known.
-	introActive bool
-	introStyle  IntroStyle
-	introFrames []IntroFrame
-	introIdx    int
+	// are built lazily on the first tick once width is known. introDone
+	// keeps the space reserved after the last frame so the live region
+	// doesn't shrink; renderIntro then draws a static "bee v<x>" placeholder.
+	// introDoneFrame drives the post-intro pulse (two bold-flashes on "bee");
+	// it ticks up until introPulseFrames then settles.
+	introActive    bool
+	introDone      bool
+	introStyle     IntroStyle
+	introFrames    []IntroFrame
+	introIdx       int
+	introDoneFrame int
+
+	// showBanner mirrors cfg.ShowBanner. Persisted via /settings; takes
+	// effect on the NEXT launch (intro plays once at startup).
+	showBanner bool
+
+	// showLoader gates the streaming "generating" animation live. Toggle
+	// via /settings; persists across launches.
+	showLoader bool
 }

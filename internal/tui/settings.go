@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sahilm/fuzzy"
 )
 
 // settingsRow describes one toggleable row in the settings pane.
@@ -14,6 +17,8 @@ type settingsRow struct {
 	desc  string // one-line description shown next to the toggle
 }
 
+// settingsRows is the alphabetised pool. Sorted at package init so new rows
+// can be appended in any order without resorting the source file.
 var settingsRows = []settingsRow{
 	{key: "verbose", label: "verbose tool output", desc: "show full tool result instead of one-line preview"},
 	{key: "show_thoughts", label: "show agent thoughts", desc: "render chain-of-thought reasoning blocks"},
@@ -22,6 +27,8 @@ var settingsRows = []settingsRow{
 	{key: "show_context_bar", label: "show context bar", desc: "thin context-fill strip at the bottom edge"},
 	{key: "highlight", label: "syntax highlight", desc: "color code in diffs, file content, and bash commands"},
 	{key: "shell_bang_silent", label: "!shell stays local", desc: "!cmd runs without forwarding output to the LLM (!! inverts)"},
+	{key: "show_banner", label: "show intro animation", desc: "braille startup animation (applies on next launch)"},
+	{key: "show_loader", label: "show generating animation", desc: "braille loader + caret while the model is generating"},
 	{key: "show_bee", label: "top-bar bee glyph", desc: "show the 🐝 emoji on the top status line"},
 	{key: "show_context_pct", label: "top-bar context %", desc: "show the percent label next to the bee glyph"},
 	{key: "show_model", label: "top-bar model name", desc: "show the active provider/model label"},
@@ -32,12 +39,21 @@ var settingsRows = []settingsRow{
 	{key: "show_total_tokens", label: "top-bar total tokens", desc: "show Σ session tokens (input+output) next to cost"},
 }
 
+func init() {
+	sort.Slice(settingsRows, func(i, j int) bool {
+		return settingsRows[i].label < settingsRows[j].label
+	})
+}
+
 // SettingsPane is a modal toggling persistent TUI settings. Arrow keys move
-// cursor; enter/space flips the focused row. Each flip applies live and writes
-// to ~/.bee/config.toml so the next launch picks the same values up.
+// cursor, enter/space flips the focused row, anything else types into the
+// fuzzy filter. Each flip applies live and writes to ~/.bee/config.toml so
+// the next launch picks the same values up.
 type SettingsPane struct {
 	open       bool
 	cursor     int
+	filter     textinput.Model
+	matches    []fuzzy.Match
 	verbose    bool
 	thought    bool
 	nudge      bool
@@ -53,11 +69,18 @@ type SettingsPane struct {
 	turnTimer  bool
 	gitBranch  bool
 	totTokens  bool
+	banner     bool
+	loader     bool
 }
 
 // NewSettingsPane returns a closed settings pane.
 func NewSettingsPane() *SettingsPane {
-	return &SettingsPane{
+	ti := textinput.New()
+	ti.Placeholder = "type to filter…"
+	ti.Prompt = "› "
+	ti.CharLimit = 64
+	p := &SettingsPane{
+		filter:     ti,
 		thought:    true,
 		highlight:  true,
 		bangSilent: true,
@@ -67,7 +90,11 @@ func NewSettingsPane() *SettingsPane {
 		cwd:        true,
 		effort:     true,
 		turnTimer:  true,
+		banner:     true,
+		loader:     true,
 	}
+	p.recomputeMatches()
+	return p
 }
 
 // Open reports visibility.
@@ -91,6 +118,8 @@ type SettingsSnapshot struct {
 	ShowTurnTimer   bool
 	ShowGitBranch   bool
 	ShowTotalTokens bool
+	ShowBanner      bool
+	ShowLoader      bool
 }
 
 // Show opens the pane seeded with the live values.
@@ -100,6 +129,8 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 	}
 	p.open = true
 	p.cursor = 0
+	p.filter.SetValue("")
+	p.filter.Focus()
 	p.verbose = s.Verbose
 	p.thought = s.ShowThoughts
 	p.nudge = s.ShowNudges
@@ -115,6 +146,9 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 	p.turnTimer = s.ShowTurnTimer
 	p.gitBranch = s.ShowGitBranch
 	p.totTokens = s.ShowTotalTokens
+	p.banner = s.ShowBanner
+	p.loader = s.ShowLoader
+	p.recomputeMatches()
 }
 
 // settingsToggleMsg is published when a row is toggled. Carries the new value
@@ -122,6 +156,32 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 type settingsToggleMsg struct {
 	key   string
 	value bool
+}
+
+// recomputeMatches fuzzy-filters settingsRows against the filter input. Empty
+// input keeps the full alphabetised list (one code path for the renderer).
+func (p *SettingsPane) recomputeMatches() {
+	needle := strings.TrimSpace(p.filter.Value())
+	if needle == "" {
+		p.matches = make([]fuzzy.Match, len(settingsRows))
+		for i, r := range settingsRows {
+			p.matches[i] = fuzzy.Match{Index: i, Str: r.label}
+		}
+	} else {
+		// match against "label  description" so descriptions can rank too;
+		// the renderer masks highlight indices to the label range.
+		hay := make([]string, len(settingsRows))
+		for i, r := range settingsRows {
+			hay[i] = r.label + "  " + r.desc
+		}
+		p.matches = fuzzy.Find(needle, hay)
+	}
+	if p.cursor >= len(p.matches) {
+		p.cursor = 0
+	}
+	if p.cursor < 0 {
+		p.cursor = 0
+	}
 }
 
 // Update handles key events.
@@ -134,69 +194,127 @@ func (p *SettingsPane) Update(msg tea.Msg) (*SettingsPane, tea.Cmd) {
 		return p, nil
 	}
 	switch km.String() {
-	case "esc", "q":
+	case "esc", "ctrl+c":
 		p.open = false
-	case "down", "j":
-		if p.cursor < len(settingsRows)-1 {
+		return p, nil
+	case "down", "ctrl+n":
+		if p.cursor < len(p.matches)-1 {
 			p.cursor++
 		}
-	case "up", "k":
+		return p, nil
+	case "up", "ctrl+p":
 		if p.cursor > 0 {
 			p.cursor--
 		}
-	case "enter", " ", "tab":
-		row := settingsRows[p.cursor]
-		var newVal bool
-		switch row.key {
-		case "verbose":
-			p.verbose = !p.verbose
-			newVal = p.verbose
-		case "show_thoughts":
-			p.thought = !p.thought
-			newVal = p.thought
-		case "show_nudges":
-			p.nudge = !p.nudge
-			newVal = p.nudge
-		case "compact":
-			p.compact = !p.compact
-			newVal = p.compact
-		case "show_context_bar":
-			p.ctxBar = !p.ctxBar
-			newVal = p.ctxBar
-		case "highlight":
-			p.highlight = !p.highlight
-			newVal = p.highlight
-		case "shell_bang_silent":
-			p.bangSilent = !p.bangSilent
-			newVal = p.bangSilent
-		case "show_bee":
-			p.bee = !p.bee
-			newVal = p.bee
-		case "show_context_pct":
-			p.ctxPct = !p.ctxPct
-			newVal = p.ctxPct
-		case "show_model":
-			p.modelName = !p.modelName
-			newVal = p.modelName
-		case "show_cwd":
-			p.cwd = !p.cwd
-			newVal = p.cwd
-		case "show_effort":
-			p.effort = !p.effort
-			newVal = p.effort
-		case "show_turn_timer":
-			p.turnTimer = !p.turnTimer
-			newVal = p.turnTimer
-		case "show_git_branch":
-			p.gitBranch = !p.gitBranch
-			newVal = p.gitBranch
-		case "show_total_tokens":
-			p.totTokens = !p.totTokens
-			newVal = p.totTokens
-		}
-		return p, func() tea.Msg { return settingsToggleMsg{key: row.key, value: newVal} }
+		return p, nil
+	case "enter", "tab":
+		return p, p.toggleCurrent()
 	}
-	return p, nil
+	prev := p.filter.Value()
+	var cmd tea.Cmd
+	p.filter, cmd = p.filter.Update(km)
+	if p.filter.Value() != prev {
+		p.cursor = 0
+		p.recomputeMatches()
+	}
+	return p, cmd
+}
+
+// toggleCurrent flips the row at p.cursor (in the filtered match list) and
+// returns the side-effect command publishing the new value.
+func (p *SettingsPane) toggleCurrent() tea.Cmd {
+	if len(p.matches) == 0 {
+		return nil
+	}
+	idx := p.matches[p.cursor].Index
+	if idx < 0 || idx >= len(settingsRows) {
+		return nil
+	}
+	row := settingsRows[idx]
+	newVal := !p.rowState(row.key)
+	p.setRowState(row.key, newVal)
+	return func() tea.Msg { return settingsToggleMsg{key: row.key, value: newVal} }
+}
+
+// rowState reads the toggle backing field for a given key.
+func (p *SettingsPane) rowState(key string) bool {
+	switch key {
+	case "verbose":
+		return p.verbose
+	case "show_thoughts":
+		return p.thought
+	case "show_nudges":
+		return p.nudge
+	case "compact":
+		return p.compact
+	case "show_context_bar":
+		return p.ctxBar
+	case "highlight":
+		return p.highlight
+	case "shell_bang_silent":
+		return p.bangSilent
+	case "show_bee":
+		return p.bee
+	case "show_context_pct":
+		return p.ctxPct
+	case "show_model":
+		return p.modelName
+	case "show_cwd":
+		return p.cwd
+	case "show_effort":
+		return p.effort
+	case "show_turn_timer":
+		return p.turnTimer
+	case "show_git_branch":
+		return p.gitBranch
+	case "show_total_tokens":
+		return p.totTokens
+	case "show_banner":
+		return p.banner
+	case "show_loader":
+		return p.loader
+	}
+	return false
+}
+
+// setRowState writes the toggle backing field for a given key.
+func (p *SettingsPane) setRowState(key string, v bool) {
+	switch key {
+	case "verbose":
+		p.verbose = v
+	case "show_thoughts":
+		p.thought = v
+	case "show_nudges":
+		p.nudge = v
+	case "compact":
+		p.compact = v
+	case "show_context_bar":
+		p.ctxBar = v
+	case "highlight":
+		p.highlight = v
+	case "shell_bang_silent":
+		p.bangSilent = v
+	case "show_bee":
+		p.bee = v
+	case "show_context_pct":
+		p.ctxPct = v
+	case "show_model":
+		p.modelName = v
+	case "show_cwd":
+		p.cwd = v
+	case "show_effort":
+		p.effort = v
+	case "show_turn_timer":
+		p.turnTimer = v
+	case "show_git_branch":
+		p.gitBranch = v
+	case "show_total_tokens":
+		p.totTokens = v
+	case "show_banner":
+		p.banner = v
+	case "show_loader":
+		p.loader = v
+	}
 }
 
 // View renders the modal.
@@ -209,64 +327,66 @@ func (p *SettingsPane) View(width, height int) string {
 		Bold(true).
 		Render("⬢ Settings")
 
+	hl := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
+
 	var b strings.Builder
 	b.WriteString(title)
+	b.WriteString("\n")
+	b.WriteString(p.filter.View())
 	b.WriteString("\n\n")
 
-	for i, r := range settingsRows {
+	if len(p.matches) == 0 {
+		b.WriteString(StyleLabel.Render("  no matches"))
+		b.WriteString("\n")
+	}
+
+	for i, m := range p.matches {
+		r := settingsRows[m.Index]
 		marker := "  "
 		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
 		if i == p.cursor {
 			marker = lipgloss.NewStyle().Foreground(accentHoney).Render("▸ ")
 			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
 		}
-		var state bool
-		switch r.key {
-		case "verbose":
-			state = p.verbose
-		case "show_thoughts":
-			state = p.thought
-		case "show_nudges":
-			state = p.nudge
-		case "compact":
-			state = p.compact
-		case "show_context_bar":
-			state = p.ctxBar
-		case "highlight":
-			state = p.highlight
-		case "shell_bang_silent":
-			state = p.bangSilent
-		case "show_bee":
-			state = p.bee
-		case "show_context_pct":
-			state = p.ctxPct
-		case "show_model":
-			state = p.modelName
-		case "show_cwd":
-			state = p.cwd
-		case "show_effort":
-			state = p.effort
-		case "show_turn_timer":
-			state = p.turnTimer
-		case "show_git_branch":
-			state = p.gitBranch
-		case "show_total_tokens":
-			state = p.totTokens
-		}
 		toggle := "[ ]"
-		if state {
+		if p.rowState(r.key) {
 			toggle = lipgloss.NewStyle().Foreground(accentHoney).Render("[x]")
 		}
 		b.WriteString(marker)
 		b.WriteString(toggle)
 		b.WriteString("  ")
-		b.WriteString(nameStyle.Render(padRightVisible(r.label, 22)))
+		b.WriteString(highlightLabel(r.label, m.MatchedIndexes, nameStyle, hl, 22))
 		b.WriteString("  ")
 		b.WriteString(StyleLabel.Render(r.desc))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(StyleLabel.Render("↑/↓ pick · enter/space toggle · esc close · saved to ~/.bee/config.toml"))
+	b.WriteString(StyleLabel.Render("type filter · ↑/↓ pick · enter/tab toggle · esc close · saved to ~/.bee/config.toml"))
 	return boxModal(b.String(), width, height)
+}
+
+// highlightLabel renders label with matched runes accented, then pads the
+// visible width to n columns so toggle/desc columns stay aligned.
+func highlightLabel(label string, matched []int, base, hl lipgloss.Style, n int) string {
+	hits := map[int]struct{}{}
+	for _, idx := range matched {
+		if idx >= 0 && idx < len(label) {
+			hits[idx] = struct{}{}
+		}
+	}
+	var b strings.Builder
+	for i := 0; i < len(label); i++ {
+		ch := string(label[i])
+		if _, ok := hits[i]; ok {
+			b.WriteString(hl.Render(ch))
+		} else {
+			b.WriteString(base.Render(ch))
+		}
+	}
+	pad := n - len(label)
+	if pad > 0 {
+		b.WriteString(strings.Repeat(" ", pad))
+	}
+	return b.String()
 }

@@ -124,6 +124,61 @@ func Push(dir, branch string) error {
 	return err
 }
 
+// Fetch updates remote-tracking refs. remote defaults to "origin".
+// Best-effort: not having a remote configured is not fatal for local-only flows.
+func Fetch(dir, remote string) error {
+	if remote == "" {
+		remote = "origin"
+	}
+	_, err := gitRun(dir, "fetch", remote)
+	return err
+}
+
+// Rebase replays HEAD commits onto onto. Returns the raw error including
+// stderr on conflict so callers can surface it.
+func Rebase(dir, onto string) error {
+	if onto == "" {
+		return errors.New("rebase: empty onto")
+	}
+	_, err := gitRun(dir, "rebase", onto)
+	return err
+}
+
+// RebaseAbort aborts an in-progress rebase. Safe to call when no rebase is
+// active — git exits non-zero but the caller can ignore it.
+func RebaseAbort(dir string) error {
+	_, err := gitRun(dir, "rebase", "--abort")
+	return err
+}
+
+// IsRebasing returns true when a rebase is in progress in dir. Checks for
+// .git/rebase-merge and .git/rebase-apply via git status --porcelain=v2.
+func IsRebasing(dir string) bool {
+	out, err := gitRun(dir, "status", "--porcelain=v2", "--branch")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(out, "# branch.head (no branch)") ||
+		strings.Contains(out, "rebase")
+}
+
+// MergeFF fast-forwards branch onto base in dir. dir should be the main repo
+// (not the worktree). Returns error if FF is not possible.
+func MergeFF(dir, base, branch string) error {
+	if base == "" {
+		return errors.New("merge-ff: empty base")
+	}
+	if branch == "" {
+		return errors.New("merge-ff: empty branch")
+	}
+	// switch base, then merge --ff-only branch
+	if _, err := gitRun(dir, "switch", base); err != nil {
+		return err
+	}
+	_, err := gitRun(dir, "merge", "--ff-only", branch)
+	return err
+}
+
 // DiffStat returns the one-line `--shortstat` summary for HEAD~1..HEAD.
 // Returns empty string when the commit didn't actually change anything.
 func DiffStat(dir, ref string) (string, error) {

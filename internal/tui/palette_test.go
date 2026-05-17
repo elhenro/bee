@@ -24,7 +24,9 @@ func (f *fakeSkills) Get(name string) (skills.Skill, bool) {
 	return skills.Skill{}, false
 }
 
-func newTestPalette() PaletteModel {
+func newTestPalette(t *testing.T) PaletteModel {
+	t.Helper()
+	t.Setenv("BEE_HOME", t.TempDir())
 	reg := commands.NewRegistry()
 	commands.RegisterBuiltins(reg)
 	sk := &fakeSkills{list: []skills.Skill{
@@ -35,7 +37,9 @@ func newTestPalette() PaletteModel {
 	return NewPalette(reg, sk)
 }
 
-func newPaletteCmdsOnly() PaletteModel {
+func newPaletteCmdsOnly(t *testing.T) PaletteModel {
+	t.Helper()
+	t.Setenv("BEE_HOME", t.TempDir())
 	reg := commands.NewRegistry()
 	commands.RegisterBuiltins(reg)
 	p := NewPalette(reg, nil)
@@ -44,7 +48,7 @@ func newPaletteCmdsOnly() PaletteModel {
 }
 
 func TestPalette_PoolMergesCommandsAndSkills(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("")
 	if len(p.pool) == 0 {
 		t.Fatal("empty pool")
@@ -64,7 +68,7 @@ func TestPalette_PoolMergesCommandsAndSkills(t *testing.T) {
 }
 
 func TestPalette_FuzzyRanking(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("cmpt") // should rank /compact highly
 	if len(p.matches) == 0 {
 		t.Fatal("no matches for cmpt")
@@ -76,7 +80,7 @@ func TestPalette_FuzzyRanking(t *testing.T) {
 }
 
 func TestPalette_FuzzyMatchesSkill(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("rls")
 	if len(p.matches) == 0 {
 		t.Fatal("no matches for rls")
@@ -94,7 +98,7 @@ func TestPalette_FuzzyMatchesSkill(t *testing.T) {
 }
 
 func TestPalette_ShowWithInitial(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("hlp")
 	if p.input.Value() != "hlp" {
 		t.Errorf("initial value should pre-fill, got %q", p.input.Value())
@@ -109,7 +113,7 @@ func TestPalette_ShowWithInitial(t *testing.T) {
 }
 
 func TestPalette_EmptyInputShowsAll(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("")
 	if len(p.matches) != len(p.pool) {
 		t.Errorf("empty input should match all, got %d/%d", len(p.matches), len(p.pool))
@@ -117,7 +121,7 @@ func TestPalette_EmptyInputShowsAll(t *testing.T) {
 }
 
 func TestPalette_View_HasHighlight(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("hlp")
 	v := p.View()
 	if !strings.Contains(v, "help") {
@@ -130,7 +134,7 @@ func TestPalette_View_HasHighlight(t *testing.T) {
 }
 
 func TestPalette_View_SkillsGlyph(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("calc")
 	v := p.View()
 	// skill rows are prefixed with "#" glyph.
@@ -144,7 +148,7 @@ func TestPalette_View_MatchedIndexesMaskedToName(t *testing.T) {
 	// "name description"; the renderer must mask them to the name range
 	// before indexing into Name to avoid out-of-range panics or stray
 	// highlights spilling into the description column.
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("clone session") // matches "clone" command (name+desc fuzzy)
 	v := p.View()
 	if !strings.Contains(v, "clone") {
@@ -153,7 +157,7 @@ func TestPalette_View_MatchedIndexesMaskedToName(t *testing.T) {
 }
 
 func TestPalette_Esc_Dismisses(t *testing.T) {
-	p := newPaletteCmdsOnly()
+	p := newPaletteCmdsOnly(t)
 	p2, cmd := p.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if p2.Active {
 		t.Error("esc should clear Active")
@@ -167,7 +171,7 @@ func TestPalette_Esc_Dismisses(t *testing.T) {
 }
 
 func TestPalette_Enter_EmitsSelect(t *testing.T) {
-	p := newPaletteCmdsOnly()
+	p := newPaletteCmdsOnly(t)
 	p.input.SetValue("help") // filter narrows
 	p.recomputeMatches()
 	p2, cmd := p.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -190,7 +194,7 @@ func TestPalette_Enter_EmitsSelect(t *testing.T) {
 }
 
 func TestPalette_Enter_SkillSelectKind(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("calc")
 	if len(p.matches) == 0 {
 		t.Fatal("no matches for calc")
@@ -210,7 +214,7 @@ func TestPalette_Enter_SkillSelectKind(t *testing.T) {
 }
 
 func TestPalette_DownUp_MovesSelection(t *testing.T) {
-	p := newPaletteCmdsOnly()
+	p := newPaletteCmdsOnly(t)
 	p2, _ := p.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if p2.selected != 1 {
 		t.Errorf("down: want sel=1, got %d", p2.selected)
@@ -227,7 +231,7 @@ func TestPalette_DownUp_MovesSelection(t *testing.T) {
 }
 
 func TestPalette_Enter_NoMatchNoCmd(t *testing.T) {
-	p := newPaletteCmdsOnly()
+	p := newPaletteCmdsOnly(t)
 	p.input.SetValue("zzz-no-match")
 	p.recomputeMatches()
 	_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -237,7 +241,7 @@ func TestPalette_Enter_NoMatchNoCmd(t *testing.T) {
 }
 
 func TestPalette_View_RendersListWhenActive(t *testing.T) {
-	p := newPaletteCmdsOnly()
+	p := newPaletteCmdsOnly(t)
 	p.SetWidth(120)
 	out := p.View()
 	// first-page rows: alphabetized commands well inside maxPaletteRows.
@@ -263,7 +267,7 @@ func TestPalette_View_EmptyWhenInactive(t *testing.T) {
 }
 
 func TestPalette_TypingResetsSelection(t *testing.T) {
-	p := newPaletteCmdsOnly()
+	p := newPaletteCmdsOnly(t)
 	p2, _ := p.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if p2.selected != 1 {
 		t.Fatalf("setup: want sel=1, got %d", p2.selected)
@@ -276,7 +280,7 @@ func TestPalette_TypingResetsSelection(t *testing.T) {
 }
 
 func TestPalette_NilSkillsLister_OK(t *testing.T) {
-	p := newPaletteCmdsOnly()
+	p := newPaletteCmdsOnly(t)
 	if len(p.pool) == 0 {
 		t.Fatal("pool should have commands even with nil skills")
 	}
@@ -291,7 +295,7 @@ func TestPalette_View_SelectionScrollsWindow(t *testing.T) {
 	// regression: when selection moves past maxPaletteRows, the visible
 	// window must slide so the highlighted row stays in view. previously
 	// the renderer pinned to rows[:maxPaletteRows] regardless of selected.
-	p := newPaletteCmdsOnly()
+	p := newPaletteCmdsOnly(t)
 	p.SetWidth(120)
 	if len(p.matches) <= maxPaletteRows {
 		t.Skipf("need >%d entries to exercise scrolling, have %d", maxPaletteRows, len(p.matches))
@@ -317,7 +321,7 @@ func TestPalette_View_SelectionScrollsWindow(t *testing.T) {
 }
 
 func TestPalette_View_NoMatchesShowsMessage(t *testing.T) {
-	p := newTestPalette()
+	p := newTestPalette(t)
 	p.Show("zzzzzzzzzz-impossible")
 	v := p.View()
 	if !strings.Contains(v, "no matches") {

@@ -64,6 +64,11 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 	if eng != nil && eng.Cfg.ShowBanner {
 		m = m.WithIntro(ParseIntroStyle(os.Getenv("BEE_BANNER")))
 	}
+	if eng != nil {
+		m = m.WithShowBanner(eng.Cfg.ShowBanner).WithShowLoader(eng.Cfg.ShowLoader)
+	} else {
+		m = m.WithShowBanner(true).WithShowLoader(true)
+	}
 	// verbose: env wins over cfg (CLI/env path); cfg persists across launches.
 	verbose := os.Getenv("BEE_VERBOSE") != ""
 	if !verbose && eng != nil {

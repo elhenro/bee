@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/term"
 
 	"github.com/elhenro/bee/internal/approval"
+	"github.com/elhenro/bee/internal/bgreg"
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
@@ -26,6 +28,7 @@ import (
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/zzz"
+	zzztui "github.com/elhenro/bee/internal/zzz/tui"
 )
 
 func runZzz(args []string) {
@@ -41,6 +44,9 @@ func runZzz(args []string) {
 	resumeID := fs.String("resume", "", "resume run id (default: most-recent)")
 	wantList := fs.Bool("list", false, "list runs and exit")
 	cleanupID := fs.String("cleanup", "", "remove worktree for run id and exit")
+	gcRuns := fs.Bool("gc", false, "prune terminal runs + done bg sessions, then exit")
+	gcMaxAge := fs.Duration("gc-max-age", 14*24*time.Hour, "with --gc: delete entries older than this")
+	gcKeep := fs.Int("gc-keep", 20, "with --gc: keep this many newest entries regardless of age")
 	model := fs.String("model", "", "override config default_model")
 	provider := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope")
@@ -49,6 +55,7 @@ func runZzz(args []string) {
 	cavemanLvl := fs.String("caveman", "", "force caveman level")
 	yes := fs.Bool("yes", false, "auto-approve dangerous shell commands")
 	yolo := fs.Bool("yolo", false, "alias for --yes")
+	plain := fs.Bool("plain", false, "force single-line status renderer (no full-screen TUI)")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
@@ -64,6 +71,10 @@ func runZzz(args []string) {
 		if err := zzzCleanup(*cleanupID); err != nil {
 			fatalf("zzz: cleanup: %v", err)
 		}
+		return
+	}
+	if *gcRuns {
+		runGC(*gcMaxAge, *gcKeep)
 		return
 	}
 
@@ -108,17 +119,57 @@ func runZzz(args []string) {
 		fatalf("zzz: %v", err)
 	}
 
-	eng, cleanup, err := buildZzzEngine(cfg, prov, app, skillReg, run.RepoRoot)
+	useTUI := !*plain && term.IsTerminal(int(os.Stdout.Fd()))
+	var engineOut io.Writer = os.Stdout
+	var tuiModel *zzztui.Model
+	if useTUI {
+		tuiModel = zzztui.New(run, zCfg)
+		engineOut = tuiModel.EngineWriter()
+	}
+
+	eng, cleanup, err := buildZzzEngine(cfg, prov, app, skillReg, run.RepoRoot, engineOut)
 	if err != nil {
 		fatalf("zzz: engine: %v", err)
 	}
 	defer cleanup()
 
+	if useTUI {
+		runZzzTUI(ctx, stopCh, eng, zCfg, run, tuiModel)
+		fmt.Fprintf(os.Stderr, "\n→ inspect: ~/.bee/zzz/runs/%s/  (notes.md, events.jsonl, meta.json)\n", run.ID)
+		return
+	}
 	ui := zzz.NewStatus(os.Stderr)
 	if err := zzz.Drive(ctx, stopCh, eng, zCfg, run, ui); err != nil {
 		fatalf("zzz: drive: %v", err)
 	}
 	fmt.Fprintf(os.Stderr, "\n→ inspect: ~/.bee/zzz/runs/%s/  (notes.md, events.jsonl, meta.json)\n", run.ID)
+}
+
+// runZzzTUI launches Drive in a goroutine and blocks on the bubbletea
+// program in this goroutine. When Drive returns, the TUI flips to its
+// summary panel and waits for q/ctrl+d. If the operator quits first,
+// ctx-cancel propagates a hard stop to Drive.
+func runZzzTUI(parentCtx context.Context, stopCh chan struct{}, eng *loop.Engine, zCfg zzz.Config, run *zzz.Run, model *zzztui.Model) {
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+	done := make(chan struct{})
+	var driveErr error
+	go func() {
+		driveErr = zzz.Drive(ctx, stopCh, eng, zCfg, run, model)
+		model.Done(run, driveErr)
+		close(done)
+	}()
+	if err := model.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "zzz tui: %v\n", err)
+	}
+	cancel()
+	<-done
+	// altscreen restores on quit — re-render the summary to stderr so the
+	// operator sees the outcome after the TUI goes away.
+	zzz.NewStatus(os.Stderr).RenderSummary(run)
+	if driveErr != nil {
+		fmt.Fprintf(os.Stderr, "zzz: drive: %v\n", driveErr)
+	}
 }
 
 // startRun creates a brand-new run: new id, branch (or worktree), persisted
@@ -320,8 +371,10 @@ func buildZzzDeps(model, provider, sandboxScope, thinking, effort, cavemanLvl st
 }
 
 // buildZzzEngine assembles a *loop.Engine rooted at cwd (which may be a
-// worktree). Returns a cleanup fn that closes the session rollout.
-func buildZzzEngine(cfg config.Config, prov llm.Provider, app approval.Approver, skillReg *skills.Registry, cwd string) (*loop.Engine, func(), error) {
+// worktree). out routes engine deltas — pass os.Stdout for plain runs or
+// the TUI's sink for live TUI mode. Returns a cleanup fn that closes the
+// session rollout.
+func buildZzzEngine(cfg config.Config, prov llm.Provider, app approval.Approver, skillReg *skills.Registry, cwd string, out io.Writer) (*loop.Engine, func(), error) {
 	storeDir, _ := knowledge.StoreDir()
 	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
 	if err != nil {
@@ -333,6 +386,9 @@ func buildZzzEngine(cfg config.Config, prov llm.Provider, app approval.Approver,
 		return nil, func() {}, fmt.Errorf("session: %w", err)
 	}
 	memStore := newKnowledgeAdapter(prov, cfg)
+	if out == nil {
+		out = os.Stdout
+	}
 	eng := &loop.Engine{
 		Provider: prov,
 		Tools:    reg,
@@ -341,10 +397,29 @@ func buildZzzEngine(cfg config.Config, prov llm.Provider, app approval.Approver,
 		Sessions: roll,
 		Cfg:      cfg,
 		Cwd:      cwd,
-		Stdout:   os.Stdout,
+		Stdout:   out,
 		Costs:    cost.New(),
 	}
 	return eng, func() { roll.Close() }, nil
+}
+
+// runGC prunes terminal zzz runs + done bg sessions per opts, prints what
+// was removed. Worktrees are intentionally NOT touched here — those have
+// their own lifecycle via `bee zzz --cleanup <id>` or `git worktree prune`.
+func runGC(maxAge time.Duration, keep int) {
+	zRes := zzz.Prune(zzz.PruneOpts{MaxAge: maxAge, KeepNewest: keep})
+	bRes := bgreg.Prune(bgreg.PruneOpts{MaxAge: maxAge, KeepNewest: keep})
+	fmt.Printf("zzz runs pruned: %d\n", len(zRes.RemovedRunIDs))
+	for _, id := range zRes.RemovedRunIDs {
+		fmt.Printf("  - %s\n", id)
+	}
+	fmt.Printf("bg sessions pruned: %d\n", len(bRes.RemovedIDs))
+	for _, id := range bRes.RemovedIDs {
+		fmt.Printf("  - %s\n", id)
+	}
+	for _, e := range append(zRes.Errors, bRes.Errors...) {
+		fmt.Fprintf(os.Stderr, "gc warn: %v\n", e)
+	}
 }
 
 func fatalf(format string, a ...any) {

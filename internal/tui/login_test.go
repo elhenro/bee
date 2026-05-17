@@ -84,6 +84,10 @@ func (s *loginSideStub) SetShowGitBranch(bool) error                    { return
 func (s *loginSideStub) GetShowGitBranch() bool                         { return false }
 func (s *loginSideStub) SetShowTotalTokens(bool) error                  { return nil }
 func (s *loginSideStub) GetShowTotalTokens() bool                       { return false }
+func (s *loginSideStub) SetShowBanner(bool) error                       { return nil }
+func (s *loginSideStub) GetShowBanner() bool                            { return true }
+func (s *loginSideStub) SetShowLoader(bool) error                       { return nil }
+func (s *loginSideStub) GetShowLoader() bool                            { return true }
 func (s *loginSideStub) ListTools() []commands.ToolInfo                 { return nil }
 func (s *loginSideStub) SetToolDisabled(string, bool) error             { return nil }
 func (s *loginSideStub) AddUserTool(string, string, string) error       { return nil }

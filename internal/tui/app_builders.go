@@ -93,6 +93,22 @@ func (m Model) WithShellBangSilent(v bool) Model {
 	return m
 }
 
+// WithShowBanner seeds the intro-animation flag. Toggling at runtime only
+// affects the NEXT launch — the startup animation is one-shot.
+func (m Model) WithShowBanner(v bool) Model {
+	m.showBanner = v
+	return m
+}
+
+// WithShowLoader seeds the streaming-loader visibility. Config-driven path.
+func (m Model) WithShowLoader(v bool) Model {
+	m.showLoader = v
+	if m.stream != nil {
+		m.stream.SetShowLoader(v)
+	}
+	return m
+}
+
 // WithShowBee seeds top-bar bee-glyph visibility. Config-driven path.
 func (m Model) WithShowBee(v bool) Model { m.showBee = v; return m }
 

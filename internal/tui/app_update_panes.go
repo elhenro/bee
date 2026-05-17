@@ -54,6 +54,8 @@ func (m Model) onOpenSettings(_ openSettingsMsg) (tea.Model, tea.Cmd) {
 		ShowTurnTimer:   m.showTurnTimer,
 		ShowGitBranch:   m.showGitBranch,
 		ShowTotalTokens: m.showTotalTokens,
+		ShowBanner:      m.showBanner,
+		ShowLoader:      m.showLoader,
 	})
 	return m, nil
 }
@@ -92,6 +94,10 @@ func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
 		err = m.side().SetShowGitBranch(msg.value)
 	case "show_total_tokens":
 		err = m.side().SetShowTotalTokens(msg.value)
+	case "show_banner":
+		err = m.side().SetShowBanner(msg.value)
+	case "show_loader":
+		err = m.side().SetShowLoader(msg.value)
 	}
 	if err != nil && m.state != StateStreaming {
 		// don't kill an in-flight turn over a persist hiccup; surface the

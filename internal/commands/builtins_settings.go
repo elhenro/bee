@@ -62,8 +62,12 @@ func applySettingsArg(args []string, s Side) (string, error) {
 		key = "compact"
 	case "bang", "shell_bang", "shell_bang_silent", "bang_silent":
 		key = "shell_bang_silent"
+	case "banner", "show_banner", "intro":
+		key = "show_banner"
+	case "loader", "show_loader", "generating":
+		key = "show_loader"
 	default:
-		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | compact | shell_bang_silent)", nil
+		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | compact | shell_bang_silent | show_banner | show_loader)", nil
 	}
 	var newVal bool
 	if len(args) >= 2 {
@@ -85,6 +89,10 @@ func applySettingsArg(args []string, s Side) (string, error) {
 			newVal = !s.GetCompact()
 		case "shell_bang_silent":
 			newVal = !s.GetShellBangSilent()
+		case "show_banner":
+			newVal = !s.GetShowBanner()
+		case "show_loader":
+			newVal = !s.GetShowLoader()
 		}
 	}
 	var err error
@@ -99,6 +107,10 @@ func applySettingsArg(args []string, s Side) (string, error) {
 		err = s.SetCompact(newVal)
 	case "shell_bang_silent":
 		err = s.SetShellBangSilent(newVal)
+	case "show_banner":
+		err = s.SetShowBanner(newVal)
+	case "show_loader":
+		err = s.SetShowLoader(newVal)
 	}
 	if err != nil {
 		return "", err

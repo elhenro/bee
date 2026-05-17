@@ -49,6 +49,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 					m.state = StateError
 					return m, nil
 				}
+				m.palette.Bump(parts[0])
 				return m.submit(userMsg)
 			}
 		}
@@ -56,6 +57,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		m.state = StateError
 		return m, nil
 	}
+	m.palette.Bump(parts[0])
 
 	// /compact runs async with a loader animation so the LLM summarization
 	// call doesn't freeze the UI. State stays StateIdle; m.compacting drives

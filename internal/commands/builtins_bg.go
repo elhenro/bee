@@ -53,4 +53,12 @@ func registerBackground(r *Registry) {
 			return "", s.OpenSession(args[0])
 		},
 	})
+	r.Register(Command{
+		Name:           "agents",
+		Description:    "parallel-agents overview — open in a new shell: `bee agents`",
+		AllowDuringRun: true,
+		Run: func(_ context.Context, _ []string, _ Side) (string, error) {
+			return "Quit (ctrl+d ctrl+d) and run `bee agents` to open the parallel-agents overview. Each chat message there spawns a new agent in its own git worktree.", nil
+		},
+	})
 }

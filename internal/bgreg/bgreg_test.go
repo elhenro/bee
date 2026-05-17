@@ -68,3 +68,58 @@ func TestRemove(t *testing.T) {
 		t.Fatalf("expected error after Remove, got nil")
 	}
 }
+
+// TestWriteBumpsVersion verifies that each successful Write monotonically
+// advances the on-disk Version, so concurrent readers can detect change.
+func TestWriteBumpsVersion(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("BEE_HOME", dir)
+	for i := 0; i < 3; i++ {
+		if err := Write(Status{SessionID: "v", State: StateActive}); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+	}
+	got, err := Read("v")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.Version != 3 {
+		t.Fatalf("Version=%d want 3", got.Version)
+	}
+}
+
+// TestUpdateAtomic exercises the read-modify-write helper. Two sequential
+// Updates should produce Version=2 with both mutations applied.
+func TestUpdateAtomic(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("BEE_HOME", dir)
+	if err := Write(Status{SessionID: "u", State: StateActive}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := Update("u", func(s *Status) error {
+		s.State = StateAwaiting
+		s.LastResponse = "first"
+		return nil
+	}); err != nil {
+		t.Fatalf("update1: %v", err)
+	}
+	if err := Update("u", func(s *Status) error {
+		s.LastResponse = s.LastResponse + ":second"
+		return nil
+	}); err != nil {
+		t.Fatalf("update2: %v", err)
+	}
+	got, err := Read("u")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.State != StateAwaiting {
+		t.Errorf("State=%s want awaiting", got.State)
+	}
+	if got.LastResponse != "first:second" {
+		t.Errorf("LastResponse=%q want first:second", got.LastResponse)
+	}
+	if got.Version < 2 {
+		t.Errorf("Version=%d want ≥2", got.Version)
+	}
+}

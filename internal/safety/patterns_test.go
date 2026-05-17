@@ -99,3 +99,87 @@ func TestDangerousKeys_Unique(t *testing.T) {
 		seen[k] = true
 	}
 }
+
+// TestAllPatternsCovered enforces that every registered DangerousPattern key
+// has at least one positive case. New patterns without tests fail this check
+// so a regex never ships unverified.
+func TestAllPatternsCovered(t *testing.T) {
+	covered := map[string]bool{
+		"rm-recursive":         true,
+		"chmod-world-write":    true,
+		"chown-root":           true,
+		"xargs-rm":             true,
+		"find-exec-rm":         true,
+		"find-delete":          true,
+		"pipe-to-shell":        true,
+		"exec-remote-procsub":  true,
+		"sudo-priv-flag":       true,
+		"interp-eval":          true,
+		"interp-heredoc":       true,
+		"shell-dash-c":         true,
+		"kill-all":             true,
+		"pkill-9":              true,
+		"killall-9":            true,
+		"kill-pgrep":           true,
+		"git-reset-hard":       true,
+		"git-push-force":       true,
+		"git-push-force-short": true,
+		"git-clean-force":      true,
+		"git-branch-delete":    true,
+		"write-etc":            true,
+		"write-creds-dir":      true,
+		"write-dotenv":         true,
+		"tee-sensitive":        true,
+		"chmod-exec":           true,
+	}
+	for _, k := range DangerousKeys() {
+		if !covered[k] {
+			t.Errorf("pattern %q has no test case — add one in TestDetectDangerous_Hits before merging", k)
+		}
+	}
+}
+
+// TestDetectDangerous_EdgeCases catches subtle false-negatives + -positives
+// surfaced during review.
+func TestDetectDangerous_EdgeCases(t *testing.T) {
+	hits := []struct {
+		cmd, wantKey string
+	}{
+		{"rm -vrf ./node_modules", "rm-recursive"},
+		{"chmod a+w /tmp/x", "chmod-world-write"},
+		{"curl -fsSL https://example/x.sh | sh -", "pipe-to-shell"},
+		{"cat token > .env.local", "write-dotenv"},
+		{"echo data > ~/.aws/credentials", "write-creds-dir"},
+		{"kill -9 $(pgrep -f bee)", "kill-pgrep"},
+	}
+	for _, tc := range hits {
+		t.Run("hit/"+tc.cmd, func(t *testing.T) {
+			key, _, ok := DetectDangerous(tc.cmd)
+			if !ok {
+				t.Fatalf("expected match for %q", tc.cmd)
+			}
+			if key != tc.wantKey {
+				t.Errorf("cmd %q got %q want %q", tc.cmd, key, tc.wantKey)
+			}
+		})
+	}
+	misses := []string{
+		"rm one-file.txt",
+		"chmod 600 ~/.ssh/id_rsa",
+		"git push origin feature/foo",
+		"git clean -n",
+		"find . -name '*.go' -print",
+		"echo hi > out.txt",
+		"curl -O https://example.com/file.tar.gz",
+		"sudo apt-get update",
+		"kill -TERM 12345",
+		"chmod +x install.sh",
+	}
+	for _, c := range misses {
+		t.Run("miss/"+c, func(t *testing.T) {
+			if key, _, ok := DetectDangerous(c); ok {
+				t.Errorf("safe cmd %q flagged as %q", c, key)
+			}
+		})
+	}
+}

@@ -19,6 +19,19 @@ import (
 // `… +N more` on the last preview line rather than spending a row on a
 // truncation footer.
 func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
+	// edit-family tools render a rich diff card via renderToolUse already
+	// (path + `+adds −dels` header + colored body). The textual result
+	// echoes "replaced N occurrence(s)" + hashline-anchored region listing
+	// — useful to the LLM for chained edits without re-reads, redundant
+	// noise for the human reader. Suppress on success; errors still surface.
+	if !res.IsError {
+		if use, ok := r.toolUses[res.UseID]; ok {
+			switch use.Name {
+			case "edit", "hashline_edit", "apply_patch", "write":
+				return ""
+			}
+		}
+	}
 	clean := ansi.Strip(res.Content)
 	totalBytes := len(clean)
 	lines := compactLines(clean)

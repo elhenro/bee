@@ -82,6 +82,28 @@ Disable:
 
 Explicit value beats profile.
 
+## Overnight loop: `bee zzz`
+
+Hand bee an objective and a budget, walk away, wake up to a branch full of small individually-revertable commits. Each iteration runs one focused change and either commits or `git reset --hard` rolls back on failure — the working tree never stays dirty. A live TUI shows the iteration ledger (🐝 foraging · 🌼 committed · 🍃 noop · 🥀 reset · 💥 failed), token cost, and a sleeping bee at the bottom. Type to nudge the run mid-flight; `/stop` exits gracefully after the current iteration, `/abort` cancels immediately.
+
+    bee zzz "tighten error messages across internal/tools" --max-iterations 30
+    bee zzz --list                       # past runs
+    bee zzz --resume                     # pick up the most recent
+    bee zzz --worktree "..."             # isolate in ~/.bee/zzz/worktrees/<id>
+    bee zzz --plain                      # disable the TUI
+
+Artifacts live in `~/.bee/zzz/runs/<id>/`: `notes.md` per-iter summaries, `events.jsonl` raw timeline, `meta.json` run state. Inspired by [gnhf](https://github.com/kunchenguid/gnhf).
+
+## Parallel agents: `bee agents`
+
+Spawn many bees at once, each on its own git worktree. The overview reuses the chat input — every submitted message starts a fresh detached agent under `~/.bee/agents/worktrees/<id>` on branch `agents/<short>`. Rows show initial prompt, elapsed, tokens up/down, last thought, locked model. `j/k`/arrows navigate, `l`/`→`/`enter` opens an agent fullscreen (existing session view), `m` retries a merge.
+
+    bee agents
+
+When an agent ends its turn with `DONE: <summary>` the coordinator rebases its branch onto `main` and fast-forwards. Conflicts post a resolution prompt back to the agent via the inbox and flip its row to **needs input**; auto-retry every 10s or hit `m` to force a retry. Unmerged worktrees stay highlighted in red until they land.
+
+`/model <name>` and `/provider <name>` set the model used for the next spawn (sticky until changed) — mix and match across agents. Killing `bee agents` does not kill the running children; relaunching reconstructs the overview from `~/.bee/sessions/bg/`.
+
 ## My setup / how I run this
 
 **Mac M3 Max (64 GB) -> omlx with an MLX-quantized coder model.**

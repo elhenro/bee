@@ -39,6 +39,7 @@ func Defaults() Config {
 			Threshold: 0.8,
 		},
 		ShowBanner:    true,
+		ShowLoader:    true,
 		MaxIterations: 50,
 		Verbose:        false,
 		ShowThoughts:   true,

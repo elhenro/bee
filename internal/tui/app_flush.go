@@ -23,6 +23,12 @@ import (
 // text block has the prefix stripped so the progressively-flushed head
 // doesn't print twice. Always cleared after this call, even on no match.
 func (m *Model) flush() tea.Cmd {
+	// hold all scrollback emissions until the intro banner has been pushed,
+	// otherwise resumed-session or live messages would slot above it and the
+	// banner would no longer sit at the top of the conversation.
+	if m.introActive || m.introDone {
+		return nil
+	}
 	if m.printedCount > len(m.messages) {
 		m.printedCount = len(m.messages)
 	}
@@ -89,6 +95,12 @@ func (m *Model) commitFlushed() {
 // the per-delta cost negligible.
 func (m *Model) maybeFlushPartialHead() tea.Cmd {
 	if !m.progressiveStream || m.partial == "" || m.height <= 0 || m.width <= 0 {
+		return nil
+	}
+	// same anchor as flush(): nothing escapes to scrollback while the intro
+	// pulse is still running, otherwise stream head lines would push the
+	// banner down off the top of the conversation.
+	if m.introActive || m.introDone {
 		return nil
 	}
 	flushedLen := len(m.streamFlushed)

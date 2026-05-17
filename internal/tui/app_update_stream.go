@@ -152,26 +152,44 @@ func (m Model) onCostTick(_ costTickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onIntroTick(_ introTickMsg) (tea.Model, tea.Cmd) {
-	if !m.introActive {
-		return m, nil
-	}
-	// build frames on first tick when width is finally known. If width
-	// still hasn't arrived (initial WindowSizeMsg pending), just rearm.
-	if m.introFrames == nil {
-		if m.width <= 0 {
+	if m.introActive {
+		// build frames on first tick when width is finally known. If width
+		// still hasn't arrived (initial WindowSizeMsg pending), just rearm.
+		if m.introFrames == nil {
+			if m.width <= 0 {
+				return m, introTickCmd()
+			}
+			m.introFrames = introFrames(m.introStyle, m.width)
+			if len(m.introFrames) == 0 {
+				m.introActive = false
+				m.introDone = true
+				m.introDoneFrame = 0
+				return m, introTickCmd()
+			}
+		}
+		m.introIdx++
+		if m.introIdx >= len(m.introFrames) {
+			m.introActive = false
+			m.introFrames = nil
+			m.introDone = true
+			m.introDoneFrame = 0
 			return m, introTickCmd()
 		}
-		m.introFrames = introFrames(m.introStyle, m.width)
-		if len(m.introFrames) == 0 {
-			m.introActive = false
-			return m, nil
+		return m, introTickCmd()
+	}
+	// post-intro pulse: keep ticking until the bold-flash cycle settles,
+	// then push the banner to terminal scrollback so it stays anchored at
+	// the top of the conversation. Clearing introDone collapses the live
+	// region; the scrollback push adds the banner above, so the input bar
+	// only jumps by the difference (placeholder rows minus 1).
+	if m.introDone && m.introDoneFrame < introPulseFrames {
+		m.introDoneFrame++
+		if m.introDoneFrame < introPulseFrames {
+			return m, introTickCmd()
 		}
+		banner := buildIntroBannerLine(m.width, true)
+		m.introDone = false
+		return m, tea.Println(banner)
 	}
-	m.introIdx++
-	if m.introIdx >= len(m.introFrames) {
-		m.introActive = false
-		m.introFrames = nil
-		return m, nil
-	}
-	return m, introTickCmd()
+	return m, nil
 }
