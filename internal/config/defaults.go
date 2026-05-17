@@ -80,7 +80,7 @@ func Defaults() Config {
 				BaseURL:      "https://generativelanguage.googleapis.com/v1beta",
 				WireAPI:      "gemini",
 				EnvKey:       "GEMINI_API_KEY",
-				DefaultModel: "gemini-2.0-flash",
+				DefaultModel: "gemini-2.5-flash",
 			},
 			"ollama": {
 				BaseURL:      "http://localhost:11434/v1",
@@ -114,7 +114,7 @@ func Defaults() Config {
 				BaseURL:      "https://chatgpt.com/backend-api/codex",
 				WireAPI:      "responses",
 				EnvKey:       "",
-				DefaultModel: "gpt-5-codex",
+				DefaultModel: "gpt-5.4-mini",
 				OAuth: &OAuthConfig{
 					ClientID:          "app_EMoamEEZ73f0CkXaXp7hrann",
 					AuthorizeEndpoint: "https://auth.openai.com/oauth/authorize",

@@ -104,10 +104,21 @@ func ListModels(ctx context.Context, name string, cfg config.ProviderConfig) ([]
 		storeCache(name, models)
 		return models, nil
 	}
-	// Responses-wire backends (chatgpt subscription) don't expose /models —
-	// the backend only serves /responses. Skip the GET that would 401 with
-	// no token and use the curated list for `name` instead.
+	// Responses-wire backends. chatgpt.com exposes a plan-filtered list at
+	// /backend-api/codex/models?client_version=X — query it live so users see
+	// exactly what their account can call. Other responses providers don't
+	// have a /models endpoint, so fall back to the curated list.
 	if cfg.WireAPI == "responses" {
+		if name == "chatgpt" {
+			acct := ""
+			if cfg.OAuth != nil {
+				acct = cfg.OAuth.AccountIDHeader
+			}
+			if live, err := FetchChatGPTModels(ctx, cfg.BaseURL, acct); err == nil && len(live) > 0 {
+				storeCache(name, live)
+				return live, nil
+			}
+		}
 		models := hardcodedFallback(name)
 		if models == nil {
 			models = []Model{}

@@ -88,9 +88,14 @@ var contextLengths = map[string]int{
 	"deepseek-chat":     65536,
 	"deepseek-reasoner": 65536,
 	// Google
-	"gemini-2.0-flash": 1000000,
-	"gemini-2.5-flash": 1000000,
-	"gemini-2.5-pro":   2000000,
+	"gemini-2.0-flash":              1000000,
+	"gemini-2.5-flash":              1000000,
+	"gemini-2.5-pro":                2000000,
+	"gemini-3-flash-preview":        1000000,
+	"gemini-3-pro-preview":          2000000,
+	"gemini-3.1-flash-lite":         1000000,
+	"gemini-3.1-flash-lite-preview": 1000000,
+	"gemini-3.1-pro-preview":        2000000,
 	// Groq / Llama
 	"llama-3.3-70b-versatile": 131072,
 	"llama-3.1-8b-instant":    131072,
@@ -111,8 +116,8 @@ var thinkingModelSubstrings = []string{
 	"claude-opus-4", "claude-sonnet-4", "claude-haiku-4",
 	// DeepSeek reasoners (reasoner, v3.1+, v4 flash/full).
 	"deepseek-reasoner", "deepseek-r1", "deepseek-v3.1", "deepseek-v3.2", "deepseek-v4",
-	// Gemini 2.5 family (thinkingBudget).
-	"gemini-2.5",
+	// Gemini 2.5 / 3.x families (thinkingBudget).
+	"gemini-2.5", "gemini-3",
 	// Qwen reasoning variants.
 	"qwq", "qwen3-thinking",
 	// Z.AI GLM thinking tier.
@@ -168,20 +173,39 @@ func hardcodedFallback(name string) []Model {
 	case "anthropic", "claude":
 		return hardcodedModels("anthropic")
 	case "openai":
+		// Fallback only — live /models is preferred. Curated against the
+		// public Responses API surface; codex-tagged variants are routed to
+		// the chatgpt provider, not this one.
 		return []Model{
-			{ID: "gpt-4o", Name: "GPT-4o"},
-			{ID: "gpt-4o-mini", Name: "GPT-4o mini"},
-			{ID: "o1", Name: "o1"},
-			{ID: "o1-mini", Name: "o1 mini"},
+			{ID: "gpt-5.5", Name: "GPT-5.5", ContextLength: 272000},
+			{ID: "gpt-5.4", Name: "GPT-5.4", ContextLength: 272000},
+			{ID: "gpt-5.4-mini", Name: "GPT-5.4 mini", ContextLength: 272000},
+			{ID: "gpt-5.2", Name: "GPT-5.2", ContextLength: 272000},
+			{ID: "gpt-5.1", Name: "GPT-5.1", ContextLength: 272000},
+			{ID: "gpt-4.1", Name: "GPT-4.1", ContextLength: 1000000},
+			{ID: "gpt-4o", Name: "GPT-4o", ContextLength: 128000},
+			{ID: "gpt-4o-mini", Name: "GPT-4o mini", ContextLength: 128000},
+			{ID: "o3", Name: "o3", ContextLength: 200000},
+			{ID: "o3-mini", Name: "o3 mini", ContextLength: 200000},
 		}
 	case "chatgpt":
-		// chatgpt.com subscription backend (auth, /responses only). Curated
-		// list of models exposed by the responses endpoint.
+		// chatgpt.com subscription backend (auth, /responses only). Used only
+		// as a fallback when the live /models fetch in FetchChatGPTModels
+		// fails (no token, network error). When logged in the real list is
+		// queried per request and reflects the user's plan.
 		return []Model{
-			{ID: "gpt-5-codex", Name: "GPT-5 Codex", ContextLength: 272000},
-			{ID: "gpt-5", Name: "GPT-5", ContextLength: 272000},
-			{ID: "gpt-5-pro", Name: "GPT-5 Pro", ContextLength: 272000},
-			{ID: "gpt-5-codex-mini", Name: "GPT-5 Codex mini", ContextLength: 272000},
+			{ID: "gpt-5.4-mini", Name: "gpt-5.4-mini", ContextLength: 272000},
+		}
+	case "gemini", "google":
+		return []Model{
+			{ID: "gemini-3.1-pro-preview", Name: "Gemini 3.1 Pro (preview)", ContextLength: 2000000},
+			{ID: "gemini-3.1-flash-lite", Name: "Gemini 3.1 Flash Lite", ContextLength: 1000000},
+			{ID: "gemini-3.1-flash-lite-preview", Name: "Gemini 3.1 Flash Lite (preview)", ContextLength: 1000000},
+			{ID: "gemini-3-pro-preview", Name: "Gemini 3 Pro (preview)", ContextLength: 2000000},
+			{ID: "gemini-3-flash-preview", Name: "Gemini 3 Flash (preview)", ContextLength: 1000000},
+			{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", ContextLength: 2000000},
+			{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", ContextLength: 1000000},
+			{ID: "gemini-2.0-flash", Name: "Gemini 2.0 Flash", ContextLength: 1000000},
 		}
 	case "ollama":
 		return []Model{
