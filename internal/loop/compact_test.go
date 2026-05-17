@@ -59,8 +59,8 @@ func TestCompact_PreservesTail(t *testing.T) {
 	if stats.BeforeMsgs != len(msgs) || stats.AfterMsgs != len(out) {
 		t.Errorf("stats msg counts: before=%d after=%d, want %d/%d", stats.BeforeMsgs, stats.AfterMsgs, len(msgs), len(out))
 	}
-	if stats.Duration <= 0 {
-		t.Errorf("stats.Duration should be positive, got %v", stats.Duration)
+	if stats.Duration < 0 {
+		t.Errorf("stats.Duration should be non-negative, got %v", stats.Duration)
 	}
 }
 

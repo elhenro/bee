@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -10,6 +11,16 @@ import (
 
 	"github.com/elhenro/bee/internal/types"
 )
+
+// absPath builds an OS-absolute path so tests don't bake `/` assumptions
+// that break on Windows where filepath.IsAbs requires a drive letter.
+func absPath(parts ...string) string {
+	root := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		root = "C:" + root
+	}
+	return root + filepath.Join(parts...)
+}
 
 // stripANSI removes CSI + OSC sequences so assertions match plain content.
 // Uses charmbracelet/x/ansi so OSC 133 prompt-zone marks emitted by
@@ -377,13 +388,17 @@ func TestSummarizeBash_DropsCommandPrefix(t *testing.T) {
 }
 
 func TestSummarizeBash_AppendsCwd(t *testing.T) {
+	// Use a host-absolute path so filepath.IsAbs holds on Windows too
+	// (forward-slash paths aren't absolute there).
+	cwd := absPath("Users", "x", "projects", "bee")
+	home := absPath("Users", "x")
 	pathRootsOnce.Do(func() {})
-	cachedCwd = "/Users/x/projects/bee"
-	cachedHome = "/Users/x"
+	cachedCwd = cwd
+	cachedHome = home
 	defer func() { cachedCwd = ""; cachedHome = "" }()
 	got := summarizeToolArgs("bash", map[string]any{
 		"command": "go test ./...",
-		"cwd":     "/Users/x/projects/bee",
+		"cwd":     cwd,
 	}, argsSummaryCompact)
 	if got != "go test ./...  · ./" {
 		t.Fatalf("want command + cwd suffix, got %q", got)
