@@ -46,7 +46,7 @@ go run ./cmd/bee
 BEE_TEST_PROVIDER=stub go run ./cmd/bee run --headless "hi"
 
 # point bee at an isolated home (does not touch ~/.bee)
-BEE_HOME=/tmp/bee-dev go run ./cmd/bee install-shims
+BEE_HOME=/tmp/bee-dev go run ./cmd/bee
 ```
 
 ## Style

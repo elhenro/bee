@@ -8,12 +8,22 @@ BEE=${BEE:-./bee}
 
 "$BEE" bg "task A" >/tmp/bg-a.out
 "$BEE" bg "task B" >/tmp/bg-b.out
-sleep 2
 
-# at least two .status.json sidecars should exist
-count=$(ls "$BEE_HOME/sessions/bg/"*.status.json 2>/dev/null | wc -l | tr -d ' ')
+# poll for sidecars instead of sleeping a fixed interval — slow CI runners
+# need more than 2s, fast Macs would waste time.
+count=0
+i=0
+while [ "$i" -lt 30 ]; do
+  count=$(ls "$BEE_HOME/sessions/bg/"*.status.json 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$count" -ge 2 ]; then
+    break
+  fi
+  sleep 0.5
+  i=$((i + 1))
+done
+
 if [ "$count" -lt 2 ]; then
-  echo "FAIL: expected >=2 status sidecars, got $count"
+  echo "FAIL: expected >=2 status sidecars after 15s, got $count"
   ls -la "$BEE_HOME/sessions/bg/" || true
   exit 1
 fi

@@ -16,7 +16,14 @@ import (
 	"github.com/elhenro/bee/internal/skills"
 )
 
-const version = "0.1.0"
+// version and commit are overridable at link time. The release workflow
+// injects the tag name and short SHA:
+//
+//	go build -ldflags="-X main.version=$TAG -X main.commit=$SHA"
+var (
+	version = "0.1.0"
+	commit  = "dev"
+)
 
 // reserved names cannot be used as skill names — they always dispatch
 // to the built-in subcommand. Lookup must check this before consulting
@@ -66,7 +73,11 @@ func main() {
 	case "doctor":
 		runDoctor(os.Args[2:])
 	case "version", "-v", "--version":
-		fmt.Println("bee", version)
+		if commit != "" && commit != "dev" {
+			fmt.Printf("bee %s (%s)\n", version, commit)
+		} else {
+			fmt.Println("bee", version)
+		}
 	case "help", "-h", "--help":
 		usage()
 	default:

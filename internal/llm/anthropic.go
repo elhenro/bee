@@ -45,13 +45,12 @@ func buildAnthropicBody(req Request) *anthropicThinking {
 	return nil
 }
 
-// Stream returns an error directing users to the claude.go implementation.
+// Stream is intentionally not implemented on this stub. Use the native
+// path in claude.go or configure the provider with wire_api =
+// "anthropic-messages" via openai_compat.go.
 func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
-	// TODO: implement native messages API + SSE event_stream parsing.
-	// when implemented, embed `thinking` from buildAnthropicBody(req) on the
-	// request body so off → field omitted; low/medium/high → budget_tokens set.
 	_ = buildAnthropicBody(req)
-	return nil, errors.New("anthropic provider: not implemented yet")
+	return nil, errors.New("anthropic stub: use claude.go or wire_api=anthropic-messages")
 }
 
 // translateAnthropicBlock converts one internal ContentBlock to its Anthropic

@@ -42,13 +42,22 @@ jobs:
           cache: true
       - name: build
         run: |
+          set -eu
           out="bee-${GOOS}-${GOARCH}${EXT}"
-          go build -trimpath -ldflags="-s -w" -o "$out" ./cmd/bee
+          tag="${GITHUB_REF_NAME:-dev}"
+          commit="${GITHUB_SHA::8}"
+          go build \
+            -trimpath \
+            -ldflags="-s -w -X main.version=${tag} -X main.commit=${commit}" \
+            -o "$out" ./cmd/bee
+          sha256sum "$out" > "${out}.sha256"
           echo "ASSET=$out" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ASSET }}
-          path: ${{ env.ASSET }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
           if-no-files-found: error
 
   publish:
@@ -59,9 +68,15 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: list assets
-        run: ls -la dist
+      - name: aggregate checksums
+        run: |
+          set -eu
+          cd dist
+          sha256sum bee-* | grep -v '\.sha256$' > SHA256SUMS
+          cat SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/bee-*
+            dist/SHA256SUMS
           generate_release_notes: true
