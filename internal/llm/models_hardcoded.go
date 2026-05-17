@@ -96,6 +96,55 @@ var contextLengths = map[string]int{
 	"llama-3.1-8b-instant":    131072,
 }
 
+// thinkingModelSubstrings names model families known to honor a reasoning
+// budget. Matched case-insensitively against both the full id and the trailing
+// path segment so openrouter-style ids ("openai/o3-mini") resolve. Keep entries
+// substring-safe: "o1" must not match "claude-opus-4-1" — guard those with
+// hyphens. New families: add the smallest unique distinguishing fragment.
+var thinkingModelSubstrings = []string{
+	// OpenAI o-series (o1, o3, o4-mini …) — substring "/o" or "-o" guarded by
+	// matching the prefix-after-vendor form below.
+	"o1", "o3", "o4-mini",
+	// GPT-5 family supports reasoning_effort.
+	"gpt-5",
+	// Anthropic 4.x extended thinking.
+	"claude-opus-4", "claude-sonnet-4", "claude-haiku-4",
+	// DeepSeek reasoners (reasoner, v3.1+, v4 flash/full).
+	"deepseek-reasoner", "deepseek-r1", "deepseek-v3.1", "deepseek-v3.2", "deepseek-v4",
+	// Gemini 2.5 family (thinkingBudget).
+	"gemini-2.5",
+	// Qwen reasoning variants.
+	"qwq", "qwen3-thinking",
+	// Z.AI GLM thinking tier.
+	"glm-4.6",
+	// xAI grok reasoning.
+	"grok-3", "grok-4",
+	// Moonshot kimi-k2 reasoner.
+	"kimi-k2",
+}
+
+// SupportsThinking reports whether modelID belongs to a family that honors a
+// reasoning_effort / thinking-budget request. Best-effort: substring match
+// against thinkingModelSubstrings on both the full id and trailing path
+// segment. Unknown models return false → ThinkingAuto resolves to off so we
+// don't break non-reasoning providers that choke on the field.
+func SupportsThinking(modelID string) bool {
+	if modelID == "" {
+		return false
+	}
+	id := strings.ToLower(modelID)
+	tail := id
+	if idx := strings.LastIndex(id, "/"); idx >= 0 {
+		tail = id[idx+1:]
+	}
+	for _, s := range thinkingModelSubstrings {
+		if strings.Contains(id, s) || strings.Contains(tail, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // hardcodedModels returns a curated list for wire families whose /models
 // endpoint is unavailable or gated (notably Anthropic).
 func hardcodedModels(wireAPI string) []Model {

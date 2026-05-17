@@ -214,6 +214,13 @@ type Model struct {
 	// not gated by this — POSIX cancel convention is single-press.
 	quitArmed   bool
 	quitArmedAt time.Time
+
+	// intro animation — plays above the input bar without blocking. Frames
+	// are built lazily on the first tick once width is known.
+	introActive bool
+	introStyle  IntroStyle
+	introFrames []IntroFrame
+	introIdx    int
 }
 
 // quitConfirmWindow is how long a single ctrl+d arms the quit-confirm flow.
@@ -271,6 +278,15 @@ const costFlashDuration = 8
 
 func costTickCmd() tea.Cmd {
 	return tea.Tick(costTickInterval, func(time.Time) tea.Msg { return costTickMsg{} })
+}
+
+// introTickMsg advances the non-blocking startup intro animation. Self-rearms
+// while introActive; the animation lives above the input bar so typing is
+// available from frame zero.
+type introTickMsg struct{}
+
+func introTickCmd() tea.Cmd {
+	return tea.Tick(introFrameDelay, func(time.Time) tea.Msg { return introTickMsg{} })
 }
 
 // turnDoneMsg is published when the engine finishes a Run.
@@ -382,6 +398,17 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 // top bar and the /cost pane can read it.
 func (m Model) WithCostTracker(t *cost.Tracker) Model {
 	m.costs = t
+	return m
+}
+
+// WithIntro enables the non-blocking startup animation. Frames are built
+// lazily on the first tick once width is known. BEE_NO_INTRO=1 disables.
+func (m Model) WithIntro(style IntroStyle) Model {
+	if os.Getenv("BEE_NO_INTRO") == "1" {
+		return m
+	}
+	m.introStyle = style
+	m.introActive = true
 	return m
 }
 
@@ -694,6 +721,9 @@ func (m Model) Init() tea.Cmd {
 	if c := m.flush(); c != nil {
 		cmds = append(cmds, c)
 	}
+	if m.introActive {
+		cmds = append(cmds, introTickCmd())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -981,6 +1011,30 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		}
 		m.costFlashFrame++
 		return m, costTickCmd()
+
+	case introTickMsg:
+		if !m.introActive {
+			return m, nil
+		}
+		// build frames on first tick when width is finally known. If width
+		// still hasn't arrived (initial WindowSizeMsg pending), just rearm.
+		if m.introFrames == nil {
+			if m.width <= 0 {
+				return m, introTickCmd()
+			}
+			m.introFrames = introFrames(m.introStyle, m.width)
+			if len(m.introFrames) == 0 {
+				m.introActive = false
+				return m, nil
+			}
+		}
+		m.introIdx++
+		if m.introIdx >= len(m.introFrames) {
+			m.introActive = false
+			m.introFrames = nil
+			return m, nil
+		}
+		return m, introTickCmd()
 
 	case openPaletteMsg:
 		if m.cmds != nil {
@@ -1811,6 +1865,11 @@ func RunWithCommandsAndKeyMap(ctx context.Context, eng *loop.Engine, reg *comman
 		m = m.WithSkills(eng.Skills)
 	}
 	m = m.WithKeyMap(km)
+	// intro: cfg.ShowBanner gates the non-blocking startup animation;
+	// BEE_BANNER picks the variant (handled inside WithIntro/introFrames).
+	if eng != nil && eng.Cfg.ShowBanner {
+		m = m.WithIntro(ParseIntroStyle(os.Getenv("BEE_BANNER")))
+	}
 	// verbose: env wins over cfg (CLI/env path); cfg persists across launches.
 	verbose := os.Getenv("BEE_VERBOSE") != ""
 	if !verbose && eng != nil {
@@ -1881,9 +1940,11 @@ func (m *Model) currentLeafID() string {
 	return m.messages[len(m.messages)-1].ID
 }
 
-// cycleThinking rotates Off → Low → Medium → High → Off.
+// cycleThinking rotates Auto → Off → Low → Medium → High → Auto.
 func cycleThinking(t string) string {
 	switch llm.ParseThinking(t) {
+	case llm.ThinkingAuto:
+		return string(llm.ThinkingOff)
 	case llm.ThinkingOff:
 		return string(llm.ThinkingLow)
 	case llm.ThinkingLow:
@@ -1891,7 +1952,7 @@ func cycleThinking(t string) string {
 	case llm.ThinkingMedium:
 		return string(llm.ThinkingHigh)
 	default:
-		return string(llm.ThinkingOff)
+		return string(llm.ThinkingAuto)
 	}
 }
 

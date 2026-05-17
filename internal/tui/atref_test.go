@@ -63,3 +63,32 @@ func TestFuzzyFiles_SkipsDotGit(t *testing.T) {
 		}
 	}
 }
+
+func TestFuzzyFiles_SkipsHiddenDotDirs(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".claude", "worktrees", "feat"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".claude", "worktrees", "feat", "leak.go"), nil, 0o644)
+	os.MkdirAll(filepath.Join(dir, ".idea"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".idea", "ide.xml"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "keep.go"), nil, 0o644)
+	got := FuzzyFiles(dir, "")
+	for _, p := range got {
+		b := filepath.Base(p)
+		if b == "leak.go" || b == "ide.xml" {
+			t.Errorf("should skip hidden dotfolders, got %v", got)
+		}
+	}
+}
+
+func TestFuzzyFiles_SkipsWorktrees(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "worktrees", "wt1"), 0o755)
+	os.WriteFile(filepath.Join(dir, "worktrees", "wt1", "x.go"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "main.go"), nil, 0o644)
+	got := FuzzyFiles(dir, "")
+	for _, p := range got {
+		if filepath.Base(p) == "x.go" {
+			t.Errorf("should skip worktrees dir, got %v", got)
+		}
+	}
+}

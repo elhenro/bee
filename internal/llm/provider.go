@@ -41,6 +41,10 @@ type Request struct {
 type Thinking string
 
 const (
+	// ThinkingAuto = "medium when model supports reasoning, off otherwise".
+	// Resolve with ResolveThinking before sending to providers — wire layers
+	// only understand off/low/medium/high.
+	ThinkingAuto   Thinking = "auto"
 	ThinkingOff    Thinking = "off"
 	ThinkingLow    Thinking = "low"
 	ThinkingMedium Thinking = "medium"
@@ -61,10 +65,12 @@ func ThinkingBudget(t Thinking) int {
 	return 0
 }
 
-// ParseThinking accepts "off"/"low"/"medium"/"high" (case insensitive) and
-// returns the canonical Thinking value. Unknown strings return ThinkingOff.
+// ParseThinking accepts "auto"/"off"/"low"/"medium"/"high" (case insensitive)
+// and returns the canonical Thinking value. Unknown strings return ThinkingOff.
 func ParseThinking(s string) Thinking {
 	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "auto":
+		return ThinkingAuto
 	case "low":
 		return ThinkingLow
 	case "medium", "med":
@@ -74,6 +80,20 @@ func ParseThinking(s string) Thinking {
 	default:
 		return ThinkingOff
 	}
+}
+
+// ResolveThinking turns ThinkingAuto into ThinkingMedium for reasoning-capable
+// models and ThinkingOff for everything else. Non-auto values pass through
+// unchanged. Call before building a Request — provider adapters only see the
+// resolved level, never the sentinel.
+func ResolveThinking(t Thinking, modelID string) Thinking {
+	if t != ThinkingAuto {
+		return t
+	}
+	if SupportsThinking(modelID) {
+		return ThinkingMedium
+	}
+	return ThinkingOff
 }
 
 // ToolSpec is the agent-side advertisement of a tool to the model.

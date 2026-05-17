@@ -12,7 +12,7 @@ type Config struct {
 	DefaultModel    string                    `toml:"default_model"`
 	Caveman         string                    `toml:"caveman"`
 	Profile         string                    `toml:"profile"`
-	Thinking        string                    `toml:"thinking"` // off | low | medium | high
+	Thinking        string                    `toml:"thinking"` // auto | off | low | medium | high
 	// Mode gates how the agent reacts to user input. plan = read-only
 	// research + proposed plan, no mutations. edit = full tool surface
 	// (default). auto = side-LLM classifier picks plan|edit per turn.

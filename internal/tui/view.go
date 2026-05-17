@@ -27,6 +27,9 @@ func (m Model) View() string {
 	bot := m.renderBottomBar()
 	mid := m.renderLive()
 	var parts []string
+	if intro := m.renderIntro(); intro != "" {
+		parts = append(parts, intro)
+	}
 	if mid != "" {
 		parts = append(parts, mid)
 	}
@@ -371,6 +374,24 @@ func overlayCenter(base, modal string, w int) string {
 		return base
 	}
 	return base + "\n\n" + lipgloss.NewStyle().Width(w).Align(lipgloss.Center).Render(modal)
+}
+
+// renderIntro draws the current frame of the non-blocking startup animation.
+// Empty string once the animation finishes or before width is known.
+func (m Model) renderIntro() string {
+	if !m.introActive || len(m.introFrames) == 0 {
+		return ""
+	}
+	if m.introIdx < 0 || m.introIdx >= len(m.introFrames) {
+		return ""
+	}
+	f := m.introFrames[m.introIdx]
+	dim := lipgloss.NewStyle().Foreground(fgOyster)
+	art := dim.Render(f.Text)
+	if f.Subtitle == "" {
+		return art
+	}
+	return art + "\n" + dim.Render("  "+f.Subtitle)
 }
 
 // renderWarning returns a tiny dim notice line for transient engine events

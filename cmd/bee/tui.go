@@ -180,13 +180,10 @@ func runTUIWithSession(resumeID string) {
 		return nil
 	}
 
-	// Print the startup intro animation (config-gated).
-	// BEE_BANNER picks variant — "lifecycle" / "swarm" / "hex" / "random".
-	// BEE_NO_INTRO=1 skips the animation entirely.
-	if cfg.ShowBanner {
-		tui.PrintIntro(version)
-	}
-
+	// Startup intro animation is non-blocking: tui.RunWithCommandsAndKeyMap
+	// wires it into the bubbletea model when cfg.ShowBanner is true, so the
+	// user can already type while frames advance.
+	//
 	// Build the slash command registry up front so callers/plugins can
 	// extend it before tui.Run kicks off. NewModel auto-seeds one too,
 	// but going through RunWithCommands keeps the wiring explicit.

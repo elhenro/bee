@@ -9,15 +9,18 @@ func Defaults() Config {
 	return Config{
 		DefaultProvider: "openrouter",
 		DefaultModel:    "deepseek/deepseek-v4-flash",
-		// "auto" defers to the active profile's Caveman (so tiny → off, normal
-		// → full, large → lite). Lets local/tiny runs avoid the caveman style
-		// nudge which biases small models into narrating instead of calling tools.
+		// "auto" defers to the active profile's Caveman (tiny → full, normal →
+		// full, large → lite). Disable per-run with `--caveman off` or in
+		// config.toml: caveman = "off".
 		Caveman: "auto",
 		// "auto" picks tiny/normal/large by model class. Small/fast models
 		// (flash/mini/nano/haiku/8b…) get the 4-tool tiny surface to match
 		// pi-coding-agent's effective tool budget for the same class.
 		Profile: "auto",
-		Thinking: "off",
+		// "auto" = medium when model supports reasoning_effort/thinking-budget
+		// (o-series, gpt-5, claude-4.x, gemini-2.5, deepseek reasoner, qwq …),
+		// off otherwise. Override per-run with `--thinking off|low|medium|high`.
+		Thinking: "auto",
 		// "auto" runs an 8-token classifier per turn to pick plan|edit. Cheap
 		// and avoids mutator spam on greetings/questions where small models
 		// (flash/mini/8b…) otherwise reflex into shell calls.
@@ -122,18 +125,16 @@ func Defaults() Config {
 		},
 		Profiles: map[string]Profile{
 			// tiny: local + 4k-context models (ollama, lmstudio, flash/mini class).
-			// Caveman OFF: caveman rules in the system prompt teach small models
-			// to mirror terse caveman style and *narrate* what they'd do instead
-			// of emitting tool_calls. Plain English + richer tool descriptions
-			// (≈pi-coding-agent shape) restore tool-use behavior. top_k=1 keeps
-			// memory injection cheap.
+			// Caveman FULL: small models tolerate the terse style and still emit
+			// tool_calls in practice. top_k=1 keeps memory injection cheap.
+			// Override per-run with `--caveman off` or in config: caveman = "off".
 			"tiny": {
 				SystemPromptBudget: 3000,
 				MemoryTopK:         1,
 				MemoryBodyChars:    400,
 				ToolDescChars:      220,
 				SkillManifestChars: 80,
-				Caveman:            "off",
+				Caveman:            "full",
 				MaxIterations:      50,
 				// ~1500 tokens (~6k chars) per tool result. one fat read of
 				// a 1.5k-line file would otherwise blow a 4-8k MLX context.

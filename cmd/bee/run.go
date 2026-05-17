@@ -53,7 +53,7 @@ func runHeadlessReal(args []string) {
 	providerName := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|danger-full-access)")
 	skillName := fs.String("skill", "", "run a skill as the user message (prompt-kind only in Wave 2)")
-	thinking := fs.String("thinking", "", "thinking level: off|low|medium|high (default: from config)")
+	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high (default: from config)")
 	cavemanLvl := fs.String("caveman", "", "force caveman level: off|lite|full|ultra (overrides profile, even on tiny)")
 	jsonOut := fs.Bool("json", false, "emit NDJSON events to stdout instead of text")
 	allowedTools := fs.String("allowed-tools", "", "comma-list of tool names to expose (default: all)")

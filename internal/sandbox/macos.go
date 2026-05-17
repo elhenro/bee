@@ -3,6 +3,7 @@ package sandbox
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -86,8 +87,10 @@ func macosProfile(p Policy) (string, error) {
 		}
 		var b strings.Builder
 		b.WriteString(seatbeltWorkspaceWriteHead)
-		b.WriteString("\n    ")
-		b.WriteString(fmt.Sprintf("(subpath %q)", cwd))
+		for _, path := range cwdAliases(cwd) {
+			b.WriteString("\n    ")
+			b.WriteString(fmt.Sprintf("(subpath %q)", path))
+		}
 		for _, d := range devCacheDirs() {
 			b.WriteString("\n    ")
 			b.WriteString(fmt.Sprintf("(subpath %q)", d))
@@ -97,6 +100,33 @@ func macosProfile(p Policy) (string, error) {
 	default:
 		return "", fmt.Errorf("sandbox: unsupported scope %q", p.Scope)
 	}
+}
+
+// cwdAliases returns the cwd plus any canonical-resolved aliases. seatbelt
+// canonicalizes the operand path before matching subpath, so when the user
+// runs bee from a firmlinked or symlinked path (e.g. ~/web/bee that maps to
+// the same inode as ~/projects-new/bee), writes resolve to the canonical
+// path and miss a subpath built from the literal cwd — giving EPERM
+// "Operation not permitted" on anything under .git. Include both forms.
+//
+// EvalSymlinks handles POSIX symlinks but not APFS firmlinks (Readlink
+// reports ENOENT/EINVAL on those), so we also shell out to realpath(3) via
+// /usr/bin/realpath which follows firmlinks. dedupes preserving order.
+func cwdAliases(cwd string) []string {
+	seen := map[string]bool{cwd: true}
+	out := []string{cwd}
+	if p, err := filepath.EvalSymlinks(cwd); err == nil && !seen[p] {
+		seen[p] = true
+		out = append(out, p)
+	}
+	if data, err := exec.Command("/usr/bin/realpath", cwd).Output(); err == nil {
+		p := strings.TrimRight(string(data), "\n")
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // devCacheDirs returns the per-user dev-tool cache locations the workspace

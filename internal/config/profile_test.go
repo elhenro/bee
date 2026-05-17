@@ -65,8 +65,8 @@ func TestApplyProfile_FillsCavemanWhenEmpty(t *testing.T) {
 	c.Profile = "tiny"
 	c.Caveman = "" // simulate unset
 	out := ApplyProfile(c)
-	if out.Caveman != "off" {
-		t.Errorf("ApplyProfile caveman = %q, want off (from tiny profile)", out.Caveman)
+	if out.Caveman != "full" {
+		t.Errorf("ApplyProfile caveman = %q, want full (from tiny profile)", out.Caveman)
 	}
 }
 
@@ -75,15 +75,15 @@ func TestApplyProfile_ResolvesAutoCaveman(t *testing.T) {
 	c.Profile = "tiny"
 	c.Caveman = "auto" // sentinel: defer to profile
 	out := ApplyProfile(c)
-	if out.Caveman != "off" {
-		t.Errorf("ApplyProfile caveman = %q, want off (from tiny profile)", out.Caveman)
+	if out.Caveman != "full" {
+		t.Errorf("ApplyProfile caveman = %q, want full (from tiny profile)", out.Caveman)
 	}
 }
 
 func TestApplyProfile_PreservesExplicitCaveman(t *testing.T) {
 	c := Defaults()
 	c.Profile = "tiny"
-	c.Caveman = "off" // explicit user choice
+	c.Caveman = "off" // explicit user opt-out
 	out := ApplyProfile(c)
 	if out.Caveman != "off" {
 		t.Errorf("ApplyProfile overwrote explicit caveman: got %q", out.Caveman)
@@ -119,8 +119,8 @@ func TestApplyProfile_ResolvesAuto(t *testing.T) {
 	if out.Profile != "tiny" {
 		t.Errorf("auto → expected tiny for flash, got %q", out.Profile)
 	}
-	if out.Caveman != "off" {
-		t.Errorf("auto→tiny should pick caveman=off, got %q", out.Caveman)
+	if out.Caveman != "full" {
+		t.Errorf("auto→tiny should pick caveman=full, got %q", out.Caveman)
 	}
 }
 

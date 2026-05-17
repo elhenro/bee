@@ -42,7 +42,7 @@ func LongestCommonPrefix(ss []string) string {
 const fuzzyMax = 50
 
 // FuzzyFiles returns paths under root containing needle (case-insensitive).
-// Skips .git, node_modules, vendor. Caps at fuzzyMax results.
+// Skips hidden .folders, node_modules, vendor, worktrees. Caps at fuzzyMax results.
 func FuzzyFiles(root, needle string) []string {
 	needleLower := strings.ToLower(needle)
 	var out []string
@@ -52,7 +52,7 @@ func FuzzyFiles(root, needle string) []string {
 		}
 		if d.IsDir() {
 			n := d.Name()
-			if n == ".git" || n == "node_modules" || n == "vendor" {
+			if p != root && (n == "node_modules" || n == "vendor" || n == "worktrees" || strings.HasPrefix(n, ".")) {
 				return filepath.SkipDir
 			}
 			return nil

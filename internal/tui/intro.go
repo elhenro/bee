@@ -1,18 +1,13 @@
 // Package tui implements bee's interactive Bubbletea interface.
 //
-// Startup intro animation — short in-place braille animation that redraws
-// in the same screen rows, then leaves the cursor below for the banner.
+// Startup intro animation — short braille frame sequence rendered above the
+// input bar by the bubbletea model so typing stays available throughout.
 
 package tui
 
 import (
-	"fmt"
 	"math"
-	"os"
-	"strings"
 	"time"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // IntroFrame is one rendered frame of the startup animation.
@@ -25,23 +20,52 @@ type IntroFrame struct {
 type IntroStyle int
 
 const (
-	IntroStyleDefault IntroStyle = iota // lifecycle: egg → larva → pupa → flight
-	IntroStyleSwarm                     // swarm only
-	IntroStyleHex                       // hex outline only
+	IntroStyleRandom    IntroStyle = iota // pick one of the concrete styles per launch
+	IntroStyleLifecycle                   // egg → larva → pupa → flight
+	IntroStyleSwarm                       // swarm of dots
+	IntroStyleHex                         // hex outline orbit
+	IntroStyleDance                       // waggle dance figure-8
+	IntroStyleDrip                        // honey drop + ripple
 )
+
+// IntroStyleDefault is the value used when BEE_BANNER is unset.
+const IntroStyleDefault = IntroStyleRandom
+
+// concreteIntroStyles is the pool used by random.
+var concreteIntroStyles = []IntroStyle{
+	IntroStyleLifecycle,
+	IntroStyleSwarm,
+	IntroStyleHex,
+	IntroStyleDance,
+	IntroStyleDrip,
+}
 
 // ParseIntroStyle maps BEE_BANNER values to a style.
 func ParseIntroStyle(s string) IntroStyle {
 	switch s {
-	case "", "default", "life", "lifecycle":
-		return IntroStyleDefault
+	case "", "random", "rand":
+		return IntroStyleRandom
+	case "default", "life", "lifecycle":
+		return IntroStyleLifecycle
 	case "swarm":
 		return IntroStyleSwarm
 	case "hex":
 		return IntroStyleHex
+	case "dance", "waggle":
+		return IntroStyleDance
+	case "drip", "honey":
+		return IntroStyleDrip
 	default:
-		return IntroStyleDefault
+		return IntroStyleRandom
 	}
+}
+
+// pickStyle resolves Random to a concrete style per launch (rand seeded by time).
+func pickStyle(s IntroStyle) IntroStyle {
+	if s != IntroStyleRandom {
+		return s
+	}
+	return concreteIntroStyles[time.Now().UnixNano()%int64(len(concreteIntroStyles))]
 }
 
 // introArtRows is the fixed number of braille text rows per frame.
@@ -55,14 +79,103 @@ func introFrames(style IntroStyle, width int) []IntroFrame {
 	cw := cells * braillePxW
 	h := introArtRows * braillePxH
 
-	switch style {
+	switch pickStyle(style) {
 	case IntroStyleSwarm:
 		return swarmFrames(cw, h, 24)
 	case IntroStyleHex:
 		return hexFrames(cw, h, 24)
+	case IntroStyleDance:
+		return danceFrames(cw, h, 30)
+	case IntroStyleDrip:
+		return dripFrames(cw, h, 28)
+	case IntroStyleLifecycle:
+		return lifecycleFrames(cw, h)
 	default:
 		return lifecycleFrames(cw, h)
 	}
+}
+
+// danceFrames draws a waggle-dance figure-8 trail.
+func danceFrames(cw, h, count int) []IntroFrame {
+	out := make([]IntroFrame, 0, count)
+	cx := cw / 2
+	cy := h / 2
+	rx := float64(cw)/3 - 1
+	ry := float64(h)/2 - 1
+	if rx < 6 {
+		rx = 6
+	}
+	if ry < 2 {
+		ry = 2
+	}
+	for i := 0; i < count; i++ {
+		c := NewDrawilleCanvas(cw, h)
+		// trail: last ~12 positions
+		for t := 0; t < 12; t++ {
+			step := float64(i-t) * 0.35
+			x := cx + int(rx*math.Sin(step))
+			y := cy + int(ry*math.Sin(step*2)*0.5)
+			if x >= 0 && x < cw && y >= 0 && y < h {
+				c.SetPixel(x, y, true)
+			}
+		}
+		// bee head (3-pixel cluster)
+		step := float64(i) * 0.35
+		hx := cx + int(rx*math.Sin(step))
+		hy := cy + int(ry*math.Sin(step*2)*0.5)
+		for _, dp := range [][2]int{{0, 0}, {1, 0}, {0, 1}} {
+			x, y := hx+dp[0], hy+dp[1]
+			if x >= 0 && x < cw && y >= 0 && y < h {
+				c.SetPixel(x, y, true)
+			}
+		}
+		out = append(out, IntroFrame{Text: c.ToBraille(), Subtitle: "waggle"})
+	}
+	return out
+}
+
+// dripFrames draws a honey drop falling and rippling on the ground.
+func dripFrames(cw, h, count int) []IntroFrame {
+	out := make([]IntroFrame, 0, count)
+	cx := cw / 2
+	fall := count / 2
+	for i := 0; i < count; i++ {
+		c := NewDrawilleCanvas(cw, h)
+		if i < fall {
+			// falling drop: teardrop at growing y
+			y := int(float64(i) / float64(fall) * float64(h-2))
+			c.SetPixel(cx, y, true)
+			if y >= 1 {
+				c.SetPixel(cx-1, y-1, true)
+				c.SetPixel(cx+1, y-1, true)
+				c.SetPixel(cx, y-1, true)
+			}
+		} else {
+			// ripple: concentric rings expanding from ground
+			t := float64(i-fall) / float64(count-fall)
+			gy := h - 2
+			rad := int(t * float64(cw/4))
+			if rad < 1 {
+				rad = 1
+			}
+			for a := 0; a < 20; a++ {
+				ang := float64(a) / 20.0 * 2 * math.Pi
+				x := cx + int(float64(rad)*math.Cos(ang))
+				y := gy + int(float64(rad)*math.Sin(ang)*0.4)
+				if x >= 0 && x < cw && y >= 0 && y < h {
+					c.SetPixel(x, y, true)
+				}
+			}
+			// puddle base
+			for dx := -1; dx <= 1; dx++ {
+				if cx+dx >= 0 && cx+dx < cw {
+					c.SetPixel(cx+dx, gy, true)
+				}
+			}
+		}
+		out = append(out, IntroFrame{Text: c.ToBraille(), Subtitle: "honey"})
+	}
+	return out
 }
 
 func swarmFrames(cw, h, count int) []IntroFrame {
@@ -110,11 +223,11 @@ func lifecycleFrames(cw, h int) []IntroFrame {
 			frames = append(frames, IntroFrame{Text: c.ToBraille(), Subtitle: sub})
 		}
 	}
-	add(5, "egg", func(i, n int) *DrawilleCanvas { return makeEggFrame(cw, h, i, n) })
-	add(6, "larva", func(i, n int) *DrawilleCanvas { return makeLarvaFrame(cw, h, i, n) })
-	add(5, "pupa", func(i, n int) *DrawilleCanvas { return makePupaFrame(cw, h, i, n) })
-	add(4, "emerge", func(i, n int) *DrawilleCanvas { return makeEmergeFrame(cw, h, i, n) })
-	add(8, "flight", func(i, n int) *DrawilleCanvas { return makeFlightFrame(cw, h, i, n) })
+	add(10, "egg", func(i, n int) *DrawilleCanvas { return makeEggFrame(cw, h, i, n) })
+	add(12, "larva", func(i, n int) *DrawilleCanvas { return makeLarvaFrame(cw, h, i, n) })
+	add(10, "pupa", func(i, n int) *DrawilleCanvas { return makePupaFrame(cw, h, i, n) })
+	add(8, "emerge", func(i, n int) *DrawilleCanvas { return makeEmergeFrame(cw, h, i, n) })
+	add(14, "flight", func(i, n int) *DrawilleCanvas { return makeFlightFrame(cw, h, i, n) })
 	return frames
 }
 
@@ -194,114 +307,35 @@ func makeEmergeFrame(cw, h, idx, total int) *DrawilleCanvas {
 	return c
 }
 
+// makeFlightFrame: bee enters from left, settles in middle and hovers.
 func makeFlightFrame(cw, h, idx, total int) *DrawilleCanvas {
 	c := NewDrawilleCanvas(cw, h)
 	t := float64(idx) / float64(total)
-	x := int(-4 + t*float64(cw+8))
+	cx := cw / 2
+	// ease into center over first 60%, then bob
+	var bx int
+	if t < 0.6 {
+		bx = int(-4 + (t/0.6)*float64(cx-(-4)))
+	} else {
+		bob := math.Sin((t-0.6)*8) * 2
+		bx = cx + int(bob)
+	}
 	y := h/2 + int(math.Sin(float64(idx)*0.6)*float64(h/4))
 	sprite := []byte{0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0}
-	c.DrawSprite(sprite, 4, 4, x, y-2)
+	c.DrawSprite(sprite, 4, 4, bx, y-2)
+	// wing flap on alternate frames
 	if (idx/2)%2 == 0 {
 		for dx := -2; dx <= -1; dx++ {
-			if x+dx >= 0 && x+dx < cw {
-				c.SetPixel(x+dx, y, true)
+			if bx+dx >= 0 && bx+dx < cw {
+				c.SetPixel(bx+dx, y, true)
 			}
 		}
 		for dx := 4; dx <= 5; dx++ {
-			if x+dx >= 0 && x+dx < cw {
-				c.SetPixel(x+dx, y, true)
+			if bx+dx >= 0 && bx+dx < cw {
+				c.SetPixel(bx+dx, y, true)
 			}
 		}
 	}
 	return c
 }
 
-// PrintIntro plays the startup animation to stderr, then returns the
-// static banner string. Animation redraws in place using ANSI cursor-up
-// codes; all output goes to a single stream (stderr).
-func PrintIntro(version string) string {
-	honey := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
-	dim := lipgloss.NewStyle().Foreground(fgOyster)
-
-	info := "bee"
-	if version != "" {
-		info += " " + version
-	}
-	banner := honey.Render("⬢") + "  " + dim.Render(info) + "\n"
-
-	if os.Getenv("BEE_NO_INTRO") == "1" {
-		return banner
-	}
-
-	// terminal width (fallback to 60)
-	width := 60
-	if s := os.Getenv("COLUMNS"); s != "" {
-		if n, ok := strToInt(s); ok && n > 16 {
-			width = n
-		}
-	}
-
-	style := ParseIntroStyle(os.Getenv("BEE_BANNER"))
-	frames := introFrames(style, width)
-	if len(frames) == 0 {
-		return banner
-	}
-
-	w := os.Stderr
-	totalRows := introArtRows + 1 // art + subtitle
-
-	// reserve space: print totalRows blank lines, then move cursor back up
-	for i := 0; i < totalRows; i++ {
-		fmt.Fprintln(w)
-	}
-	fmt.Fprintf(w, "\033[%dA", totalRows)
-	// hide cursor during animation
-	fmt.Fprint(w, "\033[?25l")
-	defer fmt.Fprint(w, "\033[?25h")
-
-	for fi, f := range frames {
-		artLines := strings.Split(f.Text, "\n")
-		for r := 0; r < introArtRows; r++ {
-			fmt.Fprint(w, "\r\033[2K")
-			if r < len(artLines) {
-				fmt.Fprint(w, artLines[r])
-			}
-			fmt.Fprintln(w)
-		}
-		// subtitle row
-		fmt.Fprint(w, "\r\033[2K")
-		if f.Subtitle != "" {
-			fmt.Fprint(w, dim.Render("  "+f.Subtitle))
-		}
-		fmt.Fprintln(w)
-
-		if fi < len(frames)-1 {
-			fmt.Fprintf(w, "\033[%dA", totalRows)
-			time.Sleep(introFrameDelay)
-		}
-	}
-
-	return banner
-}
-
-// strToInt converts a decimal string to int (returns 0,false on parse failure).
-func strToInt(s string) (int, bool) {
-	if len(s) == 0 {
-		return 0, false
-	}
-	n, neg, i := 0, false, 0
-	if s[0] == '-' {
-		neg = true
-		i = 1
-	}
-	for ; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return 0, false
-		}
-		n = n*10 + int(s[i]-'0')
-	}
-	if neg {
-		n = -n
-	}
-	return n, true
-}

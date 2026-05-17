@@ -291,7 +291,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 			Messages: res.Messages,
 			Tools:    specs,
 			Stream:   true,
-			Thinking: llm.ParseThinking(e.Cfg.Thinking),
+			Thinking: llm.ResolveThinking(llm.ParseThinking(e.Cfg.Thinking), e.Cfg.DefaultModel),
 		}
 		assistantMsg, finalText, toolUses, err := e.streamOnce(ctx, req)
 		if err != nil {

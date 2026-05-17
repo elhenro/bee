@@ -369,7 +369,7 @@ func (s *tuiSide) SetThinking(level string) error {
 	trimmed := level
 	canonical := llm.ParseThinking(level)
 	if canonical == llm.ThinkingOff && trimmed != "" && trimmed != "off" {
-		return fmt.Errorf("unknown effort %q (want off|low|medium|high)", level)
+		return fmt.Errorf("unknown effort %q (want auto|off|low|medium|high)", level)
 	}
 	s.m.thinking = string(canonical)
 	if s.m.eng != nil {

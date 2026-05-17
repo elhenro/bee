@@ -52,15 +52,25 @@ For sub-8k-context models, use the tiny profile:
 
 ## Caveman mode
 
-Token-compression rules injected into the system prompt. Default `caveman = "auto"` resolves per profile: `full` on `normal`, `lite` on `large`, `off` on `tiny` (small models tend to narrate instead of tool-call when caveman-nudged).
+Token-compression rules injected into the system prompt. On by default. `caveman = "auto"` resolves per profile: `full` on `tiny` and `normal`, `lite` on `large`.
 
 Force a level regardless of profile:
 
+    bee --caveman full                        # global, any subcommand
     bee run --caveman full -- "..."           # one-off
-    BEE_CAVEMAN=full bee --profile tiny ...   # session-wide
     # or set caveman = "full" in ~/.bee/config.toml
 
-Explicit value beats profile, so `--caveman full` works even on `tiny`.
+Disable:
+
+    bee --caveman off
+    # or set caveman = "off" in ~/.bee/config.toml
+
+Explicit value beats profile.
+
+## My setup / how I run this
+
+**Mac M3 Max (64 GB) -> omlx, Qwen3.6-35B-A3B-4bit.**
+Runs fast, handles small tasks reliably, doesn't choke on context. Good enough for day-to-day. Local, private, free once the hardware is paid for.
 
 ## Credits
 

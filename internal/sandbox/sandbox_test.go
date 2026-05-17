@@ -2,6 +2,8 @@ package sandbox
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -147,6 +149,57 @@ func TestWrap_Windows_Stub(t *testing.T) {
 	}
 	if !equalSlice(got, []string{"dir"}) {
 		t.Errorf("got %v, want pass-through", got)
+	}
+}
+
+func TestWrap_MacOS_WorkspaceWrite_IncludesSymlinkAlias(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin-only")
+	}
+	withLookPath(t, func(string) (string, error) { return "/usr/bin/sandbox-exec", nil })
+
+	// real dir + symlink pointing at it: both paths must appear in the
+	// profile so seatbelt allows writes regardless of which form the
+	// operand canonicalizes to.
+	realDir := t.TempDir()
+	linkDir := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	got, err := Wrap(Policy{Scope: WorkspaceWrite, Cwd: linkDir}, []string{"ls"})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	profile := got[2]
+	// the symlink form (literal cwd) must appear, and at least one
+	// resolved form must appear that differs from it. exact canonical
+	// path varies (macOS firmlinks /var → /private/var), so just check
+	// that we emitted more than one subpath alias for the cwd.
+	if !strings.Contains(profile, `"`+linkDir+`"`) {
+		t.Errorf("profile missing literal cwd %q\n%s", linkDir, profile)
+	}
+	aliases := cwdAliases(linkDir)
+	if len(aliases) < 2 {
+		t.Fatalf("expected >=2 aliases for symlinked cwd, got %v", aliases)
+	}
+	for _, a := range aliases {
+		if !strings.Contains(profile, `"`+a+`"`) {
+			t.Errorf("profile missing alias %q\n%s", a, profile)
+		}
+	}
+	_ = realDir
+}
+
+func TestCwdAliases_DedupesWhenIdentical(t *testing.T) {
+	dir := t.TempDir()
+	got := cwdAliases(dir)
+	for i, p := range got {
+		for j := i + 1; j < len(got); j++ {
+			if p == got[j] {
+				t.Errorf("duplicate entry %q at %d,%d in %v", p, i, j, got)
+			}
+		}
 	}
 }
 
