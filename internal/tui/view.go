@@ -25,22 +25,31 @@ func (m Model) View() string {
 	// height sync runs at the end of Update via defer; View stays pure.
 	status := m.renderTopBar()
 	bot := m.renderBottomBar()
-	mid := m.renderLive()
+	// pre-render all non-mid parts so we can budget remaining rows for the
+	// streaming partial. bubbletea inline cannot reach above the cursor, so
+	// a partial taller than the live region gets its head clipped out of
+	// sight — clip head-side ourselves and surface a `… +N above` header.
+	intro := m.renderIntro()
+	warn := m.renderWarning()
+	var ctxBar string
+	if m.showContextBar {
+		ctxBar = m.renderContextBar()
+	}
+	midBudget := liveBudget(m.height, intro, bot, status, warn, ctxBar)
+	mid := m.renderLive(midBudget)
 	var parts []string
-	if intro := m.renderIntro(); intro != "" {
+	if intro != "" {
 		parts = append(parts, intro)
 	}
 	if mid != "" {
 		parts = append(parts, mid)
 	}
 	parts = append(parts, bot, status)
-	if w := m.renderWarning(); w != "" {
-		parts = append(parts, w)
+	if warn != "" {
+		parts = append(parts, warn)
 	}
-	if m.showContextBar {
-		if bar := m.renderContextBar(); bar != "" {
-			parts = append(parts, bar)
-		}
+	if ctxBar != "" {
+		parts = append(parts, ctxBar)
 	}
 	frame := strings.Join(parts, "\n")
 	if m.approval.Active {
@@ -110,14 +119,49 @@ func (m Model) renderTopBar() string {
 	return left + strings.Repeat(" ", pad) + right
 }
 
+// liveBudget returns the row budget available for the streaming live region,
+// computed as terminal height minus every other non-mid part (chrome) and
+// the inter-part newline separators. Returns 0 when height is unknown or
+// chrome already fills the screen — caller treats 0 as "no clipping".
+func liveBudget(termH int, parts ...string) int {
+	if termH <= 0 {
+		return 0
+	}
+	chrome := 0
+	nonEmpty := 0
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		chrome += lipgloss.Height(p)
+		nonEmpty++
+	}
+	// `parts` joined with "\n"; with mid present there's one extra separator
+	// between mid and the rest. Final "\n" between blocks costs 1 row each.
+	separators := nonEmpty // mid + nonEmpty parts → nonEmpty separators
+	// reserve 1 row for the cursor / inline-render safety margin.
+	budget := termH - chrome - separators - 1
+	if budget < 1 {
+		return 1
+	}
+	return budget
+}
+
 // renderLive returns the live in-progress slice — streaming partial while
 // a turn is in flight, or the latest error line. Past messages are NOT
 // rendered here; they live in terminal scrollback. Empty string when idle
 // with no error, so the live region collapses to just top + bottom bars.
-func (m Model) renderLive() string {
+// maxRows caps the streaming partial to the tail when budget > 0; bubbletea
+// inline can't render above the cursor, so without clipping a long partial
+// would hide its newest tokens off the bottom of the visible region.
+func (m Model) renderLive(maxRows int) string {
 	var parts []string
 	if m.state == StateStreaming {
-		parts = append(parts, m.stream.RenderStreaming(m.partial, m.loaderFrame))
+		out := m.stream.RenderStreaming(m.partial, m.loaderFrame)
+		if maxRows > 0 && m.partial != "" {
+			out = m.stream.ClipStreamingTail(out, maxRows)
+		}
+		parts = append(parts, out)
 	}
 	if m.compacting {
 		parts = append(parts, m.stream.RenderCompacting(m.loaderFrame))

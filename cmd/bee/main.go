@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/elhenro/bee/internal/caveman"
+	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 )
@@ -42,6 +43,7 @@ var reservedSubcommands = map[string]bool{
 func main() {
 	stripVerboseFlag()
 	stripCavemanFlag()
+	stripEffortFlag()
 	if len(os.Args) < 2 {
 		repl()
 		return
@@ -101,6 +103,7 @@ usage:
 global flags (any position):
   --verbose                 show full tool output
   --caveman <lvl>           force caveman level: off|lite|full|ultra
+  --effort <lvl>            force thinking level: auto|off|low|medium|high|max
 `)
 }
 
@@ -165,6 +168,48 @@ func stripCavemanFlag() {
 		os.Exit(2)
 	}
 	_ = os.Setenv("BEE_CAVEMAN", string(lvl))
+	os.Args = out
+}
+
+// stripEffortFlag pulls --effort <lvl> / --effort=<lvl> out of os.Args at
+// any position so it works as a global flag (e.g. `bee --effort high`,
+// `bee --effort high run msg`). Value validated up front and stashed in
+// BEE_EFFORT; both TUI and headless paths consume it after config.Load.
+// Invalid level exits 2. Subcommand-local --thinking still works via the
+// run flagset and takes precedence over BEE_EFFORT.
+func stripEffortFlag() {
+	out := os.Args[:1]
+	var val string
+	hit := false
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--effort" || a == "-effort":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "bee: --effort needs a level (auto|off|low|medium|high|max)")
+				os.Exit(2)
+			}
+			val = args[i+1]
+			i++
+			hit = true
+		case strings.HasPrefix(a, "--effort=") || strings.HasPrefix(a, "-effort="):
+			val = a[strings.IndexByte(a, '=')+1:]
+			hit = true
+		default:
+			out = append(out, a)
+		}
+	}
+	if !hit {
+		return
+	}
+	canonical := llm.ParseThinking(val)
+	// ParseThinking returns Off for unknown — reject silent typos.
+	if canonical == llm.ThinkingOff && strings.ToLower(strings.TrimSpace(val)) != "off" {
+		fmt.Fprintf(os.Stderr, "bee: --effort: unknown level %q (want auto|off|low|medium|high|max)\n", val)
+		os.Exit(2)
+	}
+	_ = os.Setenv("BEE_EFFORT", string(canonical))
 	os.Args = out
 }
 

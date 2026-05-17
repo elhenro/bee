@@ -704,3 +704,56 @@ func TestRenderStreaming_PartialDoesNotPrependBlankLine(t *testing.T) {
 		t.Fatalf("partial render should not start with blank line: %q", out)
 	}
 }
+
+// ClipStreamingTail keeps the tail of a tall partial and surfaces a header
+// for the dropped rows. Without this, bubbletea inline mode renders past
+// the top of the visible region and the user can't see freshly-streamed
+// tokens at the bottom while the head sits unreachable above.
+func TestClipStreamingTail_KeepsTailWithHeader(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	var b strings.Builder
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, "line %d\n", i)
+	}
+	rendered := r.RenderStreaming(b.String(), 0)
+	clipped := stripANSI(r.ClipStreamingTail(rendered, 10))
+	lines := strings.Split(strings.TrimRight(clipped, "\n"), "\n")
+	if len(lines) > 10 {
+		t.Fatalf("clip exceeded budget: got %d rows, want ≤10", len(lines))
+	}
+	if !strings.Contains(lines[0], "lines above") {
+		t.Fatalf("expected header on first line, got %q", lines[0])
+	}
+	if !strings.Contains(clipped, "line 49") {
+		t.Fatalf("tail content missing: %q", clipped)
+	}
+	if strings.Contains(clipped, "line 0\n") {
+		t.Fatalf("expected head dropped, still present: %q", clipped)
+	}
+}
+
+// ClipStreamingTail is a no-op when content fits in the budget.
+func TestClipStreamingTail_NoopWhenFits(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	rendered := r.RenderStreaming("short content", 0)
+	got := r.ClipStreamingTail(rendered, 10)
+	if got != rendered {
+		t.Fatalf("expected no-op, got differing output")
+	}
+}
+
+// Long wrapped lines count as multiple visual rows; clipping must keep the
+// tail with header even when the source has no \n boundaries to clip on.
+func TestClipStreamingTail_WrapsLongLines(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 40)
+	long := strings.Repeat("ABCDEFGHIJ", 30) // 300 chars → ~8 wrapped rows at width 40
+	rendered := r.RenderStreaming(long, 0)
+	clipped := stripANSI(r.ClipStreamingTail(rendered, 3))
+	lines := strings.Split(strings.TrimRight(clipped, "\n"), "\n")
+	if len(lines) > 3 {
+		t.Fatalf("clip exceeded budget on wrapped content: got %d, want ≤3", len(lines))
+	}
+	if !strings.Contains(lines[0], "lines above") {
+		t.Fatalf("expected header for clipped wrapped content, got %q", lines[0])
+	}
+}

@@ -88,6 +88,12 @@ func runTUIWithSession(resumeID string) {
 	if v := os.Getenv("BEE_CAVEMAN"); v != "" {
 		cfg.Caveman = v
 	}
+	// global --effort flag (stripped in main) lands here via env; pre-validated
+	// so no re-parse. Overrides cfg.Thinking so the TUI session opens at the
+	// requested reasoning level.
+	if v := os.Getenv("BEE_EFFORT"); v != "" {
+		cfg.Thinking = v
+	}
 
 	prov, err := buildProvider(cfg)
 	if err != nil {

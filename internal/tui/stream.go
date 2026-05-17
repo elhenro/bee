@@ -188,6 +188,9 @@ type StreamRenderer struct {
 	// compact strips the spacing layer for terminals where vertical
 	// density matters more than focus. Default false = clean mode.
 	compact bool
+	// highlight gates chroma syntax-highlighting on tool output, file
+	// content, edit/write diffs, and bash command summaries. Default true.
+	highlight bool
 	// toolUses indexes tool calls by ID so renderToolResult can recover the
 	// originating cmd/args (e.g. surface the failed bash command in place of
 	// the bare "exit N" preview). Populated lazily as RenderMessage walks
@@ -211,6 +214,39 @@ func (r *StreamRenderer) SetShowThoughts(v bool) { r.showThoughts = v }
 // Off (default) collapses them out of scrollback; the loop still injects
 // them so the provider sees the same conversation.
 func (r *StreamRenderer) SetShowNudges(v bool) { r.showNudges = v }
+
+// SetHighlight toggles chroma syntax-highlighting across diff/file/bash
+// previews. Off returns raw content; on (default) emits ANSI-colored tokens.
+func (r *StreamRenderer) SetHighlight(v bool) { r.highlight = v }
+
+// hl returns content with chroma highlighting using the lexer matching
+// path. Returns the input unchanged when r.highlight is off or no lexer
+// resolves. Trailing newlines are preserved (chroma appends a reset).
+func (r *StreamRenderer) hl(content, path string) string {
+	if !r.highlight {
+		return content
+	}
+	return HighlightCode(content, langFromPath(path))
+}
+
+// hlLang highlights with an explicit lexer name (e.g. "bash", "diff") when
+// no path is available. Same off-switch + safe-fallback semantics as hl.
+func (r *StreamRenderer) hlLang(content, lang string) string {
+	if !r.highlight {
+		return content
+	}
+	return HighlightCode(content, lang)
+}
+
+// diffSign renders one diff line as `<prefix-styled> <highlighted-content>`.
+// When highlight is off, falls back to wrapping the whole line in the prefix
+// style — preserves the pre-feature look exactly.
+func (r *StreamRenderer) diffSign(sign string, content string, path string, signStyle lipgloss.Style) string {
+	if !r.highlight {
+		return signStyle.Render(sign + " " + content)
+	}
+	return signStyle.Render(sign) + " " + HighlightCode(content, langFromPath(path))
+}
 
 // SetCompact toggles compact mode. When true, RenderMessage and friends emit
 // the dense pre-pi layout (no outer gutter, no inter-turn blank line, no
@@ -294,6 +330,7 @@ func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 		md:           r,
 		width:        width,
 		showThoughts: true,
+		highlight:    true,
 		loaderStyle:  ParseLoaderStyle(envLoaderStyle()),
 	}
 }
@@ -614,6 +651,40 @@ func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
 		return body
 	}
 	return applyGutter(body)
+}
+
+// ClipStreamingTail keeps the last maxRows visual rows of a rendered
+// streaming chunk, prepending a `… +N lines above` header when content was
+// dropped. Visual rows are computed against r.width so soft-wrapped long
+// lines count correctly; bubbletea's inline renderer cannot reach above the
+// cursor, so without this the head of a long partial gets clipped out of
+// sight while it grows. maxRows <= 0 is a no-op (caller has no budget info).
+func (r *StreamRenderer) ClipStreamingTail(rendered string, maxRows int) string {
+	if maxRows <= 0 || rendered == "" {
+		return rendered
+	}
+	w := r.width
+	if w < 4 {
+		w = 80
+	}
+	wrapped := ansi.Hardwrap(rendered, w, true)
+	lines := strings.Split(wrapped, "\n")
+	if len(lines) <= maxRows {
+		return rendered
+	}
+	// reserve 1 row for the `… +N above` header so the indicator never
+	// pushes the tail off the bottom.
+	keep := maxRows - 1
+	if keep < 1 {
+		keep = 1
+	}
+	hidden := len(lines) - keep
+	kept := lines[len(lines)-keep:]
+	header := r.styles.Dim.Render(fmt.Sprintf("… +%d lines above", hidden))
+	if !r.compact {
+		header = outerGutter + header
+	}
+	return header + "\n" + strings.Join(kept, "\n")
 }
 
 // pulseStyle picks the loader color for this frame — alternates between
@@ -998,6 +1069,9 @@ func (r *StreamRenderer) renderToolUse(u types.ToolUse) string {
 	if args == "" {
 		return fmt.Sprintf("%s\n", name)
 	}
+	if u.Name == "bash" && r.highlight {
+		return fmt.Sprintf("%s  %s\n", name, r.hlLang(args, "bash"))
+	}
 	return fmt.Sprintf("%s  %s\n", name, r.styles.ToolArgs.Render(args))
 }
 
@@ -1073,10 +1147,10 @@ func (r *StreamRenderer) previewEdit(in map[string]any) (string, string, bool) {
 	}
 	var lines []string
 	for _, l := range splitKeepEmpty(old) {
-		lines = append(lines, r.styles.DiffDel.Render("- "+l))
+		lines = append(lines, r.diffSign("-", l, path, r.styles.DiffDel))
 	}
 	for _, l := range splitKeepEmpty(newStr) {
-		lines = append(lines, r.styles.DiffAdd.Render("+ "+l))
+		lines = append(lines, r.diffSign("+", l, path, r.styles.DiffAdd))
 	}
 	return header, r.diffBody(lines), true
 }
@@ -1094,7 +1168,7 @@ func (r *StreamRenderer) previewWrite(in map[string]any) (string, string, bool) 
 	header += "  " + r.styles.DiffMeta.Render(fmt.Sprintf("(write, %d lines)", len(all)))
 	lines := make([]string, 0, len(all))
 	for _, l := range all {
-		lines = append(lines, r.styles.DiffAdd.Render("+ "+l))
+		lines = append(lines, r.diffSign("+", l, path, r.styles.DiffAdd))
 	}
 	return header, r.diffBody(lines), true
 }
@@ -1147,13 +1221,15 @@ func (r *StreamRenderer) previewHashlineEdit(in map[string]any) (string, string,
 		raw, _ := m["lines"].([]any)
 		for _, l := range raw {
 			s, _ := l.(string)
-			lines = append(lines, r.styles.DiffAdd.Render("+ "+s))
+			lines = append(lines, r.diffSign("+", s, path, r.styles.DiffAdd))
 		}
 	}
 	return header, r.diffBody(lines), true
 }
 
-// colorPatchLine picks the style for one raw unified-diff line.
+// colorPatchLine picks the style for one raw unified-diff line. When
+// highlighting is on, content after the +/- sign goes through chroma so
+// the code itself reads as code; the sign keeps the green/red rail color.
 func (r *StreamRenderer) colorPatchLine(l string) string {
 	switch {
 	case strings.HasPrefix(l, "+++"), strings.HasPrefix(l, "---"),
@@ -1163,8 +1239,14 @@ func (r *StreamRenderer) colorPatchLine(l string) string {
 		strings.HasPrefix(l, "similarity "):
 		return r.styles.DiffMeta.Render(l)
 	case strings.HasPrefix(l, "+"):
+		if r.highlight {
+			return r.styles.DiffAdd.Render("+") + r.hlLang(strings.TrimPrefix(l, "+"), "")
+		}
 		return r.styles.DiffAdd.Render(l)
 	case strings.HasPrefix(l, "-"):
+		if r.highlight {
+			return r.styles.DiffDel.Render("-") + r.hlLang(strings.TrimPrefix(l, "-"), "")
+		}
 		return r.styles.DiffDel.Render(l)
 	default:
 		return r.styles.ToolPrev.Render(l)
@@ -1317,8 +1399,25 @@ func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
 	if headerOverride != "" {
 		rendered = append(rendered, rail+" "+headerOverride)
 	}
+	// when source is a file read, run the whole payload through chroma once
+	// (multi-line lexers like markdown/yaml need cross-line context to
+	// classify tokens correctly) before splitting + re-shortening. Only
+	// applies on success — errors keep the red error-style fallback.
+	hlPath := ""
+	if r.highlight && !res.IsError {
+		if use, ok := r.toolUses[res.UseID]; ok && use.Name == "read" {
+			if p, _ := use.Input["path"].(string); p != "" {
+				hlPath = p
+			}
+		}
+	}
 	for _, ln := range lines {
-		rendered = append(rendered, rail+" "+style.Render(shortenPathsInline(ln)))
+		s := shortenPathsInline(ln)
+		if hlPath != "" {
+			rendered = append(rendered, rail+" "+r.hl(s, hlPath))
+			continue
+		}
+		rendered = append(rendered, rail+" "+style.Render(s))
 	}
 	out := strings.Join(rendered, "\n")
 	switch {

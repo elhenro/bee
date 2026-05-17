@@ -358,6 +358,99 @@ func TestRunMaxIterationsCap(t *testing.T) {
 	}
 }
 
+func TestRunOne_UnknownToolListsAvailable(t *testing.T) {
+	reg := tools.NewRegistry()
+	_ = reg.Register(&stubTool{name: "bash", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+		return tools.Result{Content: ""}, nil
+	}})
+	_ = reg.Register(&stubTool{name: "read", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+		return tools.Result{Content: ""}, nil
+	}})
+	p := &stubProvider{scripts: [][]llm.Event{
+		{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u1", Name: `bogus<｜DSML｜x`, Input: map[string]any{}}},
+			{Type: llm.EventDone, StopReason: "tool_use"},
+		},
+		{
+			{Type: llm.EventTextDelta, Delta: "ok"},
+			{Type: llm.EventDone, StopReason: "stop"},
+		},
+	}}
+	eng, _ := newEngine(p, reg)
+	res, err := eng.Run(context.Background(), "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var content string
+	for _, m := range res.Messages {
+		if m.Role != types.RoleTool {
+			continue
+		}
+		for _, c := range m.Content {
+			if c.Type == types.BlockToolResult && c.Result != nil {
+				content = c.Result.Content
+			}
+		}
+	}
+	if !strings.Contains(content, "unknown tool") {
+		t.Fatalf("missing prefix: %q", content)
+	}
+	if !strings.Contains(content, "available: bash, read") {
+		t.Errorf("expected sorted available list, got: %q", content)
+	}
+	if !strings.Contains(content, "chat-template markup") {
+		t.Errorf("expected markup-leak hint, got: %q", content)
+	}
+}
+
+func TestRunOne_ParseErrorSurfacesDiagnostic(t *testing.T) {
+	reg := tools.NewRegistry()
+	called := false
+	_ = reg.Register(&stubTool{name: "bash", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+		called = true
+		return tools.Result{Content: ""}, nil
+	}})
+	p := &stubProvider{scripts: [][]llm.Event{
+		{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{
+				ID:    "u1",
+				Name:  "bash",
+				Input: map[string]any{"_parse_error": "decode tool args: bad json", "_raw_args": `{"cmd":` + "\n"},
+			}},
+			{Type: llm.EventDone, StopReason: "tool_use"},
+		},
+		{
+			{Type: llm.EventTextDelta, Delta: "ok"},
+			{Type: llm.EventDone, StopReason: "stop"},
+		},
+	}}
+	eng, _ := newEngine(p, reg)
+	res, err := eng.Run(context.Background(), "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("bash should not have been invoked on parse-error input")
+	}
+	var content string
+	for _, m := range res.Messages {
+		if m.Role != types.RoleTool {
+			continue
+		}
+		for _, c := range m.Content {
+			if c.Type == types.BlockToolResult && c.Result != nil {
+				content = c.Result.Content
+			}
+		}
+	}
+	if !strings.Contains(content, "failed to parse") {
+		t.Errorf("expected parse-error diagnostic, got: %q", content)
+	}
+	if !strings.Contains(content, "raw=") {
+		t.Errorf("expected raw= excerpt, got: %q", content)
+	}
+}
+
 func TestRunOne_TruncatesShellOutput(t *testing.T) {
 	reg := tools.NewRegistry()
 	// emit > 50K tokens worth of output (chars/4 heuristic → > 200K chars).

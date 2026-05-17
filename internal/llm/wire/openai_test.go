@@ -379,3 +379,75 @@ func TestFormatToolArgs(t *testing.T) {
 		t.Fatalf("got %q", out)
 	}
 }
+
+func TestSanitizeToolName(t *testing.T) {
+	cases := []struct {
+		raw, want string
+	}{
+		{"read", "read"},
+		{"  read  ", "read"},
+		{`"read path="/x"</｜DSML｜parameter`, "read"},
+		{"<｜DSML｜invoke>shell", "shell"},
+		{"bash<｜tool_call｜>", "bash"},
+		{`"shell"`, "shell"},
+		{"｜DSML｜", ""},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := SanitizeToolName(tc.raw); got != tc.want {
+			t.Errorf("SanitizeToolName(%q) = %q; want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestStripMarkupBytes(t *testing.T) {
+	in := []byte(`{"command":"ls"}</｜DSML｜invoke`)
+	out := string(StripMarkupBytes(in))
+	if out != `{"command":"ls"}` {
+		t.Errorf("strip suffix marker: got %q", out)
+	}
+	in = []byte(`{"command":"ls -la"}</parameter>`)
+	out = string(StripMarkupBytes(in))
+	if out != `{"command":"ls -la"}` {
+		t.Errorf("strip closing tag: got %q", out)
+	}
+}
+
+func TestStripMarkupInValues_NestedStrings(t *testing.T) {
+	m := map[string]any{
+		"command": `ls -la</parameter>` + "\n" + `</｜DSML｜invoke`,
+		"nested":  map[string]any{"x": `a</parameter>b`},
+		"list":    []any{`one</｜DSML｜end`, "two"},
+	}
+	StripMarkupInValues(m)
+	if m["command"] != "ls -la" {
+		t.Errorf("command: %q", m["command"])
+	}
+	nested := m["nested"].(map[string]any)
+	if nested["x"] != "ab" {
+		t.Errorf("nested: %+v", nested)
+	}
+	list := m["list"].([]any)
+	if list[0] != "one" || list[1] != "two" {
+		t.Errorf("list: %+v", list)
+	}
+}
+
+func TestToolCallAccumulator_StripsDSMLLeak(t *testing.T) {
+	// deepseek-v4-flash failure mode: native tool_calls but the function
+	// name carries chat-template markup and the args carry a trailing
+	// `</｜DSML｜invoke` after the JSON close.
+	acc := NewToolCallAccumulator()
+	acc.Apply([]StreamToolCall{{Index: 0, ID: "c", Function: StreamFunctionDelta{Name: `"bash"</｜DSML｜parameter`}}})
+	acc.Apply([]StreamToolCall{{Index: 0, Function: StreamFunctionDelta{Arguments: `{"command":"ls -la"}</｜DSML｜invoke`}}})
+	calls, err := acc.Finalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls[0].Name != "bash" {
+		t.Errorf("name: %q", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "ls -la" {
+		t.Errorf("command: %+v", calls[0].Input)
+	}
+}

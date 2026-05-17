@@ -98,6 +98,11 @@ type Side interface {
 	SetShowContextBar(v bool) error
 	// GetShowContextBar returns the current show-context-bar flag.
 	GetShowContextBar() bool
+	// SetHighlight toggles chroma syntax-highlighting across diff/file/bash
+	// previews. Persists to config.
+	SetHighlight(v bool) error
+	// GetHighlight returns the current highlight flag.
+	GetHighlight() bool
 	// OpenSettings asks the TUI to display the settings pane. Returns an
 	// error in headless contexts so the slash command can fall back to text.
 	OpenSettings() error

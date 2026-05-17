@@ -39,6 +39,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/grep"
 	"github.com/elhenro/bee/internal/tools/hashline_edit"
 	"github.com/elhenro/bee/internal/tools/knowledge_search"
+	"github.com/elhenro/bee/internal/tools/knowledge_write"
 	"github.com/elhenro/bee/internal/tools/ls"
 	"github.com/elhenro/bee/internal/tools/read"
 	"github.com/elhenro/bee/internal/tools/shell"
@@ -54,7 +55,8 @@ func runHeadlessReal(args []string) {
 	providerName := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|danger-full-access)")
 	skillName := fs.String("skill", "", "run a skill as the user message (prompt-kind only in Wave 2)")
-	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high (default: from config)")
+	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high|max (default: from config)")
+	effort := fs.String("effort", "", "alias for --thinking: auto|off|low|medium|high|max")
 	cavemanLvl := fs.String("caveman", "", "force caveman level: off|lite|full|ultra (overrides profile, even on tiny)")
 	jsonOut := fs.Bool("json", false, "emit NDJSON events to stdout instead of text")
 	allowedTools := fs.String("allowed-tools", "", "comma-list of tool names to expose (default: all)")
@@ -119,6 +121,16 @@ func runHeadlessReal(args []string) {
 		cfg.Memory.Enabled = false
 	}
 	applyOverrides(&cfg, *model, *providerName, *sandboxScope)
+	// --effort is an alias for --thinking. Global `bee --effort` (stripped
+	// in main.go) lands in BEE_EFFORT and is consumed here as the lowest-
+	// priority source; explicit subcommand flags override env.
+	effortVal := *effort
+	if effortVal == "" {
+		effortVal = os.Getenv("BEE_EFFORT")
+	}
+	if *thinking == "" && effortVal != "" {
+		*thinking = effortVal
+	}
 	if *thinking != "" {
 		cfg.Thinking = string(llm.ParseThinking(*thinking))
 	}
@@ -531,7 +543,10 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	}
 	if cfg.Memory.Enabled && storeDir != "" {
 		topK := cfg.Memory.TopK
-		all = append(all, knowledge_search.New(prov, cfg.DefaultModel, storeDir, topK))
+		all = append(all,
+			knowledge_search.New(prov, cfg.DefaultModel, storeDir, topK),
+			knowledge_write.New(storeDir),
+		)
 	}
 	for _, t := range all {
 		if err := r.Register(t); err != nil {
@@ -567,7 +582,10 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	}
 	if cfg.Memory.Enabled && storeDir != "" {
 		topK := cfg.Memory.TopK
-		all = append(all, knowledge_search.New(prov, cfg.DefaultModel, storeDir, topK))
+		all = append(all,
+			knowledge_search.New(prov, cfg.DefaultModel, storeDir, topK),
+			knowledge_write.New(storeDir),
+		)
 	}
 	for _, t := range all {
 		if err := r.Register(t); err != nil {

@@ -7,6 +7,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/elhenro/bee/internal/llm"
@@ -50,6 +51,20 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	defer r.mu.RUnlock()
 	t, ok := r.tools[name]
 	return t, ok
+}
+
+// Names returns the registered tool names sorted alphabetically. Used by
+// diagnostics (e.g. unknown-tool error feedback) so the model can recover
+// without having to re-read the system prompt.
+func (r *Registry) Names() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.tools))
+	for n := range r.tools {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (r *Registry) Specs() []llm.ToolSpec {

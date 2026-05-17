@@ -274,6 +274,7 @@ func TestOpenAICompat_ReasoningEffort(t *testing.T) {
 		{"low", ThinkingLow, `"reasoning_effort":"low"`, false},
 		{"medium", ThinkingMedium, `"reasoning_effort":"medium"`, false},
 		{"high", ThinkingHigh, `"reasoning_effort":"high"`, false},
+		{"max clamps to high", ThinkingMax, `"reasoning_effort":"high"`, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

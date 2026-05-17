@@ -49,6 +49,11 @@ const (
 	ThinkingLow    Thinking = "low"
 	ThinkingMedium Thinking = "medium"
 	ThinkingHigh   Thinking = "high"
+	// ThinkingMax pushes the reasoning budget to the provider's practical
+	// ceiling. Wire layers without a distinct "max" tier (OpenAI's
+	// reasoning_effort) clamp to "high"; budget-token providers (Anthropic,
+	// Gemini) get a much larger budget than High.
+	ThinkingMax Thinking = "max"
 )
 
 // ThinkingBudget maps a level to a token budget for thinking-enabled providers.
@@ -61,12 +66,15 @@ func ThinkingBudget(t Thinking) int {
 		return 4096
 	case ThinkingHigh:
 		return 16384
+	case ThinkingMax:
+		return 32768
 	}
 	return 0
 }
 
-// ParseThinking accepts "auto"/"off"/"low"/"medium"/"high" (case insensitive)
-// and returns the canonical Thinking value. Unknown strings return ThinkingOff.
+// ParseThinking accepts "auto"/"off"/"low"/"medium"/"high"/"max" (case
+// insensitive) and returns the canonical Thinking value. Unknown strings
+// return ThinkingOff.
 func ParseThinking(s string) Thinking {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "auto":
@@ -77,6 +85,8 @@ func ParseThinking(s string) Thinking {
 		return ThinkingMedium
 	case "high":
 		return ThinkingHigh
+	case "max", "maximum":
+		return ThinkingMax
 	default:
 		return ThinkingOff
 	}

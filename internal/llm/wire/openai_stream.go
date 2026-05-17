@@ -3,6 +3,8 @@ package wire
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 )
 
 // StreamChunk is one decoded SSE data: payload from an OpenAI chat stream.
@@ -148,11 +150,13 @@ func (a *ToolCallAccumulator) Finalize() ([]FinalizedCall, error) {
 	out := make([]FinalizedCall, 0, len(a.order))
 	for _, idx := range a.order {
 		p := a.slots[idx]
+		name := SanitizeToolName(p.Name)
+		rawBytes := StripMarkupBytes(p.Args)
 		args := map[string]any{}
 		var rawArgs, parseErr string
-		if len(p.Args) > 0 {
-			if err := json.Unmarshal(p.Args, &args); err != nil {
-				repaired, ok := repairToolArgs(p.Args)
+		if len(rawBytes) > 0 {
+			if err := json.Unmarshal(rawBytes, &args); err != nil {
+				repaired, ok := repairToolArgs(rawBytes)
 				if !ok {
 					rawArgs = string(p.Args)
 					parseErr = fmt.Sprintf("decode tool args for %s: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
@@ -164,15 +168,98 @@ func (a *ToolCallAccumulator) Finalize() ([]FinalizedCall, error) {
 				}
 			}
 		}
+		StripMarkupInValues(args)
+		if name == "" && p.Name != "" {
+			// every char in the name was markup/junk. surface as parse error
+			// so the loop can return a useful diagnostic to the model.
+			if parseErr == "" {
+				parseErr = fmt.Sprintf("tool name unrecognizable after stripping model markup (raw=%q)", truncForErr([]byte(p.Name)))
+			}
+			name = p.Name
+		}
 		out = append(out, FinalizedCall{
 			ID:         p.ID,
-			Name:       p.Name,
+			Name:       name,
 			Input:      args,
 			RawArgs:    rawArgs,
 			ParseError: parseErr,
 		})
 	}
 	return out, nil
+}
+
+// modelMarkupRe matches the DeepSeek / chat-template "special token" leaks
+// that show up when a model trained for one tool-calling format is forced
+// into another (notably deepseek-v4-flash emitting `<｜DSML｜invoke` and
+// `</｜DSML｜parameter` into native openai tool_calls). The fullwidth bar
+// `｜` (U+FF5C) is the marker; we strip from `<` (or `</`) up through the
+// next `>` or end-of-string.
+var modelMarkupRe = regexp.MustCompile(`</?\x{FF5C}[^<>]*(?:\x{FF5C}[^<>]*)*>?`)
+
+// also catch dangling `</parameter>` / `</tool_call>` tags that some
+// templates emit alongside the special-token wrapper.
+var stuckClosingTagRe = regexp.MustCompile(`</(?:parameter|invoke|tool_call|tool_calls|function|name)\s*>`)
+
+// SanitizeToolName extracts a clean identifier from a possibly-noisy tool
+// name. Some models inject markup or extra fields into function.name,
+// e.g. `"read path=\"/x\"</｜DSML｜parameter"`. Take the leading identifier
+// run after trimming quotes/markup. Returns "" if nothing identifier-like
+// is found (caller should surface a parse error).
+func SanitizeToolName(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = modelMarkupRe.ReplaceAllString(s, "")
+	s = strings.TrimLeft(s, "\"' \t\r\n")
+	end := 0
+	for end < len(s) {
+		c := s[end]
+		isIdent := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '_' || c == '-'
+		if !isIdent {
+			break
+		}
+		end++
+	}
+	return s[:end]
+}
+
+// StripMarkupBytes removes DSML / stray closing tags from a raw byte slice
+// before JSON parsing. preserves length-on-success guarantees: nil in → nil
+// out, empty in → empty out.
+func StripMarkupBytes(b []byte) []byte {
+	if len(b) == 0 {
+		return b
+	}
+	s := string(b)
+	s = modelMarkupRe.ReplaceAllString(s, "")
+	s = stuckClosingTagRe.ReplaceAllString(s, "")
+	return []byte(s)
+}
+
+// StripMarkupInValues walks string values in a parsed args map and strips
+// model markup tokens. Handles nested maps and slices. Mutates in place.
+func StripMarkupInValues(m map[string]any) {
+	for k, v := range m {
+		m[k] = stripMarkupAny(v)
+	}
+}
+
+func stripMarkupAny(v any) any {
+	switch x := v.(type) {
+	case string:
+		s := modelMarkupRe.ReplaceAllString(x, "")
+		s = stuckClosingTagRe.ReplaceAllString(s, "")
+		return strings.TrimRight(s, " \t\r\n")
+	case map[string]any:
+		StripMarkupInValues(x)
+		return x
+	case []any:
+		for i, e := range x {
+			x[i] = stripMarkupAny(e)
+		}
+		return x
+	default:
+		return v
+	}
 }
 
 // repairToolArgs tries best-effort fixes for noisy model output that won't

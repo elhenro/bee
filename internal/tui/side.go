@@ -360,8 +360,8 @@ func (s *tuiSide) SaveAPIKey(provider, key string) error {
 }
 
 // SetThinking mutates the reasoning-effort level. Accepts the same strings
-// as llm.ParseThinking (off|low|medium|high, "med" alias for medium); unknown
-// values are rejected so silent typos don't downgrade to "off".
+// as llm.ParseThinking (off|low|medium|high|max, "med" alias for medium);
+// unknown values are rejected so silent typos don't downgrade to "off".
 func (s *tuiSide) SetThinking(level string) error {
 	if s.m == nil {
 		return errors.New("effort: no tui state")
@@ -369,7 +369,7 @@ func (s *tuiSide) SetThinking(level string) error {
 	trimmed := level
 	canonical := llm.ParseThinking(level)
 	if canonical == llm.ThinkingOff && trimmed != "" && trimmed != "off" {
-		return fmt.Errorf("unknown effort %q (want auto|off|low|medium|high)", level)
+		return fmt.Errorf("unknown effort %q (want auto|off|low|medium|high|max)", level)
 	}
 	s.m.thinking = string(canonical)
 	if s.m.eng != nil {
@@ -514,6 +514,30 @@ func (s *tuiSide) GetShowContextBar() bool {
 		return false
 	}
 	return s.m.showContextBar
+}
+
+// SetHighlight toggles chroma syntax-highlighting live + persists. Affects
+// tool result previews, edit/write diffs, bash command summaries.
+func (s *tuiSide) SetHighlight(v bool) error {
+	if s.m == nil {
+		return errors.New("highlight: no tui state")
+	}
+	s.m.highlight = v
+	if s.m.stream != nil {
+		s.m.stream.SetHighlight(v)
+	}
+	if s.m.eng != nil {
+		s.m.eng.Cfg.Highlight = v
+	}
+	return PersistSetting("", "highlight", v)
+}
+
+// GetHighlight returns the current highlight flag.
+func (s *tuiSide) GetHighlight() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.highlight
 }
 
 // OpenSettings flips a sentinel that Model.Update consumes to display the

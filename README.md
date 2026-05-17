@@ -17,18 +17,16 @@ bee
 
 Three wedges incumbents miss:
 
-1. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. No REPL incantations. `bee calc` just works, from any directory, in any shell.
-2. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint, all four are equally callable tools the model can invoke mid-task. Your daily driver Hermes runs as a sub-agent. No IPC dance.
-3. **Tiny-context friendly.** Caveman-compressed system prompt, three tools, top-k memory. Same harness scales from a 4k-context local Ollama to small fine-tunes like Qwen3.6-35B-A3B-4bit up to DeepSeek v4 Flash's 1M window.
-
-Built light. Shrinks itself when context gets tight. Stays small.
+1. **Tiny-context friendly, tiny footprint.** Caveman-compressed system prompt, three tools, top-k memory. Same harness scales from a 4k-context local Ollama to small fine-tunes like `Qwen3.6-35B-A3B-4bit` up to DeepSeek v4 Flash's 1M window. Native **omlx** (Apple Silicon MLX) and **OpenRouter** support out of the box. Shrinks itself when context gets tight.
+2. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. No REPL incantations. `bee criticize plan.md` just works, from any directory, in any shell.
+3. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint — all four are equally callable tools the model can invoke mid-task. Your daily driver Hermes runs as a sub-agent. No IPC dance.
 
 ## Quick demos
 
 ```sh
-$ bee calc          # one binary, every skill a subcommand
-$ bee run "lint cmd/"   # headless, pipeable
-$ bee swarm "migrate auth to jwt"  # queen + workers
+$ bee criticize plan.md             # one binary, every skill a subcommand
+$ bee run "lint cmd/"               # headless, pipeable
+$ bee swarm "migrate auth to jwt"   # queen + workers
 $ bee fan "audit internal/ for cleanup"  # parallel fan-out
 ```
 

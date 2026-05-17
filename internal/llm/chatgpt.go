@@ -90,6 +90,9 @@ func (p *ChatGPTProvider) do(ctx context.Context, req Request, isRetry bool) (*h
 	effort := ""
 	if req.Thinking != "" && req.Thinking != ThinkingOff {
 		effort = string(req.Thinking)
+		if req.Thinking == ThinkingMax {
+			effort = string(ThinkingHigh)
+		}
 	}
 	body, err := json.Marshal(wire.BuildResponsesRequest(req.Model, req.System, req.Messages, tools, req.MaxTokens, req.Temperature, req.Stream, effort))
 	if err != nil {

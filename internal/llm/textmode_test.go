@@ -182,6 +182,26 @@ func TestTextMode_CleansToolBlocksFromText(t *testing.T) {
 	}
 }
 
+func TestTextMode_StripsDSMLMarkup(t *testing.T) {
+	// deepseek text-mode sometimes appends `</｜DSML｜invoke` after the
+	// closing tag; the JSON body itself may also carry stray closing tags.
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `<shell>{"command":"ls -la</parameter>"}</shell></｜DSML｜invoke`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 {
+		t.Fatalf("calls: got %d, want 1", len(tools))
+	}
+	if got := tools[0].Input["command"]; got != "ls -la" {
+		t.Fatalf("command not scrubbed: %q (input=%+v)", got, tools[0].Input)
+	}
+}
+
 func TestTextMode_PassesThroughThinkingDeltas(t *testing.T) {
 	inner := &fakeProvider{
 		events: []Event{

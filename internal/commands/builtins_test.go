@@ -121,6 +121,8 @@ func (f *fakeSide) SetShowNudges(v bool) error {
 func (f *fakeSide) GetShowNudges() bool                  { return f.showNudges }
 func (f *fakeSide) SetShowContextBar(bool) error          { return nil }
 func (f *fakeSide) GetShowContextBar() bool               { return false }
+func (f *fakeSide) SetHighlight(bool) error               { return nil }
+func (f *fakeSide) GetHighlight() bool                    { return true }
 
 // OpenSettings returns an error so /settings (no args) falls back to its
 // inline text status — matches the headless-fallback pattern used elsewhere.

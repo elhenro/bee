@@ -712,9 +712,20 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if e.Tools == nil {
 		return types.ToolResult{UseID: u.ID, Content: "no tools registered", IsError: true}, nil
 	}
+	// short-circuit on upstream parse failure so the model sees a clean
+	// diagnostic (with the raw args) instead of the tool running on `{}` and
+	// returning a generic "missing field" error.
+	if pe, ok := u.Input["_parse_error"].(string); ok && pe != "" {
+		raw, _ := u.Input["_raw_args"].(string)
+		msg := fmt.Sprintf("tool args failed to parse: %s\nemit args as a single JSON object, no extra markup or trailing tokens.", pe)
+		if raw != "" {
+			msg += fmt.Sprintf("\nraw=%q", truncForLog(raw, 240))
+		}
+		return types.ToolResult{UseID: u.ID, Content: msg, IsError: true}, nil
+	}
 	t, ok := e.Tools.Get(u.Name)
 	if !ok {
-		return types.ToolResult{UseID: u.ID, Content: fmt.Sprintf("unknown tool %q", u.Name), IsError: true}, nil
+		return types.ToolResult{UseID: u.ID, Content: unknownToolMsg(u.Name, e.Tools.Names()), IsError: true}, nil
 	}
 	input := u.Input
 	if u.Name == "bash" {
@@ -732,6 +743,38 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 		e.JSONEmitter.Emit(jsonmode.Event{Type: "tool_truncated", Name: u.Name, UseID: u.ID})
 	}
 	return types.ToolResult{UseID: u.ID, Content: content, IsError: out.IsError}, nil
+}
+
+// unknownToolMsg builds a diagnostic the model can act on. It surfaces a
+// likely-cause hint when the bad name looks like markup leakage (the
+// deepseek-v4 "DSML" failure mode) so the model knows to re-emit a plain
+// identifier, plus the actual available tool names.
+func unknownToolMsg(bad string, available []string) string {
+	hint := ""
+	if looksLikeMarkupLeak(bad) {
+		hint = "\nname contains chat-template markup — emit the tool name as a plain identifier in function.name, with all args inside function.arguments JSON."
+	}
+	list := strings.Join(available, ", ")
+	return fmt.Sprintf("unknown tool %q.%s\navailable: %s", bad, hint, list)
+}
+
+// looksLikeMarkupLeak flags tool names that smuggle in chat-template tokens
+// or arg syntax. used only for picking the hint above.
+func looksLikeMarkupLeak(s string) bool {
+	if strings.ContainsAny(s, "<>\"'\n ") {
+		return true
+	}
+	if strings.Contains(s, "｜") {
+		return true
+	}
+	return false
+}
+
+func truncForLog(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // prependWarningToToolResult injects a context-warning prefix into the first

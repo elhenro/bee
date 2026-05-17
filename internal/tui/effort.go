@@ -9,7 +9,7 @@ import (
 
 // effortLevel describes one row in the effort picker.
 type effortLevel struct {
-	value string // off | low | medium | high
+	value string // off | low | medium | high | max
 	label string // human-readable label
 	desc  string // one-line description
 }
@@ -20,6 +20,7 @@ var effortLevels = []effortLevel{
 	{value: "low", label: "low", desc: "minimal reasoning — balanced speed/quality"},
 	{value: "medium", label: "medium", desc: "moderate reasoning"},
 	{value: "high", label: "high", desc: "deep reasoning — best quality, slowest"},
+	{value: "max", label: "max", desc: "maximum budget — slowest, top quality"},
 }
 
 // EffortPane is a modal picker for reasoning effort. Arrow keys pick, enter

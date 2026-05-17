@@ -61,6 +61,11 @@ type Config struct {
 	// a row of visual noise. Toggle via /settings; persists across launches.
 	ShowContextBar bool `toml:"show_context_bar"`
 
+	// Highlight gates syntax highlighting (chroma) on tool output, file
+	// content, edit/write diffs, and bash command summaries. Default true.
+	// Toggle via /settings; persists across launches.
+	Highlight bool `toml:"highlight"`
+
 	// ExtraTools opts specific tools into the manifest beyond the active
 	// profile's allowlist. Names match tool Spec().Name (e.g. "apply_patch",
 	// "hashline_edit"). The default keeps the surface minimal; this is the

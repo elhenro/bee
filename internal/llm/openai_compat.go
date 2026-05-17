@@ -285,23 +285,30 @@ func (p *OpenAICompatProvider) nonStreamLoop(resp *http.Response, out chan<- Eve
 		out <- Event{Type: EventTextDelta, Delta: choice.Message.Content}
 	}
 	for _, tc := range choice.Message.ToolCalls {
+		name := wire.SanitizeToolName(tc.Function.Name)
+		if name == "" {
+			name = tc.Function.Name
+		}
 		input := map[string]any{}
 		var parseErr string
 		if tc.Function.Arguments != "" {
-			if err := json.Unmarshal([]byte(tc.Function.Arguments), &input); err != nil {
+			scrubbed := wire.StripMarkupBytes([]byte(tc.Function.Arguments))
+			if err := json.Unmarshal(scrubbed, &input); err != nil {
 				parseErr = err.Error()
 				input = map[string]any{}
 			}
 		}
 		if parseErr != "" {
 			input = map[string]any{"_parse_error": parseErr, "_raw_args": tc.Function.Arguments}
+		} else {
+			wire.StripMarkupInValues(input)
 		}
 		id := tc.ID
 		if id == "" {
 			id = "call_" + uuid.NewString()
 		}
 		out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-			ID: id, Name: tc.Function.Name, Input: input,
+			ID: id, Name: name, Input: input,
 		}}
 	}
 	done := Event{Type: EventDone, StopReason: choice.FinishReason}
@@ -441,8 +448,13 @@ func buildWireRequest(req Request) wire.ChatRequest {
 	wr := wire.BuildRequest(req.Model, req.System, req.Messages, tools, req.MaxTokens, req.Temperature, req.Stream)
 	// OpenAI o-series + compatible: pass thinking level as reasoning_effort.
 	// Omit on Off so non-reasoning models don't choke on the unknown field.
+	// "max" isn't an OpenAI tier — clamp to "high" on the wire.
 	if req.Thinking != "" && req.Thinking != ThinkingOff {
-		wr.ReasoningEffort = string(req.Thinking)
+		eff := string(req.Thinking)
+		if req.Thinking == ThinkingMax {
+			eff = string(ThinkingHigh)
+		}
+		wr.ReasoningEffort = eff
 	}
 	return wr
 }

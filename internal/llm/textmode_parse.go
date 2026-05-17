@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/elhenro/bee/internal/llm/wire"
 )
 
 // parsedCall is one extracted tool invocation. Order preserved from text.
@@ -78,12 +80,15 @@ func parseToolArgs(body string) map[string]any {
 		return map[string]any{}
 	}
 	body = stripCodeFence(body)
+	body = string(wire.StripMarkupBytes([]byte(body)))
 	var v map[string]any
 	if err := json.Unmarshal([]byte(body), &v); err == nil {
+		wire.StripMarkupInValues(v)
 		return v
 	}
 	if repaired, ok := lenientJSONRepair(body); ok {
 		if err := json.Unmarshal([]byte(repaired), &v); err == nil {
+			wire.StripMarkupInValues(v)
 			return v
 		}
 	}

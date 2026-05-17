@@ -9,6 +9,9 @@ func TestParseThinking(t *testing.T) {
 		"Medium":  ThinkingMedium,
 		"med":     ThinkingMedium,
 		"HIGH":    ThinkingHigh,
+		"max":     ThinkingMax,
+		"MAX":     ThinkingMax,
+		"maximum": ThinkingMax,
 		"auto":    ThinkingAuto,
 		"AUTO":    ThinkingAuto,
 		"":        ThinkingOff,
@@ -120,5 +123,8 @@ func TestThinkingBudget(t *testing.T) {
 	}
 	if ThinkingBudget(ThinkingLow) <= 0 {
 		t.Error("low > 0 expected")
+	}
+	if ThinkingBudget(ThinkingMax) <= ThinkingBudget(ThinkingHigh) {
+		t.Error("max > high expected")
 	}
 }

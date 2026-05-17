@@ -45,6 +45,7 @@ func Defaults() Config {
 		ShowNudges:     false,
 		Compact:        false,
 		ShowContextBar: false,
+		Highlight:      true,
 		Providers: map[string]ProviderConfig{
 			"openrouter": {
 				BaseURL:      "https://openrouter.ai/api/v1",

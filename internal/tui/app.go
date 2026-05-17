@@ -213,6 +213,11 @@ type Model struct {
 	// Toggle via /settings; persists to config.
 	showContextBar bool
 
+	// highlight gates chroma syntax-highlighting on tool output, diffs,
+	// file content, and bash command summaries. Default true. Toggle via
+	// /settings; persists to config.
+	highlight bool
+
 	// quitArmed is true after a first ctrl+d. Within quitConfirmWindow a
 	// second ctrl+d quits; any other key clears the armed state. Ctrl+c is
 	// not gated by this — POSIX cancel convention is single-press.
@@ -395,6 +400,7 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		hive:         NewHive(),
 		agentView:    NewAgentView(),
 		showThoughts: true,
+		highlight:    true,
 	}
 }
 
@@ -464,6 +470,15 @@ func (m Model) WithCompact(v bool) Model {
 // WithShowContextBar seeds context-bar visibility. Config-driven path.
 func (m Model) WithShowContextBar(v bool) Model {
 	m.showContextBar = v
+	return m
+}
+
+// WithHighlight seeds chroma syntax-highlighting state. Config-driven path.
+func (m Model) WithHighlight(v bool) Model {
+	m.highlight = v
+	if m.stream != nil {
+		m.stream.SetHighlight(v)
+	}
 	return m
 }
 
@@ -610,7 +625,9 @@ func (m *Model) flush() tea.Cmd {
 		// blank-line gap between turns so scrollback breathes. Skip before
 		// the very first message of the session (startIdx+i == 0) so we
 		// don't push a stray gap above the chat history on cold start.
-		if startIdx+i > 0 {
+		// Compact mode drops the gap entirely — denser layout for users who
+		// opted in via ctrl+v / BEE_COMPACT.
+		if startIdx+i > 0 && !m.compact {
 			rendered = "\n" + rendered
 		}
 		cmds = append(cmds, tea.Println(rendered))
@@ -920,6 +937,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.stream.SetShowThoughts(m.showThoughts)
 		m.stream.SetShowNudges(m.showNudges)
 		m.stream.SetCompact(m.compact)
+		m.stream.SetHighlight(m.highlight)
 		m.palette.SetWidth(msg.Width)
 		m.atpicker.SetWidth(msg.Width)
 		if m.picker != nil {
@@ -1211,7 +1229,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		if m.settingsPane == nil {
 			m.settingsPane = NewSettingsPane()
 		}
-		m.settingsPane.Show(m.verbose, m.showThoughts, m.showNudges, m.compact, m.showContextBar)
+		m.settingsPane.Show(m.verbose, m.showThoughts, m.showNudges, m.compact, m.showContextBar, m.highlight)
 		return m, nil
 
 	case settingsToggleMsg:
@@ -1228,6 +1246,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 			err = m.side().SetCompact(msg.value)
 		case "show_context_bar":
 			err = m.side().SetShowContextBar(msg.value)
+		case "highlight":
+			err = m.side().SetHighlight(msg.value)
 		}
 		if err != nil && m.state != StateStreaming {
 			// don't kill an in-flight turn over a persist hiccup; surface the
@@ -1948,6 +1968,11 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 	if eng != nil {
 		m = m.WithShowContextBar(eng.Cfg.ShowContextBar)
 	}
+	// highlight: cfg-driven; default true. Skip default-call when eng is nil
+	// so tests stay on the ctor default already set to true.
+	if eng != nil {
+		m = m.WithHighlight(eng.Cfg.Highlight)
+	}
 	// hand the engine's stream channel to the model so deltas land in the
 	// bubbletea Update loop instead of corrupting the alt-screen.
 	if eng != nil && eng.StreamCh != nil {
@@ -1991,7 +2016,7 @@ func (m *Model) currentLeafID() string {
 	return m.messages[len(m.messages)-1].ID
 }
 
-// cycleThinking rotates Auto → Off → Low → Medium → High → Auto.
+// cycleThinking rotates Auto → Off → Low → Medium → High → Max → Auto.
 func cycleThinking(t string) string {
 	switch llm.ParseThinking(t) {
 	case llm.ThinkingAuto:
@@ -2002,6 +2027,8 @@ func cycleThinking(t string) string {
 		return string(llm.ThinkingMedium)
 	case llm.ThinkingMedium:
 		return string(llm.ThinkingHigh)
+	case llm.ThinkingHigh:
+		return string(llm.ThinkingMax)
 	default:
 		return string(llm.ThinkingAuto)
 	}
