@@ -7,23 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
 )
-
-// stubProvider satisfies llm.Provider for tests that need one.
-type stubProvider struct {
-	resp string
-}
-
-func (s stubProvider) Name() string { return "stub" }
-func (s stubProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
-	ch := make(chan llm.Event, 2)
-	ch <- llm.Event{Type: llm.EventTextDelta, Delta: s.resp}
-	ch <- llm.Event{Type: llm.EventDone}
-	close(ch)
-	return ch, nil
-}
 
 func toolDir(t *testing.T) string {
 	t.Helper()
@@ -58,9 +43,15 @@ func TestSpecSchema(t *testing.T) {
 			t.Fatalf("missing required property %q", k)
 		}
 	}
+	tags, ok := props["tags"].(map[string]any)
+	if !ok {
+		t.Fatal("missing tags property")
+	}
+	maxItems, ok := tags["maxItems"]
+	if !ok || maxItems != 5 {
+		t.Fatalf("expected maxItems=5 on tags, got %v", maxItems)
+	}
 }
-
-// --- write tests ---
 
 func TestWriteNew(t *testing.T) {
 	dir := toolDir(t)
@@ -75,7 +66,6 @@ func TestWriteNew(t *testing.T) {
 	if !strings.Contains(res.Content, "stored") {
 		t.Fatalf("expected 'stored' in result, got: %q", res.Content)
 	}
-	// verify file on disk
 	if _, err := os.Stat(filepath.Join(dir, "test-record.md")); err != nil {
 		t.Fatalf("record file not written: %v", err)
 	}
@@ -85,13 +75,11 @@ func TestWriteOverwrite(t *testing.T) {
 	dir := toolDir(t)
 	tool := New(dir)
 
-	// first write
 	res, err := tool.Run(context.Background(), validInput())
 	if err != nil || res.IsError {
 		t.Fatalf("first write failed: %v %s", err, res.Content)
 	}
 
-	// second write same name, different body
 	in2 := validInput()
 	in2["body"] = "updated body"
 	res, err = tool.Run(context.Background(), in2)
@@ -104,7 +92,6 @@ func TestWriteOverwrite(t *testing.T) {
 	if !strings.Contains(res.Content, "stored") {
 		t.Fatalf("expected 'stored' in result, got: %q", res.Content)
 	}
-	// read back and verify content
 	b, err := os.ReadFile(filepath.Join(dir, "test-record.md"))
 	if err != nil {
 		t.Fatalf("read back failed: %v", err)
@@ -195,7 +182,6 @@ func TestWriteTagsValid(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
 	}
-	// read file and confirm tags rendered
 	b, err := os.ReadFile(filepath.Join(dir, "test-record.md"))
 	if err != nil {
 		t.Fatalf("read back failed: %v", err)
@@ -275,8 +261,8 @@ func TestWriteExpiresDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back failed: %v", err)
 	}
-	if !strings.Contains(string(b), "2025-09-01") {
-		t.Fatalf("expected expires date in file, got:\n%s", string(b))
+	if !strings.Contains(string(b), "expires: 2025-09-01T00:00:00Z") {
+		t.Fatalf("expected RFC 3339 expires in file,\ngot:\n%s", string(b))
 	}
 }
 
@@ -296,8 +282,8 @@ func TestWriteExpiresRFC3339(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back failed: %v", err)
 	}
-	if !strings.Contains(string(b), "2025-09-01") {
-		t.Fatalf("expected expires date in file, got:\n%s", string(b))
+	if !strings.Contains(string(b), "expires: 2025-09-01T00:00:00Z") {
+		t.Fatalf("expected RFC 3339 expires in file,\ngot:\n%s", string(b))
 	}
 }
 
@@ -306,22 +292,12 @@ func TestWriteExpiresInvalid(t *testing.T) {
 	tool := New(dir)
 	in := validInput()
 	in["expires_at"] = "next tuesday"
-	// unparseable expires silently ignored — tool does not error
-	// (expires_at is optional, silent no-expiry is fine)
-	res, err := tool.Run(context.Background(), in)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res, _ := tool.Run(context.Background(), in)
+	if !res.IsError {
+		t.Fatal("expected error for unparseable expires_at")
 	}
-	if res.IsError {
-		t.Fatalf("unexpected error: %s", res.Content)
-	}
-	// file should have expires: never (not a real date)
-	b, err := os.ReadFile(filepath.Join(dir, "test-record.md"))
-	if err != nil {
-		t.Fatalf("read back failed: %v", err)
-	}
-	if !strings.Contains(string(b), "expires: never") {
-		t.Fatalf("expected expires: never for unparseable date, got:\n%s", string(b))
+	if !strings.Contains(res.Content, "expires_at: cannot parse") {
+		t.Fatalf("expected parse error, got: %q", res.Content)
 	}
 }
 
@@ -341,12 +317,10 @@ func TestWriteBodyTrailingNewlines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back failed: %v", err)
 	}
-	// renderFile trims trailing newlines from body
 	content := string(b)
 	if !strings.Contains(content, "line one") {
 		t.Fatalf("expected body content, got:\n%s", content)
 	}
-	// should NOT end with trailing blank lines
 	if strings.HasSuffix(content, "\n\n") {
 		t.Fatal("body should not have trailing blank lines after renderFile trim")
 	}
@@ -364,7 +338,6 @@ func TestWritePastExpiry(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
 	}
-	// should write fine — staleness is a read-time concern
 	if _, err := os.Stat(filepath.Join(dir, "test-record.md")); err != nil {
 		t.Fatalf("record file not written: %v", err)
 	}
@@ -385,30 +358,42 @@ func TestToolInterface(t *testing.T) {
 // --- parseExpires unit tests ---
 
 func TestParseExpiresEmpty(t *testing.T) {
-	if !parseExpires(nil).IsZero() {
-		t.Fatal("nil should return zero time")
+	got, err := parseExpires(nil)
+	if err != nil || !got.IsZero() {
+		t.Fatalf("nil: got=(%v, %v), want zero+noerr", got, err)
 	}
-	if !parseExpires("").IsZero() {
-		t.Fatal("empty string should return zero time")
+	got, err = parseExpires("")
+	if err != nil || !got.IsZero() {
+		t.Fatalf("empty string: got=(%v, %v), want zero+noerr", got, err)
 	}
 }
 
 func TestParseExpiresDate(t *testing.T) {
-	got := parseExpires("2025-09-01")
+	got, err := parseExpires("2025-09-01")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if got.Year() != 2025 || got.Month() != 9 || got.Day() != 1 {
 		t.Fatalf("unexpected date: %v", got)
 	}
 }
 
 func TestParseExpiresRFC3339(t *testing.T) {
-	got := parseExpires("2025-09-01T00:00:00Z")
+	got, err := parseExpires("2025-09-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if got.Year() != 2025 || got.Month() != 9 || got.Day() != 1 {
 		t.Fatalf("unexpected date: %v", got)
 	}
 }
 
 func TestParseExpiresUnparseable(t *testing.T) {
-	if !parseExpires("next tuesday").IsZero() {
-		t.Fatal("unparseable should return zero time")
+	_, err := parseExpires("next tuesday")
+	if err == nil {
+		t.Fatal("expected error for unparseable date")
+	}
+	if !strings.Contains(err.Error(), "cannot parse") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

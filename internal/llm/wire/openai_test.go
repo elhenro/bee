@@ -414,8 +414,11 @@ func TestStripMarkupBytes(t *testing.T) {
 }
 
 func TestStripMarkupInValues_NestedStrings(t *testing.T) {
+	// post-parse: only the fullwidth-pipe leak token gets stripped.
+	// `</parameter>` and friends are preserved — they may be legit user
+	// content (file paths, source code, prompts) past the JSON boundary.
 	m := map[string]any{
-		"command": `ls -la</parameter>` + "\n" + `</｜DSML｜invoke`,
+		"command": `ls -la` + "\n" + `</｜DSML｜invoke`,
 		"nested":  map[string]any{"x": `a</parameter>b`},
 		"list":    []any{`one</｜DSML｜end`, "two"},
 	}
@@ -424,12 +427,28 @@ func TestStripMarkupInValues_NestedStrings(t *testing.T) {
 		t.Errorf("command: %q", m["command"])
 	}
 	nested := m["nested"].(map[string]any)
-	if nested["x"] != "ab" {
-		t.Errorf("nested: %+v", nested)
+	if nested["x"] != "a</parameter>b" {
+		t.Errorf("nested preserved tag: %+v", nested)
 	}
 	list := m["list"].([]any)
 	if list[0] != "one" || list[1] != "two" {
 		t.Errorf("list: %+v", list)
+	}
+}
+
+func TestStripMarkupBytes_PreservesInnerTags(t *testing.T) {
+	// the closing-tag regex is suffix-anchored — tags inside a quoted
+	// JSON string value must NOT be stripped, only trailing leak tags.
+	in := []byte(`{"content":"foo</parameter>bar"}`)
+	out := string(StripMarkupBytes(in))
+	if out != `{"content":"foo</parameter>bar"}` {
+		t.Errorf("inner tag stripped: got %q", out)
+	}
+	// trailing tag still gets removed.
+	in = []byte(`{"content":"x"}</parameter></tool_call>`)
+	out = string(StripMarkupBytes(in))
+	if out != `{"content":"x"}` {
+		t.Errorf("trailing tags not stripped: got %q", out)
 	}
 }
 

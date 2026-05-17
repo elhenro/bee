@@ -37,7 +37,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"name": map[string]any{
 					"type":        "string",
-					"description": "Record name — slug: a-z, A-Z, 0-9, hyphens, underscores, dots. Becomes the filename.",
+					"description": "Record name -- slug: a-z, A-Z, 0-9, hyphens, underscores, dots. Becomes the filename.",
 				},
 				"description": map[string]any{
 					"type":        "string",
@@ -45,13 +45,14 @@ func (t *Tool) Spec() llm.ToolSpec {
 				},
 				"body": map[string]any{
 					"type":        "string",
-					"description": "Full record content — the information the agent should recall.",
+					"description": "Full record content -- the information the agent should recall.",
 				},
 				"tags": map[string]any{
 					"type": "array",
 					"items": map[string]any{
 						"type": "string",
 					},
+					"maxItems":    5,
 					"description": "Tags for matching (max 5, lowercase-alphanumeric-hyphenated).",
 				},
 				"priority": map[string]any{
@@ -90,7 +91,10 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 
 	tags := parseTags(in["tags"])
 	priority := parsePriority(in["priority"])
-	expiresAt := parseExpires(in["expires_at"])
+	expiresAt, err := parseExpires(in["expires_at"])
+	if err != nil {
+		return tools.Result{Content: err.Error(), IsError: true}, nil
+	}
 
 	rec := knowledge.Record{
 		Entry: knowledge.Entry{
@@ -147,30 +151,28 @@ func parsePriority(raw any) int {
 }
 
 // parseExpires converts the expires_at input to time.Time. Accepts:
-//   - nil / "" → zero time (no expiry)
-//   - "YYYY-MM-DD" → midnight UTC
+//   - nil / "" -> zero time, nil error (no expiry)
+//   - "YYYY-MM-DD" -> midnight UTC
 //   - RFC 3339 string
-// On parse failure returns zero time (caller may want to reject, but the tool
-// spec says "optional" so silent fallthrough matches "no expiry" semantics).
-func parseExpires(raw any) time.Time {
+//   - anything else -> error
+func parseExpires(raw any) (time.Time, error) {
 	if raw == nil {
-		return time.Time{}
+		return time.Time{}, nil
 	}
 	s, ok := raw.(string)
 	if !ok || s == "" {
-		return time.Time{}
+		return time.Time{}, nil
 	}
 	s = strings.TrimSpace(s)
 	if len(s) == 10 && s[4] == '-' && s[7] == '-' {
 		t, err := time.Parse("2006-01-02", s)
 		if err == nil {
-			return t
+			return t, nil
 		}
 	}
 	t, err := time.Parse(time.RFC3339, s)
 	if err == nil {
-		return t
+		return t, nil
 	}
-	// unparseable — silently no expiry
-	return time.Time{}
+	return time.Time{}, fmt.Errorf("expires_at: cannot parse %q -- use YYYY-MM-DD or RFC 3339", s)
 }

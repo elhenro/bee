@@ -74,6 +74,13 @@ func extractToolCalls(s string, known map[string]bool, canonical map[string]stri
 // first, then a lenient repair pass; on total failure returns a map with
 // `_parse_error` so the tool layer can surface the issue instead of running
 // with empty args silently.
+//
+// Guard: if the lenient repair pass shrinks a `content` field by more than
+// 25% vs the raw body length (rough proxy — content dominates `write`/`edit`
+// payloads), surface `_parse_error` instead of writing mangled output.
+// Repair heuristics (newline escaping + trailing-comma strip) can desync on
+// model output that has both raw newlines AND unescaped quotes, producing
+// technically-valid JSON with the wrong structure.
 func parseToolArgs(body string) map[string]any {
 	body = strings.TrimSpace(body)
 	if body == "" {
@@ -89,6 +96,16 @@ func parseToolArgs(body string) map[string]any {
 	if repaired, ok := lenientJSONRepair(body); ok {
 		if err := json.Unmarshal([]byte(repaired), &v); err == nil {
 			wire.StripMarkupInValues(v)
+			if c, isStr := v["content"].(string); isStr {
+				// guard: repaired content < 75% of raw body length is
+				// suspicious — likely a state-machine desync stripped
+				// structural characters from inside the string.
+				if len(c) > 0 && len(c)*4 < len(body)*3 {
+					return map[string]any{
+						"_parse_error": fmt.Sprintf("content arg shrank suspiciously after JSON repair (raw=%d bytes, content=%d bytes) — refusing to write potentially mangled output. Re-emit with escaped newlines and quotes.", len(body), len(c)),
+					}
+				}
+			}
 			return v
 		}
 	}

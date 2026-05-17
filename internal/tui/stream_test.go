@@ -705,6 +705,20 @@ func TestRenderStreaming_PartialDoesNotPrependBlankLine(t *testing.T) {
 	}
 }
 
+// caret must animate across frames so in-stream pauses (model reasoning,
+// slow deltas) still visibly signal liveness. Static caret looks stuck.
+func TestRenderStreaming_PartialCaretAnimatesAcrossFrames(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	seen := map[string]bool{}
+	for f := 0; f < 10; f++ {
+		out := stripANSI(r.RenderStreaming("hello", f))
+		seen[out] = true
+	}
+	if len(seen) < 5 {
+		t.Fatalf("expected caret to cycle across frames, got %d unique renders: %v", len(seen), seen)
+	}
+}
+
 // ClipStreamingTail keeps the tail of a tall partial and surfaces a header
 // for the dropped rows. Without this, bubbletea inline mode renders past
 // the top of the visible region and the user can't see freshly-streamed

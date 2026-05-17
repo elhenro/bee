@@ -83,6 +83,29 @@ func renderBrailleSwarm(frame, cells int) string {
 	return c.ToBraille()
 }
 
+// renderBrailleCaretSwarm — pocket-sized swarm caret. 3 cells wide
+// (6×4 px), 3 bees on phase-offset sine paths in both axes with 1-px
+// trails. Stands in for the old static ▍ caret at the tail of a
+// streaming partial so reader sees swarm-style motion mid-stream
+// instead of a single spinning glyph.
+func renderBrailleCaretSwarm(frame int) string {
+	const cells = 3
+	w := cells * braillePxW
+	c := NewDrawilleCanvas(w, braillePxH)
+	for i := 0; i < 3; i++ {
+		t := float64(frame)*0.32 + float64(i)*1.879
+		x := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(w-1)))
+		y := int(math.Round((math.Sin(t*0.7+float64(i)) + 1) * 0.5 * float64(braillePxH-1)))
+		c.SetPixel(x, y, true)
+		tp := t - 0.32
+		xp := int(math.Round((math.Sin(tp) + 1) * 0.5 * float64(w-1)))
+		if xp != x {
+			c.SetPixel(xp, y, true)
+		}
+	}
+	return c.ToBraille()
+}
+
 // renderBrailleWave — two layered sine waves at different phases. The
 // faster one carries the rhythm; the slower one gives depth.
 func renderBrailleWave(frame, cells int) string {

@@ -621,8 +621,10 @@ func indentContinuation(s, indent string) string {
 }
 
 // RenderStreaming returns the partial-text view while the model emits deltas.
-// A subtle ▍ caret tracks the cursor. frame drives the pre-token loader
-// animation; once partial is non-empty the animation gives way to text.
+// frame drives both the pre-token loader animation (empty partial) and the
+// trailing caret animation (non-empty partial) — see animatedCaret for the
+// rationale: a static caret looked "stopped" during in-stream pauses
+// (reasoning, slow tool-call generation, network stalls between deltas).
 //
 // The partial is rendered as RAW text (not glamour-markdown). Re-rendering a
 // growing buffer through glamour on every delta reflows word-wrap and shifts
@@ -642,7 +644,7 @@ func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
 		}
 		return "\n" + outerGutter + head
 	}
-	caret := r.styles.Dim.Render("▍")
+	caret := r.animatedCaret(frame)
 	// trim trailing whitespace so the caret sits flush with the last visible
 	// char instead of floating on an indented blank line under the prose.
 	trimmed := strings.TrimRight(partial, " \t\n")
@@ -651,6 +653,23 @@ func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
 		return body
 	}
 	return applyGutter(body)
+}
+
+// animatedCaret renders a tiny 3-cell bee swarm at the tail of a
+// streaming partial. Replaces the old static ▍ caret: when the model
+// paused between deltas (mid-text reasoning, slow tool-call emission,
+// network gap) the static caret gave no signal that work was still in
+// flight — looked stuck. loaderFrame keeps ticking at loaderTickInterval
+// (~120ms) for the full duration of StateStreaming, so the swarm drifts
+// even when no new deltas arrive. Same swarm shape as the
+// LoaderStyleSwarm full-width loader, just shrunk to caret size.
+// pulseStyle alternates color so motion is visible on dim terminals.
+func (r *StreamRenderer) animatedCaret(frame int) string {
+	nf := frame
+	if nf < 0 {
+		nf = -nf
+	}
+	return r.pulseStyle(nf).Render(renderBrailleCaretSwarm(nf))
 }
 
 // ClipStreamingTail keeps the last maxRows visual rows of a rendered

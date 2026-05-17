@@ -197,8 +197,12 @@ func (a *ToolCallAccumulator) Finalize() ([]FinalizedCall, error) {
 var modelMarkupRe = regexp.MustCompile(`</?\x{FF5C}[^<>]*(?:\x{FF5C}[^<>]*)*>?`)
 
 // also catch dangling `</parameter>` / `</tool_call>` tags that some
-// templates emit alongside the special-token wrapper.
-var stuckClosingTagRe = regexp.MustCompile(`</(?:parameter|invoke|tool_call|tool_calls|function|name)\s*>`)
+// templates emit alongside the special-token wrapper. anchored to the
+// end of input so we only strip TRAILING leak tags — never tags that
+// appear inside a quoted string value (which would corrupt user content
+// like `{"content":"foo</parameter>bar"}` or any file containing those
+// literal tokens).
+var stuckClosingTagRe = regexp.MustCompile(`(?:</(?:parameter|invoke|tool_call|tool_calls|function|name)\s*>\s*)+$`)
 
 // SanitizeToolName extracts a clean identifier from a possibly-noisy tool
 // name. Some models inject markup or extra fields into function.name,
@@ -246,8 +250,11 @@ func StripMarkupInValues(m map[string]any) {
 func stripMarkupAny(v any) any {
 	switch x := v.(type) {
 	case string:
+		// only strip the fullwidth-pipe leak token from decoded values.
+		// NEVER strip `</parameter>` etc here — that's user content past
+		// the JSON layer and must round-trip verbatim. trailing leak tags
+		// are already removed pre-parse by StripMarkupBytes.
 		s := modelMarkupRe.ReplaceAllString(x, "")
-		s = stuckClosingTagRe.ReplaceAllString(s, "")
 		return strings.TrimRight(s, " \t\r\n")
 	case map[string]any:
 		StripMarkupInValues(x)
