@@ -68,6 +68,24 @@ func mergeEnv(c *Config) {
 	if v := os.Getenv("BEE_EXTRA_TOOLS"); v != "" {
 		c.ExtraTools = splitCSV(v)
 	}
+	if v := os.Getenv("BEE_SHELL_RC"); v != "" {
+		c.Shell.UseUserRC = boolEnv(v)
+	}
+	if v := os.Getenv("BEE_SHELL"); v != "" {
+		c.Shell.Shell = v
+	}
+	if v := os.Getenv("BEE_SHELL_RC_FILE"); v != "" {
+		c.Shell.RCFile = v
+	}
+}
+
+// boolEnv parses common truthy spellings. Anything else = false.
+func boolEnv(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // splitCSV trims whitespace, drops empties.

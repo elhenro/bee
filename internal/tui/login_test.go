@@ -66,6 +66,8 @@ func (s *loginSideStub) SetShowContextBar(bool) error                   { return
 func (s *loginSideStub) GetShowContextBar() bool                        { return false }
 func (s *loginSideStub) SetHighlight(bool) error                        { return nil }
 func (s *loginSideStub) GetHighlight() bool                             { return true }
+func (s *loginSideStub) SetShellBangSilent(bool) error                  { return nil }
+func (s *loginSideStub) GetShellBangSilent() bool                       { return true }
 
 func TestLoginPane_OpensAndRendersProviders(t *testing.T) {
 	side := &loginSideStub{statuses: []commands.ProviderAuth{

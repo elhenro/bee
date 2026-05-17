@@ -123,6 +123,8 @@ func (f *fakeSide) SetShowContextBar(bool) error          { return nil }
 func (f *fakeSide) GetShowContextBar() bool               { return false }
 func (f *fakeSide) SetHighlight(bool) error               { return nil }
 func (f *fakeSide) GetHighlight() bool                    { return true }
+func (f *fakeSide) SetShellBangSilent(bool) error         { return nil }
+func (f *fakeSide) GetShellBangSilent() bool              { return true }
 
 // OpenSettings returns an error so /settings (no args) falls back to its
 // inline text status — matches the headless-fallback pattern used elsewhere.

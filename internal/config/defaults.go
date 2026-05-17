@@ -46,6 +46,9 @@ func Defaults() Config {
 		Compact:        false,
 		ShowContextBar: false,
 		Highlight:      true,
+		// silent by default: `!ls` runs in your shell without spending tokens
+		// on output. Set false (or toggle in /settings) to forward to the LLM.
+		ShellBangSilent: true,
 		Providers: map[string]ProviderConfig{
 			"openrouter": {
 				BaseURL:      "https://openrouter.ai/api/v1",

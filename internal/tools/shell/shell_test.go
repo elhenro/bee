@@ -2,6 +2,9 @@ package shell
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -127,5 +130,74 @@ func TestSpec(t *testing.T) {
 	}
 	if s.Schema == nil {
 		t.Fatal("nil schema")
+	}
+}
+
+// TestUserRCAliasZsh proves an alias declared in a fake .zshrc is expanded
+// when the tool runs with UseUserRC=true. Skipped if zsh is absent.
+func TestUserRCAliasZsh(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("zsh not standard on Windows runners")
+	}
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh not on PATH")
+	}
+	rc := filepath.Join(t.TempDir(), ".zshrc")
+	if err := os.WriteFile(rc, []byte("alias greet='echo aliased-hi'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewWithOptions(nil, Options{UseUserRC: true, Shell: "zsh", RCFile: rc})
+	res, err := tool.Run(context.Background(), map[string]any{"command": "greet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("err: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "aliased-hi") {
+		t.Fatalf("alias not expanded: %q", res.Content)
+	}
+}
+
+// TestUserRCAliasBash mirrors the zsh test for bash. bash needs the
+// shopt expand_aliases prelude that buildInvocation injects.
+func TestUserRCAliasBash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("aliases under git-bash on Windows are flaky")
+	}
+	rc := filepath.Join(t.TempDir(), ".bashrc")
+	if err := os.WriteFile(rc, []byte("alias greet='echo aliased-hi'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewWithOptions(nil, Options{UseUserRC: true, Shell: "bash", RCFile: rc})
+	res, err := tool.Run(context.Background(), map[string]any{"command": "greet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("err: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "aliased-hi") {
+		t.Fatalf("alias not expanded: %q", res.Content)
+	}
+}
+
+// TestMissingRCFileSoftFails ensures pointing at a non-existent rc file does
+// not break command execution — the prelude guards on [ -f rc ].
+func TestMissingRCFileSoftFails(t *testing.T) {
+	tool := NewWithOptions(nil, Options{
+		UseUserRC: true,
+		Shell:     "bash",
+		RCFile:    "/nonexistent/path/to/.bashrc",
+	})
+	res, err := tool.Run(context.Background(), map[string]any{"command": "echo ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("err: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "ok") {
+		t.Fatalf("missing output: %q", res.Content)
 	}
 }

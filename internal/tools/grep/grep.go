@@ -30,7 +30,7 @@ func isBinary(f *os.File) bool {
 	return binary
 }
 
-const toolName = "grep"
+const toolName = "search"
 
 // Tool is the grep tool.
 type Tool struct {
@@ -56,10 +56,12 @@ func NewWithMax(root string, n int) *Tool {
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name: toolName,
-		Description: "Search file contents by regex. Use this BEFORE read on large files — get only the matching lines plus optional context, never the whole file. " +
-			"Returns up to 200 matches as path:line:text (match) or path:line-text (context). " +
+		Description: "ALWAYS use `search` for file content search. NEVER invoke `grep`, `rg`, or `ack` via the `bash` tool — shell variants miss bee's project-aware excludes (.claude, vendor, testdata) and inflate counts with worktree duplicates. " +
+			"Regex (Go RE2 syntax) over file contents. Returns up to 200 matches as path:line:text (match) or path:line-text (context). " +
+			"ANCHOR your pattern: `^func Test` not `func Test` — unanchored patterns match comments, strings, fixtures and inflate counts. " +
+			"For counting (e.g. 'how many tests'), use count_only=true to get per-file counts; an outlier file reveals fixtures/generated code skewing totals. " +
 			"Args: pattern (required), path (dir), glob (file ext like 'go'), context (int, 0-5 surrounding lines per match), count_only (bool, per-file match counts only).",
-		PromptSnippet: "regex search file contents (prefer over read for large files; supports context lines)",
+		PromptSnippet: "search file contents by regex (use this, NOT shell `grep`)",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -109,7 +111,9 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if name == ".git" || name == "node_modules" || name == "vendor" {
+			// .claude holds agent state (worktrees with duplicate code) — skip
+			// or counts/searches double-count every file.
+			if name == ".git" || name == "node_modules" || name == "vendor" || name == "testdata" || name == ".claude" {
 				return filepath.SkipDir
 			}
 			return nil

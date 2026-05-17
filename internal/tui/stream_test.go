@@ -771,3 +771,35 @@ func TestClipStreamingTail_WrapsLongLines(t *testing.T) {
 		t.Fatalf("expected header for clipped wrapped content, got %q", lines[0])
 	}
 }
+
+// RenderStreamingChunk drops caret + leading blank but keeps gutter, so a
+// settled head chunk emitted via tea.Println slots cleanly above the still-
+// streaming tail. Trailing newlines get trimmed (tea.Println adds its own).
+func TestRenderStreamingChunk_GutterNoCaret(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	got := stripANSI(r.RenderStreamingChunk("line one\nline two\n"))
+	if strings.HasPrefix(got, "\n") {
+		t.Fatalf("chunk should not have leading newline: %q", got)
+	}
+	if strings.HasSuffix(got, "\n") {
+		t.Fatalf("chunk should not have trailing newline (tea.Println adds it): %q", got)
+	}
+	if !strings.Contains(got, "line one") || !strings.Contains(got, "line two") {
+		t.Fatalf("chunk missing content: %q", got)
+	}
+	// caret glyphs from animatedCaret must not bleed into the chunk path.
+	if strings.Contains(got, "⠇") || strings.Contains(got, "⢿") {
+		t.Fatalf("chunk should not include streaming caret: %q", got)
+	}
+}
+
+// Empty / whitespace-only chunks render as empty so callers can safely
+// short-circuit before calling tea.Println.
+func TestRenderStreamingChunk_EmptyInput(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	for _, in := range []string{"", "\n", "\n\n\n"} {
+		if got := r.RenderStreamingChunk(in); got != "" {
+			t.Fatalf("empty input %q → %q, want empty", in, got)
+		}
+	}
+}

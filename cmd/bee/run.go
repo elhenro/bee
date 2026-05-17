@@ -496,13 +496,22 @@ func buildTools(cwd string, cfg config.Config, prov llm.Provider, storeDir strin
 	return buildToolsWithApprover(cwd, cfg, prov, storeDir, nil)
 }
 
-// newShellTool returns a shell tool with optional approval gating. nil app =
-// no gating (matches pre-approval behavior).
-func newShellTool(app approval.Approver) tools.Tool {
-	if app == nil {
-		return shell.New()
+// newShellTool returns a shell tool with optional approval gating and the
+// shell-environment options from cfg. nil app = no gating (matches
+// pre-approval behavior).
+func newShellTool(app approval.Approver, cfg config.Config) tools.Tool {
+	opts := shell.Options{
+		UseUserRC: cfg.Shell.UseUserRC,
+		Shell:     cfg.Shell.Shell,
+		RCFile:    cfg.Shell.RCFile,
 	}
-	return shell.NewWithApprover(app)
+	if !opts.UseUserRC && opts.Shell == "" && opts.RCFile == "" {
+		if app == nil {
+			return shell.New()
+		}
+		return shell.NewWithApprover(app)
+	}
+	return shell.NewWithOptions(app, opts)
 }
 
 // buildHeadlessApprover wires the dangerous-command approval gate for the
@@ -528,7 +537,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
 	all := []tools.Tool{
-		newShellTool(app),
+		newShellTool(app, cfg),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),
 		grep.NewWithMax(cwd, prof.GrepMaxMatches),
 		find.New(cwd),
@@ -568,7 +577,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
 	all := []tools.Tool{
-		newShellTool(app),
+		newShellTool(app, cfg),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),
 		grep.NewWithMax(cwd, prof.GrepMaxMatches),
 		find.New(cwd),

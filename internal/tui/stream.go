@@ -672,12 +672,31 @@ func (r *StreamRenderer) animatedCaret(frame int) string {
 	return r.pulseStyle(nf).Render(renderBrailleCaretSwarm(nf))
 }
 
+// RenderStreamingChunk formats a settled head of a streaming partial for
+// emission to terminal scrollback via tea.Println. Mirrors RenderStreaming's
+// gutter treatment but drops the trailing caret (the cursor isn't here
+// anymore) and the leading blank row (rest of the partial keeps streaming
+// in the live region right below). Used by the progressive-flush path so
+// the head of a long response stays readable while the tail keeps growing.
+func (r *StreamRenderer) RenderStreamingChunk(chunk string) string {
+	chunk = strings.TrimRight(chunk, "\n")
+	if chunk == "" {
+		return ""
+	}
+	if r.compact {
+		return chunk
+	}
+	return applyGutter(chunk)
+}
+
 // ClipStreamingTail keeps the last maxRows visual rows of a rendered
 // streaming chunk, prepending a `… +N lines above` header when content was
 // dropped. Visual rows are computed against r.width so soft-wrapped long
 // lines count correctly; bubbletea's inline renderer cannot reach above the
 // cursor, so without this the head of a long partial gets clipped out of
 // sight while it grows. maxRows <= 0 is a no-op (caller has no budget info).
+// With progressive flush active, complete leading lines get pushed to
+// scrollback before this fires — clipping only trims the unflushed tail.
 func (r *StreamRenderer) ClipStreamingTail(rendered string, maxRows int) string {
 	if maxRows <= 0 || rendered == "" {
 		return rendered

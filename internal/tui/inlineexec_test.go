@@ -27,19 +27,40 @@ func TestParseInlinePrefix(t *testing.T) {
 	cases := []struct {
 		in     string
 		cmd    string
-		silent bool
+		count  int
 		inline bool
 	}{
-		{"!ls", "ls", false, true},
-		{"!!ls -la", "ls -la", true, true},
-		{"hello", "hello", false, false},
-		{"echo !", "echo !", false, false},
+		{"!ls", "ls", 1, true},
+		{"!!ls -la", "ls -la", 2, true},
+		{"hello", "hello", 0, false},
+		{"echo !", "echo !", 0, false},
 	}
 	for _, c := range cases {
-		cmd, silent, inline := parseInlinePrefix(c.in)
-		if cmd != c.cmd || silent != c.silent || inline != c.inline {
+		cmd, count, inline := parseInlinePrefix(c.in)
+		if cmd != c.cmd || count != c.count || inline != c.inline {
 			t.Errorf("parseInlinePrefix(%q) = (%q,%v,%v); want (%q,%v,%v)",
-				c.in, cmd, silent, inline, c.cmd, c.silent, c.inline)
+				c.in, cmd, count, inline, c.cmd, c.count, c.inline)
+		}
+	}
+}
+
+func TestResolveBangSilent(t *testing.T) {
+	cases := []struct {
+		defaultSilent bool
+		count         int
+		want          bool
+	}{
+		// default silent (new default): ! silent, !! forwards
+		{true, 1, true},
+		{true, 2, false},
+		// default forwards (legacy): ! forwards, !! silent
+		{false, 1, false},
+		{false, 2, true},
+	}
+	for _, c := range cases {
+		if got := resolveBangSilent(c.defaultSilent, c.count); got != c.want {
+			t.Errorf("resolveBangSilent(default=%v, count=%d) = %v; want %v",
+				c.defaultSilent, c.count, got, c.want)
 		}
 	}
 }

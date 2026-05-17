@@ -103,6 +103,12 @@ type Side interface {
 	SetHighlight(v bool) error
 	// GetHighlight returns the current highlight flag.
 	GetHighlight() bool
+	// SetShellBangSilent flips the default behavior of `!cmd`. true = run
+	// locally without forwarding; false = legacy forward-to-LLM. `!!` always
+	// inverts. Persists to config.
+	SetShellBangSilent(v bool) error
+	// GetShellBangSilent returns the current bang-silent flag.
+	GetShellBangSilent() bool
 	// OpenSettings asks the TUI to display the settings pane. Returns an
 	// error in headless contexts so the slash command can fall back to text.
 	OpenSettings() error

@@ -428,8 +428,10 @@ func applySettingsArg(args []string, s Side) (string, error) {
 		key = "show_nudges"
 	case "compact", "dense", "tight":
 		key = "compact"
+	case "bang", "shell_bang", "shell_bang_silent", "bang_silent":
+		key = "shell_bang_silent"
 	default:
-		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | compact)", nil
+		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | compact | shell_bang_silent)", nil
 	}
 	var newVal bool
 	if len(args) >= 2 {
@@ -449,6 +451,8 @@ func applySettingsArg(args []string, s Side) (string, error) {
 			newVal = !s.GetShowNudges()
 		case "compact":
 			newVal = !s.GetCompact()
+		case "shell_bang_silent":
+			newVal = !s.GetShellBangSilent()
 		}
 	}
 	var err error
@@ -461,6 +465,8 @@ func applySettingsArg(args []string, s Side) (string, error) {
 		err = s.SetShowNudges(newVal)
 	case "compact":
 		err = s.SetCompact(newVal)
+	case "shell_bang_silent":
+		err = s.SetShellBangSilent(newVal)
 	}
 	if err != nil {
 		return "", err

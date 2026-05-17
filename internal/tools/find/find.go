@@ -11,7 +11,7 @@ import (
 	"github.com/elhenro/bee/internal/tools"
 )
 
-const toolName = "find"
+const toolName = "glob"
 
 // Tool is the find tool.
 type Tool struct {
@@ -25,9 +25,9 @@ func New(root string) *Tool { return &Tool{root: root, max: 500} }
 // Spec advertises the tool to the model.
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
-		Name:        toolName,
-		Description:   "Find files by name glob (filepath.Match, e.g. '*.go'). Returns up to 500 paths. Args: name (required), path (optional).",
-		PromptSnippet: "Find files by glob pattern (respects .gitignore)",
+		Name:          toolName,
+		Description:   "ALWAYS use `glob` for filename pattern matching. NEVER invoke `find` or `fd` via the `bash` tool — shell variants miss bee's project-aware excludes (.claude, vendor, node_modules) and inflate counts with worktree duplicates. Filename glob (filepath.Match, e.g. '*.go', '*_test.go'). Returns up to 500 paths. Args: name (required), path (optional).",
+		PromptSnippet: "find files by name pattern (use this, NOT shell `find`)",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -65,7 +65,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if name == ".git" || name == "node_modules" || name == "vendor" {
+			if name == ".git" || name == "node_modules" || name == "vendor" || name == ".claude" {
 				return filepath.SkipDir
 			}
 			return nil

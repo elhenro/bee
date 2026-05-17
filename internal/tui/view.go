@@ -157,8 +157,14 @@ func liveBudget(termH int, parts ...string) int {
 func (m Model) renderLive(maxRows int) string {
 	var parts []string
 	if m.state == StateStreaming {
-		out := m.stream.RenderStreaming(m.partial, m.loaderFrame)
-		if maxRows > 0 && m.partial != "" {
+		// progressive flush may have pushed a prefix of m.partial to scroll-
+		// back already; only render what's still live.
+		visible := m.partial
+		if n := len(m.streamFlushed); n > 0 && n <= len(m.partial) {
+			visible = m.partial[n:]
+		}
+		out := m.stream.RenderStreaming(visible, m.loaderFrame)
+		if maxRows > 0 && visible != "" {
 			out = m.stream.ClipStreamingTail(out, maxRows)
 		}
 		parts = append(parts, out)

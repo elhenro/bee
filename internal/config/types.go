@@ -67,6 +67,13 @@ type Config struct {
 	// Toggle via /settings; persists across launches.
 	Highlight bool `toml:"highlight"`
 
+	// ShellBangSilent flips the behavior of the inline shell prefix `!`.
+	// Default true = `!cmd` runs locally and the output is NOT forwarded to
+	// the LLM (silent). false restores the legacy behavior where `!cmd`
+	// appends its output to a user turn. `!!cmd` always runs in the
+	// opposite mode (escape hatch). Toggle via /settings.
+	ShellBangSilent bool `toml:"shell_bang_silent"`
+
 	// ExtraTools opts specific tools into the manifest beyond the active
 	// profile's allowlist. Names match tool Spec().Name (e.g. "apply_patch",
 	// "hashline_edit"). The default keeps the surface minimal; this is the

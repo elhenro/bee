@@ -9,6 +9,7 @@ import (
 
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/skills"
+	"github.com/elhenro/bee/internal/types"
 )
 
 // newTestModel builds a model with no engine and a sane terminal size.
@@ -542,6 +543,92 @@ func TestModel_PendingImageAttachedAndCleared(t *testing.T) {
 	}
 	if !gotImage {
 		t.Errorf("expected an image block on submit, got: %+v", last.Content)
+	}
+}
+
+// Progressive flush: a stream that outgrows the live region pushes complete
+// leading lines into scrollback so the user can read from the start while the
+// tail keeps streaming. Tail stays in m.partial; the flushed prefix lives in
+// m.streamFlushed so the renderer skips it.
+func TestModel_ProgressiveFlush_PushesHeadOnOverflow(t *testing.T) {
+	m := newTestModel(t) // 80x24 terminal — small budget so overflow is easy
+	m.state = StateStreaming
+	// stream enough deltas to overflow the live budget. Each line is short so
+	// width-wrap can't account for the overflow on its own.
+	var cmds []tea.Cmd
+	for i := 0; i < 60; i++ {
+		m2, cmd := m.Update(streamDeltaMsg{Delta: "line\n"})
+		m = m2.(Model)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if m.streamFlushed == "" {
+		t.Fatalf("expected progressive flush to have pushed a head prefix; streamFlushed is empty (partial=%dB)", len(m.partial))
+	}
+	if !strings.HasPrefix(m.partial, m.streamFlushed) {
+		t.Fatalf("streamFlushed must be a prefix of partial; partial=%q flushed=%q", m.partial, m.streamFlushed)
+	}
+	if len(cmds) == 0 {
+		t.Fatal("expected at least one cmd batch carrying tea.Println for the flushed head")
+	}
+}
+
+// Short streams stay in the live buffer entirely so finalization keeps the
+// full markdown-styled RenderMessage path intact.
+func TestModel_ProgressiveFlush_ShortStreamStaysLive(t *testing.T) {
+	m := newTestModel(t)
+	m.state = StateStreaming
+	m2, _ := m.Update(streamDeltaMsg{Delta: "one short line\n"})
+	m = m2.(Model)
+	if m.streamFlushed != "" {
+		t.Fatalf("short stream should not trigger flush; got streamFlushed=%q", m.streamFlushed)
+	}
+}
+
+// commitFlushed → flush() roundtrip: the assistant message whose first text
+// block starts with the flushed prefix gets the prefix stripped before being
+// emitted, so the head doesn't print twice in scrollback.
+func TestModel_FlushStripsFlushedPrefix(t *testing.T) {
+	m := newTestModel(t)
+	m.streamFlushed = "head line\n"
+	m.commitFlushed()
+	if m.pendingFlushedPrefix != "head line\n" {
+		t.Fatalf("commitFlushed should hand prefix off; got %q", m.pendingFlushedPrefix)
+	}
+	if m.streamFlushed != "" {
+		t.Fatalf("commitFlushed should clear streamFlushed; got %q", m.streamFlushed)
+	}
+	m.messages = append(m.messages, types.Message{
+		Role: types.RoleAssistant,
+		Content: []types.ContentBlock{{
+			Type: types.BlockText,
+			Text: "head line\ntail line",
+		}},
+	})
+	_ = m.flush()
+	if m.pendingFlushedPrefix != "" {
+		t.Fatalf("flush should consume prefix; got %q", m.pendingFlushedPrefix)
+	}
+	// messages slice is left intact (engine source of truth); strip happens
+	// on the copy passed to RenderMessage.
+	if got := m.messages[0].Content[0].Text; got != "head line\ntail line" {
+		t.Fatalf("original message must not be mutated; got %q", got)
+	}
+}
+
+// On stream error there's no final assistant message to dedupe against, so
+// any in-flight flushed prefix gets dropped to avoid contaminating the next
+// turn's flush().
+func TestModel_TurnDoneError_DropsFlushedPrefix(t *testing.T) {
+	m := newTestModel(t)
+	m.state = StateStreaming
+	m.streamFlushed = "head\n"
+	m.partial = "head\nmid"
+	m2, _ := m.Update(turnDoneMsg{err: context.DeadlineExceeded})
+	m = m2.(Model)
+	if m.streamFlushed != "" || m.pendingFlushedPrefix != "" {
+		t.Fatalf("error path should drop flush state; got flushed=%q pending=%q", m.streamFlushed, m.pendingFlushedPrefix)
 	}
 }
 

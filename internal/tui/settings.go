@@ -21,30 +21,34 @@ var settingsRows = []settingsRow{
 	{key: "compact", label: "compact layout", desc: "drop gutter + inter-turn blank + user tint + OSC 133"},
 	{key: "show_context_bar", label: "show context bar", desc: "thin context-fill strip at the bottom edge"},
 	{key: "highlight", label: "syntax highlight", desc: "color code in diffs, file content, and bash commands"},
+	{key: "shell_bang_silent", label: "!shell stays local", desc: "!cmd runs without forwarding output to the LLM (!! inverts)"},
 }
 
 // SettingsPane is a modal toggling persistent TUI settings. Arrow keys move
 // cursor; enter/space flips the focused row. Each flip applies live and writes
 // to ~/.bee/config.toml so the next launch picks the same values up.
 type SettingsPane struct {
-	open      bool
-	cursor    int
-	verbose   bool
-	thought   bool
-	nudge     bool
-	compact   bool
-	ctxBar    bool
-	highlight bool
+	open       bool
+	cursor     int
+	verbose    bool
+	thought    bool
+	nudge      bool
+	compact    bool
+	ctxBar     bool
+	highlight  bool
+	bangSilent bool
 }
 
 // NewSettingsPane returns a closed settings pane.
-func NewSettingsPane() *SettingsPane { return &SettingsPane{thought: true, highlight: true} }
+func NewSettingsPane() *SettingsPane {
+	return &SettingsPane{thought: true, highlight: true, bangSilent: true}
+}
 
 // Open reports visibility.
 func (p *SettingsPane) Open() bool { return p != nil && p.open }
 
 // Show opens the pane seeded with the live values.
-func (p *SettingsPane) Show(verbose, showThoughts, showNudges, compact, showContextBar, highlight bool) {
+func (p *SettingsPane) Show(verbose, showThoughts, showNudges, compact, showContextBar, highlight, shellBangSilent bool) {
 	if p == nil {
 		return
 	}
@@ -56,6 +60,7 @@ func (p *SettingsPane) Show(verbose, showThoughts, showNudges, compact, showCont
 	p.compact = compact
 	p.ctxBar = showContextBar
 	p.highlight = highlight
+	p.bangSilent = shellBangSilent
 }
 
 // settingsToggleMsg is published when a row is toggled. Carries the new value
@@ -107,6 +112,9 @@ func (p *SettingsPane) Update(msg tea.Msg) (*SettingsPane, tea.Cmd) {
 		case "highlight":
 			p.highlight = !p.highlight
 			newVal = p.highlight
+		case "shell_bang_silent":
+			p.bangSilent = !p.bangSilent
+			newVal = p.bangSilent
 		}
 		return p, func() tea.Msg { return settingsToggleMsg{key: row.key, value: newVal} }
 	}
@@ -148,6 +156,8 @@ func (p *SettingsPane) View(width, height int) string {
 			state = p.ctxBar
 		case "highlight":
 			state = p.highlight
+		case "shell_bang_silent":
+			state = p.bangSilent
 		}
 		toggle := "[ ]"
 		if state {

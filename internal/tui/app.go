@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/rivo/uniseg"
 
 	"github.com/elhenro/bee/internal/caveman"
@@ -51,6 +52,27 @@ type Model struct {
 	stream   *StreamRenderer
 	partial  string // live-streaming buffer
 	lastErr  string
+
+	// streamFlushed holds the prefix of m.partial that has already been
+	// pushed into terminal scrollback via tea.Println by the progressive
+	// flush path. View() renders only m.partial[len(streamFlushed):]; flush()
+	// strips the prefix from the matching final assistant message so the
+	// settled head doesn't get re-printed underneath.
+	streamFlushed string
+	// streamFenceOpen tracks whether the already-flushed prefix sits inside
+	// an unclosed ``` fence. Drives the glamour-vs-raw rendering choice for
+	// the next chunk: code-block content gets shipped raw (preserving its
+	// monospace layout) while prose chunks flow through glamour for full
+	// markdown styling (headings, lists, bold, links).
+	streamFenceOpen bool
+	// pendingFlushedPrefix carries streamFlushed across the partial reset
+	// (turnDoneMsg / liveMsgMsg) so the next flush() call can suppress the
+	// already-printed prefix. Consumed (cleared) on first flush() call after
+	// commit, even if no matching message was found.
+	pendingFlushedPrefix string
+	// progressiveStream enables the head-flush path. On by default; disable
+	// with BEE_STREAM_PROGRESSIVE=0 to fall back to pure tail-clipping.
+	progressiveStream bool
 
 	// input — multi-line textarea so shift+enter / ctrl+j insert newlines
 	// while enter still submits via handleKey before textarea sees it.
@@ -217,6 +239,12 @@ type Model struct {
 	// file content, and bash command summaries. Default true. Toggle via
 	// /settings; persists to config.
 	highlight bool
+
+	// shellBangSilent controls the default behavior of `!cmd`. true (default)
+	// runs locally without forwarding to the LLM; false legacy-style submits
+	// the output as a user turn. `!!cmd` always runs in the opposite mode.
+	// Toggle via /settings; persists to config.
+	shellBangSilent bool
 
 	// quitArmed is true after a first ctrl+d. Within quitConfirmWindow a
 	// second ctrl+d quits; any other key clears the armed state. Ctrl+c is
@@ -399,8 +427,14 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		settingsPane: NewSettingsPane(),
 		hive:         NewHive(),
 		agentView:    NewAgentView(),
-		showThoughts: true,
-		highlight:    true,
+		showThoughts:    true,
+		highlight:       true,
+		shellBangSilent: true,
+		// progressive flush on by default: pushes settled head lines of a
+		// long streaming response into native terminal scrollback so the user
+		// can read from the start while the tail keeps growing. Opt out with
+		// BEE_STREAM_PROGRESSIVE=0 to fall back to pure tail-clipping.
+		progressiveStream: os.Getenv("BEE_STREAM_PROGRESSIVE") != "0",
 	}
 }
 
@@ -479,6 +513,12 @@ func (m Model) WithHighlight(v bool) Model {
 	if m.stream != nil {
 		m.stream.SetHighlight(v)
 	}
+	return m
+}
+
+// WithShellBangSilent seeds the bang default behavior. Config-driven path.
+func (m Model) WithShellBangSilent(v bool) Model {
+	m.shellBangSilent = v
 	return m
 }
 
@@ -604,18 +644,34 @@ func warningFadeCmd() tea.Cmd {
 //
 // printedCount can exceed len(m.messages) after a session swap or fork
 // that resets the slice; in that case we re-anchor it without emitting.
+//
+// pendingFlushedPrefix (set by commitFlushed when a partial-flushed stream
+// finalized) gets consumed on the matching assistant message: its first
+// text block has the prefix stripped so the progressively-flushed head
+// doesn't print twice. Always cleared after this call, even on no match.
 func (m *Model) flush() tea.Cmd {
 	if m.printedCount > len(m.messages) {
 		m.printedCount = len(m.messages)
 	}
 	if m.printedCount == len(m.messages) {
+		m.pendingFlushedPrefix = ""
 		return nil
 	}
 	pending := m.messages[m.printedCount:]
 	startIdx := m.printedCount
 	m.printedCount = len(m.messages)
+	prefix := m.pendingFlushedPrefix
+	m.pendingFlushedPrefix = ""
 	cmds := make([]tea.Cmd, 0, len(pending))
 	for i, msg := range pending {
+		// strip the already-flushed head off the first matching assistant
+		// turn so its prefix doesn't render twice in scrollback.
+		if prefix != "" && msg.Role == types.RoleAssistant {
+			if stripped, ok := stripTextPrefix(msg, prefix); ok {
+				msg = stripped
+			}
+			prefix = ""
+		}
 		rendered := m.stream.RenderMessage(msg)
 		// renderer may return empty for filtered messages (e.g. hidden
 		// [nudge] turns); skip those so we don't blit a stray blank row.
@@ -636,6 +692,99 @@ func (m *Model) flush() tea.Cmd {
 		return cmds[0]
 	}
 	return tea.Sequence(cmds...)
+}
+
+// commitFlushed transfers any progressively-flushed prefix from the active
+// stream over to pendingFlushedPrefix so the next flush() call can suppress
+// the already-printed head from the final assistant message. Must be called
+// before m.partial is cleared on any successful or canceled stream path.
+func (m *Model) commitFlushed() {
+	if m.streamFlushed == "" {
+		return
+	}
+	m.pendingFlushedPrefix = m.streamFlushed
+	m.streamFlushed = ""
+}
+
+// maybeFlushPartialHead pushes complete leading lines of m.partial into
+// terminal scrollback when the partial would otherwise overflow the live
+// region. bubbletea's inline renderer cannot reach above the cursor, so a
+// long response normally has its head clipped out of sight while only the
+// tail (with a `… +N above` header) stays visible. Progressive flush emits
+// settled head lines via tea.Println so the user can scroll up and read
+// from the start while the tail keeps streaming.
+//
+// Returns nil when nothing to flush, progressive mode is off, no complete
+// line is available, or the partial still fits the live budget. Callers
+// should invoke this after appending to m.partial; the newline gate keeps
+// the per-delta cost negligible.
+func (m *Model) maybeFlushPartialHead() tea.Cmd {
+	if !m.progressiveStream || m.partial == "" || m.height <= 0 || m.width <= 0 {
+		return nil
+	}
+	flushedLen := len(m.streamFlushed)
+	if flushedLen > len(m.partial) {
+		// defensive: partial got reset without commitFlushed (shouldn't
+		// happen — every reset path commits — but bail rather than slice
+		// past length).
+		m.streamFlushed = ""
+		return nil
+	}
+	unflushed := m.partial[flushedLen:]
+	lastNL := strings.LastIndexByte(unflushed, '\n')
+	if lastNL < 0 {
+		return nil
+	}
+	// only flush when the live region actually overflows. Short responses
+	// stay in the live buffer and get full markdown styling at finalization.
+	intro := m.renderIntro()
+	bot := m.renderBottomBar()
+	status := m.renderTopBar()
+	warn := m.renderWarning()
+	var ctxBar string
+	if m.showContextBar {
+		ctxBar = m.renderContextBar()
+	}
+	budget := liveBudget(m.height, intro, bot, status, warn, ctxBar)
+	if budget <= 0 {
+		return nil
+	}
+	rendered := m.stream.RenderStreaming(unflushed, m.loaderFrame)
+	w := m.width
+	if w < 4 {
+		w = 80
+	}
+	wrapped := ansi.Hardwrap(rendered, w, true)
+	if strings.Count(wrapped, "\n")+1 <= budget {
+		return nil
+	}
+	head := unflushed[:lastNL+1]
+	chunk := m.stream.RenderStreamingChunk(head)
+	m.streamFlushed += head
+	if chunk == "" {
+		return nil
+	}
+	return tea.Println(chunk)
+}
+
+// stripTextPrefix returns a copy of msg with the leading prefix removed
+// from its first BlockText. ok is false when no text block starts with the
+// prefix — in that case the caller should fall back to printing msg as-is.
+func stripTextPrefix(msg types.Message, prefix string) (types.Message, bool) {
+	for i, b := range msg.Content {
+		if b.Type != types.BlockText {
+			continue
+		}
+		if !strings.HasPrefix(b.Text, prefix) {
+			return msg, false
+		}
+		out := msg
+		out.Content = make([]types.ContentBlock, len(msg.Content))
+		copy(out.Content, msg.Content)
+		out.Content[i].Text = b.Text[len(prefix):]
+		return out, true
+	}
+	return msg, false
 }
 
 // WithCommands swaps in a caller-provided registry. The palette is rebuilt
@@ -964,7 +1113,17 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		// append to live partial. View() picks it up next render. The pump
 		// re-arms itself so subsequent deltas keep draining.
 		m.partial += msg.Delta
-		return m, m.waitStream()
+		// newline-gated head flush: only check the budget when this delta
+		// completed a line. Tiny per-character deltas skip the work; line
+		// terminators trigger the overflow check + possible scrollback push.
+		var flushCmd tea.Cmd
+		if strings.ContainsRune(msg.Delta, '\n') {
+			flushCmd = m.maybeFlushPartialHead()
+		}
+		if flushCmd == nil {
+			return m, m.waitStream()
+		}
+		return m, tea.Batch(flushCmd, m.waitStream())
 
 	case liveMsgMsg:
 		// engine persisted a new assistant/tool message mid-Run; print it to
@@ -982,6 +1141,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 			}
 		}
 		m.messages = append(m.messages, msg.Msg)
+		m.commitFlushed()
 		m.partial = ""
 		flushCmd := m.flush()
 		return m, tea.Batch(flushCmd, m.waitLiveMsg())
@@ -1035,13 +1195,19 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 			if len(msg.result.Messages) > 0 {
 				m.messages = msg.result.Messages
 			}
+			m.commitFlushed()
 			m.partial = ""
 			m.state = StateIdle
 		case msg.err != nil:
+			// drop any progressively-flushed prefix on error — there's no
+			// final assistant message to dedupe against, just clear state.
+			m.streamFlushed = ""
+			m.pendingFlushedPrefix = ""
 			m.state = StateError
 			m.lastErr = msg.err.Error()
 		default:
 			m.messages = msg.result.Messages
+			m.commitFlushed()
 			m.partial = ""
 			m.state = StateIdle
 		}
@@ -1222,7 +1388,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		if m.settingsPane == nil {
 			m.settingsPane = NewSettingsPane()
 		}
-		m.settingsPane.Show(m.verbose, m.showThoughts, m.showNudges, m.compact, m.showContextBar, m.highlight)
+		m.settingsPane.Show(m.verbose, m.showThoughts, m.showNudges, m.compact, m.showContextBar, m.highlight, m.shellBangSilent)
 		return m, nil
 
 	case settingsToggleMsg:
@@ -1241,6 +1407,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 			err = m.side().SetShowContextBar(msg.value)
 		case "highlight":
 			err = m.side().SetHighlight(msg.value)
+		case "shell_bang_silent":
+			err = m.side().SetShellBangSilent(msg.value)
 		}
 		if err != nil && m.state != StateStreaming {
 			// don't kill an in-flight turn over a persist hiccup; surface the
@@ -1684,11 +1852,14 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	// record every accepted submission for ctrl+r reverse search.
 	AppendHistory(text)
 
-	// inline shell: !cmd forwards to LLM with output appended, !!cmd is silent.
-	if cmd, silent, isInline := parseInlinePrefix(text); isInline {
+	// inline shell: ! follows the user's configured default (cfg.ShellBangSilent
+	// — silent by default so quick lookups don't burn tokens). !! inverts the
+	// default, giving a per-invocation escape hatch in either direction.
+	if cmd, count, isInline := parseInlinePrefix(text); isInline {
 		if m.eng == nil {
 			return m, nil
 		}
+		silent := resolveBangSilent(m.shellBangSilent, count)
 		res := runInlineShell(m.ctx, m.eng.Tools, cmd, silent)
 		payload := formatInlineShell(cmd, res.Output, res.IsError)
 		if silent {
@@ -1847,6 +2018,10 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 // The result comes back via turnDoneMsg.
 func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 	m.state = StateStreaming
+	// fresh stream — drop any lingering flush state from a previous turn so
+	// the next progressive flush starts clean.
+	m.streamFlushed = ""
+	m.pendingFlushedPrefix = ""
 	m.partial = ""
 	m.loaderFrame = 0
 
@@ -1993,6 +2168,11 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 	// so tests stay on the ctor default already set to true.
 	if eng != nil {
 		m = m.WithHighlight(eng.Cfg.Highlight)
+	}
+	// shell-bang-silent: cfg-driven; default true so `!cmd` runs locally
+	// without LLM forwarding. Skip when eng nil to keep test defaults.
+	if eng != nil {
+		m = m.WithShellBangSilent(eng.Cfg.ShellBangSilent)
 	}
 	// hand the engine's stream channel to the model so deltas land in the
 	// bubbletea Update loop instead of corrupting the alt-screen.

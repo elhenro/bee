@@ -154,6 +154,8 @@ func (s *tuiSide) OpenSession(id string) error {
 	s.m.eng.Sessions = roll
 	s.m.messages = prior
 	s.m.partial = ""
+	s.m.streamFlushed = ""
+	s.m.pendingFlushedPrefix = ""
 	s.m.lastErr = ""
 	s.m.state = StateIdle
 	// Reset printedCount so flush() will emit the resumed transcript into
@@ -184,6 +186,8 @@ func (s *tuiSide) NewSession() error {
 	}
 	s.m.messages = nil
 	s.m.partial = ""
+	s.m.streamFlushed = ""
+	s.m.pendingFlushedPrefix = ""
 	s.m.lastErr = ""
 	s.m.state = StateIdle
 	s.m.printedCount = 0
@@ -247,6 +251,8 @@ func (s *tuiSide) ForkSession(fromMsgID string) error {
 	s.m.eng.Sessions = newR
 	s.m.messages = nil
 	s.m.partial = ""
+	s.m.streamFlushed = ""
+	s.m.pendingFlushedPrefix = ""
 	s.m.lastErr = ""
 	s.m.state = StateIdle
 	s.m.printedCount = 0
@@ -559,6 +565,28 @@ func (s *tuiSide) GetHighlight() bool {
 		return true
 	}
 	return s.m.highlight
+}
+
+// SetShellBangSilent flips the default bang-command behavior live + persists.
+// true (default) = `!cmd` stays local; false = legacy forward-to-LLM. `!!`
+// always inverts whichever default is active.
+func (s *tuiSide) SetShellBangSilent(v bool) error {
+	if s.m == nil {
+		return errors.New("shell_bang_silent: no tui state")
+	}
+	s.m.shellBangSilent = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShellBangSilent = v
+	}
+	return PersistSetting("", "shell_bang_silent", v)
+}
+
+// GetShellBangSilent returns the current bang-silent flag.
+func (s *tuiSide) GetShellBangSilent() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.shellBangSilent
 }
 
 // OpenSettings flips a sentinel that Model.Update consumes to display the

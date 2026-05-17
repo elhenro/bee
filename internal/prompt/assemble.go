@@ -97,22 +97,25 @@ func identityBlock(_ config.Config, level caveman.Level) string {
 }
 
 func identityBlockFor(cwd, gitRoot string, level caveman.Level) string {
+	// shared rule across both modes: bash tool inherits this cwd, so cd-prefixes
+	// (`cd /path && ...`) are pure noise — costs tokens, no behavior change.
+	const cdRule = "Shell tool already runs in cwd; never prefix commands with `cd <dir> &&`."
 	if level == caveman.Off {
 		// minimal-prompt shape: name the action verbs, ban narration. Small
 		// local models (qwen, llama, ds-coder) drift into describing what
 		// they'd do unless explicitly told to invoke tools.
 		header := "You are the bee coding agent. You help by reading files, running shell commands, and editing or writing code. Always invoke tools to act; do not narrate intent."
 		if gitRoot != "" && gitRoot != cwd {
-			return fmt.Sprintf("%s\nWorking directory: %s.\nProject root: %s.", header, cwd, gitRoot)
+			return fmt.Sprintf("%s\nWorking directory: %s.\nProject root: %s.\n%s", header, cwd, gitRoot, cdRule)
 		}
-		return fmt.Sprintf("%s\nWorking directory: %s.", header, cwd)
+		return fmt.Sprintf("%s\nWorking directory: %s.\n%s", header, cwd, cdRule)
 	}
 	// terse-mode identity: style rule lives in caveman rules — no duplicate
 	// here. every byte counts on tiny-profile budgets.
 	if gitRoot != "" && gitRoot != cwd {
-		return fmt.Sprintf("bee coding agent. cwd: %s. project: %s.", cwd, gitRoot)
+		return fmt.Sprintf("bee coding agent. cwd: %s. project: %s. %s", cwd, gitRoot, cdRule)
 	}
-	return fmt.Sprintf("bee coding agent. cwd: %s.", cwd)
+	return fmt.Sprintf("bee coding agent. cwd: %s. %s", cwd, cdRule)
 }
 
 // toolsManifest renders each tool as "name: snippet". When PromptSnippet is
