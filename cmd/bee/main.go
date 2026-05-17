@@ -8,7 +8,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 )
@@ -39,6 +41,7 @@ var reservedSubcommands = map[string]bool{
 
 func main() {
 	stripVerboseFlag()
+	stripCavemanFlag()
 	if len(os.Args) < 2 {
 		repl()
 		return
@@ -94,6 +97,10 @@ usage:
   bee <skill> [args...]     run a skill non-interactively
   bee version               print version
   bee help                  show this help
+
+global flags (any position):
+  --verbose                 show full tool output
+  --caveman <lvl>           force caveman level: off|lite|full|ultra
 `)
 }
 
@@ -119,6 +126,46 @@ func stripVerboseFlag() {
 		_ = os.Setenv("BEE_VERBOSE", "1")
 		os.Args = out
 	}
+}
+
+// stripCavemanFlag pulls --caveman <lvl> / --caveman=<lvl> (also -caveman
+// variants) out of os.Args at any position so it works as a global flag
+// (e.g. `bee --caveman full`, `bee --caveman full run msg`). The value is
+// validated up front and stashed in BEE_CAVEMAN; the TUI and headless paths
+// pick it up after config.Load. Invalid level exits 2.
+func stripCavemanFlag() {
+	out := os.Args[:1]
+	var val string
+	hit := false
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--caveman" || a == "-caveman":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "bee: --caveman needs a level (off|lite|full|ultra)")
+				os.Exit(2)
+			}
+			val = args[i+1]
+			i++
+			hit = true
+		case strings.HasPrefix(a, "--caveman=") || strings.HasPrefix(a, "-caveman="):
+			val = a[strings.IndexByte(a, '=')+1:]
+			hit = true
+		default:
+			out = append(out, a)
+		}
+	}
+	if !hit {
+		return
+	}
+	lvl, err := caveman.ParseLevel(val)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bee: %v\n", err)
+		os.Exit(2)
+	}
+	_ = os.Setenv("BEE_CAVEMAN", string(lvl))
+	os.Args = out
 }
 
 func runHeadless(args []string) {
