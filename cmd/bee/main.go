@@ -21,6 +21,10 @@ func init() {
 	// forward the build-tag-injected version into tui so the intro
 	// placeholder renders the live version after the animation ends.
 	tui.Version = version
+	// commit feeds the background update checker so it can compare the
+	// running build's sha against main HEAD. Dev/source builds (commit
+	// "" or "dev") skip the probe entirely.
+	tui.Commit = commit
 }
 
 // version and commit are overridable at link time. The release workflow

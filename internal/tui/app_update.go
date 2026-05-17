@@ -81,6 +81,11 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.approval = newApp
 		return m, cmd
 	}
+	if m.updatePrompt.Active {
+		newP, cmd := m.updatePrompt.Update(msg)
+		m.updatePrompt = newP
+		return m, cmd
+	}
 
 	if nm, cmd, claimed := m.claimByPane(msg); claimed {
 		return nm, cmd
@@ -199,6 +204,13 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onPickerLoginRequested(msg)
 	case effortPickedMsg:
 		return m.onEffortPicked(msg)
+
+	case updateAvailableMsg:
+		return m.onUpdateAvailable(msg)
+	case updateDecisionMsg:
+		return m.onUpdateDecision(msg)
+	case updateAppliedMsg:
+		return m.onUpdateApplied(msg)
 
 	case openWorkspaceMsg:
 		// slice 3B handles workspace; still a no-op.

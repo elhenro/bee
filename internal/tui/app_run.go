@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -150,6 +151,23 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(input))
 	if m.approver != nil {
 		m.approver.SetProgram(p)
+	}
+	// hourly background probe of the bee repo's main branch. Off when:
+	//   - the build wasn't tagged with a real commit (Commit == "" or "dev")
+	//   - cfg.UpdateCheck == "off"
+	// First probe fires 15s after launch, then once per interval. Findings
+	// flow back as updateAvailableMsg (mode "ask") or updateAppliedMsg
+	// (mode "auto") through p.Send.
+	checkerCtx, cancelChecker := context.WithCancel(ctx)
+	defer cancelChecker()
+	if eng != nil {
+		engRef := eng // capture for the closure so probes pick up live mode changes
+		startUpdateChecker(checkerCtx, p, updateCheckConfig{
+			mode:     func() string { return engRef.Cfg.UpdateCheck },
+			repo:     eng.Cfg.UpdateRepo,
+			branch:   eng.Cfg.UpdateBranch,
+			interval: time.Hour,
+		})
 	}
 	_, err := p.Run()
 	return err

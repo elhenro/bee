@@ -107,6 +107,20 @@ type Config struct {
 	// new tool whose Run executes a fixed bash command. Added via `/tools add`
 	// and persisted to ~/.bee/config.toml.
 	UserTools []UserTool `toml:"user_tools"`
+
+	// UpdateCheck gates the hourly upstream-update probe.
+	//   "ask"  — probe and surface a modal when main has new commits (default)
+	//   "auto" — probe and apply silently (notice surfaces via warn line)
+	//   "off"  — no probe, no prompt
+	// Picked from the modal's four buttons; persists across launches.
+	UpdateCheck string `toml:"update_check"`
+
+	// UpdateRepo lets forks point the probe at a different GitHub repo.
+	// Empty = elhenro/bee.
+	UpdateRepo string `toml:"update_repo"`
+
+	// UpdateBranch is the branch to compare against. Empty = main.
+	UpdateBranch string `toml:"update_branch"`
 }
 
 // UserTool describes a custom shell-alias tool. Name becomes the tool id the

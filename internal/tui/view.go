@@ -48,6 +48,9 @@ func (m Model) View() string {
 	if m.approval.Active {
 		return overlayCenter(frame, m.approval.View(), m.width)
 	}
+	if m.updatePrompt.Active {
+		return overlayCenter(frame, m.updatePrompt.View(), m.width)
+	}
 	// palette and atpicker render inline above the input in renderBottomBar —
 	// no extra overlay needed here.
 	if m.history.Active {

@@ -6,7 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/elhenro/bee)](https://github.com/elhenro/bee/releases)
 
-![bee](./bee.png)
+<img src="./bee.png" alt="bee" width="160" />
+
+![bee demo](./demo/bee.gif)
 
 bee coding agent harness. Pure Go, single static binary, requires Go 1.26+ to build.
 
@@ -121,13 +123,3 @@ The `chatgpt` provider lets you drive bee with a ChatGPT Plus/Pro/Team subscript
 ## Credits
 
 Caveman prompt-compression rules adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman).
-
-## Screenshots
-
-![bee run](./screenshots/bee-run.png)
-![bee skill](./screenshots/bee-skill.png)
-![bee hyperplan](./screenshots/bee-hyperplan.png)
-
-## License
-
-MIT.

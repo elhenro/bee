@@ -58,6 +58,9 @@ func Defaults() Config {
 		ShowTurnTimer:   true,
 		ShowGitBranch:   false,
 		ShowTotalTokens: false,
+		UpdateCheck:     "ask",
+		UpdateRepo:      "elhenro/bee",
+		UpdateBranch:    "main",
 		Providers: map[string]ProviderConfig{
 			"openrouter": {
 				BaseURL:      "https://openrouter.ai/api/v1",

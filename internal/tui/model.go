@@ -286,4 +286,15 @@ type Model struct {
 	// showLoader gates the streaming "generating" animation live. Toggle
 	// via /settings; persists across launches.
 	showLoader bool
+
+	// updatePrompt is the four-button modal surfaced when the hourly checker
+	// finds that main has new commits. Inactive until updateAvailableMsg fires.
+	updatePrompt UpdatePrompt
+	// updateSeenSession suppresses re-prompts for the remainder of this
+	// session after the user picks "later". Re-checking still happens — the
+	// gate is between probe + show, not between probe + skip.
+	updateSeenSession bool
+	// updateApplying flags an in-flight install subprocess so the user can't
+	// trigger a second one before the first finishes.
+	updateApplying bool
 }
