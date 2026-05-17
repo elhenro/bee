@@ -18,7 +18,7 @@ func TestStartLoopback_CallbackRoundTrip(t *testing.T) {
 	}
 	defer srv.Close()
 
-	if !strings.HasPrefix(srv.URL, "http://127.0.0.1:") {
+	if !strings.HasPrefix(srv.URL, "http://localhost:") {
 		t.Errorf("unexpected loopback URL: %s", srv.URL)
 	}
 	if !strings.HasSuffix(srv.URL, "/callback") {

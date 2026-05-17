@@ -79,8 +79,12 @@ func StartLoopbackOn(ctx context.Context, path string, fixedPort int) (*Loopback
 		_ = srv.Shutdown(shutCtx)
 	}()
 
+	// advertise as localhost (not 127.0.0.1): some OAuth servers (Hydra,
+	// used by chatgpt.com auth) register the literal "localhost" redirect_uri
+	// and reject the 127.0.0.1 form with authorize_hydra_invalid_request.
+	// Browser resolves localhost -> 127.0.0.1, so the listener still catches.
 	return &LoopbackServer{
-		URL:    fmt.Sprintf("http://127.0.0.1:%d%s", port, path),
+		URL:    fmt.Sprintf("http://localhost:%d%s", port, path),
 		Result: res,
 		srv:    srv,
 	}, nil
