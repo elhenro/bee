@@ -4,9 +4,11 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/types"
@@ -439,6 +441,51 @@ func TestModel_EscDismissesPicker(t *testing.T) {
 	m = m2.(Model)
 	if m.picker.Active() {
 		t.Fatal("picker should be inactive after esc on providers stage")
+	}
+}
+
+// Regression: pressing a decision key in the approval modal must resolve
+// the blocked Approver.Request. Old code gated ApprovalDecisionMsg behind
+// `if m.approval.Active`, but the modal deactivates itself synchronously
+// before the async ApprovalDecisionMsg arrives, so Resolve was never
+// called and the engine hung forever.
+func TestModel_ApprovalKey_ResolvesApprover(t *testing.T) {
+	m := newTestModel(t)
+	appr := NewApprover()
+	m = m.WithApprover(appr)
+	// register a pending request directly — Request() would block.
+	ch := make(chan approval.Decision, 1)
+	appr.mu.Lock()
+	appr.pending["u-1"] = ch
+	appr.mu.Unlock()
+	// surface the modal.
+	m2, _ := m.Update(ApprovalAskMsg{UseID: "u-1", Cmd: "rm -rf /tmp/x", Key: "rm-recursive"})
+	m = m2.(Model)
+	if !m.approval.Active {
+		t.Fatal("modal should be active after ApprovalAskMsg")
+	}
+	// press 'a' — ApprovalModel.decide returns a cmd that emits ApprovalDecisionMsg.
+	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = m2.(Model)
+	if cmd == nil {
+		t.Fatal("expected decision cmd")
+	}
+	if m.approval.Active {
+		t.Fatal("modal should self-deactivate on decide")
+	}
+	// route the produced msg back through Update like bubbletea would.
+	dec, ok := cmd().(ApprovalDecisionMsg)
+	if !ok {
+		t.Fatalf("expected ApprovalDecisionMsg, got %T", cmd())
+	}
+	_, _ = m.Update(dec)
+	select {
+	case got := <-ch:
+		if got != approval.AllowOnce {
+			t.Fatalf("approver got %v, want AllowOnce", got)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("approver Resolve never fired — engine would hang")
 	}
 }
 

@@ -1,7 +1,7 @@
 version: 2
 
 # GitGuardian was tripping on demo strings used to test the secret redactor
-# in internal/safety/. None are real credentials — they are canonical examples
+# in internal/safety/. None are real credentials - they are canonical examples
 # (jwt.io demo token, hunter2 meme, AIza...1234567 pattern) chosen specifically
 # because they match the redactor's regexes. Pin the file + literal matches so
 # real leaks in the same module still page.
@@ -10,13 +10,13 @@ secret:
     - internal/safety/safety_test.go
   ignored-matches:
     - name: jwt.io canonical demo token
-      match: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+      match: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
     - name: fake anthropic key (redactor test)
-      match: sk-ant-abcdef0123456789abcdef0123456789xx
+      match: sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
     - name: fake openai key (redactor test)
-      match: sk-proj-abc123def456ghi789jklm
+      match: sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     - name: fake google api key (redactor test)
-      match: AIzaSyAbcdefghijklmnopqrstuvwxyz1234567
+      match: AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
     - name: fake bearer token (redactor test)
       match: abcdefghijklmnopqrstuvwxyz0123
     - name: hunter2 meme password

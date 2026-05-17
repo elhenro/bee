@@ -80,6 +80,37 @@ func TestBuildResponsesRequest_ToolAdvert(t *testing.T) {
 	}
 }
 
+func TestBuildResponsesRequest_EmptyToolResultStillSerializes(t *testing.T) {
+	msgs := []types.Message{
+		{
+			Role: types.RoleUser,
+			Content: []types.ContentBlock{
+				{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: "call_x", Content: ""}},
+			},
+		},
+	}
+	req := BuildResponsesRequest("m", "", msgs, nil, 0, 0, false, "")
+	if len(req.Input) != 1 || req.Input[0].Type != "function_call_output" {
+		t.Fatalf("bad input: %+v", req.Input)
+	}
+	if req.Input[0].Output == "" {
+		t.Fatalf("output must not be empty: %+v", req.Input[0])
+	}
+	body, _ := json.Marshal(req)
+	if !contains(string(body), `"output":`) {
+		t.Errorf("serialized body missing output key: %s", body)
+	}
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
 func TestParseResponsesEvent_TextDelta(t *testing.T) {
 	raw, _ := json.Marshal(map[string]any{
 		"type":  "response.output_text.delta",

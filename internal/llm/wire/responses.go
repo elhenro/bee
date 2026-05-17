@@ -162,6 +162,11 @@ func splitResponsesUser(blocks []types.ContentBlock) []ResponsesItem {
 			if b.Result.IsError {
 				content = "ERROR: " + content
 			}
+			// responses api requires non-empty output on function_call_output;
+			// empty string gets dropped by omitempty and returns 400
+			if content == "" {
+				content = "(no output)"
+			}
 			items = append(items, ResponsesItem{
 				Type:   "function_call_output",
 				CallID: b.Result.UseID,

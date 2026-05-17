@@ -64,16 +64,21 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		})
 		return m, nil
 	}
+	// Decision arrives async from the cmd produced by ApprovalModel.decide,
+	// at which point the modal has already deactivated itself. Handle it
+	// outside the Active gate so the engine unblocks. Without this, the
+	// approver Request() never resolves and the tool call hangs forever.
+	if dec, ok := msg.(ApprovalDecisionMsg); ok {
+		m.state = StateIdle
+		if m.approver != nil {
+			m.approver.Resolve(dec.UseID, dec.Decision)
+		}
+		return m, nil
+	}
 	// modal first: it consumes keys when active.
 	if m.approval.Active {
 		newApp, cmd := m.approval.Update(msg)
 		m.approval = newApp
-		if dec, ok := msg.(ApprovalDecisionMsg); ok {
-			m.state = StateIdle
-			if m.approver != nil {
-				m.approver.Resolve(dec.UseID, dec.Decision)
-			}
-		}
 		return m, cmd
 	}
 
