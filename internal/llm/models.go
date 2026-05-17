@@ -9,7 +9,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/elhenro/bee/internal/auth"
@@ -24,26 +23,12 @@ type Model struct {
 	Pricing       string
 }
 
-// modelCacheTTL is how long a successful /models response stays warm before
-// ListModels re-fetches. Picker UI calls this on every open, so a short TTL
-// keeps it snappy without hammering upstream.
-const modelCacheTTL = 10 * time.Minute
-
 // modelsHTTPTimeout caps the /models GET. provider lists are tiny, so 8s is
 // plenty even for high-latency networks.
 const modelsHTTPTimeout = 8 * time.Second
 
-type cacheEntry struct {
-	models []Model
-	at     time.Time
-}
-
-var (
-	modelCache   = map[string]cacheEntry{}
-	modelCacheMu sync.Mutex
-	// modelsHTTPClient is overridable from tests via SetModelsHTTPClient.
-	modelsHTTPClient = &http.Client{Timeout: modelsHTTPTimeout}
-)
+// modelsHTTPClient is overridable from tests via SetModelsHTTPClient.
+var modelsHTTPClient = &http.Client{Timeout: modelsHTTPTimeout}
 
 // SetModelsHTTPClient replaces the package HTTP client. Tests use this to
 // route through an httptest server with a stricter timeout.
@@ -77,13 +62,6 @@ func resolveProviderKey(name string, cfg config.ProviderConfig) string {
 	}
 	key, _ := auth.LoadAPIKey(dir, name)
 	return key
-}
-
-// ClearModelCache drops every cached entry. Tests call this between cases.
-func ClearModelCache() {
-	modelCacheMu.Lock()
-	defer modelCacheMu.Unlock()
-	modelCache = map[string]cacheEntry{}
 }
 
 // ListModels returns the model catalogue for the given provider. For
@@ -204,38 +182,6 @@ func enrichContextLengths(ctx context.Context, name string, cfg config.ProviderC
 		}
 		if n, ok := idx[models[i].ID]; ok {
 			models[i].ContextLength = n
-		}
-	}
-}
-
-func lookupCache(name string) ([]Model, bool) {
-	modelCacheMu.Lock()
-	defer modelCacheMu.Unlock()
-	e, ok := modelCache[name]
-	if !ok {
-		return nil, false
-	}
-	if time.Since(e.at) > modelCacheTTL {
-		delete(modelCache, name)
-		return nil, false
-	}
-	// return a copy so callers can't mutate the cached slice
-	out := make([]Model, len(e.models))
-	copy(out, e.models)
-	return out, true
-}
-
-func storeCache(name string, models []Model) {
-	modelCacheMu.Lock()
-	cp := make([]Model, len(models))
-	copy(cp, models)
-	modelCache[name] = cacheEntry{models: cp, at: time.Now()}
-	modelCacheMu.Unlock()
-	// seed the package-wide live ctx cache so ContextWindow can answer for
-	// any model the API surfaced — not just the curated hardcoded table.
-	for _, m := range models {
-		if m.ContextLength > 0 {
-			RememberContextLength(m.ID, m.ContextLength)
 		}
 	}
 }
