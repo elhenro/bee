@@ -22,7 +22,7 @@ func RegisterBuiltins(r *Registry) {
 	})
 	r.Register(Command{
 		Name:           "model",
-		Description:    "interactive model picker — /model or /model <id>",
+		Description:    "interactive model picker — /model, /model <id>, or /model <provider>/<id>",
 		AllowDuringRun: true,
 		Run: func(_ context.Context, args []string, s Side) (string, error) {
 			if s == nil {
@@ -32,7 +32,14 @@ func RegisterBuiltins(r *Registry) {
 				if err := s.OpenPicker(); err == nil {
 					return "", nil
 				}
-				return "usage: /model <id>   (or open the interactive picker)", nil
+				return "usage: /model <id>   (or /model <provider>/<id>, or open the interactive picker)", nil
+			}
+			// <provider>/<id> form: swap provider and model in one shot, but
+			// only when the prefix matches a configured provider. Avoids
+			// hijacking openrouter IDs like "anthropic/claude-3-5-sonnet"
+			// where the slash is part of the upstream model name.
+			if p, m, ok := splitProviderModel(args[0], s); ok {
+				return "", s.SwitchProviderModel(p, m)
 			}
 			return "", s.SwitchModel(args[0])
 		},
@@ -184,7 +191,10 @@ func RegisterBuiltins(r *Registry) {
 				}
 				return loginNoOAuthHint(*match), nil
 			}
-			return "", s.Login(ctx, name)
+			if err := s.Login(ctx, name); err != nil {
+				return "", err
+			}
+			return "logged in to " + name, nil
 		},
 	})
 	r.Register(Command{
@@ -606,6 +616,24 @@ func onOff(v bool) string {
 		return "on "
 	}
 	return "off"
+}
+
+// splitProviderModel parses "<provider>/<model>" when the prefix matches a
+// configured provider. Returns (provider, model, true) on a hit. The Side
+// gate is what keeps openrouter IDs (e.g. "anthropic/claude-3-5-sonnet")
+// from being misread as provider switches.
+func splitProviderModel(arg string, s Side) (string, string, bool) {
+	i := strings.IndexByte(arg, '/')
+	if i <= 0 || i == len(arg)-1 {
+		return "", "", false
+	}
+	prefix := arg[:i]
+	for _, p := range s.LoginStatus() {
+		if p.Name == prefix {
+			return prefix, arg[i+1:], true
+		}
+	}
+	return "", "", false
 }
 
 func parseOnOff(s string) (bool, bool) {
