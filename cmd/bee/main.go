@@ -36,6 +36,7 @@ var reservedSubcommands = map[string]bool{
 	"hyperplan": true,
 	"hive":      true,
 	"bg":        true,
+	"zzz":       true,
 	"doctor":    true,
 	"version":   true,
 	"-v":        true,
@@ -70,6 +71,8 @@ func main() {
 		hive(os.Args[2:])
 	case "bg":
 		bg(os.Args[2:])
+	case "zzz":
+		runZzz(os.Args[2:])
 	case "doctor":
 		runDoctor(os.Args[2:])
 	case "version", "-v", "--version":
@@ -106,6 +109,9 @@ usage:
   bee bg --list                      list background bees
   bee bg --tail <id>                 follow a background log
   bee bg --kill <id>                 stop a background bee
+  bee zzz [flags] <objective>        overnight loop: clean→prompt→commit-or-reset
+  bee zzz --list                     list overnight runs
+  bee zzz --resume <id>              resume an aborted run
   bee doctor [--json]       preflight: dirs, sandbox, provider creds
   bee <skill> [args...]     run a skill non-interactively
   bee version               print version
