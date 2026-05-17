@@ -31,12 +31,11 @@ func (m *Model) flush() tea.Cmd {
 		return nil
 	}
 	pending := m.messages[m.printedCount:]
-	startIdx := m.printedCount
 	m.printedCount = len(m.messages)
 	prefix := m.pendingFlushedPrefix
 	m.pendingFlushedPrefix = ""
 	cmds := make([]tea.Cmd, 0, len(pending))
-	for i, msg := range pending {
+	for _, msg := range pending {
 		// strip the already-flushed head off the first matching assistant
 		// turn so its prefix doesn't render twice in scrollback.
 		if prefix != "" && msg.Role == types.RoleAssistant {
@@ -51,14 +50,9 @@ func (m *Model) flush() tea.Cmd {
 		if rendered == "" {
 			continue
 		}
-		// blank-line gap between turns so scrollback breathes. Skip before
-		// the very first message of the session (startIdx+i == 0) so we
-		// don't push a stray gap above the chat history on cold start.
-		// Compact mode drops the gap entirely — denser layout for users who
-		// opted in via ctrl+v / BEE_COMPACT.
-		if startIdx+i > 0 && !m.compact {
-			rendered = "\n" + rendered
-		}
+		// RenderMessage already emits one leading "\n" in non-compact mode
+		// so each turn has a single blank-line gap; stacking another here
+		// produced double-blanks between every message in scrollback.
 		cmds = append(cmds, tea.Println(rendered))
 	}
 	if len(cmds) == 1 {

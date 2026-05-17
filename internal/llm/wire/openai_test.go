@@ -391,6 +391,8 @@ func TestSanitizeToolName(t *testing.T) {
 		{"bash<｜tool_call｜>", "bash"},
 		{`"shell"`, "shell"},
 		{"｜DSML｜", ""},
+		{"｜DSML｜search", "search"},
+		{"｜tool_sep｜glob", "glob"},
 		{"", ""},
 	}
 	for _, tc := range cases {

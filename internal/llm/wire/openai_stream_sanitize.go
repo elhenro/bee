@@ -13,6 +13,13 @@ import (
 // next `>` or end-of-string.
 var modelMarkupRe = regexp.MustCompile(`</?\x{FF5C}[^<>]*(?:\x{FF5C}[^<>]*)*>?`)
 
+// bareDSMLRe matches a bare special-token fragment delimited by fullwidth bars
+// without surrounding `<...>` brackets — e.g. `｜DSML｜search` where the leading
+// `<` was already stripped or never emitted. Tokens inside cannot contain `｜`,
+// `<`, or `>`. Applied after modelMarkupRe to catch leaks that slipped past
+// the bracketed pattern (notably deepseek-v4-flash emitting bare names).
+var bareDSMLRe = regexp.MustCompile(`\x{FF5C}[^\x{FF5C}<>]*\x{FF5C}`)
+
 // also catch dangling `</parameter>` / `</tool_call>` tags that some
 // templates emit alongside the special-token wrapper. anchored to the
 // end of input so we only strip TRAILING leak tags — never tags that
@@ -29,6 +36,7 @@ var stuckClosingTagRe = regexp.MustCompile(`(?:</(?:parameter|invoke|tool_call|t
 func SanitizeToolName(raw string) string {
 	s := strings.TrimSpace(raw)
 	s = modelMarkupRe.ReplaceAllString(s, "")
+	s = bareDSMLRe.ReplaceAllString(s, "")
 	s = strings.TrimLeft(s, "\"' \t\r\n")
 	end := 0
 	for end < len(s) {
@@ -52,6 +60,7 @@ func StripMarkupBytes(b []byte) []byte {
 	}
 	s := string(b)
 	s = modelMarkupRe.ReplaceAllString(s, "")
+	s = bareDSMLRe.ReplaceAllString(s, "")
 	s = stuckClosingTagRe.ReplaceAllString(s, "")
 	return []byte(s)
 }
@@ -72,6 +81,7 @@ func stripMarkupAny(v any) any {
 		// the JSON layer and must round-trip verbatim. trailing leak tags
 		// are already removed pre-parse by StripMarkupBytes.
 		s := modelMarkupRe.ReplaceAllString(x, "")
+		s = bareDSMLRe.ReplaceAllString(s, "")
 		return strings.TrimRight(s, " \t\r\n")
 	case map[string]any:
 		StripMarkupInValues(x)

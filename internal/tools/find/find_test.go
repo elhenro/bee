@@ -30,7 +30,38 @@ func TestFind_MissingName(t *testing.T) {
 	f := New(t.TempDir())
 	res, _ := f.Run(context.Background(), map[string]any{})
 	if !res.IsError {
-		t.Errorf("want IsError when name missing")
+		t.Errorf("want IsError when pattern missing")
+	}
+}
+
+func TestFind_PatternAlias(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := New(dir).Run(context.Background(), map[string]any{"pattern": "*.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Content, "a.go") {
+		t.Errorf("pattern arg should match like name; got: %s", res.Content)
+	}
+}
+
+func TestFind_DoubleStarPrefix(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "sub", "nest"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "nest", "Bunker.ts"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := New(dir).Run(context.Background(), map[string]any{"pattern": "**/Bunker*.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Content, "Bunker.ts") {
+		t.Errorf("**/ prefix should be stripped and recurse; got: %s", res.Content)
 	}
 }
 

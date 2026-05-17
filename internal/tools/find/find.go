@@ -26,27 +26,42 @@ func New(root string) *Tool { return &Tool{root: root, max: 500} }
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name:          toolName,
-		Description:   "ALWAYS use `glob` for filename pattern matching. NEVER invoke `find` or `fd` via the `bash` tool — shell variants miss bee's project-aware excludes (.claude, vendor, node_modules) and inflate counts with worktree duplicates. Filename glob (filepath.Match, e.g. '*.go', '*_test.go'). Returns up to 500 paths. Args: name (required), path (optional).",
+		Description:   "ALWAYS use `glob` for filename pattern matching. NEVER invoke `find` or `fd` via the `bash` tool — shell variants miss bee's project-aware excludes (.claude, vendor, node_modules) and inflate counts with worktree duplicates. Filename glob (filepath.Match on basename, e.g. '*.go', '*_test.go'). Leading '**/' is accepted and stripped (recursion is implicit). Returns up to 500 paths. Args: pattern (required, alias: name), path (optional).",
 		PromptSnippet: "find files by name pattern (use this, NOT shell `find`)",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"name": map[string]any{"type": "string"},
-				"path": map[string]any{"type": "string"},
+				"pattern": map[string]any{"type": "string", "description": "glob pattern, e.g. '*.go' or '**/foo*.ts'"},
+				"path":    map[string]any{"type": "string"},
 			},
-			"required": []string{"name"},
+			"required": []string{"pattern"},
 		},
 	}
 }
 
 // Run executes the search.
 func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error) {
-	name, _ := in["name"].(string)
-	if name == "" {
-		return tools.Result{Content: "missing name", IsError: true}, nil
+	// accept `pattern` (canonical) or `name` (legacy alias). most upstream
+	// tool schemas use `pattern`, and several models (deepseek-v4-flash,
+	// gpt-oss) emit `pattern` regardless of what we advertise.
+	pat, _ := in["pattern"].(string)
+	if pat == "" {
+		pat, _ = in["name"].(string)
+	}
+	if pat == "" {
+		return tools.Result{Content: "missing pattern", IsError: true}, nil
+	}
+	// strip leading '**/' (and bare '**') — recursion is implicit. without
+	// this, a pattern like '**/Bunker*.ts' would never match because
+	// filepath.Match is applied to the basename only.
+	for strings.HasPrefix(pat, "**/") {
+		pat = pat[3:]
+	}
+	if pat == "**" {
+		pat = "*"
 	}
 	// validate the pattern up front
-	if _, err := filepath.Match(name, "x"); err != nil {
+	if _, err := filepath.Match(pat, "x"); err != nil {
 		return tools.Result{Content: "bad pattern: " + err.Error(), IsError: true}, nil
 	}
 	root, _ := in["path"].(string)
@@ -70,7 +85,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 			}
 			return nil
 		}
-		ok, err := filepath.Match(name, filepath.Base(p))
+		ok, err := filepath.Match(pat, filepath.Base(p))
 		if err != nil {
 			return err
 		}
