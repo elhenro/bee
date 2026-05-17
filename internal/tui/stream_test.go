@@ -664,6 +664,88 @@ func TestRenderToolUse_WriteListsContentLines(t *testing.T) {
 	}
 }
 
+// real LCS should drop matched lines so an edit that only mutates one row
+// inside a 30-line `old`/`new` payload renders one `-`, one `+`, and one
+// `⋯ +K unchanged` gap marker — not 30 dels followed by 30 adds.
+func TestRenderToolUse_EditCollapsesUnchangedToHunks(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	var oldB, newB strings.Builder
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&oldB, "shared %d\n", i)
+		if i == 15 {
+			fmt.Fprintln(&newB, "MUTATED 15")
+			continue
+		}
+		fmt.Fprintf(&newB, "shared %d\n", i)
+	}
+	m := types.Message{
+		Role: types.RoleAssistant,
+		Content: []types.ContentBlock{{Type: types.BlockToolUse, Use: &types.ToolUse{
+			ID: "u1", Name: "edit", Input: map[string]any{
+				"path": "f.go", "old": oldB.String(), "new": newB.String(),
+			},
+		}}},
+	}
+	out := stripANSI(r.RenderMessage(m))
+	for _, want := range []string{"- shared 15", "+ MUTATED 15", "unchanged", "+1", "−1"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	// 28 unchanged lines on either side of the change must NOT all render —
+	// they get collapsed into the `⋯ +K unchanged` gap.
+	if strings.Count(out, "shared 0") > 1 {
+		t.Fatalf("unchanged context not collapsed:\n%s", out)
+	}
+}
+
+// when an edit is large enough that the cap fires AND is one-sided heavy
+// (long del block followed by adds), balancedTrim must still surface at
+// least one `+` line so the user can see what's replacing the deletions.
+func TestRenderToolUse_EditCapBalancesAddsAndDels(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	var oldB, newB strings.Builder
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&oldB, "old %d\n", i)
+	}
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&newB, "new %d\n", i)
+	}
+	m := types.Message{
+		Role: types.RoleAssistant,
+		Content: []types.ContentBlock{{Type: types.BlockToolUse, Use: &types.ToolUse{
+			ID: "u1", Name: "edit", Input: map[string]any{
+				"path": "f.go", "old": oldB.String(), "new": newB.String(),
+			},
+		}}},
+	}
+	out := stripANSI(r.RenderMessage(m))
+	if !strings.Contains(out, "- old ") {
+		t.Fatalf("missing del lines:\n%s", out)
+	}
+	if !strings.Contains(out, "+ new ") {
+		t.Fatalf("cap hid every addition — balancedTrim regressed:\n%s", out)
+	}
+}
+
+// previewEdit must normalize tabs so leading indentation doesn't jump to
+// terminal default tab stops (8 cols) and visually scramble the rail.
+func TestRenderToolUse_EditExpandsTabs(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	m := types.Message{
+		Role: types.RoleAssistant,
+		Content: []types.ContentBlock{{Type: types.BlockToolUse, Use: &types.ToolUse{
+			ID: "u1", Name: "edit", Input: map[string]any{
+				"path": "f.go", "old": "\tdone := 1", "new": "\tdone := 2",
+			},
+		}}},
+	}
+	out := stripANSI(r.RenderMessage(m))
+	if strings.Contains(out, "\t") {
+		t.Fatalf("raw tab leaked into rendered diff:\n%q", out)
+	}
+}
+
 func TestRenderToolUse_EditCompactCapsLongDiff(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	var b strings.Builder

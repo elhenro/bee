@@ -1223,7 +1223,20 @@ func summarizeGlob(in map[string]any, budget int) (string, bool) {
 
 // diffPreviewLinesCompact caps body height for compact-mode edit previews.
 // Verbose mode lets every line through (mirrors previewLines() semantics).
-const diffPreviewLinesCompact = 8
+// Sized to fit a focused hunk: 1 context + change block + 1 context.
+const diffPreviewLinesCompact = 14
+
+// diffContextLines is the per-side context retained around each change
+// block when collapsing unchanged runs. Keep tight (1) so dense edits don't
+// blow the cap; LCS already strips matched lines.
+const diffContextLines = 1
+
+// diffTabWidth expands tab characters in diff bodies to a fixed number of
+// spaces. Tabs were rendering as terminal default tab stops (8 cols) inside
+// a styled rail, which visually skewed indentation and pushed continuation
+// content off the right edge of the card. 4 spaces matches the project's
+// gofmt visual width and stays readable on narrow terminals.
+const diffTabWidth = 4
 
 // renderEditPreview turns a file-mutation tool call into a pretty
 // `path` header + colored diff body. Returns (header, body, true) when u
@@ -1245,30 +1258,89 @@ func (r *StreamRenderer) renderEditPreview(u types.ToolUse) (string, string, boo
 	return "", "", false
 }
 
-// previewEdit renders the edit tool: replace Nth `old` with `new`.
+// previewEdit renders the edit tool as a real LCS-based line diff so the
+// reader sees only the actual changes — not the whole `old` payload followed
+// by the whole `new` payload. Unchanged context is dimmed and collapses to a
+// `⋯ +K unchanged` marker when long. Header carries `+adds −dels` stats so
+// the change scale reads at a glance.
 //
-//	path
-//	▎ - <old line 1>
-//	▎ + <new line 1>
+//	path  +3 −2  (occ 2)
+//	▎   <context line>
+//	▎ - <removed>
+//	▎ + <added>
+//	▎ ⋯ +12 unchanged
+//	▎   <context line>
 func (r *StreamRenderer) previewEdit(in map[string]any) (string, string, bool) {
 	path, _ := in["path"].(string)
-	old, _ := in["old"].(string)
+	oldStr, _ := in["old"].(string)
 	newStr, _ := in["new"].(string)
 	if path == "" {
 		return "", "", true
 	}
+	oldLines := splitKeepEmpty(oldStr)
+	newLines := splitKeepEmpty(newStr)
+	ops := lineDiff(oldLines, newLines)
+	adds, dels := countDiffOps(ops)
+	hunks := collapseToHunks(ops, diffContextLines)
+
 	header := r.styles.DiffPath.Render(shortenPath(path))
 	if occ, ok := numericField(in["occurrence"]); ok && occ != 1 {
 		header += "  " + r.styles.DiffMeta.Render(fmt.Sprintf("(occ %d)", occ))
 	}
-	var lines []string
-	for _, l := range splitKeepEmpty(old) {
-		lines = append(lines, r.diffSign("-", l, path, r.styles.DiffDel))
+	header += "  " + r.diffStats(adds, dels)
+	return header, r.diffBody(r.renderDiffOps(hunks, path)), true
+}
+
+// renderDiffOps turns post-collapse edit ops into styled rail lines. Context
+// (`=`) is dimmed and signless so changes pop; gap markers ride DiffMeta.
+// Trailing empty context (`=`-blank) is dropped — splitKeepEmpty preserves
+// the empty entry after a trailing newline and there's no value in rendering
+// an empty dimmed row at the end of every diff.
+func (r *StreamRenderer) renderDiffOps(ops []editOp, path string) []string {
+	for len(ops) > 0 {
+		last := ops[len(ops)-1]
+		if last.kind == '=' && last.text == "" {
+			ops = ops[:len(ops)-1]
+			continue
+		}
+		break
 	}
-	for _, l := range splitKeepEmpty(newStr) {
-		lines = append(lines, r.diffSign("+", l, path, r.styles.DiffAdd))
+	out := make([]string, 0, len(ops))
+	for _, op := range ops {
+		switch op.kind {
+		case '+':
+			out = append(out, r.diffSign("+", expandTabs(op.text), path, r.styles.DiffAdd))
+		case '-':
+			out = append(out, r.diffSign("-", expandTabs(op.text), path, r.styles.DiffDel))
+		case '=':
+			out = append(out, r.diffContext(expandTabs(op.text)))
+		case '~':
+			out = append(out, r.styles.DiffMeta.Render("⋯ "+op.text))
+		}
 	}
-	return header, r.diffBody(lines), true
+	return out
+}
+
+// diffContext styles an unchanged context line: 2-space gutter (aligns with
+// `+ ` / `- `) and dimmed content so the eye skims past it to the changes.
+func (r *StreamRenderer) diffContext(content string) string {
+	return r.styles.Dim.Render("  " + content)
+}
+
+// diffStats renders the `+N −M` header badge with semantic colors. Symmetric
+// minus uses U+2212 (true minus) not hyphen so it visually balances the `+`.
+func (r *StreamRenderer) diffStats(adds, dels int) string {
+	parts := make([]string, 0, 2)
+	if adds > 0 {
+		parts = append(parts, r.styles.DiffAdd.Render(fmt.Sprintf("+%d", adds)))
+	}
+	if dels > 0 {
+		parts = append(parts, r.styles.DiffDel.Render(fmt.Sprintf("−%d", dels)))
+	}
+	if len(parts) == 0 {
+		return r.styles.DiffMeta.Render("(no change)")
+	}
+	return strings.Join(parts, " ")
 }
 
 // previewWrite renders the write tool. Treats the whole content as added
@@ -1284,7 +1356,7 @@ func (r *StreamRenderer) previewWrite(in map[string]any) (string, string, bool) 
 	header += "  " + r.styles.DiffMeta.Render(fmt.Sprintf("(write, %d lines)", len(all)))
 	lines := make([]string, 0, len(all))
 	for _, l := range all {
-		lines = append(lines, r.diffSign("+", l, path, r.styles.DiffAdd))
+		lines = append(lines, r.diffSign("+", expandTabs(l), path, r.styles.DiffAdd))
 	}
 	return header, r.diffBody(lines), true
 }
@@ -1337,7 +1409,7 @@ func (r *StreamRenderer) previewHashlineEdit(in map[string]any) (string, string,
 		raw, _ := m["lines"].([]any)
 		for _, l := range raw {
 			s, _ := l.(string)
-			lines = append(lines, r.diffSign("+", s, path, r.styles.DiffAdd))
+			lines = append(lines, r.diffSign("+", expandTabs(s), path, r.styles.DiffAdd))
 		}
 	}
 	return header, r.diffBody(lines), true
@@ -1346,6 +1418,8 @@ func (r *StreamRenderer) previewHashlineEdit(in map[string]any) (string, string,
 // colorPatchLine picks the style for one raw unified-diff line. When
 // highlighting is on, content after the +/- sign goes through chroma so
 // the code itself reads as code; the sign keeps the green/red rail color.
+// Tabs in the content are expanded to a fixed width so columns align under
+// the rail instead of jumping to terminal-default tab stops.
 func (r *StreamRenderer) colorPatchLine(l string) string {
 	switch {
 	case strings.HasPrefix(l, "+++"), strings.HasPrefix(l, "---"),
@@ -1355,24 +1429,29 @@ func (r *StreamRenderer) colorPatchLine(l string) string {
 		strings.HasPrefix(l, "similarity "):
 		return r.styles.DiffMeta.Render(l)
 	case strings.HasPrefix(l, "+"):
+		body := expandTabs(strings.TrimPrefix(l, "+"))
 		if r.highlight {
-			return r.styles.DiffAdd.Render("+") + r.hlLang(strings.TrimPrefix(l, "+"), "")
+			return r.styles.DiffAdd.Render("+") + r.hlLang(body, "")
 		}
-		return r.styles.DiffAdd.Render(l)
+		return r.styles.DiffAdd.Render("+" + body)
 	case strings.HasPrefix(l, "-"):
+		body := expandTabs(strings.TrimPrefix(l, "-"))
 		if r.highlight {
-			return r.styles.DiffDel.Render("-") + r.hlLang(strings.TrimPrefix(l, "-"), "")
+			return r.styles.DiffDel.Render("-") + r.hlLang(body, "")
 		}
-		return r.styles.DiffDel.Render(l)
+		return r.styles.DiffDel.Render("-" + body)
 	default:
-		return r.styles.ToolPrev.Render(l)
+		return r.styles.ToolPrev.Render(expandTabs(l))
 	}
 }
 
 // diffBody wraps a slice of already-styled lines in the lilac tool rail
 // (same as renderToolResult) and applies the compact-mode line cap. When
 // every line would render empty the empty string is returned so the
-// caller can omit the body entirely.
+// caller can omit the body entirely. When the cap fires, the body is
+// trimmed by balancedTrim so both `-` and `+` rails stay represented —
+// the previous head-cap could fully hide the additions when the removal
+// block was long enough to fill the budget alone.
 func (r *StreamRenderer) diffBody(lines []string) string {
 	if len(lines) == 0 {
 		return ""
@@ -1380,7 +1459,7 @@ func (r *StreamRenderer) diffBody(lines []string) string {
 	hidden := 0
 	if !r.verbose && len(lines) > diffPreviewLinesCompact {
 		hidden = len(lines) - diffPreviewLinesCompact
-		lines = lines[:diffPreviewLinesCompact]
+		lines = balancedTrim(lines, diffPreviewLinesCompact)
 	}
 	rail := r.styles.ToolRail.Render("▎")
 	out := make([]string, len(lines))
@@ -1389,9 +1468,66 @@ func (r *StreamRenderer) diffBody(lines []string) string {
 	}
 	body := strings.Join(out, "\n")
 	if hidden > 0 {
-		body += "\n" + rail + " " + r.styles.Dim.Render(fmt.Sprintf("… +%d more", hidden))
+		body += "\n" + rail + " " + r.styles.Dim.Render(fmt.Sprintf("⋯ +%d more", hidden))
 	}
 	return body
+}
+
+// balancedTrim keeps the first `keep` lines but, when the slice starts with
+// a long run of `-`-styled deletions, reserves the back half of the budget
+// for whatever follows so additions/context don't get squeezed out. Style
+// detection is heuristic: the diffSign output always begins with the styled
+// sign char (`+`/`-`) inside an ANSI escape, so we walk the visible bytes
+// after `\x1b[…m` for the first printable byte.
+func balancedTrim(lines []string, keep int) []string {
+	if keep <= 0 || len(lines) <= keep {
+		return lines
+	}
+	// count leading dels — if everything in the window is one-sided, regular
+	// head-cap is already optimal.
+	leadDel := 0
+	for _, l := range lines {
+		if firstVisible(l) != '-' {
+			break
+		}
+		leadDel++
+	}
+	// no imbalance vs the rest, head-cap is fine.
+	if leadDel <= keep/2 {
+		return lines[:keep]
+	}
+	half := keep / 2
+	tailNeed := keep - half
+	// pull `half` from the leading dels, `tailNeed` from whatever follows.
+	out := make([]string, 0, keep)
+	out = append(out, lines[:half]...)
+	out = append(out, lines[len(lines)-tailNeed:]...)
+	return out
+}
+
+// firstVisible returns the first non-ANSI printable byte of s, or 0 if
+// none. Walks past `\x1b[…m` escape sequences without parsing them — only
+// the m terminator matters. Used by balancedTrim to peek at the sign of a
+// styled diff line.
+func firstVisible(s string) byte {
+	i := 0
+	for i < len(s) {
+		if s[i] != 0x1b {
+			return s[i]
+		}
+		// skip `\x1b[…m`
+		i++
+		if i < len(s) && s[i] == '[' {
+			i++
+		}
+		for i < len(s) && s[i] != 'm' {
+			i++
+		}
+		if i < len(s) {
+			i++
+		}
+	}
+	return 0
 }
 
 // patchFiles returns the list of `+++ b/<path>` (or `--- a/<path>`)
@@ -1426,6 +1562,171 @@ func splitKeepEmpty(s string) []string {
 		return nil
 	}
 	return strings.Split(s, "\n")
+}
+
+// editOp is one step in a line-level diff: kind ∈ {'=','+','-','~'} where
+// '~' marks a synthetic gap line ("⋯ +K unchanged") emitted by the
+// collapser. text is the line content (or marker payload for '~').
+type editOp struct {
+	kind byte
+	text string
+}
+
+// lineDiff computes an LCS-based edit script between two slices of lines.
+// Greedy DP — runtime is O(n·m) which is fine for the <few-hundred-line
+// payloads typical of an edit tool call. For pathologically large inputs
+// (n·m > diffMaxCells), falls back to a naive "all dels then all adds" script
+// so the renderer stays responsive instead of stalling the TUI thread.
+func lineDiff(a, b []string) []editOp {
+	n, m := len(a), len(b)
+	if n == 0 && m == 0 {
+		return nil
+	}
+	if n*m > diffMaxCells {
+		out := make([]editOp, 0, n+m)
+		for _, l := range a {
+			out = append(out, editOp{'-', l})
+		}
+		for _, l := range b {
+			out = append(out, editOp{'+', l})
+		}
+		return out
+	}
+	// dp[i][j] = LCS length of a[i:] vs b[j:]
+	dp := make([][]int, n+1)
+	for i := range dp {
+		dp[i] = make([]int, m+1)
+	}
+	for i := n - 1; i >= 0; i-- {
+		for j := m - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				dp[i][j] = dp[i+1][j+1] + 1
+				continue
+			}
+			if dp[i+1][j] >= dp[i][j+1] {
+				dp[i][j] = dp[i+1][j]
+			} else {
+				dp[i][j] = dp[i][j+1]
+			}
+		}
+	}
+	out := make([]editOp, 0, n+m)
+	i, j := 0, 0
+	for i < n && j < m {
+		switch {
+		case a[i] == b[j]:
+			out = append(out, editOp{'=', a[i]})
+			i++
+			j++
+		case dp[i+1][j] >= dp[i][j+1]:
+			out = append(out, editOp{'-', a[i]})
+			i++
+		default:
+			out = append(out, editOp{'+', b[j]})
+			j++
+		}
+	}
+	for ; i < n; i++ {
+		out = append(out, editOp{'-', a[i]})
+	}
+	for ; j < m; j++ {
+		out = append(out, editOp{'+', b[j]})
+	}
+	return out
+}
+
+// diffMaxCells caps the LCS DP grid so a runaway edit (e.g. write of a huge
+// generated file) can't lock the renderer. 250k cells ≈ 500x500 lines.
+const diffMaxCells = 250000
+
+// countDiffOps tallies real adds/dels (ignoring '=' context and '~' markers)
+// for the header `+N −M` badge.
+func countDiffOps(ops []editOp) (adds, dels int) {
+	for _, op := range ops {
+		switch op.kind {
+		case '+':
+			adds++
+		case '-':
+			dels++
+		}
+	}
+	return
+}
+
+// collapseToHunks trims unchanged ('=') runs to at most `ctx` lines on each
+// side of a change block, replacing the middle of long runs with a '~' gap
+// marker. Mirrors `git diff -U<ctx>` behaviour but cheaper since we just
+// rewrite the op stream.
+func collapseToHunks(ops []editOp, ctx int) []editOp {
+	if len(ops) == 0 {
+		return ops
+	}
+	// find change-block boundaries; everything outside is candidate context.
+	type span struct{ lo, hi int } // hi exclusive
+	var changes []span
+	i := 0
+	for i < len(ops) {
+		if ops[i].kind == '=' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(ops) && ops[j].kind != '=' {
+			j++
+		}
+		changes = append(changes, span{i, j})
+		i = j
+	}
+	if len(changes) == 0 {
+		// pure context — show nothing; previewEdit caller still emits the
+		// header so the user sees that an edit ran with no net effect.
+		return nil
+	}
+	out := make([]editOp, 0, len(ops))
+	prevEnd := 0
+	for idx, c := range changes {
+		// context before this change block. leading/inter-block gaps both
+		// surface a `~` marker when truncated so the reader sees how much
+		// unchanged code is omitted.
+		gap := ops[prevEnd:c.lo]
+		switch {
+		case idx == 0 && len(gap) > ctx:
+			hidden := len(gap) - ctx
+			out = append(out, editOp{'~', fmt.Sprintf("+%d unchanged above", hidden)})
+			gap = gap[len(gap)-ctx:]
+		case idx > 0 && len(gap) > 2*ctx:
+			hidden := len(gap) - 2*ctx
+			out = append(out, gap[:ctx]...)
+			out = append(out, editOp{'~', fmt.Sprintf("+%d unchanged", hidden)})
+			gap = gap[len(gap)-ctx:]
+		}
+		out = append(out, gap...)
+		out = append(out, ops[c.lo:c.hi]...)
+		prevEnd = c.hi
+	}
+	// trailing context after the last change block
+	tail := ops[prevEnd:]
+	if len(tail) > ctx {
+		hidden := len(tail) - ctx
+		out = append(out, tail[:ctx]...)
+		out = append(out, editOp{'~', fmt.Sprintf("+%d unchanged below", hidden)})
+	} else {
+		out = append(out, tail...)
+	}
+	return out
+}
+
+// expandTabs replaces tab characters with diffTabWidth spaces. Diff rows
+// render under a styled rail and a 1-col `+`/`-` sign, so raw tabs land on
+// terminal-default tab stops (8 cols) and jump content well past the rail's
+// visual indent — making it look as if random characters were prepended to
+// the first identifier. Expanding here keeps the visual column for each
+// rendered line aligned with the rail.
+func expandTabs(s string) string {
+	if !strings.ContainsRune(s, '\t') {
+		return s
+	}
+	return strings.ReplaceAll(s, "\t", strings.Repeat(" ", diffTabWidth))
 }
 
 // numericField coerces a JSON number (float64 from encoding/json) or int into int.
