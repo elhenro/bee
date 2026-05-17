@@ -182,12 +182,13 @@ func TestTextMode_CleansToolBlocksFromText(t *testing.T) {
 	}
 }
 
-func TestTextMode_StripsDSMLMarkup(t *testing.T) {
-	// deepseek text-mode sometimes appends `</｜DSML｜invoke` after the
-	// closing tag; the JSON body itself may also carry stray closing tags.
+func TestTextMode_StripsDSMLOuterMarkup(t *testing.T) {
+	// text-mode providers sometimes append `</｜DSML｜invoke` after the
+	// closing tool tag. that trailing markup is consumed by the outer
+	// tag-removal sweep and never reaches arg parsing.
 	inner := &fakeProvider{
 		events: []Event{
-			{Type: EventTextDelta, Delta: `<shell>{"command":"ls -la</parameter>"}</shell></｜DSML｜invoke`},
+			{Type: EventTextDelta, Delta: `<shell>{"command":"ls -la"}</shell></｜DSML｜invoke`},
 			{Type: EventDone},
 		},
 	}
@@ -198,7 +199,29 @@ func TestTextMode_StripsDSMLMarkup(t *testing.T) {
 		t.Fatalf("calls: got %d, want 1", len(tools))
 	}
 	if got := tools[0].Input["command"]; got != "ls -la" {
-		t.Fatalf("command not scrubbed: %q (input=%+v)", got, tools[0].Input)
+		t.Fatalf("command: %q (input=%+v)", got, tools[0].Input)
+	}
+}
+
+func TestTextMode_PreservesInnerLeakTags(t *testing.T) {
+	// inner `</parameter>` inside a quoted JSON string is legitimate user
+	// content (e.g. test fixtures, source code, prompts) — it must round-
+	// trip verbatim, NOT get stripped by the markup scrubber.
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `<write>{"path":"x","content":"func TestX() { return ` + "`" + `</parameter>` + "`" + ` }"}</write>`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 {
+		t.Fatalf("calls: got %d, want 1", len(tools))
+	}
+	got, _ := tools[0].Input["content"].(string)
+	if !strings.Contains(got, `</parameter>`) {
+		t.Fatalf("inner leak tag was stripped — destructive: %q", got)
 	}
 }
 

@@ -1105,19 +1105,12 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m, nil
 
 	case PaletteSelectMsg:
-		switch msg.Kind {
-		case EntrySkill:
-			// stage "/<skill-name>" in the input bar without submitting —
-			// keeps invocation discretionary; user can edit or hit enter.
-			m.input.SetValue("/" + msg.Name)
-			m.input.CursorEnd()
-			return m, nil
-		default:
-			// command: synthesize a "/name" submit so the same dispatch
-			// path runs as if the user typed it.
-			m.input.SetValue("/" + msg.Name)
-			return m.handleSubmit()
-		}
+		// commands AND skills both submit immediately via "/name" — runSlash
+		// dispatches to the command registry first, then falls through to the
+		// skill registry. unified path keeps "/calc" and "#calc → enter"
+		// behaving the same.
+		m.input.SetValue("/" + msg.Name)
+		return m.handleSubmit()
 
 	case PaletteDismissedMsg:
 		// clear the slash-query staged in the input on esc — the user
@@ -1731,6 +1724,34 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 	}
 	c, ok := m.cmds.Get(parts[0])
 	if !ok {
+		// fall through to skills registry so "/calc" runs the calc skill
+		// the same way "#calc" did from the palette. prompt-kind skills
+		// fold body into a user-turn prompt; non-prompt kinds aren't yet
+		// supported here (defer to headless `bee <skill>`).
+		if m.skills != nil {
+			if sk, found := m.skills.Get(parts[0]); found {
+				if sk.Kind != "" && sk.Kind != skills.KindPrompt {
+					m.lastErr = "/" + parts[0] + ": skill kind " + string(sk.Kind) + " not supported in TUI yet; run `bee " + parts[0] + "` instead"
+					m.state = StateError
+					return m, nil
+				}
+				userMsg := sk.Body
+				if len(parts) > 1 {
+					extra := strings.Join(parts[1:], " ")
+					if userMsg == "" {
+						userMsg = extra
+					} else {
+						userMsg += "\n\nUser: " + extra
+					}
+				}
+				if strings.TrimSpace(userMsg) == "" {
+					m.lastErr = "/" + parts[0] + ": skill has empty body"
+					m.state = StateError
+					return m, nil
+				}
+				return m.submit(userMsg)
+			}
+		}
 		m.lastErr = "unknown command /" + parts[0]
 		m.state = StateError
 		return m, nil

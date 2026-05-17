@@ -15,6 +15,15 @@ type fakeSkills struct{ list []skills.Skill }
 
 func (f *fakeSkills) List() []skills.Skill { return f.list }
 
+func (f *fakeSkills) Get(name string) (skills.Skill, bool) {
+	for _, s := range f.list {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return skills.Skill{}, false
+}
+
 func newTestPalette() PaletteModel {
 	reg := commands.NewRegistry()
 	commands.RegisterBuiltins(reg)

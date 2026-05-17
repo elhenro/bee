@@ -12,6 +12,7 @@ import (
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/session"
+	"github.com/google/uuid"
 )
 
 // compile-time assertion left implicit; the registry takes any commands.Side.
@@ -173,13 +174,33 @@ func (s *tuiSide) OpenResume() error {
 
 // NewSession clears scrollback for a fresh conversation. Past content
 // stays in the terminal scrollback (we can't unprint stdout); flush()
-// resets its counter so future messages print correctly.
+// resets its counter so future messages print correctly. Swaps the engine
+// rollout to a fresh uuid and resets the cost tracker so the context-fill
+// indicator drops back to 0% (without these, the next turn would re-send
+// the prior conversation and LastInput would still reflect the old fill).
 func (s *tuiSide) NewSession() error {
+	if s.m == nil {
+		return nil
+	}
 	s.m.messages = nil
 	s.m.partial = ""
 	s.m.lastErr = ""
 	s.m.state = StateIdle
 	s.m.printedCount = 0
+	if s.m.eng != nil {
+		if s.m.eng.Sessions != nil {
+			_ = s.m.eng.Sessions.Close()
+		}
+		roll, err := session.Open(uuid.NewString())
+		if err != nil {
+			return err
+		}
+		s.m.eng.Sessions = roll
+		s.m.eng.InitialMessages = nil
+		if s.m.eng.Costs != nil {
+			s.m.eng.Costs.Reset()
+		}
+	}
 	return nil
 }
 

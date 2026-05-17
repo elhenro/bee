@@ -25,6 +25,21 @@ func TestRecordAndTotal(t *testing.T) {
 	}
 }
 
+func TestResetClearsEvents(t *testing.T) {
+	tr := New()
+	tr.Record("openai", "gpt-4o-mini", 1234, 56)
+	if tr.LastInput() == 0 || tr.Total().Calls == 0 {
+		t.Fatal("setup: expected recorded event")
+	}
+	tr.Reset()
+	if tr.LastInput() != 0 {
+		t.Errorf("LastInput after Reset: %d, want 0", tr.LastInput())
+	}
+	if tr.Total().Calls != 0 {
+		t.Errorf("Total.Calls after Reset: %d, want 0", tr.Total().Calls)
+	}
+}
+
 func TestLookupResolvesProviderPrefix(t *testing.T) {
 	p, ok := Lookup("openrouter", "openai/gpt-4o-mini")
 	if !ok {

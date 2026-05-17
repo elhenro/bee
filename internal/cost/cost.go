@@ -64,6 +64,14 @@ func (t *Tracker) Record(provider, model string, in, out int) Event {
 	return ev
 }
 
+// Reset drops every recorded event so a fresh session starts at zero.
+// Used by /new and /clear to bring the context-fill indicator back to 0%.
+func (t *Tracker) Reset() {
+	t.mu.Lock()
+	t.events = nil
+	t.mu.Unlock()
+}
+
 // Events returns a snapshot copy of every recorded event.
 func (t *Tracker) Events() []Event {
 	t.mu.RLock()

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/elhenro/bee/internal/caveman"
+	"github.com/elhenro/bee/internal/skills"
 )
 
 // newTestModel builds a model with no engine and a sane terminal size.
@@ -221,6 +222,67 @@ func TestModel_SubmitSlashHelpRunsCommand(t *testing.T) {
 	}
 	if !strings.Contains(m.messages[0].Content[0].Text, "/compact") {
 		t.Errorf("missing /compact in help text: %q", m.messages[0].Content[0].Text)
+	}
+}
+
+func TestModel_SubmitSlashSkill_RunsPromptSkill(t *testing.T) {
+	m := newTestModel(t)
+	sk := &fakeSkills{list: []skills.Skill{
+		{Name: "calc", Kind: skills.KindPrompt, Body: "stage and commit"},
+	}}
+	m = m.WithSkills(sk)
+	m.input.SetValue("/calc")
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = m2.(Model)
+	if m.state == StateError {
+		t.Fatalf("slash-skill dispatch errored: %s", m.lastErr)
+	}
+	// submit() pushes the user message into scrollback synchronously.
+	if len(m.messages) == 0 {
+		t.Fatal("expected user message appended")
+	}
+	last := m.messages[len(m.messages)-1]
+	if !strings.Contains(last.Content[0].Text, "stage and commit") {
+		t.Errorf("expected skill body in user message, got: %q", last.Content[0].Text)
+	}
+}
+
+func TestModel_SubmitSlashSkill_AppendsExtraArgs(t *testing.T) {
+	m := newTestModel(t)
+	sk := &fakeSkills{list: []skills.Skill{
+		{Name: "hermes", Kind: skills.KindPrompt, Body: "you are hermes"},
+	}}
+	m = m.WithSkills(sk)
+	m.input.SetValue("/hermes when is my next meeting")
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = m2.(Model)
+	if m.state == StateError {
+		t.Fatalf("slash-skill dispatch errored: %s", m.lastErr)
+	}
+	last := m.messages[len(m.messages)-1]
+	body := last.Content[0].Text
+	if !strings.Contains(body, "you are hermes") {
+		t.Errorf("missing skill body: %q", body)
+	}
+	if !strings.Contains(body, "when is my next meeting") {
+		t.Errorf("missing user extra args: %q", body)
+	}
+}
+
+func TestModel_SubmitSlashSkill_NonPromptKindErrors(t *testing.T) {
+	m := newTestModel(t)
+	sk := &fakeSkills{list: []skills.Skill{
+		{Name: "myexec", Kind: skills.KindExec, Exec: []string{"echo", "hi"}},
+	}}
+	m = m.WithSkills(sk)
+	m.input.SetValue("/myexec")
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = m2.(Model)
+	if m.state != StateError {
+		t.Fatalf("expected error for non-prompt skill kind, got state %v", m.state)
+	}
+	if !strings.Contains(m.lastErr, "not supported") {
+		t.Errorf("expected 'not supported' in err, got: %q", m.lastErr)
 	}
 }
 

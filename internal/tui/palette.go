@@ -40,9 +40,12 @@ type PaletteSelectMsg struct {
 type PaletteDismissedMsg struct{}
 
 // SkillsLister is the seam the palette uses to fetch skills. Tests inject a
-// stub; *skills.Registry already satisfies it.
+// stub; *skills.Registry already satisfies it. Get is also used by the slash
+// dispatcher to resolve "/<name>" against the skill registry when no built-in
+// command matches.
 type SkillsLister interface {
 	List() []skills.Skill
+	Get(name string) (skills.Skill, bool)
 }
 
 // PaletteModel is the fzf-style picker. It merges slash commands and skills

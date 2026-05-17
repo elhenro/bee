@@ -96,11 +96,13 @@ func parseToolArgs(body string) map[string]any {
 	if repaired, ok := lenientJSONRepair(body); ok {
 		if err := json.Unmarshal([]byte(repaired), &v); err == nil {
 			wire.StripMarkupInValues(v)
+			// guard: large `write`/`edit` payloads where repaired content
+			// is less than half the raw body length signal a likely
+			// state-machine desync in the newline/quote repair pass.
+			// 500-byte floor avoids flagging trivial cases where content
+			// is legitimately tiny vs JSON structural overhead.
 			if c, isStr := v["content"].(string); isStr {
-				// guard: repaired content < 75% of raw body length is
-				// suspicious — likely a state-machine desync stripped
-				// structural characters from inside the string.
-				if len(c) > 0 && len(c)*4 < len(body)*3 {
+				if len(body) >= 500 && len(c)*2 < len(body) {
 					return map[string]any{
 						"_parse_error": fmt.Sprintf("content arg shrank suspiciously after JSON repair (raw=%d bytes, content=%d bytes) — refusing to write potentially mangled output. Re-emit with escaped newlines and quotes.", len(body), len(c)),
 					}
