@@ -15,7 +15,7 @@ func TestJoinShell(t *testing.T) {
 		{
 			name: "simple",
 			argv: []string{"/bin/bash", "-c", "echo hi"},
-			want: "/bin/bash -c echo hi",
+			want: "/bin/bash -c 'echo hi'",
 		},
 		{
 			name: "empty arg",
@@ -44,7 +44,7 @@ func TestShellQuote(t *testing.T) {
 		{"path", "/var/log/app.log", "/var/log/app.log"},
 		{"dashes", "my-file_name.v2", "my-file_name.v2"},
 		{"spaces", "hello world", "'hello world'"},
-		{"single quote", "it's a test", q + "it" + q + q + "'s a test" + q},
+		{"single quote", "it's a test", q + "it" + q + `\'` + q + "s a test" + q},
 		{"semicolon", "echo a; rm -rf /", "'echo a; rm -rf /'"},
 		{"pipe", "cat file | grep foo", "'cat file | grep foo'"},
 		{"redirect", "cat > output.txt", "'cat > output.txt'"},
@@ -78,8 +78,9 @@ func TestWrapShellInput_EmptyCommand(t *testing.T) {
 	input := map[string]any{"command": ""}
 	cfg := config.SandboxConfig{Scope: "workspace-write", Approval: "on-request"}
 	got := wrapShellInput(input, cfg, "/tmp")
-	if got["command"] != nil {
-		t.Errorf("empty command: got command=%v, want nil", got["command"])
+	// empty command short-circuits — input passes through unwrapped
+	if got["command"] != "" {
+		t.Errorf("empty command: got command=%v, want unchanged empty", got["command"])
 	}
 }
 

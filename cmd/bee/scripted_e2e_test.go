@@ -67,7 +67,11 @@ func TestScriptedHeadlessToolTurn(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "run", "--headless", "please read "+target)
+	// prompt path must use forward slashes to match the FIXTURE_FILE
+	// substitution above (which also uses filepath.ToSlash). without this
+	// the scenario matcher rejects the request on Windows where the raw
+	// target carries backslashes.
+	cmd := exec.CommandContext(ctx, bin, "run", "--headless", "please read "+filepath.ToSlash(target))
 	cmd.Env = scriptedEnv(home, sessDir, scriptPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

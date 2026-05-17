@@ -442,8 +442,10 @@ func TestRunContextCancellation(t *testing.T) {
 	}
 	eng, _ := newEngine(p, tools.NewRegistry())
 	ctx, cancel := context.WithCancel(context.Background())
+	// 100ms gives the stream goroutine time to reach its hold check even on
+	// slow runners (windows scheduler tick ~16ms) — the prior 20ms raced.
 	go func() {
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		cancel()
 	}()
 	_, err := eng.Run(ctx, "x")

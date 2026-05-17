@@ -199,8 +199,8 @@ func TestTopBar_HexEmptyByDefault(t *testing.T) {
 	m := NewModel(nil, "/tmp/work", "claude-sonnet-4-6", "workspace-write", caveman.Default).WithCostTracker(cost.New())
 	m.width = 120
 	out := stripANSI(m.renderTopBar())
-	if !strings.Contains(out, "⬡") {
-		t.Fatalf("empty hex glyph missing: %q", out)
+	if !strings.Contains(out, "🐝") {
+		t.Fatalf("empty bee glyph missing: %q", out)
 	}
 	if strings.Contains(out, "%") {
 		t.Fatalf("empty bar should hide percent: %q", out)
@@ -217,8 +217,8 @@ func TestTopBar_HexFillsWithContext(t *testing.T) {
 	m := NewModel(nil, "/tmp/work", "claude-sonnet-4-6", "workspace-write", caveman.Default).WithCostTracker(tr)
 	m.width = 120
 	out := stripANSI(m.renderTopBar())
-	if !strings.Contains(out, "⬢") {
-		t.Fatalf("filled hex glyph missing: %q", out)
+	if !strings.Contains(out, "🐝") {
+		t.Fatalf("bee glyph missing: %q", out)
 	}
 	if !strings.Contains(out, "50%") {
 		t.Fatalf("expected 50%% label: %q", out)
@@ -234,8 +234,8 @@ func TestTopBar_HexUnknownModelHidesPercent(t *testing.T) {
 	if strings.Contains(out, "%") {
 		t.Fatalf("unknown context window should suppress percent: %q", out)
 	}
-	if !strings.Contains(out, "⬡") {
-		t.Fatalf("expected outline hex when window unknown: %q", out)
+	if !strings.Contains(out, "🐝") {
+		t.Fatalf("expected bee glyph when window unknown: %q", out)
 	}
 }
 

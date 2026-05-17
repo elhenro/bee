@@ -530,6 +530,14 @@ func (e *Engine) streamAttempt(
 			}
 		}
 	}
+	// post-stream ctx check: if the channel closed without an explicit
+	// terminal event because the caller canceled, surface that as the err
+	// rather than returning a half-formed message with nil. otherwise
+	// races between cancel() and the provider goroutine exit can swallow
+	// the cancellation entirely.
+	if ctx.Err() != nil {
+		return types.Message{}, "", nil, gotContent, false, ctx.Err()
+	}
 	// thinking block first so the rendered transcript reads in causal order
 	if th := thinkBuf.String(); th != "" {
 		*content = append(*content, types.ContentBlock{Type: types.BlockThinking, Text: th})

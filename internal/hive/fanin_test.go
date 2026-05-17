@@ -60,11 +60,8 @@ func TestSummary_FormatTable(t *testing.T) {
 	}
 
 	got := Summary(results)
+	// alpha + gamma have nil err → 2 ok; beta has err → 1 fail.
 	cases := []string{
-		"1 ok, 1 failed", // note: gamma counts as ok (no err) → really 2 ok
-	}
-	// recompute: alpha + gamma have nil err → 2 ok; beta has err → 1 fail.
-	cases = []string{
 		"2 ok, 1 failed",
 		"70ms wall",
 		"[ok] alpha (50ms): hello world",

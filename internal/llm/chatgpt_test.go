@@ -48,7 +48,7 @@ func TestChatGPT_Stream_TextAndUsage(t *testing.T) {
 	saveTok(t, dir, "chatgpt", &auth.Token{AccessToken: "AT", AccountID: "acct-1", ExpiresIn: 3600})
 
 	var gotAuth, gotAcct string
-	srv, err := func() (*httptest.Server, error) {
+	srv := func() *httptest.Server {
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotAuth = r.Header.Get("Authorization")
 			gotAcct = r.Header.Get("chatgpt-account-id")
@@ -71,7 +71,7 @@ func TestChatGPT_Stream_TextAndUsage(t *testing.T) {
 				},
 			})
 		}))
-		return s, nil
+		return s
 	}()
 	defer srv.Close()
 
