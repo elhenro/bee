@@ -81,6 +81,12 @@ func runTUIWithSession(resumeID string) {
 			os.Exit(1)
 		}
 	}
+	// global --caveman flag (stripped in main) lands here via env; pre-validated
+	// in stripCavemanFlag, so no re-parse. Overrides profile via ApplyProfile's
+	// non-auto branch.
+	if v := os.Getenv("BEE_CAVEMAN"); v != "" {
+		cfg.Caveman = v
+	}
 
 	prov, err := buildProvider(cfg)
 	if err != nil {
