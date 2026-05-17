@@ -7,6 +7,10 @@ version: "2"
 run:
   timeout: 5m
   tests: true
+  # pin to 1.25 — golangci-lint v2.5.0 ships with go1.25 toolchain and
+  # rejects a 1.26 go.mod target. enabled linters (govet, ineffassign)
+  # do not need 1.26 syntax features.
+  go: "1.25"
 
 linters:
   default: none

@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/elhenro/bee/internal/config"
@@ -103,6 +104,9 @@ func TestWrapShellInput_EmptyScope(t *testing.T) {
 }
 
 func TestWrapShellInput_WorkspaceWrite(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox helper not available on CI for this OS; wrap degrades to passthrough")
+	}
 	input := map[string]any{"command": "echo hi"}
 	cfg := config.SandboxConfig{Scope: "workspace-write", Approval: "on-request"}
 	got := wrapShellInput(input, cfg, "/home/user/project")
@@ -116,6 +120,9 @@ func TestWrapShellInput_WorkspaceWrite(t *testing.T) {
 }
 
 func TestWrapShellInput_StashesOriginal(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox helper not available on CI for this OS; wrap degrades to passthrough")
+	}
 	input := map[string]any{"command": "rm -rf ./tmp"}
 	cfg := config.SandboxConfig{Scope: "workspace-write", Approval: "on-request"}
 	got := wrapShellInput(input, cfg, "/tmp")
