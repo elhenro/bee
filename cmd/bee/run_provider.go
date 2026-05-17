@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/llm/mockprov"
@@ -20,6 +22,11 @@ import (
 func resolveUserMessage(positional []string, stdin io.Reader) (string, error) {
 	if len(positional) > 0 {
 		return strings.Join(positional, " "), nil
+	}
+	// tty stdin would block io.ReadFull until ^D; surface a clear error
+	// instead of looking hung when run without args from an interactive shell.
+	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		return "", fmt.Errorf("no user message: pass as args or pipe via stdin")
 	}
 	// stdin fallback. limit read so a stuck pipe doesn't hang forever.
 	buf := make([]byte, 1<<20)
