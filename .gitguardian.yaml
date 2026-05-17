@@ -1,0 +1,23 @@
+version: 2
+
+# GitGuardian was tripping on demo strings used to test the secret redactor
+# in internal/safety/. None are real credentials — they are canonical examples
+# (jwt.io demo token, hunter2 meme, AIza...1234567 pattern) chosen specifically
+# because they match the redactor's regexes. Pin the file + literal matches so
+# real leaks in the same module still page.
+secret:
+  ignored-paths:
+    - internal/safety/safety_test.go
+  ignored-matches:
+    - name: jwt.io canonical demo token
+      match: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+    - name: fake anthropic key (redactor test)
+      match: sk-ant-abcdef0123456789abcdef0123456789xx
+    - name: fake openai key (redactor test)
+      match: sk-proj-abc123def456ghi789jklm
+    - name: fake google api key (redactor test)
+      match: AIzaSyAbcdefghijklmnopqrstuvwxyz1234567
+    - name: fake bearer token (redactor test)
+      match: abcdefghijklmnopqrstuvwxyz0123
+    - name: hunter2 meme password
+      match: hunter2

@@ -1,0 +1,40 @@
+# golangci-lint config for bee.
+# kept conservative — passing lint must not require touching existing code.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - ineffassign
+    - unused
+    - misspell
+
+linters-settings:
+  errcheck:
+    # ignore close() / os.Remove() / writes-to-stderr style errors that the
+    # codebase explicitly discards with `_ = ...`.
+    check-blank: false
+    check-type-assertions: false
+  misspell:
+    locale: US
+  govet:
+    enable:
+      - shadow
+
+issues:
+  exclude-dirs:
+    - docs
+    - vendor
+  exclude-rules:
+    # test files commonly use _ = to ignore returns intentionally
+    - path: _test\.go
+      linters:
+        - errcheck
+  max-issues-per-linter: 0
+  max-same-issues: 0

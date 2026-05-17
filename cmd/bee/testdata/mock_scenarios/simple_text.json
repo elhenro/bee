@@ -1,0 +1,13 @@
+{
+  "scenarios": [
+    {
+      "name": "single-turn-greet",
+      "match": {"any": true},
+      "events": [
+        {"type": "text_delta", "delta": "scripted: "},
+        {"type": "text_delta", "delta": "hello back"},
+        {"type": "done", "stop_reason": "stop", "usage": {"input": 5, "output": 2}}
+      ]
+    }
+  ]
+}

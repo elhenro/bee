@@ -1,0 +1,21 @@
+{
+  "scenarios": [
+    {
+      "name": "call-read",
+      "match": {"contains": "FIXTURE_FILE"},
+      "events": [
+        {"type": "text_delta", "delta": "Reading the file..."},
+        {"type": "tool_use", "tool": {"id": "toolu_read1", "name": "read", "input": {"path": "FIXTURE_FILE"}}},
+        {"type": "done", "stop_reason": "tool_use"}
+      ]
+    },
+    {
+      "name": "after-read",
+      "match": {"role": "tool"},
+      "events": [
+        {"type": "text_delta", "delta": "Done. Saw the fixture body."},
+        {"type": "done", "stop_reason": "stop", "usage": {"input": 30, "output": 6}}
+      ]
+    }
+  ]
+}

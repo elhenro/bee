@@ -1,0 +1,16 @@
+/bee
+/bee-*
+/dist/
+/bin/
+*.test
+*.out
+coverage.*
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.local
+cmd/bee/bee
+.claude/
+/.bee/
+*.jsonl
