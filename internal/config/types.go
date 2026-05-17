@@ -18,6 +18,7 @@ type Config struct {
 	// (default). auto = side-LLM classifier picks plan|edit per turn.
 	Mode string `toml:"mode"` // plan | auto | edit
 	Sandbox         SandboxConfig             `toml:"sandbox"`
+	Shell           ShellConfig               `toml:"shell"`
 	Memory          MemoryConfig              `toml:"memory"`
 	Compaction      CompactionConfig          `toml:"compaction"`
 	Providers       map[string]ProviderConfig `toml:"providers"`
@@ -163,6 +164,17 @@ type SandboxConfig struct {
 	Scope            string   `toml:"scope"`
 	Approval         string   `toml:"approval"`
 	CommandAllowlist []string `toml:"command_allowlist"`
+}
+
+// ShellConfig controls how the bash tool launches commands. Default keeps
+// the hermetic `bash -c` shape (no rc files). UseUserRC=true sources the
+// user's interactive rc file before each command so aliases and functions
+// from .zshrc / .bashrc become available. Tradeoff: leaks rc-banner output
+// into tool results, slower startup, breaks reproducibility — opt in only.
+type ShellConfig struct {
+	UseUserRC bool   `toml:"use_user_rc"`
+	Shell     string `toml:"shell"`   // override $SHELL (e.g. "/bin/zsh"); empty = autodetect
+	RCFile    string `toml:"rc_file"` // override rc path; empty = .zshrc / .bashrc per shell
 }
 
 // MemoryConfig gates the heuristic memory loop. Enabled=false skips both
