@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/prompt"
@@ -15,12 +16,33 @@ import (
 // PreserveTail is the number of trailing messages kept verbatim during compaction.
 const PreserveTail = 4
 
+// CompactStats reports what a Compact call achieved. Duration spans the
+// LLM summarization plus token accounting. Token figures are estimates
+// derived from estimateMessageTokens so they line up with the
+// auto-compact trigger heuristic.
+type CompactStats struct {
+	BeforeMsgs   int
+	AfterMsgs    int
+	BeforeTokens int
+	AfterTokens  int
+	Duration     time.Duration
+}
+
 // Compact summarizes msgs[:-PreserveTail] using provider into a single user
-// message containing "[compacted history]\n<summary>" and returns the new slice.
+// message containing "[compacted history]\n<summary>" and returns the new slice
+// plus stats describing the size delta and elapsed time.
 // Returns the input unchanged if it has PreserveTail or fewer messages.
-func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Message) ([]types.Message, error) {
+func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Message) ([]types.Message, CompactStats, error) {
+	start := time.Now()
+	stats := CompactStats{
+		BeforeMsgs:   len(msgs),
+		BeforeTokens: totalTokens(msgs),
+	}
 	if len(msgs) <= PreserveTail {
-		return msgs, nil
+		stats.AfterMsgs = stats.BeforeMsgs
+		stats.AfterTokens = stats.BeforeTokens
+		stats.Duration = time.Since(start)
+		return msgs, stats, nil
 	}
 	cut := len(msgs) - PreserveTail
 	older := msgs[:cut]
@@ -45,7 +67,8 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	}
 	ch, err := p.Stream(ctx, req)
 	if err != nil {
-		return msgs, err
+		stats.Duration = time.Since(start)
+		return msgs, stats, err
 	}
 	var sum strings.Builder
 	for ev := range ch {
@@ -53,7 +76,8 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 			sum.WriteString(ev.Delta)
 		}
 		if ev.Type == llm.EventError && ev.Err != nil {
-			return msgs, ev.Err
+			stats.Duration = time.Since(start)
+			return msgs, stats, ev.Err
 		}
 	}
 	summaryMsg := types.Message{
@@ -61,7 +85,20 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 		Content: []types.ContentBlock{{Type: types.BlockText, Text: "[compacted history]\n" + sum.String()}},
 	}
 	out := append([]types.Message{summaryMsg}, preserved...)
-	return out, nil
+	stats.AfterMsgs = len(out)
+	stats.AfterTokens = totalTokens(out)
+	stats.Duration = time.Since(start)
+	return out, stats, nil
+}
+
+// totalTokens sums estimateMessageTokens across a slice. Same heuristic the
+// auto-compact trigger uses, so reported "size now" matches what the trigger sees.
+func totalTokens(msgs []types.Message) int {
+	t := 0
+	for _, m := range msgs {
+		t += estimateMessageTokens(m)
+	}
+	return t
 }
 
 // ShouldAutoCompact returns true if assembled prompt + history exceeds

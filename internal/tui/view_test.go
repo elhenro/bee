@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
@@ -34,5 +36,43 @@ func TestDisplayModel_NilEngineReturnsBare(t *testing.T) {
 	m := NewModel(nil, "/tmp/work", "llama3.1:8b", "workspace-write", caveman.Default)
 	if got := m.displayModel(); got != "llama3.1:8b" {
 		t.Errorf("nil engine: got %q want %q", got, "llama3.1:8b")
+	}
+}
+
+func TestFormatElapsed(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "0.0s"},
+		{350 * time.Millisecond, "0.3s"},
+		{1500 * time.Millisecond, "1.5s"},
+		{12 * time.Second, "12s"},
+		{75 * time.Second, "1m 15s"},
+		{2*time.Hour + 4*time.Minute, "2h 04m"},
+	}
+	for _, c := range cases {
+		if got := formatElapsed(c.d); got != c.want {
+			t.Errorf("formatElapsed(%v) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}
+
+// while streaming the chip reads the live wall-clock; final mode persists
+// lastTurnDuration. Empty state when neither applies — top bar stays quiet.
+func TestRenderTurnTimer_LiveAndFinal(t *testing.T) {
+	m := NewModel(nil, "/tmp/work", "gpt-4o-mini", "workspace-write", caveman.Default)
+	if got := m.renderTurnTimer(); got != "" {
+		t.Errorf("idle/empty: got %q want empty", got)
+	}
+	m.lastTurnDuration = 12 * time.Second
+	if got := stripANSI(m.renderTurnTimer()); !strings.Contains(got, "12s") {
+		t.Errorf("final: got %q want contains 12s", got)
+	}
+	m.state = StateStreaming
+	m.turnStartedAt = time.Now().Add(-3500 * time.Millisecond)
+	got := stripANSI(m.renderTurnTimer())
+	if !strings.Contains(got, "s") || !strings.HasPrefix(got, "⏱") {
+		t.Errorf("live: got %q want timer chip", got)
 	}
 }

@@ -43,6 +43,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/ls"
 	"github.com/elhenro/bee/internal/tools/read"
 	"github.com/elhenro/bee/internal/tools/shell"
+	"github.com/elhenro/bee/internal/tools/usertool"
 	"github.com/elhenro/bee/internal/tools/write"
 )
 
@@ -557,12 +558,40 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 			knowledge_write.New(storeDir),
 		)
 	}
+	all = appendUserTools(all, cfg.UserTools)
 	for _, t := range all {
+		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
+			continue
+		}
 		if err := r.Register(t); err != nil {
 			return nil, err
 		}
 	}
 	return r, nil
+}
+
+// appendUserTools wraps each [[user_tools]] entry as a tool. Malformed
+// entries (empty name/command) are silently skipped so a typo in config
+// doesn't crash bootstrapping.
+func appendUserTools(all []tools.Tool, ut []config.UserTool) []tools.Tool {
+	for _, u := range ut {
+		t, err := usertool.New(u.Name, u.Command, u.Description)
+		if err != nil {
+			continue
+		}
+		all = append(all, t)
+	}
+	return all
+}
+
+// isDisabledTool reports whether name appears in the disabled set.
+func isDisabledTool(disabled []string, name string) bool {
+	for _, d := range disabled {
+		if d == name {
+			return true
+		}
+	}
+	return false
 }
 
 // buildToolsFiltered is buildTools with a path-regex constraint threaded into
@@ -596,7 +625,11 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 			knowledge_write.New(storeDir),
 		)
 	}
+	all = appendUserTools(all, cfg.UserTools)
 	for _, t := range all {
+		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
+			continue
+		}
 		if err := r.Register(t); err != nil {
 			return nil, err
 		}

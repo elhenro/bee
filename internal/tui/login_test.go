@@ -68,6 +68,27 @@ func (s *loginSideStub) SetHighlight(bool) error                        { return
 func (s *loginSideStub) GetHighlight() bool                             { return true }
 func (s *loginSideStub) SetShellBangSilent(bool) error                  { return nil }
 func (s *loginSideStub) GetShellBangSilent() bool                       { return true }
+func (s *loginSideStub) SetShowBee(bool) error                          { return nil }
+func (s *loginSideStub) GetShowBee() bool                               { return true }
+func (s *loginSideStub) SetShowContextPct(bool) error                   { return nil }
+func (s *loginSideStub) GetShowContextPct() bool                        { return true }
+func (s *loginSideStub) SetShowModel(bool) error                        { return nil }
+func (s *loginSideStub) GetShowModel() bool                             { return true }
+func (s *loginSideStub) SetShowCwd(bool) error                          { return nil }
+func (s *loginSideStub) GetShowCwd() bool                               { return true }
+func (s *loginSideStub) SetShowEffort(bool) error                       { return nil }
+func (s *loginSideStub) GetShowEffort() bool                            { return true }
+func (s *loginSideStub) SetShowTurnTimer(bool) error                    { return nil }
+func (s *loginSideStub) GetShowTurnTimer() bool                         { return true }
+func (s *loginSideStub) SetShowGitBranch(bool) error                    { return nil }
+func (s *loginSideStub) GetShowGitBranch() bool                         { return false }
+func (s *loginSideStub) SetShowTotalTokens(bool) error                  { return nil }
+func (s *loginSideStub) GetShowTotalTokens() bool                       { return false }
+func (s *loginSideStub) ListTools() []commands.ToolInfo                 { return nil }
+func (s *loginSideStub) SetToolDisabled(string, bool) error             { return nil }
+func (s *loginSideStub) AddUserTool(string, string, string) error       { return nil }
+func (s *loginSideStub) RemoveUserTool(string) error                    { return nil }
+func (s *loginSideStub) OpenToolsPane() error                           { return nil }
 
 func TestLoginPane_OpensAndRendersProviders(t *testing.T) {
 	side := &loginSideStub{statuses: []commands.ProviderAuth{

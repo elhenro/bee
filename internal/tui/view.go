@@ -3,7 +3,9 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -78,6 +80,9 @@ func (m Model) View() string {
 	if m.settingsPane != nil && m.settingsPane.Open() {
 		return overlayCenter(frame, m.settingsPane.View(m.width, m.height), m.width)
 	}
+	if m.toolsPane != nil && m.toolsPane.Open() {
+		return overlayCenter(frame, m.toolsPane.View(m.width, m.height), m.width)
+	}
 	if m.agentView != nil && m.agentView.IsOpen() {
 		return overlayCenter(frame, m.agentView.Render(m.width, m.height), m.width)
 	}
@@ -92,24 +97,57 @@ func (m Model) View() string {
 func (m Model) renderTopBar() string {
 	// Slim, dim status line. Hex glyph doubles as a context-fill pie:
 	// outline when empty, filled and color-tiered as input tokens grow
-	// against the model's context window.
+	// against the model's context window. Each chunk is independently
+	// toggleable via /settings; flipping all five user-visible chunks off
+	// collapses the entire row (caller drops the empty string from parts).
+	if !m.showBee && !m.showContextPct && !m.showModel && !m.showCwd && !m.showEffort && !m.showTurnTimer && !m.showGitBranch && !m.showTotalTokens {
+		return ""
+	}
 	hex := m.renderContextHex()
-	model := m.styles.Dim.Render(m.displayModel())
-	cwd := m.styles.Dim.Render(prettyCwd(m.cwd))
-	left := hex + "  " + model + "  " + cwd
+	var leftParts []string
+	if hex != "" {
+		leftParts = append(leftParts, hex)
+	}
+	if m.showModel {
+		leftParts = append(leftParts, m.styles.Dim.Render(m.displayModel()))
+	}
+	if m.showCwd {
+		leftParts = append(leftParts, m.styles.Dim.Render(prettyCwd(m.cwd)))
+	}
+	if m.showGitBranch {
+		if br := gitBranch(m.cwd); br != "" {
+			leftParts = append(leftParts, m.styles.Dim.Render("⎇ "+br))
+		}
+	}
+	left := strings.Join(leftParts, "  ")
 	if m.costs != nil && !m.isLocalProvider() {
 		tot := m.costs.Total()
 		// only render badge when there's actual spend — free local models
 		// (ollama, lm-studio) report 0 USD and shouldn't show "$0.0000".
 		if tot.USD > 0 {
-			left += "  " + m.renderCostBadge(tot.USD)
+			if left != "" {
+				left += "  "
+			}
+			left += m.renderCostBadge(tot.USD)
+		}
+	}
+	if m.showTotalTokens && m.costs != nil {
+		tot := m.costs.Total()
+		if n := tot.Input + tot.Output; n > 0 {
+			if left != "" {
+				left += "  "
+			}
+			left += m.styles.Dim.Render("Σ" + tokensHuman(n))
 		}
 	}
 	right := ""
+	if timer := m.renderTurnTimer(); timer != "" {
+		right += timer + "  "
+	}
 	if m.mode == "auto" {
 		right += m.renderModeBadge() + "  "
 	}
-	if m.thinking != "" && m.thinking != "off" {
+	if m.showEffort && m.thinking != "" && m.thinking != "off" {
 		right += m.styles.Dim.Render("t:"+m.thinking) + " "
 	}
 	pad := m.width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -117,6 +155,55 @@ func (m Model) renderTopBar() string {
 		pad = 1
 	}
 	return left + strings.Repeat(" ", pad) + right
+}
+
+// renderTurnTimer formats a tiny right-side chip showing how long the bee
+// has been working on the current turn (live) or how long the most recent
+// turn took (final). Empty string when neither applies. Live ticks via the
+// loaderTickMsg cadence; final persists until the next submit clears it.
+//
+// Two visual tiers: live uses RoleBee accent (matches the streaming loader
+// palette), final uses Dim (a quiet "done" acknowledgement). Hourglass +
+// space + duration. No bold, no flash — same restraint as the cost badge.
+func (m Model) renderTurnTimer() string {
+	if !m.showTurnTimer {
+		return ""
+	}
+	if m.state == StateStreaming && !m.turnStartedAt.IsZero() {
+		d := time.Since(m.turnStartedAt)
+		return m.styles.RoleBee.Render("⏱ " + formatElapsed(d))
+	}
+	if m.lastTurnDuration > 0 {
+		return m.styles.Dim.Render("⏱ " + formatElapsed(m.lastTurnDuration))
+	}
+	return ""
+}
+
+// formatElapsed returns a human, readable duration string. Sub-second uses
+// one decimal so a fast turn doesn't read "0s"; sub-minute drops decimals;
+// longer durations switch to compact M m S s / H h M m forms. Designed to
+// stay ≤7 chars so the top-bar slot doesn't push other chips around.
+func formatElapsed(d time.Duration) string {
+	if d <= 0 {
+		return "0.0s"
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	if d < 10*time.Second {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		mins := int(d / time.Minute)
+		secs := int((d % time.Minute) / time.Second)
+		return fmt.Sprintf("%dm %02ds", mins, secs)
+	}
+	hrs := int(d / time.Hour)
+	mins := int((d % time.Hour) / time.Minute)
+	return fmt.Sprintf("%dh %02dm", hrs, mins)
 }
 
 // liveBudget returns the row budget available for the streaming live region,
@@ -255,11 +342,10 @@ func (m Model) contextPct() float64 {
 // you "fresh" vs "almost full". Percent label appears once anything's used.
 // you "fresh" vs "almost full". Percent label appears once anything's used.
 func (m Model) renderContextHex() string {
-	pct := m.contextPct()
-	glyph := "🐝"
-	if pct > 0 {
-		glyph = "🐝"
+	if !m.showBee && !m.showContextPct {
+		return ""
 	}
+	pct := m.contextPct()
 	var fg lipgloss.TerminalColor
 	bold := false
 	switch {
@@ -277,15 +363,23 @@ func (m Model) renderContextHex() string {
 		bold = true
 	}
 	style := lipgloss.NewStyle().Foreground(fg).Bold(bold)
-	out := style.Render(glyph)
-	if pct > 0 {
+	var out string
+	if m.showBee {
+		out = style.Render("🐝")
+	}
+	if m.showContextPct && pct > 0 {
 		// rounded percent; cap display at 999% to avoid layout breaks if
 		// LastInput somehow exceeds the window.
 		p := int(pct*100 + 0.5)
 		if p > 999 {
 			p = 999
 		}
-		out += " " + style.Render(fmt.Sprintf("%d%%", p))
+		label := style.Render(fmt.Sprintf("%d%%", p))
+		if out != "" {
+			out += " " + label
+		} else {
+			out = label
+		}
 	}
 	return out
 }
@@ -465,4 +559,78 @@ func (m Model) renderWarning() string {
 	bee := lipgloss.NewStyle().Foreground(accentHoney).Render("◌")
 	body := lipgloss.NewStyle().Foreground(semWarning).Italic(true).Render(m.warning)
 	return bee + " " + body
+}
+
+// gitBranch returns the current branch name when cwd lives inside a git repo.
+// Walks up looking for .git (handles worktree pointer files too) and reads
+// HEAD. Returns the branch name from "ref: refs/heads/<name>", or a 7-char
+// short sha when HEAD is detached. Empty string when cwd is not in a repo.
+// Cheap enough to call per-render: two small file reads at most.
+func gitBranch(cwd string) string {
+	if cwd == "" {
+		return ""
+	}
+	dir := cwd
+	for i := 0; i < 32; i++ {
+		gitPath := filepath.Join(dir, ".git")
+		st, err := os.Stat(gitPath)
+		if err == nil {
+			gitDir := gitPath
+			if !st.IsDir() {
+				// worktree pointer: ".git" file with "gitdir: <path>"
+				b, err := os.ReadFile(gitPath)
+				if err != nil {
+					return ""
+				}
+				line := strings.TrimSpace(string(b))
+				if !strings.HasPrefix(line, "gitdir: ") {
+					return ""
+				}
+				gd := strings.TrimPrefix(line, "gitdir: ")
+				if !filepath.IsAbs(gd) {
+					gd = filepath.Join(dir, gd)
+				}
+				gitDir = gd
+			}
+			head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+			if err != nil {
+				return ""
+			}
+			s := strings.TrimSpace(string(head))
+			if rest, ok := strings.CutPrefix(s, "ref: refs/heads/"); ok {
+				return rest
+			}
+			if len(s) >= 7 {
+				return s[:7]
+			}
+			return s
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
+// tokensHuman formats a token count compactly: 1234 → "1.2k", 1_500_000 → "1.5M".
+// Sub-1000 stays bare. One decimal point until 100, none above.
+func tokensHuman(n int) string {
+	switch {
+	case n < 1000:
+		return fmt.Sprintf("%d", n)
+	case n < 1_000_000:
+		v := float64(n) / 1000
+		if v < 10 {
+			return fmt.Sprintf("%.1fk", v)
+		}
+		return fmt.Sprintf("%dk", int(v+0.5))
+	default:
+		v := float64(n) / 1_000_000
+		if v < 10 {
+			return fmt.Sprintf("%.1fM", v)
+		}
+		return fmt.Sprintf("%dM", int(v+0.5))
+	}
 }

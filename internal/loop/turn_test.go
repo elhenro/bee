@@ -101,7 +101,7 @@ func newEngine(p llm.Provider, reg *tools.Registry) (*Engine, *bytes.Buffer) {
 func TestFilterToolSpecsForProfile(t *testing.T) {
 	specs := []llm.ToolSpec{
 		{Name: "bash"}, {Name: "read"}, {Name: "write"}, {Name: "edit"},
-		{Name: "grep"}, {Name: "find"}, {Name: "ls"},
+		{Name: "search"}, {Name: "glob"}, {Name: "ls"},
 		{Name: "apply_patch"}, {Name: "hashline_edit"}, {Name: "knowledge_search"},
 	}
 	// tiny: 4-tool minimum {bash, read, write, edit}
@@ -125,7 +125,7 @@ func TestFilterToolSpecsForProfile(t *testing.T) {
 	for _, s := range normal {
 		keepNormal[s.Name] = true
 	}
-	for _, want := range []string{"bash", "read", "write", "edit", "grep", "find", "ls", "knowledge_search"} {
+	for _, want := range []string{"bash", "read", "write", "edit", "search", "glob", "ls", "knowledge_search"} {
 		if !keepNormal[want] {
 			t.Errorf("normal profile missing %s", want)
 		}
@@ -168,13 +168,36 @@ func TestFilterToolSpecsForProfile_ExtrasUnionWithAllowlist(t *testing.T) {
 	}
 }
 
+// Disabled tools are dropped from the manifest regardless of profile.
+func TestFilterToolSpecsDisabled(t *testing.T) {
+	specs := []llm.ToolSpec{{Name: "bash"}, {Name: "read"}, {Name: "write"}}
+	got := filterToolSpecsDisabled(specs, []string{"write"})
+	if len(got) != 2 {
+		t.Fatalf("want 2 after dropping write, got %d", len(got))
+	}
+	for _, s := range got {
+		if s.Name == "write" {
+			t.Error("write should have been removed")
+		}
+	}
+}
+
+// Empty disabled list passes through unchanged.
+func TestFilterToolSpecsDisabled_EmptyPassthrough(t *testing.T) {
+	specs := []llm.ToolSpec{{Name: "bash"}}
+	got := filterToolSpecsDisabled(specs, nil)
+	if &got[0] != &specs[0] && len(got) != 1 {
+		t.Error("empty disabled should pass through")
+	}
+}
+
 // Canonical bee tool names: a stable 7-tool surface for the normal profile.
 func TestCanonicalToolNames(t *testing.T) {
-	// canonical set: bash, edit, find, grep, ls, read, write. normal profile
+	// canonical set: bash, edit, glob, search, ls, read, write. normal profile
 	// also exposes knowledge_search as a bee extension.
 	want := map[string]bool{
 		"bash": true, "read": true, "write": true, "edit": true,
-		"grep": true, "find": true, "ls": true,
+		"search": true, "glob": true, "ls": true,
 	}
 	for name := range want {
 		if !profileToolAllowlist["normal"][name] {

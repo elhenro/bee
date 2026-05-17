@@ -43,7 +43,7 @@ func TestParseClassifyOutput(t *testing.T) {
 func TestFilterToolSpecsForMode(t *testing.T) {
 	specs := []llm.ToolSpec{
 		{Name: "read"},
-		{Name: "grep"},
+		{Name: "search"},
 		{Name: "bash"},
 		{Name: "edit"},
 		{Name: "write"},
@@ -60,7 +60,7 @@ func TestFilterToolSpecsForMode(t *testing.T) {
 			t.Errorf("ModePlan leaked mutator %q", s.Name)
 		}
 	}
-	if len(got) != 3 { // read, grep, knowledge_search
+	if len(got) != 3 { // read, search, knowledge_search
 		t.Errorf("ModePlan filtered set size = %d, want 3", len(got))
 	}
 }

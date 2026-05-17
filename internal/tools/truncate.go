@@ -21,8 +21,8 @@ const MaxWebfetchTokens = 10_000
 // back to MaxOutputTokens via limitFor.
 var truncatableLimits = map[string]int{
 	"bash":          MaxOutputTokens,
-	"grep":          MaxOutputTokens,
-	"find":          MaxOutputTokens,
+	"search":        MaxOutputTokens,
+	"glob":          MaxOutputTokens,
 	"ls":            MaxOutputTokens,
 	"read":          MaxOutputTokens,
 	"edit":          MaxOutputTokens,

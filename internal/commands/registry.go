@@ -109,12 +109,53 @@ type Side interface {
 	SetShellBangSilent(v bool) error
 	// GetShellBangSilent returns the current bang-silent flag.
 	GetShellBangSilent() bool
+	// Top-bar chrome toggles. Each persists to config; flipping all five off
+	// collapses the entire status row.
+	SetShowBee(v bool) error
+	GetShowBee() bool
+	SetShowContextPct(v bool) error
+	GetShowContextPct() bool
+	SetShowModel(v bool) error
+	GetShowModel() bool
+	SetShowCwd(v bool) error
+	GetShowCwd() bool
+	SetShowEffort(v bool) error
+	GetShowEffort() bool
+	SetShowTurnTimer(v bool) error
+	GetShowTurnTimer() bool
+	SetShowGitBranch(v bool) error
+	GetShowGitBranch() bool
+	SetShowTotalTokens(v bool) error
+	GetShowTotalTokens() bool
 	// OpenSettings asks the TUI to display the settings pane. Returns an
 	// error in headless contexts so the slash command can fall back to text.
 	OpenSettings() error
 	// OpenAgentView opens the bgreg-backed multi-bee pane (Left arrow).
 	// Returns an error in headless contexts.
 	OpenAgentView() error
+	// ListTools reports every known tool with its enabled state and source
+	// (builtin vs user). Sorted by name. Used by /tools (no args).
+	ListTools() []ToolInfo
+	// SetToolDisabled adds or removes name from cfg.DisabledTools and
+	// persists. The filter applies on the next turn (live).
+	SetToolDisabled(name string, disabled bool) error
+	// AddUserTool persists a new [[user_tools]] entry and registers it live.
+	// Errors if name collides with an existing tool.
+	AddUserTool(name, command, description string) error
+	// RemoveUserTool drops a [[user_tools]] entry by name and unregisters it.
+	// Errors if the name is not a user tool.
+	RemoveUserTool(name string) error
+	// OpenToolsPane asks the TUI to display the tools toggle pane. Returns
+	// an error in headless contexts.
+	OpenToolsPane() error
+}
+
+// ToolInfo summarizes one tool entry for /tools UI.
+type ToolInfo struct {
+	Name        string
+	Description string
+	Disabled    bool
+	UserDefined bool
 }
 
 // ProviderAuth summarizes one provider's auth posture for /login UX.

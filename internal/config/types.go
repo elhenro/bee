@@ -74,12 +74,42 @@ type Config struct {
 	// opposite mode (escape hatch). Toggle via /settings.
 	ShellBangSilent bool `toml:"shell_bang_silent"`
 
+	// Top-bar chrome toggles. Default true for each preserves the original
+	// status-line look; flipping all five off collapses the entire top row.
+	// Toggle via /settings; persists across launches.
+	ShowBee         bool `toml:"show_bee"`          // 🐝 glyph
+	ShowContextPct  bool `toml:"show_context_pct"`  // "4%" next to glyph
+	ShowModel       bool `toml:"show_model"`        // provider/model label
+	ShowCwd         bool `toml:"show_cwd"`          // current working dir
+	ShowEffort      bool `toml:"show_effort"`       // "t:max" thinking level
+	ShowTurnTimer   bool `toml:"show_turn_timer"`   // ⏱ live / final elapsed
+	ShowGitBranch   bool `toml:"show_git_branch"`   // ⎇ current git branch
+	ShowTotalTokens bool `toml:"show_total_tokens"` // Σ session tokens (in+out)
+
 	// ExtraTools opts specific tools into the manifest beyond the active
 	// profile's allowlist. Names match tool Spec().Name (e.g. "apply_patch",
 	// "hashline_edit"). The default keeps the surface minimal; this is the
 	// escape hatch for power users who want expert-mode mutators without
 	// bumping to the `large` profile.
 	ExtraTools []string `toml:"extra_tools"`
+
+	// DisabledTools hides specific tools from the model regardless of profile
+	// allowlists. Toggled via /tools. Names match tool Spec().Name.
+	DisabledTools []string `toml:"disabled_tools"`
+
+	// UserTools are caller-defined shell-alias tools. Each entry registers a
+	// new tool whose Run executes a fixed bash command. Added via `/tools add`
+	// and persisted to ~/.bee/config.toml.
+	UserTools []UserTool `toml:"user_tools"`
+}
+
+// UserTool describes a custom shell-alias tool. Name becomes the tool id the
+// model sees; Command is the bash command that runs on invocation. Optional
+// arg fields let the model pass dynamic input appended to Command.
+type UserTool struct {
+	Name        string `toml:"name"`
+	Command     string `toml:"command"`
+	Description string `toml:"description"`
 }
 
 // ProviderConfig pairs a base_url with a wire_api selector. One adapter

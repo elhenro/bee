@@ -25,12 +25,15 @@ type tuiSide struct {
 	m *Model
 }
 
-// Compact delegates to the engine-level compactor.
+// Compact delegates to the engine-level compactor. Stats are discarded — the
+// slash-command path in commands/builtins.go only needs success/failure. The
+// TUI's async /compact handler calls Engine.Compact directly to capture stats.
 func (s *tuiSide) Compact(ctx context.Context) error {
 	if s.m == nil || s.m.eng == nil {
 		return nil
 	}
-	return s.m.eng.Compact(ctx)
+	_, err := s.m.eng.Compact(ctx)
+	return err
 }
 
 // SwitchModel mutates the status-bar model label and the engine's default
@@ -155,6 +158,7 @@ func (s *tuiSide) OpenSession(id string) error {
 	s.m.messages = prior
 	s.m.partial = ""
 	s.m.streamFlushed = ""
+	s.m.streamFenceOpen = false
 	s.m.pendingFlushedPrefix = ""
 	s.m.lastErr = ""
 	s.m.state = StateIdle
@@ -187,6 +191,7 @@ func (s *tuiSide) NewSession() error {
 	s.m.messages = nil
 	s.m.partial = ""
 	s.m.streamFlushed = ""
+	s.m.streamFenceOpen = false
 	s.m.pendingFlushedPrefix = ""
 	s.m.lastErr = ""
 	s.m.state = StateIdle
@@ -252,6 +257,7 @@ func (s *tuiSide) ForkSession(fromMsgID string) error {
 	s.m.messages = nil
 	s.m.partial = ""
 	s.m.streamFlushed = ""
+	s.m.streamFenceOpen = false
 	s.m.pendingFlushedPrefix = ""
 	s.m.lastErr = ""
 	s.m.state = StateIdle
@@ -589,6 +595,153 @@ func (s *tuiSide) GetShellBangSilent() bool {
 	return s.m.shellBangSilent
 }
 
+// Top-bar chrome toggles. Each mutates the live model, syncs the cached
+// Cfg used at next launch, and persists to ~/.bee/config.toml.
+
+func (s *tuiSide) SetShowBee(v bool) error {
+	if s.m == nil {
+		return errors.New("show_bee: no tui state")
+	}
+	s.m.showBee = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowBee = v
+	}
+	return PersistSetting("", "show_bee", v)
+}
+
+func (s *tuiSide) GetShowBee() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showBee
+}
+
+func (s *tuiSide) SetShowContextPct(v bool) error {
+	if s.m == nil {
+		return errors.New("show_context_pct: no tui state")
+	}
+	s.m.showContextPct = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowContextPct = v
+	}
+	return PersistSetting("", "show_context_pct", v)
+}
+
+func (s *tuiSide) GetShowContextPct() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showContextPct
+}
+
+func (s *tuiSide) SetShowModel(v bool) error {
+	if s.m == nil {
+		return errors.New("show_model: no tui state")
+	}
+	s.m.showModel = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowModel = v
+	}
+	return PersistSetting("", "show_model", v)
+}
+
+func (s *tuiSide) GetShowModel() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showModel
+}
+
+func (s *tuiSide) SetShowCwd(v bool) error {
+	if s.m == nil {
+		return errors.New("show_cwd: no tui state")
+	}
+	s.m.showCwd = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowCwd = v
+	}
+	return PersistSetting("", "show_cwd", v)
+}
+
+func (s *tuiSide) GetShowCwd() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showCwd
+}
+
+func (s *tuiSide) SetShowEffort(v bool) error {
+	if s.m == nil {
+		return errors.New("show_effort: no tui state")
+	}
+	s.m.showEffort = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowEffort = v
+	}
+	return PersistSetting("", "show_effort", v)
+}
+
+func (s *tuiSide) GetShowEffort() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showEffort
+}
+
+func (s *tuiSide) SetShowTurnTimer(v bool) error {
+	if s.m == nil {
+		return errors.New("show_turn_timer: no tui state")
+	}
+	s.m.showTurnTimer = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowTurnTimer = v
+	}
+	return PersistSetting("", "show_turn_timer", v)
+}
+
+func (s *tuiSide) GetShowTurnTimer() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showTurnTimer
+}
+
+func (s *tuiSide) SetShowGitBranch(v bool) error {
+	if s.m == nil {
+		return errors.New("show_git_branch: no tui state")
+	}
+	s.m.showGitBranch = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowGitBranch = v
+	}
+	return PersistSetting("", "show_git_branch", v)
+}
+
+func (s *tuiSide) GetShowGitBranch() bool {
+	if s.m == nil {
+		return false
+	}
+	return s.m.showGitBranch
+}
+
+func (s *tuiSide) SetShowTotalTokens(v bool) error {
+	if s.m == nil {
+		return errors.New("show_total_tokens: no tui state")
+	}
+	s.m.showTotalTokens = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowTotalTokens = v
+	}
+	return PersistSetting("", "show_total_tokens", v)
+}
+
+func (s *tuiSide) GetShowTotalTokens() bool {
+	if s.m == nil {
+		return false
+	}
+	return s.m.showTotalTokens
+}
+
 // OpenSettings flips a sentinel that Model.Update consumes to display the
 // settings pane modal. Errors in headless contexts.
 func (s *tuiSide) OpenSettings() error {
@@ -612,5 +765,162 @@ func (s *tuiSide) OpenAgentView() error {
 		return errors.New("no agent view (headless)")
 	}
 	s.m.agentView.Open()
+	return nil
+}
+
+// ListTools returns every tool with disabled flag + user-defined source.
+// Built-ins come from the live registry; user tools come from cfg.UserTools.
+// A user tool present in cfg but absent from registry (e.g. disabled at
+// build time) is still listed so the toggle pane can re-enable it.
+func (s *tuiSide) ListTools() []commands.ToolInfo {
+	if s.m == nil || s.m.eng == nil {
+		return nil
+	}
+	cfg := s.m.eng.Cfg
+	disabled := make(map[string]bool, len(cfg.DisabledTools))
+	for _, n := range cfg.DisabledTools {
+		disabled[n] = true
+	}
+	user := make(map[string]config.UserTool, len(cfg.UserTools))
+	for _, u := range cfg.UserTools {
+		user[u.Name] = u
+	}
+	seen := map[string]bool{}
+	var out []commands.ToolInfo
+	if s.m.eng.Tools != nil {
+		for _, spec := range s.m.eng.Tools.Specs() {
+			_, isUser := user[spec.Name]
+			out = append(out, commands.ToolInfo{
+				Name:        spec.Name,
+				Description: spec.Description,
+				Disabled:    disabled[spec.Name],
+				UserDefined: isUser,
+			})
+			seen[spec.Name] = true
+		}
+	}
+	// surface disabled-only entries that aren't in the registry
+	for name := range disabled {
+		if seen[name] {
+			continue
+		}
+		desc := ""
+		userDef := false
+		if u, ok := user[name]; ok {
+			desc = u.Description
+			userDef = true
+		}
+		out = append(out, commands.ToolInfo{Name: name, Description: desc, Disabled: true, UserDefined: userDef})
+		seen[name] = true
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// SetToolDisabled updates cfg.DisabledTools and persists. Loop turn.go filters
+// the spec list live on the next turn so the change is visible without rebuild.
+func (s *tuiSide) SetToolDisabled(name string, disabled bool) error {
+	if s.m == nil || s.m.eng == nil {
+		return errors.New("no tui state")
+	}
+	if name == "" {
+		return errors.New("empty tool name")
+	}
+	cfg := &s.m.eng.Cfg
+	cur := cfg.DisabledTools[:0:0]
+	dup := false
+	for _, n := range cfg.DisabledTools {
+		if n == name {
+			dup = true
+			if disabled {
+				cur = append(cur, n)
+			}
+			continue
+		}
+		cur = append(cur, n)
+	}
+	if disabled && !dup {
+		cur = append(cur, name)
+	}
+	cfg.DisabledTools = cur
+	return PersistSetting("", "disabled_tools", cfg.DisabledTools)
+}
+
+// AddUserTool registers a new user shell-alias tool live and persists it.
+// Name collisions with existing tools (builtins or other user tools) are
+// rejected. Empty name/cmd are rejected.
+func (s *tuiSide) AddUserTool(name, cmdStr, desc string) error {
+	if s.m == nil || s.m.eng == nil {
+		return errors.New("no tui state")
+	}
+	if name == "" || cmdStr == "" {
+		return errors.New("name and command required")
+	}
+	cfg := &s.m.eng.Cfg
+	for _, u := range cfg.UserTools {
+		if u.Name == name {
+			return fmt.Errorf("user tool %q already exists", name)
+		}
+	}
+	if s.m.eng.Tools != nil {
+		if _, ok := s.m.eng.Tools.Get(name); ok {
+			return fmt.Errorf("tool %q already registered", name)
+		}
+	}
+	cfg.UserTools = append(cfg.UserTools, config.UserTool{Name: name, Command: cmdStr, Description: desc})
+	if err := PersistSetting("", "user_tools", cfg.UserTools); err != nil {
+		return err
+	}
+	// rebuild the engine's tool registry so the new tool is dispatchable now
+	if s.m.eng.Rebuild != nil {
+		if err := s.m.eng.Rebuild(s.m.eng); err != nil {
+			return fmt.Errorf("user tool: rebuild: %w", err)
+		}
+	}
+	return nil
+}
+
+// RemoveUserTool drops a [[user_tools]] entry, persists, and rebuilds the
+// engine. Returns an error when the name is not a user tool — built-ins must
+// be disabled via SetToolDisabled, not removed.
+func (s *tuiSide) RemoveUserTool(name string) error {
+	if s.m == nil || s.m.eng == nil {
+		return errors.New("no tui state")
+	}
+	cfg := &s.m.eng.Cfg
+	found := false
+	out := cfg.UserTools[:0:0]
+	for _, u := range cfg.UserTools {
+		if u.Name == name {
+			found = true
+			continue
+		}
+		out = append(out, u)
+	}
+	if !found {
+		return fmt.Errorf("no user tool %q", name)
+	}
+	cfg.UserTools = out
+	if err := PersistSetting("", "user_tools", cfg.UserTools); err != nil {
+		return err
+	}
+	if s.m.eng.Rebuild != nil {
+		if err := s.m.eng.Rebuild(s.m.eng); err != nil {
+			return fmt.Errorf("user tool: rebuild: %w", err)
+		}
+	}
+	return nil
+}
+
+// OpenToolsPane flips a sentinel that Model.Update consumes to display the
+// tools toggle pane. Errors in headless contexts.
+func (s *tuiSide) OpenToolsPane() error {
+	if s.m == nil {
+		return errors.New("no tui")
+	}
+	if s.m.toolsPane == nil {
+		return errors.New("no tools pane (headless)")
+	}
+	s.m.toolsRequested = true
 	return nil
 }

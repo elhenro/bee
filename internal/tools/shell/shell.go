@@ -71,9 +71,9 @@ func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name: toolName,
 		Description: "Run a shell command via `bash -c`. Combined stdout+stderr returned, capped at 20 KB. Already runs in bee's cwd — do NOT prepend `cd <dir> &&`; use the cwd field only to override. " +
-			"PREFER dedicated tools over shell for these tasks: `grep` tool for file content search (has count_only mode, auto-skips vendor/testdata), `find` tool for filename globs, `read`/`write` for files. " +
-			"Shell pipelines like `find | xargs grep` are error-prone (unanchored patterns, SIGPIPE, missed excludes) — use the `grep` tool instead.",
-		PromptSnippet: "Execute bash. For file search use `grep`/`find` tools, not shell pipelines.",
+			"NEVER use shell `grep`, `rg`, `ack`, `find`, or `fd` — use the `search` tool (file contents) and `glob` tool (filenames) instead. They auto-skip .claude/vendor/testdata, support count_only mode, and avoid SIGPIPE/exclude-flag footguns. " +
+			"Also prefer `read`/`write` over `cat`/`echo >`.",
+		PromptSnippet: "Execute bash. For file search NEVER use shell grep/find — use `search`/`glob` tools.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

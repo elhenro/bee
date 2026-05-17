@@ -144,6 +144,11 @@ type Model struct {
 	settingsPane      *SettingsPane
 	settingsRequested bool
 
+	// tools pane — opened by /tools. Toggle enable/disable per tool; persists
+	// to disabled_tools in ~/.bee/config.toml and applies on the next turn.
+	toolsPane      *ToolsPane
+	toolsRequested bool
+
 	// @-triggered file picker
 	atpicker AtPickerModel
 
@@ -184,6 +189,15 @@ type Model struct {
 	// loaderFrame drives the pre-token streaming animation. Incremented by
 	// loaderTickMsg while state == StateStreaming and partial is empty.
 	loaderFrame int
+
+	// turnStartedAt is wall-clock when the current turn left submit(). Zero
+	// when no turn in flight. Top-bar timer reads time.Since on every tick
+	// so the elapsed string updates live without per-second state.
+	turnStartedAt time.Time
+	// lastTurnDuration is how long the most recent turn took end-to-end.
+	// Set on every turnDoneMsg path (success, cancel, error). Persists in
+	// the top bar after streaming ends until the next submit clears it.
+	lastTurnDuration time.Duration
 
 	// compacting is true while an async /compact goroutine is running.
 	// renderLive uses this to keep the loader animation alive while the
@@ -246,6 +260,21 @@ type Model struct {
 	// Toggle via /settings; persists to config.
 	shellBangSilent bool
 
+	// top-bar chrome toggles. Default true preserves the original status row;
+	// flipping all five off collapses the entire line. Toggle via /settings;
+	// persists to config.
+	showBee        bool
+	showContextPct bool
+	showModel      bool
+	showCwd        bool
+	showEffort     bool
+	// showTurnTimer toggles the top-bar "⏱ 1.4s" chip — live while a turn
+	// streams, final after it ends. Default true. Off completely hides the
+	// timer (live + final) for users who prefer a quieter top bar.
+	showTurnTimer   bool
+	showGitBranch   bool
+	showTotalTokens bool
+
 	// quitArmed is true after a first ctrl+d. Within quitConfirmWindow a
 	// second ctrl+d quits; any other key clears the armed state. Ctrl+c is
 	// not gated by this — POSIX cancel convention is single-press.
@@ -289,8 +318,12 @@ const warningTTL = 5 * time.Second
 type loaderTickMsg struct{}
 
 // compactDoneMsg is published when an async /compact goroutine finishes.
-// nil err means the summarization succeeded.
-type compactDoneMsg struct{ err error }
+// nil err means the summarization succeeded. stats carries before/after token
+// counts and elapsed time so the success line can show what was achieved.
+type compactDoneMsg struct {
+	err   error
+	stats loop.CompactStats
+}
 
 // loaderTickInterval is the frame cadence. 120ms is fast enough that the
 // bee-trail bounce looks alive but slow enough to keep the redraw cost
@@ -299,6 +332,51 @@ const loaderTickInterval = 120 * time.Millisecond
 
 func loaderTickCmd() tea.Cmd {
 	return tea.Tick(loaderTickInterval, func(time.Time) tea.Msg { return loaderTickMsg{} })
+}
+
+// formatCompactDone renders the post-/compact summary line. Falls back to a
+// bare "done" tag for the no-op short-history path where stats are zeroed.
+func formatCompactDone(s loop.CompactStats) string {
+	if s.BeforeMsgs == 0 && s.AfterMsgs == 0 {
+		return "(/compact done)"
+	}
+	if s.BeforeMsgs == s.AfterMsgs {
+		return fmt.Sprintf("(/compact done · history short, no change · %s)", fmtDuration(s.Duration))
+	}
+	saved := s.BeforeTokens - s.AfterTokens
+	return fmt.Sprintf("(/compact done · %s → %s tokens · −%s · %d→%d msgs · %s)",
+		fmtTokens(s.BeforeTokens),
+		fmtTokens(s.AfterTokens),
+		fmtTokens(saved),
+		s.BeforeMsgs,
+		s.AfterMsgs,
+		fmtDuration(s.Duration),
+	)
+}
+
+// fmtTokens prints an int as "1.2k" / "12k" / "345". Keeps the line compact.
+func fmtTokens(n int) string {
+	if n < 0 {
+		return "-" + fmtTokens(-n)
+	}
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	if n < 10_000 {
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	}
+	return fmt.Sprintf("%dk", n/1000)
+}
+
+// fmtDuration shows sub-second as "850ms", otherwise "1.2s" / "12s".
+func fmtDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < 10*time.Second {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
 
 // costTickMsg drives the post-turn cost flash animation. Self-rearms while
@@ -344,6 +422,7 @@ type (
 	openResumeMsg    struct{}
 	openEffortMsg    struct{}
 	openSettingsMsg  struct{}
+	openToolsMsg     struct{}
 )
 
 // NewModel constructs an idle TUI model. eng may be nil for unit tests.
@@ -425,11 +504,18 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		picker:   pk,
 		effortPane:   NewEffortPane(),
 		settingsPane: NewSettingsPane(),
+		toolsPane:    NewToolsPane(),
 		hive:         NewHive(),
 		agentView:    NewAgentView(),
 		showThoughts:    true,
 		highlight:       true,
 		shellBangSilent: true,
+		showBee:         true,
+		showContextPct:  true,
+		showModel:       true,
+		showCwd:         true,
+		showEffort:      true,
+		showTurnTimer:   true,
 		// progressive flush on by default: pushes settled head lines of a
 		// long streaming response into native terminal scrollback so the user
 		// can read from the start while the tail keeps growing. Opt out with
@@ -521,6 +607,30 @@ func (m Model) WithShellBangSilent(v bool) Model {
 	m.shellBangSilent = v
 	return m
 }
+
+// WithShowBee seeds top-bar bee-glyph visibility. Config-driven path.
+func (m Model) WithShowBee(v bool) Model { m.showBee = v; return m }
+
+// WithShowContextPct seeds top-bar percent-label visibility.
+func (m Model) WithShowContextPct(v bool) Model { m.showContextPct = v; return m }
+
+// WithShowModel seeds top-bar model-name visibility.
+func (m Model) WithShowModel(v bool) Model { m.showModel = v; return m }
+
+// WithShowCwd seeds top-bar cwd visibility.
+func (m Model) WithShowCwd(v bool) Model { m.showCwd = v; return m }
+
+// WithShowEffort seeds top-bar effort-badge visibility.
+func (m Model) WithShowEffort(v bool) Model { m.showEffort = v; return m }
+
+// WithShowTurnTimer seeds top-bar turn-timer chip visibility.
+func (m Model) WithShowTurnTimer(v bool) Model { m.showTurnTimer = v; return m }
+
+// WithShowGitBranch seeds top-bar git-branch chip visibility.
+func (m Model) WithShowGitBranch(v bool) Model { m.showGitBranch = v; return m }
+
+// WithShowTotalTokens seeds top-bar session-tokens chip visibility.
+func (m Model) WithShowTotalTokens(v bool) Model { m.showTotalTokens = v; return m }
 
 // maybeStartCostFlash compares the tracker's call count to what we saw last
 // turn; on growth, it captures the cost delta and arms the top-bar flash
@@ -700,10 +810,12 @@ func (m *Model) flush() tea.Cmd {
 // before m.partial is cleared on any successful or canceled stream path.
 func (m *Model) commitFlushed() {
 	if m.streamFlushed == "" {
+		m.streamFenceOpen = false
 		return
 	}
 	m.pendingFlushedPrefix = m.streamFlushed
 	m.streamFlushed = ""
+	m.streamFenceOpen = false
 }
 
 // maybeFlushPartialHead pushes complete leading lines of m.partial into
@@ -728,13 +840,20 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 		// happen — every reset path commits — but bail rather than slice
 		// past length).
 		m.streamFlushed = ""
+		m.streamFenceOpen = false
 		return nil
 	}
 	unflushed := m.partial[flushedLen:]
-	lastNL := strings.LastIndexByte(unflushed, '\n')
+	// flush at paragraph boundary (\n\n), not per-line. Glamour styles prose
+	// holistically (headings, paragraph wrap, inline code) — chunking by line
+	// strips it of context and most lines fail `needsMarkdown`, so prose
+	// flushes as raw text. Paragraph-grained flushes restore the formatting
+	// while still relieving the live region for long responses.
+	lastNL := strings.LastIndex(unflushed, "\n\n")
 	if lastNL < 0 {
 		return nil
 	}
+	lastNL++ // include the first \n of the pair; trailing \n stays in unflushed
 	// only flush when the live region actually overflows. Short responses
 	// stay in the live buffer and get full markdown styling at finalization.
 	intro := m.renderIntro()
@@ -759,8 +878,16 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 		return nil
 	}
 	head := unflushed[:lastNL+1]
-	chunk := m.stream.RenderStreamingChunk(head)
+	// glamour-style only when the chunk lives entirely outside an open
+	// ``` fence: partial code blocks render unpredictably through glamour
+	// (mojibake, lost monospace), while raw output keeps inline ANSI the
+	// model may have already painted (git log, chroma, etc).
+	startOpen := m.streamFenceOpen
+	endOpen := fenceTransitionsAfter(head, startOpen)
+	styleMarkdown := !startOpen && !endOpen
+	chunk := m.stream.RenderStreamingChunk(head, styleMarkdown)
 	m.streamFlushed += head
+	m.streamFenceOpen = endOpen
 	if chunk == "" {
 		return nil
 	}
@@ -1042,6 +1169,15 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		}
 	}
 
+	// tools pane claims keys while open.
+	if m.toolsPane != nil && m.toolsPane.Open() {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			newT, cmd := m.toolsPane.Update(msg)
+			m.toolsPane = newT
+			return m, cmd
+		}
+	}
+
 	// palette is active: nav keys go to palette, everything else falls
 	// through to the main input so the user sees what they type. Filter
 	// syncs from input value after handleKey runs (see KeyMsg branch).
@@ -1180,12 +1316,18 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		}
 		m.messages = append(m.messages, types.Message{
 			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(/compact done)"}},
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: formatCompactDone(msg.stats)}},
 		})
 		return m, m.flush()
 
 	case turnDoneMsg:
 		m.cancelRun = nil
+		// freeze elapsed at turn end. Guard zero turnStartedAt — late msgs
+		// after Model reset shouldn't synthesize a huge duration.
+		if !m.turnStartedAt.IsZero() {
+			m.lastTurnDuration = time.Since(m.turnStartedAt)
+			m.turnStartedAt = time.Time{}
+		}
 		switch {
 		case errors.Is(msg.err, context.Canceled):
 			// user pressed esc — clean cancel, not a failure. preserve any
@@ -1202,6 +1344,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 			// drop any progressively-flushed prefix on error — there's no
 			// final assistant message to dedupe against, just clear state.
 			m.streamFlushed = ""
+			m.streamFenceOpen = false
 			m.pendingFlushedPrefix = ""
 			m.state = StateError
 			m.lastErr = msg.err.Error()
@@ -1388,7 +1531,23 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		if m.settingsPane == nil {
 			m.settingsPane = NewSettingsPane()
 		}
-		m.settingsPane.Show(m.verbose, m.showThoughts, m.showNudges, m.compact, m.showContextBar, m.highlight, m.shellBangSilent)
+		m.settingsPane.Show(SettingsSnapshot{
+			Verbose:         m.verbose,
+			ShowThoughts:    m.showThoughts,
+			ShowNudges:      m.showNudges,
+			Compact:         m.compact,
+			ShowContextBar:  m.showContextBar,
+			Highlight:       m.highlight,
+			ShellBangSilent: m.shellBangSilent,
+			ShowBee:         m.showBee,
+			ShowContextPct:  m.showContextPct,
+			ShowModel:       m.showModel,
+			ShowCwd:         m.showCwd,
+			ShowEffort:      m.showEffort,
+			ShowTurnTimer:   m.showTurnTimer,
+			ShowGitBranch:   m.showGitBranch,
+			ShowTotalTokens: m.showTotalTokens,
+		})
 		return m, nil
 
 	case settingsToggleMsg:
@@ -1409,10 +1568,40 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 			err = m.side().SetHighlight(msg.value)
 		case "shell_bang_silent":
 			err = m.side().SetShellBangSilent(msg.value)
+		case "show_bee":
+			err = m.side().SetShowBee(msg.value)
+		case "show_context_pct":
+			err = m.side().SetShowContextPct(msg.value)
+		case "show_model":
+			err = m.side().SetShowModel(msg.value)
+		case "show_cwd":
+			err = m.side().SetShowCwd(msg.value)
+		case "show_effort":
+			err = m.side().SetShowEffort(msg.value)
+		case "show_turn_timer":
+			err = m.side().SetShowTurnTimer(msg.value)
+		case "show_git_branch":
+			err = m.side().SetShowGitBranch(msg.value)
+		case "show_total_tokens":
+			err = m.side().SetShowTotalTokens(msg.value)
 		}
 		if err != nil && m.state != StateStreaming {
 			// don't kill an in-flight turn over a persist hiccup; surface the
 			// error only when idle.
+			m.lastErr = err.Error()
+			m.state = StateError
+		}
+		return m, nil
+
+	case openToolsMsg:
+		if m.toolsPane == nil {
+			m.toolsPane = NewToolsPane()
+		}
+		m.toolsPane.Show(m.side().ListTools())
+		return m, nil
+
+	case toolsToggleMsg:
+		if err := m.side().SetToolDisabled(msg.name, msg.disabled); err != nil && m.state != StateStreaming {
 			m.lastErr = err.Error()
 			m.state = StateError
 		}
@@ -1937,7 +2126,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		}
 		m.compacting = true
 		m.loaderFrame = 0
-		side := m.side()
+		eng := m.eng
 		ctx := m.ctx
 		if ctx == nil {
 			ctx = context.Background()
@@ -1945,7 +2134,11 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			loaderTickCmd(),
 			func() tea.Msg {
-				return compactDoneMsg{err: side.Compact(ctx)}
+				if eng == nil {
+					return compactDoneMsg{}
+				}
+				stats, err := eng.Compact(ctx)
+				return compactDoneMsg{err: err, stats: stats}
 			},
 		)
 	}
@@ -1993,6 +2186,11 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		m.settingsRequested = false
 		return m, func() tea.Msg { return openSettingsMsg{} }
 	}
+	// /tools asks to open the tools toggle pane.
+	if m.toolsRequested {
+		m.toolsRequested = false
+		return m, func() tea.Msg { return openToolsMsg{} }
+	}
 	// /model (no args) asks to open the provider+model picker.
 	if m.pickerRequested {
 		m.pickerRequested = false
@@ -2021,9 +2219,14 @@ func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 	// fresh stream — drop any lingering flush state from a previous turn so
 	// the next progressive flush starts clean.
 	m.streamFlushed = ""
+	m.streamFenceOpen = false
 	m.pendingFlushedPrefix = ""
 	m.partial = ""
 	m.loaderFrame = 0
+	// stamp turn start; clear last duration so the timer chip switches from
+	// "final" to "live" mode immediately, no stale final reading lingering.
+	m.turnStartedAt = time.Now()
+	m.lastTurnDuration = 0
 
 	// build content blocks: text first, then a pending image if staged.
 	content := []types.ContentBlock{{Type: types.BlockText, Text: text}}
@@ -2173,6 +2376,17 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 	// without LLM forwarding. Skip when eng nil to keep test defaults.
 	if eng != nil {
 		m = m.WithShellBangSilent(eng.Cfg.ShellBangSilent)
+	}
+	// top-bar chrome: cfg-driven; default true preserves the original row.
+	if eng != nil {
+		m = m.WithShowBee(eng.Cfg.ShowBee).
+			WithShowContextPct(eng.Cfg.ShowContextPct).
+			WithShowModel(eng.Cfg.ShowModel).
+			WithShowCwd(eng.Cfg.ShowCwd).
+			WithShowEffort(eng.Cfg.ShowEffort).
+			WithShowTurnTimer(eng.Cfg.ShowTurnTimer).
+			WithShowGitBranch(eng.Cfg.ShowGitBranch).
+			WithShowTotalTokens(eng.Cfg.ShowTotalTokens)
 	}
 	// hand the engine's stream channel to the model so deltas land in the
 	// bubbletea Update loop instead of corrupting the alt-screen.

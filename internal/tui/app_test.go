@@ -553,11 +553,12 @@ func TestModel_PendingImageAttachedAndCleared(t *testing.T) {
 func TestModel_ProgressiveFlush_PushesHeadOnOverflow(t *testing.T) {
 	m := newTestModel(t) // 80x24 terminal — small budget so overflow is easy
 	m.state = StateStreaming
-	// stream enough deltas to overflow the live budget. Each line is short so
-	// width-wrap can't account for the overflow on its own.
+	// stream short paragraphs separated by blank lines. Flush boundary is the
+	// paragraph break (\n\n) so glamour gets full paragraph context — line-by-
+	// line flushing strips holistic markdown styling.
 	var cmds []tea.Cmd
-	for i := 0; i < 60; i++ {
-		m2, cmd := m.Update(streamDeltaMsg{Delta: "line\n"})
+	for i := 0; i < 30; i++ {
+		m2, cmd := m.Update(streamDeltaMsg{Delta: "line\n\n"})
 		m = m2.(Model)
 		if cmd != nil {
 			cmds = append(cmds, cmd)

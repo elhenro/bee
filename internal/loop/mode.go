@@ -40,8 +40,8 @@ func ParseMode(s string) Mode {
 // context for its plan.
 var planSafeTools = map[string]bool{
 	"read":             true,
-	"grep":             true,
-	"find":             true,
+	"search":           true,
+	"glob":             true,
 	"ls":               true,
 	"knowledge_search": true,
 }

@@ -397,6 +397,32 @@ func TestSummarizeBash_FallsBackForNonBash(t *testing.T) {
 	}
 }
 
+func TestSummarizeSearch_PatternFirst(t *testing.T) {
+	got := summarizeToolArgs("search", map[string]any{"pattern": "^func Test"}, argsSummaryCompact)
+	if got != "^func Test" {
+		t.Fatalf("want bare pattern, got %q", got)
+	}
+}
+
+func TestSummarizeSearch_AllArgs(t *testing.T) {
+	got := summarizeToolArgs("search", map[string]any{
+		"pattern":    "^func Test",
+		"glob":       "go",
+		"count_only": true,
+	}, argsSummaryCompact)
+	want := "^func Test  · *.go  · count"
+	if got != want {
+		t.Fatalf("want %q, got %q", want, got)
+	}
+}
+
+func TestSummarizeGlob_NameFirst(t *testing.T) {
+	got := summarizeToolArgs("glob", map[string]any{"name": "*_test.go"}, argsSummaryCompact)
+	if got != "*_test.go" {
+		t.Fatalf("want bare glob, got %q", got)
+	}
+}
+
 func TestShortenPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test uses POSIX absolute paths; filepath.IsAbs is false for them on Windows")
@@ -777,7 +803,7 @@ func TestClipStreamingTail_WrapsLongLines(t *testing.T) {
 // streaming tail. Trailing newlines get trimmed (tea.Println adds its own).
 func TestRenderStreamingChunk_GutterNoCaret(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
-	got := stripANSI(r.RenderStreamingChunk("line one\nline two\n"))
+	got := stripANSI(r.RenderStreamingChunk("line one\nline two\n", false))
 	if strings.HasPrefix(got, "\n") {
 		t.Fatalf("chunk should not have leading newline: %q", got)
 	}
@@ -798,8 +824,52 @@ func TestRenderStreamingChunk_GutterNoCaret(t *testing.T) {
 func TestRenderStreamingChunk_EmptyInput(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	for _, in := range []string{"", "\n", "\n\n\n"} {
-		if got := r.RenderStreamingChunk(in); got != "" {
+		if got := r.RenderStreamingChunk(in, false); got != "" {
 			t.Fatalf("empty input %q → %q, want empty", in, got)
 		}
+		if got := r.RenderStreamingChunk(in, true); got != "" {
+			t.Fatalf("empty input %q (styled) → %q, want empty", in, got)
+		}
+	}
+}
+
+// styleMarkdown=true routes the chunk through glamour so heading prose
+// keeps its ANSI styling on flushed scrollback rows. Without the flag the
+// chunk ships verbatim — needed for fence-open code blocks where partial
+// glamour-render breaks monospace layout.
+func TestRenderStreamingChunk_StyledAppliesGlamour(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	raw := r.RenderStreamingChunk("## Heading\n\nbody text.\n", false)
+	styled := r.RenderStreamingChunk("## Heading\n\nbody text.\n", true)
+	if raw == styled {
+		t.Fatalf("styled output should differ from raw; both = %q", raw)
+	}
+	if !strings.Contains(stripANSI(styled), "Heading") {
+		t.Fatalf("styled output missing heading content: %q", styled)
+	}
+}
+
+// fenceTransitionsAfter tracks fence state across chunk boundaries so the
+// flush path can pick glamour vs raw rendering correctly.
+func TestFenceTransitionsAfter(t *testing.T) {
+	cases := []struct {
+		name      string
+		startOpen bool
+		chunk     string
+		want      bool
+	}{
+		{"plain prose, closed", false, "hello\nworld\n", false},
+		{"opens fence", false, "```\nline\n", true},
+		{"closes fence", true, "line\n```\n", false},
+		{"open+close balanced", false, "```\ncode\n```\n", false},
+		{"already-open, no transition", true, "more code\n", true},
+		{"indented fence treated as fence", false, "  ```\ncode\n", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := fenceTransitionsAfter(c.chunk, c.startOpen); got != c.want {
+				t.Fatalf("startOpen=%v chunk=%q → %v, want %v", c.startOpen, c.chunk, got, c.want)
+			}
+		})
 	}
 }

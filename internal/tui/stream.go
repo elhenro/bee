@@ -678,15 +678,40 @@ func (r *StreamRenderer) animatedCaret(frame int) string {
 // anymore) and the leading blank row (rest of the partial keeps streaming
 // in the live region right below). Used by the progressive-flush path so
 // the head of a long response stays readable while the tail keeps growing.
-func (r *StreamRenderer) RenderStreamingChunk(chunk string) string {
+//
+// styleMarkdown=true routes the chunk through glamour so prose paragraphs
+// keep their headings, lists, bold, and link styling once they hit scroll-
+// back. Callers pass false when the chunk straddles an open ``` fence —
+// partial code blocks render unpredictably through glamour, and raw output
+// preserves any inline ANSI the model already painted (git log colors,
+// chroma highlight, etc).
+func (r *StreamRenderer) RenderStreamingChunk(chunk string, styleMarkdown bool) string {
 	chunk = strings.TrimRight(chunk, "\n")
 	if chunk == "" {
 		return ""
 	}
-	if r.compact {
-		return chunk
+	body := chunk
+	if styleMarkdown {
+		body = r.renderText(chunk)
 	}
-	return applyGutter(chunk)
+	if r.compact {
+		return body
+	}
+	return applyGutter(body)
+}
+
+// fenceTransitionsAfter returns the fence-open state that results from
+// applying chunk's ``` toggles on top of startOpen. A line counts as a
+// fence marker when its first non-whitespace token starts with ```.
+func fenceTransitionsAfter(chunk string, startOpen bool) bool {
+	open := startOpen
+	for _, line := range strings.Split(chunk, "\n") {
+		t := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(t, "```") {
+			open = !open
+		}
+	}
+	return open
 }
 
 // ClipStreamingTail keeps the last maxRows visual rows of a rendered
@@ -1118,6 +1143,16 @@ func (r *StreamRenderer) renderToolUse(u types.ToolUse) string {
 // (tool name already says "bash", so `command:` prefix would be redundant)
 // with cwd folded in as a compact `· <cwd>` suffix when set.
 func summarizeToolArgs(toolName string, in map[string]any, budget int) string {
+	switch toolName {
+	case "search":
+		if s, ok := summarizeSearch(in, budget); ok {
+			return s
+		}
+	case "glob":
+		if s, ok := summarizeGlob(in, budget); ok {
+			return s
+		}
+	}
 	if toolName == "bash" {
 		if s, ok := summarizeBash(in, budget); ok {
 			return s
@@ -1139,6 +1174,49 @@ func summarizeBash(in map[string]any, budget int) (string, bool) {
 	out := shortenPathsInline(cmd)
 	if cwd, ok := in["cwd"].(string); ok && cwd != "" {
 		out += "  · " + shortenPath(cwd)
+	}
+	return truncateRunes(out, budget), true
+}
+
+// summarizeSearch renders a search tool call with the regex pattern leading
+// the card — that's the primary signal. Optional `path`, `glob`, `context`,
+// `count_only` trail as compact `· key: val` suffixes when present and
+// non-default. Returns (_, false) when pattern is missing so the caller
+// falls back to the generic json summary path.
+func summarizeSearch(in map[string]any, budget int) (string, bool) {
+	pat, ok := in["pattern"].(string)
+	if !ok || pat == "" {
+		return "", false
+	}
+	out := pat
+	if p, ok := in["path"].(string); ok && p != "" {
+		out += "  · " + shortenPath(p)
+	}
+	if g, ok := in["glob"].(string); ok && g != "" {
+		out += "  · *." + g
+	}
+	if c, ok := in["context"]; ok {
+		if n, _ := c.(float64); n > 0 {
+			out += fmt.Sprintf("  · ctx %d", int(n))
+		}
+	}
+	if co, ok := in["count_only"].(bool); ok && co {
+		out += "  · count"
+	}
+	return truncateRunes(out, budget), true
+}
+
+// summarizeGlob renders a glob tool call with the filename pattern leading.
+// Optional `path` trails as `· <path>`. Returns (_, false) when name is
+// missing so the caller falls back to the generic summary.
+func summarizeGlob(in map[string]any, budget int) (string, bool) {
+	name, ok := in["name"].(string)
+	if !ok || name == "" {
+		return "", false
+	}
+	out := name
+	if p, ok := in["path"].(string); ok && p != "" {
+		out += "  · " + shortenPath(p)
 	}
 	return truncateRunes(out, budget), true
 }

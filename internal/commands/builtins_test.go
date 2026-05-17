@@ -46,6 +46,17 @@ type fakeSide struct {
 	saveKeyProvider string
 	saveKeyValue    string
 	saveKeyErr      error
+
+	toolsList       []ToolInfo
+	toolDisabled    map[string]bool
+	lastToolToggle  string
+	setToolErr      error
+	addedTool       struct{ name, cmd, desc string }
+	addToolErr      error
+	removedTool     string
+	removeToolErr   error
+	openToolsCalled bool
+	openToolsErr    error
 }
 
 func (f *fakeSide) Compact(context.Context) error   { f.compactCalled = true; return nil }
@@ -125,6 +136,22 @@ func (f *fakeSide) SetHighlight(bool) error               { return nil }
 func (f *fakeSide) GetHighlight() bool                    { return true }
 func (f *fakeSide) SetShellBangSilent(bool) error         { return nil }
 func (f *fakeSide) GetShellBangSilent() bool              { return true }
+func (f *fakeSide) SetShowBee(bool) error                 { return nil }
+func (f *fakeSide) GetShowBee() bool                      { return true }
+func (f *fakeSide) SetShowContextPct(bool) error          { return nil }
+func (f *fakeSide) GetShowContextPct() bool               { return true }
+func (f *fakeSide) SetShowModel(bool) error               { return nil }
+func (f *fakeSide) GetShowModel() bool                    { return true }
+func (f *fakeSide) SetShowCwd(bool) error                 { return nil }
+func (f *fakeSide) GetShowCwd() bool                      { return true }
+func (f *fakeSide) SetShowEffort(bool) error              { return nil }
+func (f *fakeSide) GetShowEffort() bool                   { return true }
+func (f *fakeSide) SetShowTurnTimer(bool) error           { return nil }
+func (f *fakeSide) GetShowTurnTimer() bool                { return true }
+func (f *fakeSide) SetShowGitBranch(bool) error           { return nil }
+func (f *fakeSide) GetShowGitBranch() bool                { return false }
+func (f *fakeSide) SetShowTotalTokens(bool) error         { return nil }
+func (f *fakeSide) GetShowTotalTokens() bool              { return false }
 
 // OpenSettings returns an error so /settings (no args) falls back to its
 // inline text status — matches the headless-fallback pattern used elsewhere.
@@ -133,10 +160,42 @@ func (f *fakeSide) OpenSettings() error { return errors.New("no settings pane") 
 // OpenAgentView is a no-op stub for tests that don't exercise /agent.
 func (f *fakeSide) OpenAgentView() error { return nil }
 
+// ListTools/SetToolDisabled/AddUserTool/RemoveUserTool/OpenToolsPane stubs
+// for /tools tests. Track invocation so individual cases can assert.
+func (f *fakeSide) ListTools() []ToolInfo {
+	if f.toolsList != nil {
+		return f.toolsList
+	}
+	return []ToolInfo{
+		{Name: "bash", Description: "shell", Disabled: false, UserDefined: false},
+		{Name: "read", Description: "read", Disabled: f.toolDisabled["read"], UserDefined: false},
+	}
+}
+func (f *fakeSide) SetToolDisabled(name string, dis bool) error {
+	if f.toolDisabled == nil {
+		f.toolDisabled = map[string]bool{}
+	}
+	f.toolDisabled[name] = dis
+	f.lastToolToggle = name
+	return f.setToolErr
+}
+func (f *fakeSide) AddUserTool(name, cmd, desc string) error {
+	f.addedTool = struct{ name, cmd, desc string }{name, cmd, desc}
+	return f.addToolErr
+}
+func (f *fakeSide) RemoveUserTool(name string) error {
+	f.removedTool = name
+	return f.removeToolErr
+}
+func (f *fakeSide) OpenToolsPane() error {
+	f.openToolsCalled = true
+	return f.openToolsErr
+}
+
 func TestRegisterBuiltins_Names(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
-	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "settings", "bg", "agent", "attach"}
+	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "settings", "tools", "bg", "agent", "attach"}
 	for _, n := range want {
 		if _, ok := r.Get(n); !ok {
 			t.Errorf("missing builtin %q", n)
@@ -668,6 +727,108 @@ func TestBuiltin_Effort_SideError(t *testing.T) {
 	side := &fakeSide{thinkErr: errors.New("nope")}
 	if _, err := c.Run(context.Background(), []string{"medium"}, side); err == nil {
 		t.Fatal("expected error from Side")
+	}
+}
+
+func TestBuiltin_Tools_OpensPane(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("tools")
+	side := &fakeSide{}
+	out, err := c.Run(context.Background(), nil, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !side.openToolsCalled {
+		t.Error("OpenToolsPane not called for /tools (no args)")
+	}
+	if out != "" {
+		t.Errorf("expected empty output when pane opens, got %q", out)
+	}
+}
+
+func TestBuiltin_Tools_FallbackList(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("tools")
+	side := &fakeSide{openToolsErr: errors.New("headless")}
+	out, err := c.Run(context.Background(), nil, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "bash") || !strings.Contains(out, "read") {
+		t.Errorf("expected tool list, got %q", out)
+	}
+}
+
+func TestBuiltin_Tools_Disable(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("tools")
+	side := &fakeSide{}
+	out, err := c.Run(context.Background(), []string{"disable", "bash"}, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if side.lastToolToggle != "bash" || !side.toolDisabled["bash"] {
+		t.Errorf("disable did not flip bash: %+v", side.toolDisabled)
+	}
+	if !strings.Contains(out, "disabled") {
+		t.Errorf("expected confirmation, got %q", out)
+	}
+}
+
+func TestBuiltin_Tools_Enable(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("tools")
+	side := &fakeSide{toolDisabled: map[string]bool{"read": true}}
+	if _, err := c.Run(context.Background(), []string{"enable", "read"}, side); err != nil {
+		t.Fatal(err)
+	}
+	if side.toolDisabled["read"] {
+		t.Error("enable did not flip read")
+	}
+}
+
+func TestBuiltin_Tools_AddAndRemove(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("tools")
+	side := &fakeSide{}
+	if _, err := c.Run(context.Background(), []string{"add", "lint", "npm", "run", "lint", "--", "run", "linter"}, side); err != nil {
+		t.Fatal(err)
+	}
+	if side.addedTool.name != "lint" || side.addedTool.cmd != "npm run lint" || side.addedTool.desc != "run linter" {
+		t.Errorf("add did not parse correctly: %+v", side.addedTool)
+	}
+	if _, err := c.Run(context.Background(), []string{"rm", "lint"}, side); err != nil {
+		t.Fatal(err)
+	}
+	if side.removedTool != "lint" {
+		t.Errorf("rm did not propagate name")
+	}
+}
+
+func TestBuiltin_Tools_BareToggle(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("tools")
+	side := &fakeSide{}
+	if _, err := c.Run(context.Background(), []string{"bash"}, side); err != nil {
+		t.Fatal(err)
+	}
+	if !side.toolDisabled["bash"] {
+		t.Error("bare /tools NAME should disable an enabled tool")
+	}
+	if _, err := c.Run(context.Background(), []string{"bash"}, side); err != nil {
+		t.Fatal(err)
+	}
+	// second call sees side.ListTools() still reporting bash enabled (stub),
+	// so it flips to disabled again — that's fine; what matters is reaching
+	// SetToolDisabled with a non-error path.
+	if side.lastToolToggle != "bash" {
+		t.Errorf("toggle name lost: %q", side.lastToolToggle)
 	}
 }
 

@@ -43,7 +43,7 @@ func TestCompact_PreservesTail(t *testing.T) {
 		mkMsg(types.RoleUser, "7"),
 		mkMsg(types.RoleAssistant, "8"),
 	}
-	out, err := Compact(context.Background(), p, "stub-model", msgs)
+	out, stats, err := Compact(context.Background(), p, "stub-model", msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +56,12 @@ func TestCompact_PreservesTail(t *testing.T) {
 	if out[len(out)-1].Content[0].Text != "8" {
 		t.Errorf("last msg should be \"8\", got %q", out[len(out)-1].Content[0].Text)
 	}
+	if stats.BeforeMsgs != len(msgs) || stats.AfterMsgs != len(out) {
+		t.Errorf("stats msg counts: before=%d after=%d, want %d/%d", stats.BeforeMsgs, stats.AfterMsgs, len(msgs), len(out))
+	}
+	if stats.Duration <= 0 {
+		t.Errorf("stats.Duration should be positive, got %v", stats.Duration)
+	}
 }
 
 func TestCompact_NoChangeWhenSmall(t *testing.T) {
@@ -64,9 +70,12 @@ func TestCompact_NoChangeWhenSmall(t *testing.T) {
 		mkMsg(types.RoleUser, "1"),
 		mkMsg(types.RoleAssistant, "2"),
 	}
-	out, _ := Compact(context.Background(), p, "stub", msgs)
+	out, stats, _ := Compact(context.Background(), p, "stub", msgs)
 	if len(out) != 2 {
 		t.Errorf("small history should pass through, got %d", len(out))
+	}
+	if stats.BeforeMsgs != 2 || stats.AfterMsgs != 2 {
+		t.Errorf("no-op compaction should report unchanged counts, got before=%d after=%d", stats.BeforeMsgs, stats.AfterMsgs)
 	}
 }
 

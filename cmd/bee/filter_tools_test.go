@@ -75,7 +75,7 @@ func TestBuildTools_CanonicalNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"bash", "read", "write", "edit", "grep", "find", "ls"} {
+	for _, want := range []string{"bash", "read", "write", "edit", "search", "glob", "ls"} {
 		if _, ok := reg.Get(want); !ok {
 			t.Errorf("registry missing canonical tool %q", want)
 		}
@@ -113,5 +113,38 @@ func TestBuildTools_NormalKeepsApplyPatch(t *testing.T) {
 	}
 	if _, ok := reg.Get("apply_patch"); !ok {
 		t.Error("normal profile must register apply_patch")
+	}
+}
+
+// DisabledTools removes named tools from the registry at build time.
+func TestBuildTools_DisabledToolsDropped(t *testing.T) {
+	cfg := normalCfg()
+	cfg.DisabledTools = []string{"write"}
+	reg, err := buildTools(t.TempDir(), cfg, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.Get("write"); ok {
+		t.Error("write should be excluded when listed in disabled_tools")
+	}
+	if _, ok := reg.Get("read"); !ok {
+		t.Error("read should still be present")
+	}
+}
+
+// UserTools are registered as dispatchable tools alongside builtins.
+func TestBuildTools_UserToolsRegistered(t *testing.T) {
+	cfg := normalCfg()
+	cfg.UserTools = []config.UserTool{{Name: "lint", Command: "true", Description: "run lint"}}
+	reg, err := buildTools(t.TempDir(), cfg, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t1, ok := reg.Get("lint")
+	if !ok {
+		t.Fatal("user tool 'lint' missing from registry")
+	}
+	if t1.Spec().Name != "lint" {
+		t.Errorf("user tool name lost: %q", t1.Spec().Name)
 	}
 }

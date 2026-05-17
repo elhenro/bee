@@ -192,8 +192,15 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	if e.Tools != nil {
 		specs = e.Tools.Specs()
 	}
-	// trim tool surface for tiny-profile models — see filterToolSpecsForProfile
-	specs = filterToolSpecsForProfile(specs, e.Cfg.Profile, e.Cfg.ExtraTools...)
+	// drop user-disabled tools before any other filter
+	specs = filterToolSpecsDisabled(specs, e.Cfg.DisabledTools)
+	// trim tool surface for tiny-profile models — see filterToolSpecsForProfile.
+	// user_tools force-pass the profile gate so they're always advertised when not disabled.
+	extras := append([]string(nil), e.Cfg.ExtraTools...)
+	for _, u := range e.Cfg.UserTools {
+		extras = append(extras, u.Name)
+	}
+	specs = filterToolSpecsForProfile(specs, e.Cfg.Profile, extras...)
 	// strip per-parameter descriptions on tiny — saves ~600 toks for 4k models
 	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg.Profile)
 	// then narrow by mode: plan mode drops mutators entirely.
@@ -274,7 +281,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		if e.Cfg.Compaction.Enabled {
 			budget := contextBudget(e.Cfg)
 			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, e.Cfg.Compaction.Threshold) {
-				if compacted, cerr := Compact(ctx, e.Provider, e.Cfg.DefaultModel, res.Messages); cerr == nil {
+				if compacted, _, cerr := Compact(ctx, e.Provider, e.Cfg.DefaultModel, res.Messages); cerr == nil {
 					res.Messages = compacted
 					// post-compact: reset lastInputTokens so the next
 					// iteration re-evaluates against the smaller history.
@@ -606,11 +613,32 @@ var profileToolAllowlist = map[string]map[string]bool{
 		"read":          true,
 		"write":         true,
 		"edit":          true,
-		"grep":          true,
-		"find":          true,
+		"search":        true,
+		"glob":          true,
 		"ls":            true,
 		"knowledge_search": true,
 	},
+}
+
+// filterToolSpecsDisabled removes any spec whose name appears in disabled.
+// Live filter so toggling /tools mid-session takes effect on the next turn
+// without rebuilding the registry.
+func filterToolSpecsDisabled(specs []llm.ToolSpec, disabled []string) []llm.ToolSpec {
+	if len(disabled) == 0 {
+		return specs
+	}
+	drop := make(map[string]bool, len(disabled))
+	for _, n := range disabled {
+		drop[n] = true
+	}
+	out := make([]llm.ToolSpec, 0, len(specs))
+	for _, s := range specs {
+		if drop[s.Name] {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // filterToolSpecsForProfile drops tool specs that fall outside the profile's
@@ -641,8 +669,8 @@ func filterToolSpecsForProfile(specs []llm.ToolSpec, profile string, extras ...s
 // stay serial to preserve happens-before and avoid sandbox contention.
 var safeParallelTools = map[string]bool{
 	"read":          true,
-	"grep":          true,
-	"find":          true,
+	"search":        true,
+	"glob":          true,
 	"ls":            true,
 	"knowledge_search": true,
 }
@@ -882,20 +910,20 @@ func collectUserText(content []types.ContentBlock) string {
 // success and the next turn loop's in-memory slice is re-evaluated by
 // ShouldAutoCompact / Compact. Known limitation: replayed sessions on disk
 // still contain the full history.
-func (e *Engine) Compact(ctx context.Context) error {
+func (e *Engine) Compact(ctx context.Context) (CompactStats, error) {
 	if e.Sessions == nil {
-		return nil
+		return CompactStats{}, nil
 	}
 	msgs, err := session.Read(e.Sessions.ID())
 	if err != nil {
-		return err
+		return CompactStats{}, err
 	}
-	out, err := Compact(ctx, e.Provider, e.Cfg.DefaultModel, msgs)
+	out, stats, err := Compact(ctx, e.Provider, e.Cfg.DefaultModel, msgs)
 	if err != nil {
-		return err
+		return stats, err
 	}
 	_ = out
-	return nil
+	return stats, nil
 }
 
 // contextBudget returns the active model's real token window. Cache wins
