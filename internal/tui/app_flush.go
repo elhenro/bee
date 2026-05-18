@@ -23,12 +23,6 @@ import (
 // text block has the prefix stripped so the progressively-flushed head
 // doesn't print twice. Always cleared after this call, even on no match.
 func (m *Model) flush() tea.Cmd {
-	// hold all scrollback emissions until the intro banner has been pushed,
-	// otherwise resumed-session or live messages would slot above it and the
-	// banner would no longer sit at the top of the conversation.
-	if m.introActive || m.introDone {
-		return nil
-	}
 	if m.printedCount > len(m.messages) {
 		m.printedCount = len(m.messages)
 	}
@@ -36,11 +30,31 @@ func (m *Model) flush() tea.Cmd {
 		m.pendingFlushedPrefix = ""
 		return nil
 	}
+	// intro still owns the scrollback gate (animation playing or pulse). To
+	// keep the banner anchored at the top we used to drop the flush entirely,
+	// but that hid user submits made during intro until the next flush after
+	// turnDone — the user wouldn't see their prompt until generation
+	// finished. Fast-forward: push the settled banner now, then proceed so
+	// messages slot in below it.
+	var introCmd tea.Cmd
+	if m.introActive || m.introDone {
+		if m.width > 0 {
+			introCmd = tea.Println(renderIntroPlaceholder(m.width, introPulseFrames))
+		}
+		m.introActive = false
+		m.introFrames = nil
+		m.introIdx = 0
+		m.introDone = false
+		m.introDoneFrame = 0
+	}
 	pending := m.messages[m.printedCount:]
 	m.printedCount = len(m.messages)
 	prefix := m.pendingFlushedPrefix
 	m.pendingFlushedPrefix = ""
-	cmds := make([]tea.Cmd, 0, len(pending))
+	cmds := make([]tea.Cmd, 0, len(pending)+1)
+	if introCmd != nil {
+		cmds = append(cmds, introCmd)
+	}
 	for _, msg := range pending {
 		// strip the already-flushed head off the first matching assistant
 		// turn so its prefix doesn't render twice in scrollback.

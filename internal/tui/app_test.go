@@ -665,6 +665,30 @@ func TestModel_FlushStripsFlushedPrefix(t *testing.T) {
 	}
 }
 
+// Submit during intro must fast-forward the banner so the user msg flushes
+// immediately instead of waiting for turnDone. Regression: previously
+// flush() returned nil while introActive/introDone was set, hiding the
+// first prompt until generation completed.
+func TestModel_FlushDuringIntro_PushesBannerAndMessages(t *testing.T) {
+	m := newTestModel(t)
+	m.introActive = true
+	m.introDoneFrame = 0
+	m.messages = append(m.messages, types.Message{
+		Role:    types.RoleUser,
+		Content: []types.ContentBlock{{Type: types.BlockText, Text: "hi"}},
+	})
+	cmd := m.flush()
+	if cmd == nil {
+		t.Fatal("flush during intro should not return nil — user msg would be hidden until next flush")
+	}
+	if m.introActive || m.introDone {
+		t.Fatalf("flush must clear intro flags; got introActive=%v introDone=%v", m.introActive, m.introDone)
+	}
+	if m.printedCount != len(m.messages) {
+		t.Fatalf("flush should advance printedCount; got %d want %d", m.printedCount, len(m.messages))
+	}
+}
+
 // On stream error there's no final assistant message to dedupe against, so
 // any in-flight flushed prefix gets dropped to avoid contaminating the next
 // turn's flush().

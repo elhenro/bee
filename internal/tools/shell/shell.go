@@ -71,9 +71,9 @@ func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name: toolName,
 		Description: "Run a shell command via `bash -c`. Combined stdout+stderr returned, capped at 20 KB. Already runs in bee's cwd — do NOT prepend `cd <dir> &&`; use the cwd field only to override. " +
-			"NEVER use shell `grep`, `rg`, `ack`, `find`, or `fd` — use the `search` tool (file contents) and `glob` tool (filenames) instead. They auto-skip .claude/vendor/testdata, support count_only mode, and avoid SIGPIPE/exclude-flag footguns. " +
-			"Also prefer `read`/`write` over `cat`/`echo >`.",
-		PromptSnippet: "Execute bash. For file search NEVER use shell grep/find — use `search`/`glob` tools.",
+			"For file search prefer `search` (contents) and `glob` (filenames) — they auto-skip .claude/vendor/testdata and avoid SIGPIPE. Shell `grep`/`rg`/`ack`/`find`/`fd` remain available when you need a flag those tools don't expose. " +
+			"Prefer `read`/`write` over `cat`/`echo >`.",
+		PromptSnippet: "Execute bash. Prefer `search`/`glob` for file search; shell grep/find still allowed.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

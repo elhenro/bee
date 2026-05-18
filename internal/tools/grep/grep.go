@@ -79,12 +79,12 @@ func NewWithMax(root string, n int) *Tool {
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name: toolName,
-		Description: "ALWAYS use `search` for file content search. NEVER invoke `grep`, `rg`, or `ack` via the `bash` tool — shell variants miss bee's project-aware excludes (.claude, vendor, testdata) and inflate counts with worktree duplicates. " +
+		Description: "Preferred way to search file contents. Project-aware: auto-excludes .claude, vendor, testdata and dedupes worktrees, which shell `grep`/`rg`/`ack` won't. Use those via `bash` if you need a flag bee's `search` doesn't expose. " +
 			"Regex (Go RE2 syntax) over file contents. Returns up to 200 matches as path:line:text (match) or path:line-text (context). " +
 			"ANCHOR your pattern: `^func Test` not `func Test` — unanchored patterns match comments, strings, fixtures and inflate counts. " +
 			"For counting (e.g. 'how many tests'), use count_only=true to get per-file counts; an outlier file reveals fixtures/generated code skewing totals. " +
 			"Args: pattern (required), path (dir), glob (bare ext like 'go' OR shell glob like '*.go', '*_test.go'), context (int, 0-5 surrounding lines per match), count_only (bool, per-file match counts only).",
-		PromptSnippet: "search file contents by regex (use this, NOT shell `grep`)",
+		PromptSnippet: "search file contents by regex (preferred over shell grep)",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
