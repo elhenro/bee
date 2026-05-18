@@ -30,8 +30,12 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	e.warnedContext = false
 	e.warnedIterHalf = false
 	e.warnedIterEighty = false
+	e.warnedTokenHalf = false
+	e.warnedTokenEighty = false
 	e.warnedStall = false
 	e.noMutationStreak = 0
+	e.cumInputTokens = 0
+	e.cumOutputTokens = 0
 	e.nudgedReasoningOnly = false
 	res := RunResult{}
 
@@ -183,7 +187,31 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	if p := config.ActiveProfile(e.Cfg); p.MaxIterations > 0 {
 		maxIter = p.MaxIterations
 	}
+	// adaptive caps fire BEFORE the iter ceiling so a wasteful run stops
+	// on real cost (tokens) or real stall (read-only streak) instead of
+	// running out the arbitrary iter count.
+	//   tokenBudget: 10× the model's context window. 0 = unknown, disabled.
+	//   stallCap:   3× profile NoMutationStallThreshold, default 8. when
+	//               the model spins on reads without committing edits, bail.
+	tokenBudget := 10 * contextBudget(e.Cfg)
+	stallCap := 8
+	if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 {
+		stallCap = t * 3
+	}
 	for i := 0; i < maxIter; i++ {
+		// early-stop: token budget exhausted (cumulative input + output
+		// across iterations). only enforced when the model's context
+		// window is known so unknown-model runs aren't bounded by a
+		// fabricated number.
+		if tokenBudget > 0 && (e.cumInputTokens+e.cumOutputTokens) > tokenBudget {
+			return res, fmt.Errorf("loop: hit token budget (%d > %d tokens, %d iters) — type 'continue' to resume", e.cumInputTokens+e.cumOutputTokens, tokenBudget, i)
+		}
+		// early-stop: read-only stall. model kept calling reads for
+		// `stallCap` iters without any mutation — almost always stuck
+		// in explore-loop. bail rather than burning the rest of maxIter.
+		if e.noMutationStreak >= stallCap {
+			return res, fmt.Errorf("loop: %d read-only iters with no edits, stopping — type 'continue' to resume", e.noMutationStreak)
+		}
 		// mid-turn steering: drain pending user input into a synthetic
 		// user message before the next LLM round. Non-blocking so quiet
 		// iterations don't stall.
@@ -342,6 +370,22 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 			w := fmt.Sprintf("[iter %d/%d] near iter cap. finish current edit or stop and ask user.\n\n", current, maxIter)
 			blocks = prependWarningToToolResult(blocks, w)
 			e.warnedIterEighty = true
+		}
+		// token-budget warnings mirror the iter-cap warnings so the model
+		// hears about cost pressure separately from iter pressure. each
+		// fires at most once per Run.
+		if tokenBudget > 0 {
+			spent := e.cumInputTokens + e.cumOutputTokens
+			if !e.warnedTokenHalf && spent*2 >= tokenBudget {
+				w := fmt.Sprintf("[tokens %d/%d] half the token budget spent. summarize and commit edits.\n\n", spent, tokenBudget)
+				blocks = prependWarningToToolResult(blocks, w)
+				e.warnedTokenHalf = true
+			}
+			if !e.warnedTokenEighty && spent*5 >= tokenBudget*4 {
+				w := fmt.Sprintf("[tokens %d/%d] near token cap. finish current edit or stop.\n\n", spent, tokenBudget)
+				blocks = prependWarningToToolResult(blocks, w)
+				e.warnedTokenEighty = true
+			}
 		}
 		// stall warning is opt-in: profile must set a positive threshold.
 		if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 {
