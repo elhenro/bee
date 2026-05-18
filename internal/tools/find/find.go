@@ -26,8 +26,8 @@ func New(root string) *Tool { return &Tool{root: root, max: 500} }
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name:          toolName,
-		Description:   "Preferred way to match filenames. Project-aware: auto-excludes .claude, vendor, node_modules, testdata and dedupes worktrees, which shell `find`/`fd` won't. Use those via `bash` if you need a flag bee's `glob` doesn't expose. Filename glob (filepath.Match on basename, e.g. '*.go', '*_test.go'). Leading '**/' is accepted and stripped (recursion is implicit). Mid-path '**' is supported: 'src/**/*.go' splits into a directory prefix filter ('src/') and a basename glob ('*.go'). Returns up to 500 paths. Args: pattern (required, alias: name), path (optional).",
-		PromptSnippet: "find files by name pattern (preferred over shell find)",
+		Description:   "Filename glob (filepath.Match on basename, e.g. '*.go', '*_test.go'). Auto-excludes .claude, vendor, node_modules, testdata and dedupes worktrees. Leading '**/' is accepted and stripped (recursion is implicit). Mid-path '**' is supported: 'src/**/*.go' splits into a directory prefix filter ('src/') and a basename glob ('*.go'). Returns up to 500 paths. Args: pattern (required, alias: name), path (optional).",
+		PromptSnippet: "find files by name pattern",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

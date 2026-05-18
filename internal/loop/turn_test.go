@@ -688,3 +688,62 @@ func TestRun_MaxIter_NormalProfileFallsThrough(t *testing.T) {
 		t.Errorf("normal profile maxIter: provider calls = %d, want 50 (cfg default)", got)
 	}
 }
+
+// TestRun_TokenBudgetCap drives the adaptive token cap: provider reports
+// 200k input tokens per call against a 65k-window model (deepseek-reasoner
+// → 650k budget). Loop must bail on token budget BEFORE the 50-iter cap.
+func TestRun_TokenBudgetCap(t *testing.T) {
+	reg := tools.NewRegistry()
+	_ = reg.Register(&stubTool{
+		name: "bash",
+		desc: "x",
+		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+			return tools.Result{Content: "ok"}, nil
+		},
+	})
+	p := &stubProvider{scripts: [][]llm.Event{
+		{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u", Name: "bash", Input: map[string]any{"command": "x"}}},
+			{Type: llm.EventDone, StopReason: "tool_use", Usage: &llm.Usage{InputTokens: 200000, OutputTokens: 50000}},
+		},
+	}}
+	eng, _ := newEngine(p, reg)
+	// 65k-window model → tokenBudget = 650k. Provider emits 250k per call
+	// → trips after 3 iters, well under the 50-iter cap.
+	eng.Cfg.DefaultModel = "deepseek-reasoner"
+	_, err := eng.Run(context.Background(), "loop me")
+	if err == nil || !strings.Contains(err.Error(), "token budget") {
+		t.Fatalf("expected token-budget error, got %v", err)
+	}
+	if got := p.calls.Load(); got >= 50 {
+		t.Errorf("token cap should fire before iter cap; got %d calls", got)
+	}
+}
+
+// TestRun_StallCap drives the read-only stall cap: provider keeps calling
+// `read` (non-mutator) so noMutationStreak grows. Loop must bail before
+// the iter cap.
+func TestRun_StallCap(t *testing.T) {
+	reg := tools.NewRegistry()
+	_ = reg.Register(&stubTool{
+		name: "read",
+		desc: "x",
+		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+			return tools.Result{Content: "ok"}, nil
+		},
+	})
+	p := &stubProvider{scripts: [][]llm.Event{
+		{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u", Name: "read", Input: map[string]any{"path": "f"}}},
+			{Type: llm.EventDone, StopReason: "tool_use"},
+		},
+	}}
+	eng, _ := newEngine(p, reg)
+	_, err := eng.Run(context.Background(), "loop me")
+	if err == nil || !strings.Contains(err.Error(), "read-only iters") {
+		t.Fatalf("expected stall-cap error, got %v", err)
+	}
+	if got := p.calls.Load(); got >= 50 {
+		t.Errorf("stall cap should fire before iter cap; got %d calls", got)
+	}
+}

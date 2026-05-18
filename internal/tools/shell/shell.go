@@ -70,10 +70,8 @@ func NewWithOptions(app approval.Approver, opts Options) tools.Tool {
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name: toolName,
-		Description: "Run a shell command via `bash -c`. Combined stdout+stderr returned, capped at 20 KB. Already runs in bee's cwd — do NOT prepend `cd <dir> &&`; use the cwd field only to override. " +
-			"For file search prefer `search` (contents) and `glob` (filenames) — they auto-skip .claude/vendor/testdata and avoid SIGPIPE. Shell `grep`/`rg`/`ack`/`find`/`fd` remain available when you need a flag those tools don't expose. " +
-			"Prefer `read`/`write` over `cat`/`echo >`.",
-		PromptSnippet: "Execute bash. Prefer `search`/`glob` for file search; shell grep/find still allowed.",
+		Description:   "Run a shell command via `bash -c`. Combined stdout+stderr returned, capped at 20 KB. Already runs in bee's cwd — do NOT prepend `cd <dir> &&`; use the cwd field only to override.",
+		PromptSnippet: "Execute bash.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
