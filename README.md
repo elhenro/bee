@@ -6,9 +6,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/elhenro/bee)](https://github.com/elhenro/bee/releases)
 
-<img src="./bee.png" alt="bee" width="160" />
-
-![bee demo](./demo/bee.gif)
+<table>
+  <tr>
+    <td width="180" valign="middle"><img src="./bee.png" alt="bee" width="160" /></td>
+    <td valign="middle"><img src="./demo/bee.gif" alt="bee demo" /></td>
+  </tr>
+</table>
 
 bee coding agent harness. Pure Go, single static binary, requires Go 1.26+ to build.
 
@@ -29,7 +32,9 @@ bee
 
 ## Why?
 
-Three wedges incumbents miss:
+So far, I've used claude code, codex, hermes, opencode, openclaw and pi. Each one nails something. None of them felt configurable, minimal, or flexible enough for the way I actually work, and a few gaps kept biting me. bee is the harness that just does it.
+
+Three gaps bee closes:
 
 1. **Tiny-context friendly, tiny footprint.** Caveman-compressed system prompt, three tools, top-k memory. Same harness scales from a 4k-context local Ollama up through small fine-tunes to million-token frontier models. Native [omlx](https://github.com/jundot/omlx) (Apple Silicon MLX server) and OpenRouter support out of the box. Shrinks itself when context gets tight.
 2. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. No REPL incantations. `bee criticize plan.md` just works, from any directory, in any shell.
