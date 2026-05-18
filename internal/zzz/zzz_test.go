@@ -41,6 +41,10 @@ func newRepo(t *testing.T) string {
 	}
 	run("init", "-q", "-b", "main")
 	run("config", "commit.gpgsign", "false")
+	// persist identity so subsequent Commit() calls outside this helper's
+	// scoped env still produce valid commits (CI may have no global config).
+	run("config", "user.name", "zzz-test")
+	run("config", "user.email", "zzz@test")
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -195,13 +199,79 @@ func TestStateRoundTripAndNotes(t *testing.T) {
 	if err := AppendEvent(id, Event{Iter: 1, Phase: IterCommitted, Commit: "abc123"}); err != nil {
 		t.Fatalf("AppendEvent: %v", err)
 	}
-	jsonl, err := os.ReadFile(filepath.Join(t.TempDir(), ".bee", "zzz", "runs", id, "events.jsonl"))
-	_ = jsonl
-	_ = err // file lives in $HOME/.bee/...; we just check it doesn't error.
 
 	saved, err := LatestRun()
 	if err != nil || saved == nil || saved.ID != id {
 		t.Errorf("LatestRun mismatch: %+v err=%v", saved, err)
+	}
+
+	// events.jsonl must actually exist under $HOME after AppendEvent.
+	home, _ := HomeDir()
+	jsonl, err := os.ReadFile(filepath.Join(home, "runs", id, "events.jsonl"))
+	if err != nil {
+		t.Fatalf("events.jsonl missing: %v", err)
+	}
+	if !strings.Contains(string(jsonl), `"phase":"committed"`) {
+		t.Errorf("events.jsonl content wrong: %s", jsonl)
+	}
+}
+
+func TestTailNoteSectionsKeepsLastN(t *testing.T) {
+	notes := "\n## iter 1 — first\nbody1\n\n## iter 2 — second\nbody2\n\n## iter 3 — third\nbody3\n"
+	if got := TailNoteSections(notes, 0); got != notes {
+		t.Error("n=0 should be unchanged")
+	}
+	if got := TailNoteSections(notes, -1); got != notes {
+		t.Error("n<0 should be unchanged")
+	}
+	got := TailNoteSections(notes, 1)
+	if !strings.Contains(got, "iter 3 — third") || strings.Contains(got, "iter 1") {
+		t.Errorf("n=1 should keep only the last section, got: %q", got)
+	}
+	got = TailNoteSections(notes, 2)
+	if !strings.Contains(got, "iter 2") || !strings.Contains(got, "iter 3") || strings.Contains(got, "iter 1") {
+		t.Errorf("n=2 should keep last two, got: %q", got)
+	}
+	if got := TailNoteSections(notes, 10); got != notes {
+		t.Error("n>total should be unchanged")
+	}
+}
+
+func TestCommitMessageFromUnicodeSafeTruncation(t *testing.T) {
+	// 80 wide characters of a multi-byte rune. Byte slice would split mid-rune.
+	long := strings.Repeat("ü", 80)
+	msg := CommitMessageFrom(long, 1, 0, 0)
+	subject := strings.SplitN(msg, "\n", 2)[0]
+	if !strings.HasPrefix(subject, "chore: ") {
+		t.Errorf("missing chore prefix: %q", subject)
+	}
+	rest := strings.TrimPrefix(subject, "chore: ")
+	// must be valid UTF-8 (i.e. no replacement char or split rune).
+	for _, r := range rest {
+		if r == '�' {
+			t.Fatalf("subject contains replacement char (mid-rune split): %q", rest)
+		}
+	}
+}
+
+func TestSaveBlockedPatch(t *testing.T) {
+	repo := newRepo(t)
+	t.Setenv("HOME", t.TempDir())
+	id := NewID()
+	// dirty the tree so the patch has content.
+	if err := os.WriteFile(filepath.Join(repo, "scratch.txt"), []byte("partial work"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveBlockedPatch(id, 4, repo); err != nil {
+		t.Fatalf("SaveBlockedPatch: %v", err)
+	}
+	home, _ := HomeDir()
+	patch, err := os.ReadFile(filepath.Join(home, "runs", id, "blocked-4.patch"))
+	if err != nil {
+		t.Fatalf("patch file missing: %v", err)
+	}
+	if !strings.Contains(string(patch), "scratch.txt") {
+		t.Errorf("patch should mention scratch.txt: %s", patch)
 	}
 }
 

@@ -42,6 +42,7 @@ func (m Model) onOpenSettings(_ openSettingsMsg) (tea.Model, tea.Cmd) {
 		Verbose:         m.verbose,
 		ShowThoughts:    m.showThoughts,
 		ShowNudges:      m.showNudges,
+		ShowRecap:       m.showRecap,
 		Compact:         m.compact,
 		ShowContextBar:  m.showContextBar,
 		Highlight:       m.highlight,
@@ -70,6 +71,8 @@ func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
 		err = m.side().SetShowThoughts(msg.value)
 	case "show_nudges":
 		err = m.side().SetShowNudges(msg.value)
+	case "show_recap":
+		err = m.side().SetShowRecap(msg.value)
 	case "compact":
 		err = m.side().SetCompact(msg.value)
 	case "show_context_bar":

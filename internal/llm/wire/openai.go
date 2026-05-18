@@ -20,6 +20,8 @@ type ChatRequest struct {
 	Tools       []ChatTool    `json:"tools,omitempty"`
 	MaxTokens   int           `json:"max_tokens,omitempty"`
 	Temperature *float64      `json:"temperature,omitempty"`
+	TopP        *float64      `json:"top_p,omitempty"`
+	Stop        []string      `json:"stop,omitempty"`
 	Stream      bool          `json:"stream,omitempty"`
 	// StreamOptions opts in to per-stream extras. Required (include_usage=true)
 	// for OpenAI/OpenRouter/DeepSeek to emit token counts on the final SSE
@@ -76,7 +78,7 @@ type ChatFunction struct {
 }
 
 // BuildRequest converts internal Request shape to OpenAI wire form.
-func BuildRequest(model string, system string, messages []types.Message, tools []ToolAdvert, maxTokens int, temperature float64, stream bool) ChatRequest {
+func BuildRequest(model string, system string, messages []types.Message, tools []ToolAdvert, maxTokens int, temperature, topP float64, stop []string, stream bool) ChatRequest {
 	out := ChatRequest{
 		Model:  model,
 		Stream: stream,
@@ -91,6 +93,13 @@ func BuildRequest(model string, system string, messages []types.Message, tools [
 	if temperature != 0 {
 		t := temperature
 		out.Temperature = &t
+	}
+	if topP != 0 {
+		tp := topP
+		out.TopP = &tp
+	}
+	if len(stop) > 0 {
+		out.Stop = stop
 	}
 	if system != "" {
 		out.Messages = append(out.Messages, ChatMessage{Role: "system", Content: system})

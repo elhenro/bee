@@ -15,6 +15,212 @@ type parsedCall struct {
 	Input map[string]any
 }
 
+// hermesToolCallRe captures the qwen3 / hermes chat-template wrapper:
+// `<tool_call>...body...</tool_call>`. Body is usually JSON but may be the
+// `<function=NAME>...<parameter=...>` xml variant. Pre-processed away before
+// the standard XML/JSON extractors run.
+var hermesToolCallRe = regexp.MustCompile(`(?is)<tool_call>\s*(.*?)\s*</tool_call>`)
+
+// toolNameTagRe matches `<tool_name>NAME</tool_name>` — a chat-template
+// variant where the literal `tool_name` tag wraps the actual tool name and
+// args follow as a bare JSON object. Seen from qwen3-A3B reading the textmode
+// advert's `<tool_name>{...}</tool_name>` example too literally and treating
+// `tool_name` as the tag instead of a placeholder. Normalized to the canonical
+// `<NAME>{json}</NAME>` shape by normalizeHermesEnvelopes pass 1.5.
+var toolNameTagRe = regexp.MustCompile(`(?is)<tool_name>\s*([a-z_][a-z0-9_\-]*)\s*</tool_name>`)
+
+// hermesFunctionOpenRe matches the qwen3 xml variant opening tag:
+// `<function=NAME>`. The matching close is searched procedurally so we can
+// accept BOTH the literal `</function>` and the qwen3-in-the-wild `</NAME>`
+// form (model echoes function name as close instead of the literal). Also
+// tolerates missing close: the textmode stop-sequence list (`</NAME>`) cuts
+// the stream the moment the model emits the name-form close, which means we
+// never see `</function>` or `</tool_call>` past it.
+var hermesFunctionOpenRe = regexp.MustCompile(`(?is)<function=([a-z_][a-z0-9_\-]*)>`)
+
+// hermesFunctionCloseRe is the literal `</function>` close, used alongside
+// the dynamically-built `</NAME>` close in normalizeHermesEnvelopes.
+var hermesFunctionCloseRe = regexp.MustCompile(`(?is)</function>`)
+
+// hermesParamRe captures one `<parameter=KEY>VALUE</parameter>` block. Used
+// from inside hermesFunctionRe match bodies.
+var hermesParamRe = regexp.MustCompile(`(?is)<parameter=([a-z_][a-z0-9_\-]*)>\s*(.*?)\s*</parameter>`)
+
+// normalizeHermesEnvelopes rewrites qwen3 / hermes-style tool-call wrappers
+// into shapes the existing XML / JSON extractors already handle. Specifically:
+//
+//   - `<tool_call>{json}</tool_call>` → `{json}` (extractJSONToolCalls picks
+//     up the bare JSON envelope)
+//   - `<tool_call><function=NAME><parameter=K>V</parameter>...</function></tool_call>`
+//     and the un-wrapped `<function=NAME>...</function>` form → synthesized
+//     `<NAME>{"K":"V",...}</NAME>` so extractToolCalls handles it natively
+//
+// Why pre-process instead of adding a third extractor: keeps the call-site in
+// relay() unchanged and avoids fighting brace-matching on the
+// `<function=NAME>` form where the body isn't valid JSON at all.
+func normalizeHermesEnvelopes(s string) string {
+	// pass 1: unwrap <tool_call>...</tool_call> envelopes. body re-emitted
+	// inline so a json body becomes bare json, and a <function=...> body
+	// becomes a bare <function=...> match for pass 2. tolerate missing
+	// </tool_call> (stop sequence often cuts the stream before it lands).
+	s = unwrapToolCallEnvelopes(s)
+	// pass 1.5: rewrite <tool_name>NAME</tool_name>{json} → <NAME>{json}</NAME>.
+	// some templates emit the tool name as the content of a literal <tool_name>
+	// tag (qwen3-A3B reading the advert example too literally), then drop a
+	// bare JSON args object right after. consume any whitespace + a balanced
+	// `{...}` block following the close so the synthesized envelope wraps the
+	// args. when no `{` follows, synthesize an empty-args call so the loop at
+	// least advances instead of hanging.
+	s = normalizeToolNameVariant(s)
+	// pass 2: rewrite <function=NAME>...<parameter=K>V</parameter>... into
+	// <NAME>{"K":"V",...}</NAME>. close tag is either literal </function>
+	// (hermes/openai chat-template) or </NAME> (qwen3 in the wild), or
+	// missing entirely (textmode stop-seq cut the stream). last-resort rest-
+	// of-buffer consume is what unblocks the loop when the model emits the
+	// name-form close and bee's stop list trims everything past it.
+	var b strings.Builder
+	b.Grow(len(s))
+	cur := 0
+	for cur < len(s) {
+		loc := hermesFunctionOpenRe.FindStringSubmatchIndex(s[cur:])
+		if loc == nil {
+			b.WriteString(s[cur:])
+			break
+		}
+		openStart := cur + loc[0]
+		openEnd := cur + loc[1]
+		name := strings.ToLower(s[cur+loc[2] : cur+loc[3]])
+		tail := s[openEnd:]
+		bodyEnd, advance := findHermesClose(tail, name)
+		body := tail[:bodyEnd]
+		params := hermesParamRe.FindAllStringSubmatch(body, -1)
+		args := make(map[string]any, len(params))
+		for _, p := range params {
+			if len(p) != 3 {
+				continue
+			}
+			// hermes parameter bodies are raw scalars (numbers/strings) not
+			// quoted JSON. decodeHermesScalar tries numeric/bool first so
+			// `<parameter=n>3</parameter>` becomes a number, else string.
+			args[p[1]] = decodeHermesScalar(strings.TrimSpace(p[2]))
+		}
+		buf, err := json.Marshal(args)
+		if err != nil {
+			b.WriteString(s[openStart : openEnd+advance])
+			cur = openEnd + advance
+			continue
+		}
+		b.WriteString(s[cur:openStart])
+		b.WriteString("<" + name + ">" + string(buf) + "</" + name + ">")
+		cur = openEnd + advance
+	}
+	return b.String()
+}
+
+// normalizeToolNameVariant rewrites `<tool_name>NAME</tool_name>{json}` into
+// `<NAME>{json}</NAME>`. When no `{` follows the close tag, emits an empty-args
+// envelope so the call name still surfaces. Args block is matched via brace
+// counting to handle nested objects.
+func normalizeToolNameVariant(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	cur := 0
+	for cur < len(s) {
+		loc := toolNameTagRe.FindStringSubmatchIndex(s[cur:])
+		if loc == nil {
+			b.WriteString(s[cur:])
+			break
+		}
+		matchStart := cur + loc[0]
+		matchEnd := cur + loc[1]
+		name := strings.ToLower(s[cur+loc[2] : cur+loc[3]])
+		b.WriteString(s[cur:matchStart])
+		// look ahead for bare {json} args following optional whitespace.
+		tail := s[matchEnd:]
+		i := 0
+		for i < len(tail) && (tail[i] == ' ' || tail[i] == '\t' || tail[i] == '\r' || tail[i] == '\n') {
+			i++
+		}
+		if i >= len(tail) || tail[i] != '{' {
+			b.WriteString("<" + name + ">{}</" + name + ">")
+			cur = matchEnd + i
+			continue
+		}
+		end := matchBraces(tail, i)
+		if end < 0 {
+			// unbalanced — assume rest of buffer is args body (stop-seq cut).
+			b.WriteString("<" + name + ">" + tail[i:] + "}</" + name + ">")
+			cur = len(s)
+			break
+		}
+		argsJSON := tail[i : end+1]
+		b.WriteString("<" + name + ">" + argsJSON + "</" + name + ">")
+		cur = matchEnd + end + 1
+	}
+	return b.String()
+}
+
+// unwrapToolCallEnvelopes replaces <tool_call>BODY</tool_call> with BODY, AND
+// also strips a dangling `<tool_call>` opener with no close — happens when the
+// textmode stop sequence (`</NAME>`) terminates the stream past the function
+// body but before the model emits </tool_call>.
+func unwrapToolCallEnvelopes(s string) string {
+	s = hermesToolCallRe.ReplaceAllString(s, "$1")
+	// dangling open with no matching close — strip just the opener.
+	s = strings.ReplaceAll(s, "<tool_call>", "")
+	return s
+}
+
+// findHermesClose returns (body-end, advance-past-close) for a <function=NAME>
+// body, accepting either </function> or </NAME> as close. Missing close is
+// tolerated: body consumes rest of buffer, advance = len(tail). Whichever
+// close appears FIRST wins so a body that contains a literal "</function>"
+// followed later by a real "</NAME>" doesn't accidentally swallow further
+// content.
+func findHermesClose(tail, name string) (bodyEnd, advance int) {
+	fi := hermesFunctionCloseRe.FindStringIndex(tail)
+	closeNameRe := regexp.MustCompile(`(?is)</` + regexp.QuoteMeta(name) + `>`)
+	ni := closeNameRe.FindStringIndex(tail)
+	switch {
+	case fi == nil && ni == nil:
+		return len(tail), len(tail)
+	case fi == nil:
+		return ni[0], ni[1]
+	case ni == nil:
+		return fi[0], fi[1]
+	default:
+		if fi[0] <= ni[0] {
+			return fi[0], fi[1]
+		}
+		return ni[0], ni[1]
+	}
+}
+
+// decodeHermesScalar turns a raw hermes parameter body into a Go value. Tries
+// JSON number/bool/null first (so `3` → float64(3), `true` → true), then a
+// fenced JSON object/array literal (so a parameter holding `{"a":1}` decodes
+// nested), and finally falls back to the raw string.
+func decodeHermesScalar(v string) any {
+	if v == "" {
+		return ""
+	}
+	// strip surrounding ```...``` fences some models add inside parameter bodies.
+	v = stripCodeFence(v)
+	if v == "" {
+		return ""
+	}
+	// only attempt JSON decode for shapes that look like JSON to avoid
+	// turning `command: ls -la` into a parse error.
+	c := v[0]
+	if c == '{' || c == '[' || c == '"' || c == 't' || c == 'f' || c == 'n' || (c >= '0' && c <= '9') || c == '-' {
+		var out any
+		if err := json.Unmarshal([]byte(v), &out); err == nil {
+			return out
+		}
+	}
+	return v
+}
+
 // openTagRe matches an XML opening tag whose name is a valid tool ident.
 // Tool names in bee are snake/lowercase but we accept hyphen too.
 // Case-insensitive — the canonical name is resolved via the known-tools map.
@@ -245,4 +451,186 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// extractJSONToolCalls scans s for bare JSON objects that look like tool
+// calls without the XML envelope. Many models (including big ones like
+// GPT/Claude when textmode is forced) revert to their native JSON
+// function-call shape. Recognized:
+//
+//	{"type":"<tool>",...rest as args}                 // caveman / bee transcript
+//	{"name":"<tool>","arguments":{...}}               // OpenAI-ish
+//	{"name":"<tool>","input":{...}}                   // Anthropic-ish
+//	{"type":"function","function":{"name":"<tool>","arguments":<obj|string>}}
+//
+// Only objects resolving to a name in known are accepted. Returns the calls
+// in source order and the text with those JSON blocks removed.
+func extractJSONToolCalls(s string, known map[string]bool, canonical map[string]string) ([]parsedCall, string) {
+	if len(known) == 0 || s == "" {
+		return nil, s
+	}
+	var calls []parsedCall
+	var out strings.Builder
+	cur := 0
+	for cur < len(s) {
+		rel := strings.IndexByte(s[cur:], '{')
+		if rel < 0 {
+			out.WriteString(s[cur:])
+			break
+		}
+		open := cur + rel
+		end := matchBraces(s, open)
+		if end < 0 {
+			out.WriteString(s[cur:])
+			break
+		}
+		body := s[open : end+1]
+		call, ok := parseJSONToolCall(body, known, canonical)
+		if !ok {
+			// not a tool call — keep up to and including this `{`, continue past it
+			out.WriteString(s[cur : open+1])
+			cur = open + 1
+			continue
+		}
+		// strip the matched JSON; also drop a wrapping ```json fence if present
+		prefix := s[cur:open]
+		trimmedPrefix := strings.TrimRight(prefix, " \t\r\n")
+		switch {
+		case strings.HasSuffix(trimmedPrefix, "```json"):
+			prefix = strings.TrimSuffix(trimmedPrefix, "```json")
+		case strings.HasSuffix(trimmedPrefix, "```"):
+			prefix = strings.TrimSuffix(trimmedPrefix, "```")
+		}
+		out.WriteString(prefix)
+		calls = append(calls, call)
+		cur = end + 1
+		// skip immediately following closing fence (after optional whitespace)
+		rest := s[cur:]
+		skip := 0
+		for skip < len(rest) && (rest[skip] == ' ' || rest[skip] == '\t' || rest[skip] == '\r' || rest[skip] == '\n') {
+			skip++
+		}
+		if strings.HasPrefix(rest[skip:], "```") {
+			cur += skip + 3
+		}
+	}
+	cleaned := strings.TrimSpace(squeezeBlankLines(out.String()))
+	return calls, cleaned
+}
+
+// matchBraces returns the index of the `}` that closes the `{` at start,
+// respecting JSON string literals. -1 if unbalanced.
+func matchBraces(s string, start int) int {
+	if start >= len(s) || s[start] != '{' {
+		return -1
+	}
+	depth := 0
+	inStr := false
+	esc := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// parseJSONToolCall recognizes the documented JSON tool-call shapes. Returns
+// ok=false if body is not a tool call (caller keeps text verbatim).
+func parseJSONToolCall(body string, known map[string]bool, canonical map[string]string) (parsedCall, bool) {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		// try lenient repair for trailing commas / unescaped newlines
+		if repaired, ok := lenientJSONRepair(body); ok {
+			if err := json.Unmarshal([]byte(repaired), &raw); err != nil {
+				return parsedCall{}, false
+			}
+		} else {
+			return parsedCall{}, false
+		}
+	}
+	// OpenAI raw: {"type":"function","function":{...}}
+	if t, _ := raw["type"].(string); t == "function" {
+		fn, ok := raw["function"].(map[string]any)
+		if !ok {
+			return parsedCall{}, false
+		}
+		name, _ := fn["name"].(string)
+		low := strings.ToLower(strings.TrimSpace(name))
+		if low == "" || !known[low] {
+			return parsedCall{}, false
+		}
+		args := map[string]any{}
+		switch a := fn["arguments"].(type) {
+		case map[string]any:
+			args = a
+		case string:
+			_ = json.Unmarshal([]byte(a), &args)
+		}
+		return parsedCall{Name: canonical[low], Input: args}, true
+	}
+	// {"name":"<tool>",...}
+	if name, ok := raw["name"].(string); ok {
+		low := strings.ToLower(strings.TrimSpace(name))
+		if low != "" && known[low] {
+			return parsedCall{Name: canonical[low], Input: argsFromRaw(raw, "name")}, true
+		}
+	}
+	// {"type":"<tool>",...}
+	if t, ok := raw["type"].(string); ok {
+		low := strings.ToLower(strings.TrimSpace(t))
+		if low != "" && known[low] {
+			return parsedCall{Name: canonical[low], Input: argsFromRaw(raw, "type")}, true
+		}
+	}
+	return parsedCall{}, false
+}
+
+// argsFromRaw extracts the args object out of a generic tool-call envelope.
+// Prefers `arguments` or `input` when present; otherwise treats every other
+// top-level key as an inlined arg.
+func argsFromRaw(raw map[string]any, nameKey string) map[string]any {
+	if a, ok := raw["arguments"].(map[string]any); ok {
+		return a
+	}
+	if a, ok := raw["input"].(map[string]any); ok {
+		return a
+	}
+	if as, ok := raw["arguments"].(string); ok {
+		var v map[string]any
+		if err := json.Unmarshal([]byte(as), &v); err == nil {
+			return v
+		}
+	}
+	out := make(map[string]any, len(raw))
+	for k, v := range raw {
+		if k == nameKey || k == "arguments" || k == "input" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }

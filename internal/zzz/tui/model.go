@@ -42,7 +42,12 @@ type Model struct {
 	final   *zzz.Run
 	finalEr error
 
-	mu sync.Mutex // guards rows, log, iter, phase mutated by Send
+	// closed guards m.msgs from a panic when Quit fires after Drive returned
+	// — Drive's goroutine keeps calling send() during shutdown, and a
+	// send-on-closed channel would crash the process.
+	closed   chan struct{}
+	closeMu  sync.Mutex
+	closeOne sync.Once
 }
 
 // New builds the bubbletea model. width=0 defers sizing until the first
@@ -69,13 +74,14 @@ func New(run *zzz.Run, cfg zzz.Config) *Model {
 	)
 
 	return &Model{
-		run:   run,
-		cfg:   cfg,
-		input: ti,
-		start: time.Now(),
-		now:   time.Now(),
-		msgs:  make(chan tea.Msg, 64),
-		steer: make(chan zzz.Steer, 16),
+		run:    run,
+		cfg:    cfg,
+		input:  ti,
+		start:  time.Now(),
+		now:    time.Now(),
+		msgs:   make(chan tea.Msg, 64),
+		steer:  make(chan zzz.Steer, 16),
+		closed: make(chan struct{}),
 	}
 }
 
@@ -98,8 +104,16 @@ func (m *Model) Done(r *zzz.Run, err error) {
 }
 
 func (m *Model) send(msg tea.Msg) {
+	// closed sentinel beats the panic; Drive may keep calling send during
+	// shutdown but we must not feed a closed channel.
+	select {
+	case <-m.closed:
+		return
+	default:
+	}
 	select {
 	case m.msgs <- msg:
+	case <-m.closed:
 	default:
 		// drop on saturation; live status is non-critical (events.jsonl is canonical)
 	}

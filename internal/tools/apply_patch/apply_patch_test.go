@@ -311,6 +311,57 @@ func TestApplyPatch_StripsAPrefix(t *testing.T) {
 	}
 }
 
+func TestApplyPatch_EmptyResultRejected(t *testing.T) {
+	runInDir(t)
+	if err := os.WriteFile("keep.txt", []byte("only\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// patch removes all lines but lacks "deleted file mode" header
+	patch := "--- a/keep.txt\n+++ b/keep.txt\n@@ -1 +0,0 @@\n-only\n"
+	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatalf("want error for empty-buffer modify, got: %s", res.Content)
+	}
+	if _, err := os.Stat("keep.txt"); err != nil {
+		t.Fatalf("file must remain on rejection: %v", err)
+	}
+	got, _ := os.ReadFile("keep.txt")
+	if string(got) != "only\n" {
+		t.Fatalf("file content mutated: %q", got)
+	}
+}
+
+func TestApplyPatch_PreservesMode(t *testing.T) {
+	runInDir(t)
+	if err := os.WriteFile("run.sh", []byte("echo old\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	patch := `diff --git a/run.sh b/run.sh
+--- a/run.sh
++++ b/run.sh
+@@ -1 +1 @@
+-echo old
++echo new
+`
+	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("err: %s", res.Content)
+	}
+	info, err := os.Stat("run.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("mode not preserved: got %o want 0755", info.Mode().Perm())
+	}
+}
+
 // when any file in a multi-file patch fails the filter, the entire batch
 // is rejected before any write happens.
 func TestApplyPatch_FilterRejectsBatchAtomically(t *testing.T) {

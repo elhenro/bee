@@ -133,9 +133,9 @@ func parseConflictFiles(s string) []string {
 }
 
 // MergerLoop wakes every interval and tries to merge any agent that's done
-// but not yet merged. Caller cancels via ctx. retryCh delivers manual retry
-// signals (session id) — these bypass the timer and try immediately.
-func MergerLoop(ctx context.Context, repoRoot string, interval time.Duration, retryCh <-chan string) {
+// but not yet merged. Caller cancels via ctx. Fully autonomous — no manual
+// retry channel; the user attaches via `bee back` to resolve conflicts.
+func MergerLoop(ctx context.Context, repoRoot string, interval time.Duration) {
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
@@ -147,8 +147,6 @@ func MergerLoop(ctx context.Context, repoRoot string, interval time.Duration, re
 			return
 		case <-t.C:
 			scan(ctx, repoRoot, "")
-		case id := <-retryCh:
-			scan(ctx, repoRoot, id)
 		}
 	}
 }

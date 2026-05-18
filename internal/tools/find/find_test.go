@@ -112,6 +112,58 @@ func TestFind_RelativePaths(t *testing.T) {
 	}
 }
 
+func TestFind_DoubleStarMidPattern(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "src", "pkg", "deep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "other"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "pkg", "deep", "want.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "top.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other", "skip.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := New(dir).Run(context.Background(), map[string]any{"pattern": "src/**/*.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Content, filepath.Join("src", "pkg", "deep", "want.go")) {
+		t.Errorf("mid-pattern ** should recurse under src/; got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, filepath.Join("src", "top.go")) {
+		t.Errorf("mid-pattern ** should also include direct children of src/; got: %s", res.Content)
+	}
+	if strings.Contains(res.Content, filepath.Join("other", "skip.go")) {
+		t.Errorf("mid-pattern ** should not match outside src/; got: %s", res.Content)
+	}
+}
+
+func TestFind_SkipsTestdata(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "testdata", "fixture.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "real.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := New(dir).Run(context.Background(), map[string]any{"pattern": "*.go"})
+	if strings.Contains(res.Content, "testdata") {
+		t.Errorf("testdata should be skipped, got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "real.go") {
+		t.Errorf("expected real.go in results, got: %s", res.Content)
+	}
+}
+
 func TestFind_NoMatches(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644); err != nil {

@@ -20,23 +20,24 @@ type settingsRow struct {
 // settingsRows is the alphabetised pool. Sorted at package init so new rows
 // can be appended in any order without resorting the source file.
 var settingsRows = []settingsRow{
-	{key: "verbose", label: "verbose tool output", desc: "show full tool result instead of one-line preview"},
-	{key: "show_thoughts", label: "show agent thoughts", desc: "render chain-of-thought reasoning blocks"},
-	{key: "show_nudges", label: "show nudge messages", desc: "show the agent's self-nudge recovery messages in the transcript"},
+	{key: "verbose", label: "verbose tool output", desc: "full tool result instead of one-line preview"},
+	{key: "show_thoughts", label: "agent thoughts", desc: "chain-of-thought reasoning blocks"},
+	{key: "show_nudges", label: "nudge messages", desc: "self-nudge recovery messages in the transcript"},
+	{key: "show_recap", label: "post-turn recap", desc: "one-line side-LLM summary + next step after each turn (extra tokens)"},
 	{key: "compact", label: "compact layout", desc: "drop gutter + inter-turn blank + user tint + OSC 133"},
-	{key: "show_context_bar", label: "show context bar", desc: "thin context-fill strip at the bottom edge"},
+	{key: "show_context_bar", label: "context bar", desc: "thin context-fill strip at the bottom edge"},
 	{key: "highlight", label: "syntax highlight", desc: "color code in diffs, file content, and bash commands"},
 	{key: "shell_bang_silent", label: "!shell stays local", desc: "!cmd runs without forwarding output to the LLM (!! inverts)"},
-	{key: "show_banner", label: "show intro animation", desc: "braille startup animation (applies on next launch)"},
-	{key: "show_loader", label: "show generating animation", desc: "braille loader + caret while the model is generating"},
-	{key: "show_bee", label: "top-bar bee glyph", desc: "show the 🐝 emoji on the top status line"},
-	{key: "show_context_pct", label: "top-bar context %", desc: "show the percent label next to the bee glyph"},
-	{key: "show_model", label: "top-bar model name", desc: "show the active provider/model label"},
-	{key: "show_cwd", label: "top-bar cwd", desc: "show the current working directory"},
-	{key: "show_effort", label: "top-bar effort", desc: "show the thinking-effort badge (t:max)"},
-	{key: "show_turn_timer", label: "top-bar turn timer", desc: "show ⏱ live elapsed while working + final time after"},
-	{key: "show_git_branch", label: "top-bar git branch", desc: "show ⎇ current git branch (when cwd is in a repo)"},
-	{key: "show_total_tokens", label: "top-bar total tokens", desc: "show Σ session tokens (input+output) next to cost"},
+	{key: "show_banner", label: "intro animation", desc: "braille startup animation (applies on next launch)"},
+	{key: "show_loader", label: "loader animation", desc: "braille loader + caret while the model is generating"},
+	{key: "show_bee", label: "top-bar: bee glyph", desc: "🐝 emoji on the top status line"},
+	{key: "show_context_pct", label: "top-bar: context %", desc: "percent label next to the bee glyph"},
+	{key: "show_model", label: "top-bar: model name", desc: "active provider/model label"},
+	{key: "show_cwd", label: "top-bar: cwd", desc: "current working directory"},
+	{key: "show_effort", label: "top-bar: effort", desc: "thinking-effort badge (t:max)"},
+	{key: "show_turn_timer", label: "top-bar: turn timer", desc: "⏱ live elapsed while working + final time after"},
+	{key: "show_git_branch", label: "top-bar: git branch", desc: "⎇ current git branch (when cwd is in a repo)"},
+	{key: "show_total_tokens", label: "top-bar: total tokens", desc: "Σ session tokens (input+output) next to cost"},
 }
 
 func init() {
@@ -57,6 +58,7 @@ type SettingsPane struct {
 	verbose    bool
 	thought    bool
 	nudge      bool
+	recap      bool
 	compact    bool
 	ctxBar     bool
 	highlight  bool
@@ -106,6 +108,7 @@ type SettingsSnapshot struct {
 	Verbose         bool
 	ShowThoughts    bool
 	ShowNudges      bool
+	ShowRecap       bool
 	Compact         bool
 	ShowContextBar  bool
 	Highlight       bool
@@ -134,6 +137,7 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 	p.verbose = s.Verbose
 	p.thought = s.ShowThoughts
 	p.nudge = s.ShowNudges
+	p.recap = s.ShowRecap
 	p.compact = s.Compact
 	p.ctxBar = s.ShowContextBar
 	p.highlight = s.Highlight
@@ -245,6 +249,8 @@ func (p *SettingsPane) rowState(key string) bool {
 		return p.thought
 	case "show_nudges":
 		return p.nudge
+	case "show_recap":
+		return p.recap
 	case "compact":
 		return p.compact
 	case "show_context_bar":
@@ -286,6 +292,8 @@ func (p *SettingsPane) setRowState(key string, v bool) {
 		p.thought = v
 	case "show_nudges":
 		p.nudge = v
+	case "show_recap":
+		p.recap = v
 	case "compact":
 		p.compact = v
 	case "show_context_bar":

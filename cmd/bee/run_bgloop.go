@@ -61,6 +61,7 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 
 	msg := firstMsg
 	var cursor int64
+	hadCommit := false
 	for {
 		s := base
 		s.State = bgreg.StateActive
@@ -115,6 +116,7 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 					return failAgentCommit(base, "git commit: "+cerr.Error())
 				}
 				committedSHA = sha
+				hadCommit = true
 			}
 		}
 		_ = committedSHA
@@ -127,7 +129,18 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 			case sentinel.KindDone:
 				s = base
 				s.State = bgreg.StateDone
-				s.MergeState = bgreg.MergeStateUnmerged
+				// zero-change run has nothing to merge — skip the unmerged limbo
+				// and tear down the worktree+branch right away.
+				if hadCommit {
+					s.MergeState = bgreg.MergeStateUnmerged
+				} else {
+					s.MergeState = bgreg.MergeStateMerged
+					s.FinishedAt = time.Now().UTC()
+					if agentMode && repoRoot != "" && base.WorktreePath != "" {
+						_ = zzz.WorktreeRemove(repoRoot, base.WorktreePath, true)
+						s.WorktreePath = ""
+					}
+				}
 				s.LastResponse = final
 				s.UpdatedAt = time.Now().UTC()
 				_ = bgreg.Write(s)

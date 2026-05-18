@@ -123,6 +123,19 @@ func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
 	return out + "\n"
 }
 
+// RenderThinkingPartial is the live-streaming variant of renderThinking
+// used by the in-flight view region. Same dim/italic styling so the live
+// block visually matches the finalized scrollback render once the turn
+// commits. Empty result when thoughts are hidden or no content remains
+// after sanitize.
+func (r *StreamRenderer) RenderThinkingPartial(s string) string {
+	body := r.renderThinking(s)
+	if body == "" || r.compact {
+		return body
+	}
+	return applyGutter(body)
+}
+
 // renderThinking styles a chain-of-thought block: every line dimmed +
 // italic and prefixed with a quiet `·` glyph so it visually recedes behind
 // the actual answer. ANSI strip + control sanitize follow the same rules

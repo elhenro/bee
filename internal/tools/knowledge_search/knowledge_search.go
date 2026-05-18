@@ -66,8 +66,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if err != nil {
 		return tools.Result{Content: fmt.Sprintf("search failed: %v", err), IsError: true}, nil
 	}
-	// phase 2: only fire the side-LLM when phase 1 came up nearly empty.
-	if len(records) < 2 && t.prov != nil {
+	// phase 2: fire the side-LLM whenever phase 1 didn't fill the top-K slate.
+	if len(records) < t.topK && t.prov != nil {
 		hints, hErr := knowledge.ExtractTags(ctx, t.prov, t.model, query)
 		if hErr == nil && len(hints) > 0 {
 			rerun, qErr := knowledge.Query(ctx, t.dir, query, t.topK, knowledge.Options{HintTags: hints})

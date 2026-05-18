@@ -63,6 +63,13 @@ func (m Model) WithShowNudges(v bool) Model {
 	return m
 }
 
+// WithShowRecap seeds the post-turn recap toggle from config. Default
+// false so recaps are explicitly opt-in (extra tokens per turn).
+func (m Model) WithShowRecap(v bool) Model {
+	m.showRecap = v
+	return m
+}
+
 // WithCompact seeds compact-mode rendering. Env/config-driven path.
 func (m Model) WithCompact(v bool) Model {
 	m.compact = v
@@ -137,6 +144,14 @@ func (m Model) WithShowTotalTokens(v bool) Model { m.showTotalTokens = v; return
 // The same channel must be set on Engine.StreamCh so deltas flow.
 func (m Model) WithStreamCh(ch chan string) Model {
 	m.streamCh = ch
+	return m
+}
+
+// WithThinkCh wires a reasoning-delta channel from the engine into the TUI
+// so chain-of-thought renders live during streaming. Same channel must be
+// set on Engine.ThinkCh so deltas flow.
+func (m Model) WithThinkCh(ch chan string) Model {
+	m.thinkCh = ch
 	return m
 }
 

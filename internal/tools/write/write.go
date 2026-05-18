@@ -36,7 +36,7 @@ func NewWithFilter(root string, pathRe *regexp.Regexp) *Tool {
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name:        toolName,
-		Description:   "Overwrite a file with content. Creates parent dirs. Path must stay inside workspace root. Args: path (required), content (required).",
+		Description:   "Overwrite a file with content. Creates parent dirs. Path must stay inside workspace root. Empty content is rejected (file deletion is not supported). Args: path (required), content (required, non-empty).",
 		PromptSnippet: "Create or overwrite files",
 		Schema: map[string]any{
 			"type": "object",
@@ -58,6 +58,9 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	content, ok := in["content"].(string)
 	if !ok {
 		return tools.Result{Content: "missing content", IsError: true}, nil
+	}
+	if content == "" {
+		return tools.Result{Content: "content must be non-empty", IsError: true}, nil
 	}
 	// guard: small models sometimes drop a unified diff into content,
 	// destroying the file. detect canonical patch headers and redirect.
@@ -85,9 +88,6 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 
 	if t.pathRe != nil {
 		match := rel
-		if err != nil {
-			match = abs
-		}
 		if !t.pathRe.MatchString(match) {
 			return tools.Result{Content: fmt.Sprintf("path %q denied by write filter", match), IsError: true}, nil
 		}
@@ -96,7 +96,12 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
-	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+	// preserve existing file mode; default 0o644 for new files
+	mode := os.FileMode(0o644)
+	if info, statErr := os.Stat(abs); statErr == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := os.WriteFile(abs, []byte(content), mode); err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
 	return tools.Result{Content: fmt.Sprintf("wrote %d bytes to %s", len(content), abs)}, nil

@@ -3,6 +3,7 @@ package tui
 import (
 	"io"
 	"os"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -16,9 +17,10 @@ func (m *Model) Run() error {
 	return err
 }
 
-// Quit pushes a tea.Quit through the program. Safe to call after Done.
+// Quit signals shutdown so any goroutines that still call Model.send()
+// no-op cleanly instead of panicking on a closed channel.
 func (m *Model) Quit() {
-	close(m.msgs)
+	m.closeOne.Do(func() { close(m.closed) })
 }
 
 // EngineWriter returns a writer suitable for loop.Engine.Stdout. Engine
@@ -34,10 +36,16 @@ func (m *Model) EngineWriter() io.Writer {
 
 type engineSink struct {
 	m   *Model
+	mu  sync.Mutex
 	buf []byte
 }
 
+// Write is io.Writer but the underlying engine may stream from worker
+// goroutines (provider streaming, tool output), so a mutex around buf is
+// required to keep the partial-line state consistent.
 func (e *engineSink) Write(p []byte) (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.buf = append(e.buf, p...)
 	for {
 		i := indexByte(e.buf, '\n')

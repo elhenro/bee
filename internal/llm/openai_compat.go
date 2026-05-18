@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
@@ -62,21 +63,49 @@ func NewOpenAICompat(cfg OpenAICompatConfig) *OpenAICompatProvider {
 
 // retry policy for the pre-stream request: network errors and 408/429/5xx
 // trigger an exp-backoff retry. Once the stream starts emitting deltas we
-// no longer retry — replaying would duplicate tokens.
+// no longer retry. replaying would duplicate tokens.
 const (
-	maxRetryAttempts = 3
-	retryBaseDelay   = 800 * time.Millisecond
+	maxRetryAttempts     = 3
+	maxRetryAttemptsRate = 5
+	retryBaseDelay       = 800 * time.Millisecond
+	retryMinDelay        = 200 * time.Millisecond
 )
 
+// retryRand drives the backoff jitter. seeded once per process. jitter does
+// not need cryptographic randomness, only crowd-spreading.
+var retryRand = rand.New(rand.NewSource(time.Now().UnixNano()))
+var retryRandMu sync.Mutex
+
 // retryableStatus reports whether a server response code is worth retrying.
-// 408 request timeout, 429 too many requests, 5xx server errors — same set
-// the OpenAI/Anthropic SDKs use.
+// 408 request timeout, 429 too many requests, 5xx server errors. matches
+// the set used by major chat-completions SDKs.
 func retryableStatus(code int) bool {
 	switch code {
 	case 408, 429, 500, 502, 503, 504:
 		return true
 	}
 	return false
+}
+
+// rateLimitedStatus marks codes that warrant extra retries since the server
+// is asking us to slow down rather than reporting a hard failure.
+func rateLimitedStatus(code int) bool {
+	return code == 429 || code == 503
+}
+
+// retryBackoff computes the delay for the given attempt with ±25% jitter,
+// floored at retryMinDelay so jitter cannot push below the safe minimum.
+func retryBackoff(attempt int) time.Duration {
+	base := retryBaseDelay << (attempt - 1)
+	retryRandMu.Lock()
+	// jitter in [-0.25, +0.25]
+	jitter := (retryRand.Float64()*0.5 - 0.25)
+	retryRandMu.Unlock()
+	d := time.Duration(float64(base) * (1 + jitter))
+	if d < retryMinDelay {
+		d = retryMinDelay
+	}
+	return d
 }
 
 // isNoToolSupportError detects the Ollama/llama.cpp 400 returned for models
@@ -115,16 +144,23 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/chat/completions"
 
 	var (
-		resp    *http.Response
-		lastErr error
+		resp        *http.Response
+		lastErr     error
+		lastWasRate bool
 	)
-	for attempt := 0; attempt < maxRetryAttempts; attempt++ {
+	// loop bound is the larger cap; rate-limited statuses get the extra attempts
+	// while other retryable errors still bail at maxRetryAttempts.
+	for attempt := 0; attempt < maxRetryAttemptsRate; attempt++ {
+		// after the non-rate cap, only continue if the previous failure was a
+		// rate-limited status (429 or 503).
+		if attempt >= maxRetryAttempts && !lastWasRate {
+			break
+		}
 		if attempt > 0 {
-			delay := retryBaseDelay << (attempt - 1) // 800ms, 1.6s, 3.2s
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(delay):
+			case <-time.After(retryBackoff(attempt)):
 			}
 		}
 
@@ -141,15 +177,16 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 				return nil, ctx.Err()
 			}
 			lastErr = fmt.Errorf("post: %w", derr)
+			lastWasRate = false
 			continue
 		}
 
 		if r.StatusCode >= 400 {
 			raw, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
 			_ = r.Body.Close()
-			// Ollama (and some llama.cpp wrappers) reject tool advertisements
-			// for non-tool-tuned models with 400 "does not support tools".
-			// Strip tools, remember the model, rebuild body, retry once.
+			// some local servers reject tool advertisements for non-tool-tuned
+			// models with 400 "does not support tools". strip tools, remember
+			// the model, rebuild body, retry once.
 			if len(wireReq.Tools) > 0 && isNoToolSupportError(r.StatusCode, raw) {
 				p.noTools.Store(req.Model, struct{}{})
 				wireReq.Tools = nil
@@ -159,10 +196,12 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 				}
 				body = nb
 				lastErr = fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, string(raw))
+				lastWasRate = false
 				continue
 			}
 			if retryableStatus(r.StatusCode) {
 				lastErr = fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, string(raw))
+				lastWasRate = rateLimitedStatus(r.StatusCode)
 				continue
 			}
 			return nil, fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, string(raw))
@@ -191,7 +230,7 @@ func buildWireRequest(req Request) wire.ChatRequest {
 			Name: t.Name, Description: t.Description, Schema: t.Schema,
 		})
 	}
-	wr := wire.BuildRequest(req.Model, req.System, req.Messages, tools, req.MaxTokens, req.Temperature, req.Stream)
+	wr := wire.BuildRequest(req.Model, req.System, req.Messages, tools, req.MaxTokens, req.Temperature, req.TopP, req.Stop, req.Stream)
 	// OpenAI o-series + compatible: pass thinking level as reasoning_effort.
 	// Omit on Off so non-reasoning models don't choke on the unknown field.
 	// "max" isn't an OpenAI tier — clamp to "high" on the wire.

@@ -267,11 +267,11 @@ func TestRun_HashlineEmitsTags(t *testing.T) {
 	for i, l := range lines {
 		hash := strings.IndexByte(l, '#')
 		sep := strings.Index(l, " │ ")
-		if hash < 0 || sep < 0 || sep-hash != 3 {
-			t.Fatalf("line %d missing #XY before separator: %q", i+1, l)
+		if hash < 0 || sep < 0 || sep-hash != 4 {
+			t.Fatalf("line %d missing #XYZ before separator: %q", i+1, l)
 		}
 		tag := l[hash+1 : sep]
-		if len(tag) != 2 {
+		if len(tag) != 3 {
 			t.Fatalf("line %d tag wrong length: %q", i+1, tag)
 		}
 		for j, r := range tag {
@@ -308,6 +308,26 @@ func TestRun_HashlineDefaultOff(t *testing.T) {
 		if strings.ContainsRune(l[:sep], '#') {
 			t.Fatalf("hashline anchor leaked when disabled: %q", l)
 		}
+	}
+}
+
+func TestRead_SymlinkToSensitiveBlocked(t *testing.T) {
+	dir := t.TempDir()
+	// target basename matches the secret-file pattern (id_rsa)
+	target := filepath.Join(dir, "id_rsa")
+	if err := os.WriteFile(target, []byte("PRIVATE KEY\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "innocent.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	res, _ := New().Run(context.Background(), map[string]any{"path": link})
+	if !res.IsError {
+		t.Fatalf("symlink to sensitive target should be refused, got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "refused") {
+		t.Fatalf("expected refusal message, got: %s", res.Content)
 	}
 }
 

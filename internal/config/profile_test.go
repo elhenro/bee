@@ -27,8 +27,17 @@ func TestTinyProfile_ReadGrepCapsAndSkipApplyPatch(t *testing.T) {
 	if p.GrepMaxMatches != 50 {
 		t.Errorf("tiny.GrepMaxMatches = %d, want 50", p.GrepMaxMatches)
 	}
-	if p.NoMutationStallThreshold != 0 {
-		t.Errorf("tiny.NoMutationStallThreshold = %d, want 0", p.NoMutationStallThreshold)
+	if p.NoMutationStallThreshold != 3 {
+		t.Errorf("tiny.NoMutationStallThreshold = %d, want 3 (nudge after 3 read-only turns)", p.NoMutationStallThreshold)
+	}
+}
+
+func TestTinyProfile_ToolFormatXML(t *testing.T) {
+	c := Defaults()
+	c.Profile = "tiny"
+	p := ActiveProfile(c)
+	if p.ToolFormat != "xml" {
+		t.Errorf("tiny.ToolFormat = %q, want %q (local/small models need textmode wrapper to parse bare-JSON envelopes)", p.ToolFormat, "xml")
 	}
 }
 
@@ -65,8 +74,8 @@ func TestApplyProfile_FillsCavemanWhenEmpty(t *testing.T) {
 	c.Profile = "tiny"
 	c.Caveman = "" // simulate unset
 	out := ApplyProfile(c)
-	if out.Caveman != "full" {
-		t.Errorf("ApplyProfile caveman = %q, want full (from tiny profile)", out.Caveman)
+	if out.Caveman != "ultra" {
+		t.Errorf("ApplyProfile caveman = %q, want ultra (from tiny profile)", out.Caveman)
 	}
 }
 
@@ -75,8 +84,8 @@ func TestApplyProfile_ResolvesAutoCaveman(t *testing.T) {
 	c.Profile = "tiny"
 	c.Caveman = "auto" // sentinel: defer to profile
 	out := ApplyProfile(c)
-	if out.Caveman != "full" {
-		t.Errorf("ApplyProfile caveman = %q, want full (from tiny profile)", out.Caveman)
+	if out.Caveman != "ultra" {
+		t.Errorf("ApplyProfile caveman = %q, want ultra (from tiny profile)", out.Caveman)
 	}
 }
 
@@ -119,8 +128,8 @@ func TestApplyProfile_ResolvesAuto(t *testing.T) {
 	if out.Profile != "tiny" {
 		t.Errorf("auto → expected tiny for flash, got %q", out.Profile)
 	}
-	if out.Caveman != "full" {
-		t.Errorf("auto→tiny should pick caveman=full, got %q", out.Caveman)
+	if out.Caveman != "ultra" {
+		t.Errorf("auto→tiny should pick caveman=ultra, got %q", out.Caveman)
 	}
 }
 

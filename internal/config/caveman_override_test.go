@@ -7,7 +7,7 @@ import (
 	"github.com/elhenro/bee/internal/config"
 )
 
-// Tiny profile defaults Caveman:"full". Verify explicit opt-out (e.g. via
+// Tiny profile defaults Caveman:"ultra". Verify explicit opt-out (e.g. via
 // `--caveman off`) survives ApplyProfile so user can disable on small models.
 func TestExplicitCavemanWinsOverTinyProfile(t *testing.T) {
 	c := config.Defaults()
@@ -27,7 +27,7 @@ func TestAutoCavemanFollowsTinyProfile(t *testing.T) {
 	c.Profile = "tiny"
 	c.Caveman = "auto"
 	c = config.ApplyProfile(c)
-	if c.Caveman != "full" {
-		t.Fatalf("auto on tiny: got %q want full", c.Caveman)
+	if c.Caveman != "ultra" {
+		t.Fatalf("auto on tiny: got %q want ultra", c.Caveman)
 	}
 }

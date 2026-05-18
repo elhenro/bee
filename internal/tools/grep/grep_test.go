@@ -41,6 +41,41 @@ func TestGrep_GlobFilter(t *testing.T) {
 	}
 }
 
+func TestGrep_GlobShapes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("Foo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a_test.go"), []byte("Foo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("Foo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g := New(dir)
+	cases := []struct {
+		glob       string
+		wantA, wantTest, wantTxt bool
+	}{
+		{"go", true, true, false},
+		{".go", true, true, false},
+		{"*.go", true, true, false},
+		{"*_test.go", false, true, false},
+		{"*.txt", false, false, true},
+	}
+	for _, c := range cases {
+		res, _ := g.Run(context.Background(), map[string]any{"pattern": "Foo", "glob": c.glob})
+		// match-line emits as "<rel>:<line>:<text>"; check for the exact path prefix
+		gotA := strings.Contains(res.Content, "\na.go:") || strings.HasPrefix(res.Content, "a.go:")
+		gotTest := strings.Contains(res.Content, "a_test.go:")
+		gotTxt := strings.Contains(res.Content, "b.txt:")
+		if gotA != c.wantA || gotTest != c.wantTest || gotTxt != c.wantTxt {
+			t.Errorf("glob=%q gotA=%v gotTest=%v gotTxt=%v want=%+v\ncontent=%s",
+				c.glob, gotA, gotTest, gotTxt, c, res.Content)
+		}
+	}
+}
+
 func TestGrep_BadRegex(t *testing.T) {
 	g := New(t.TempDir())
 	res, _ := g.Run(context.Background(), map[string]any{"pattern": "[invalid"})

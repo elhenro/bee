@@ -4,13 +4,12 @@ import "github.com/elhenro/bee/internal/llm"
 
 // profileToolAllowlist trims the tool surface advertised per profile. Registry
 // stays full so any explicit call still executes, but the manifest + request
-// schema only carry the listed tools. Defaults: tiny converges on
-// {bash,read,write,edit}; normal on a 7-tool surface; large adds the
-// expert-mode patch tools.
+// schema only carry the listed tools.
 //
-//   - tiny: 4-tool minimum for 4k-ctx models. No grep/find — bash covers them.
-//   - normal: 7-tool surface (bash, read, write, edit, grep, find, ls).
-//   - large: full surface incl. apply_patch + hashline_edit for capable models.
+//   - tiny: 4-tool minimum for 4k-ctx models. bash covers grep/find for them.
+//   - normal: search/glob/ls/edit/write/bash/read plus the knowledge tools.
+//   - large: full surface incl. apply_patch + hashline_edit for capable models
+//     (no entry below; missing profile = pass-through).
 //
 // A profile absent from this map passes through unfiltered.
 var profileToolAllowlist = map[string]map[string]bool{
@@ -21,14 +20,15 @@ var profileToolAllowlist = map[string]map[string]bool{
 		"edit":  true,
 	},
 	"normal": {
-		"bash":          true,
-		"read":          true,
-		"write":         true,
-		"edit":          true,
-		"search":        true,
-		"glob":          true,
-		"ls":            true,
+		"bash":             true,
+		"read":             true,
+		"write":            true,
+		"edit":             true,
+		"search":           true,
+		"glob":             true,
+		"ls":               true,
 		"knowledge_search": true,
+		"knowledge_write":  true,
 	},
 }
 

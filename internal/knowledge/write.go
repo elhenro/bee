@@ -53,6 +53,8 @@ func WriteRecord(dir string, r Record) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+	storeMu.Lock()
+	defer storeMu.Unlock()
 	leaf := leafName(r.Name)
 	final := filepath.Join(dir, leaf)
 	tmp, err := os.CreateTemp(dir, leaf+".*.tmp")
@@ -75,7 +77,10 @@ func WriteRecord(dir string, r Record) (string, error) {
 		cleanup()
 		return "", err
 	}
-	if err := RebuildIndex(dir); err != nil {
+	// new file changes dir mtime on most filesystems, but invalidate
+	// explicitly so a same-second write still triggers rescan.
+	invalidateScanCache(dir)
+	if err := rebuildIndexLocked(dir); err != nil {
 		return final, fmt.Errorf("record written, index refresh failed: %w", err)
 	}
 	return final, nil
@@ -91,6 +96,9 @@ func leafName(name string) string {
 func validate(e Entry) error {
 	if strings.TrimSpace(e.Name) == "" {
 		return errors.New("knowledge: name required")
+	}
+	if strings.HasPrefix(e.Name, ".") {
+		return fmt.Errorf("knowledge: name %q must not start with '.'", e.Name)
 	}
 	if !slugChar(e.Name) && !slugChar(strings.TrimSuffix(e.Name, ".md")) {
 		return fmt.Errorf("knowledge: name %q must be a slug (a-z, 0-9, -, _, .)", e.Name)
@@ -160,6 +168,13 @@ func yamlEscape(s string) string {
 // desc then name asc. callers run this after each WriteRecord but may also
 // invoke directly to repair an out-of-sync index.
 func RebuildIndex(dir string) error {
+	storeMu.Lock()
+	defer storeMu.Unlock()
+	return rebuildIndexLocked(dir)
+}
+
+// rebuildIndexLocked is the body of RebuildIndex; assumes storeMu is held.
+func rebuildIndexLocked(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err

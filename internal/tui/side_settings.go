@@ -120,6 +120,28 @@ func (s *tuiSide) GetShowNudges() bool {
 	return s.m.showNudges
 }
 
+// SetShowRecap toggles post-turn one-line side-LLM recap generation and
+// persists the choice. Off = no side call. Live-applied so the next
+// turn's onTurnDone uses the new value without a relaunch.
+func (s *tuiSide) SetShowRecap(v bool) error {
+	if s.m == nil {
+		return errors.New("show_recap: no tui state")
+	}
+	s.m.showRecap = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowRecap = v
+	}
+	return PersistSetting("", "show_recap", v)
+}
+
+// GetShowRecap returns the current show-recap flag.
+func (s *tuiSide) GetShowRecap() bool {
+	if s.m == nil {
+		return false
+	}
+	return s.m.showRecap
+}
+
 // SetCompact toggles compact TUI mode live and persists it. Compact strips
 // the spacing layer (gutter, inter-turn blank, bg-tint, OSC 133).
 func (s *tuiSide) SetCompact(v bool) error {

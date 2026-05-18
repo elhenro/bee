@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,6 +10,11 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
+// recapTimeout caps the side-call so a stuck provider can't drag the turn
+// past the loader fading out. Conservative — most recaps complete in a
+// second or two against deepseek-v4-flash class models.
+const recapTimeout = 20 * time.Second
+
 // quitConfirmWindow is how long a single ctrl+d arms the quit-confirm flow.
 // After this elapses, the next ctrl+d re-arms instead of quitting.
 const quitConfirmWindow = 2 * time.Second
@@ -16,6 +22,10 @@ const quitConfirmWindow = 2 * time.Second
 // streamDeltaMsg carries a single text delta from the engine's StreamCh
 // into the bubbletea Update loop.
 type streamDeltaMsg struct{ Delta string }
+
+// thinkDeltaMsg carries one chain-of-thought delta from Engine.ThinkCh
+// into the bubbletea Update loop so reasoning renders live during a turn.
+type thinkDeltaMsg struct{ Delta string }
 
 // liveMsgMsg carries a freshly-persisted message from the engine into the
 // TUI so the scrollback updates the moment the loop appends an assistant
@@ -85,6 +95,16 @@ type turnDoneMsg struct {
 	err    error
 }
 
+// recapReadyMsg carries the synthesized one-line recap back into Update so
+// it can be flushed into scrollback as a dim italic post-turn line. text
+// non-empty = render recap; skipped = render "(skip)" diagnostic; err
+// non-empty = render error so the user sees why the side-call failed.
+type recapReadyMsg struct {
+	text    string
+	skipped bool
+	err     string
+}
+
 // sentinel msgs for unwired panes — slice 3B/3C consume them later.
 type (
 	openWorkspaceMsg struct{}
@@ -144,6 +164,23 @@ func (m Model) waitStream() tea.Cmd {
 	}
 }
 
+// waitThink returns a tea.Cmd that blocks on the next reasoning delta.
+// Same re-arming pattern as waitStream — Update re-issues the cmd on
+// receipt so the channel keeps draining.
+func (m Model) waitThink() tea.Cmd {
+	if m.thinkCh == nil {
+		return nil
+	}
+	ch := m.thinkCh
+	return func() tea.Msg {
+		d, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return thinkDeltaMsg{Delta: d}
+	}
+}
+
 // waitLiveMsg blocks on the next mid-Run message from the engine. Same
 // re-arming pattern as waitStream.
 func (m Model) waitLiveMsg() tea.Cmd {
@@ -179,4 +216,65 @@ func (m Model) waitWarn() tea.Cmd {
 // warningFadeCmd fires once after warningTTL to clear the displayed line.
 func warningFadeCmd() tea.Cmd {
 	return tea.Tick(warningTTL, func(time.Time) tea.Msg { return warningFadeMsg{} })
+}
+
+// recapMinDuration / recapMinTextLen gate the recap heuristic. Tuned so a
+// quick greeting or one-liner Q&A skips the side call entirely; only turns
+// that did real work (tool use, long reply, or wall-clock >= threshold)
+// trigger a recap.
+const (
+	recapMinDuration = 15 * time.Second
+	recapMinTextLen  = 600
+)
+
+// recapWorthwhile reports whether the just-finished turn merits a recap.
+// True if any tool was used, the turn ran long, or the assistant produced
+// a substantive reply. Scans the trailing assistant run only — stops at
+// the previous user message, matching extractRecapInput's scope.
+func recapWorthwhile(msgs []types.Message, dur time.Duration) bool {
+	if dur >= recapMinDuration {
+		return true
+	}
+	var textLen int
+	for i := len(msgs) - 1; i >= 0; i-- {
+		m := msgs[i]
+		if m.Role == types.RoleUser {
+			break
+		}
+		if m.Role != types.RoleAssistant {
+			continue
+		}
+		for _, c := range m.Content {
+			switch c.Type {
+			case types.BlockToolUse:
+				return true
+			case types.BlockText:
+				textLen += len(c.Text)
+			}
+		}
+	}
+	return textLen >= recapMinTextLen
+}
+
+// recapCmd kicks off a side-LLM summarization of the just-finished turn and
+// publishes recapReadyMsg with the result. Runs detached from the model's
+// long-lived ctx so a cancellation of the next user input doesn't abort the
+// recap mid-call; bounded by recapTimeout instead.
+func (m Model) recapCmd(msgs []types.Message) tea.Cmd {
+	if m.eng == nil || m.eng.Provider == nil {
+		return nil
+	}
+	prov := m.eng.Provider
+	model := m.eng.Cfg.DefaultModel
+	copyMsgs := append([]types.Message(nil), msgs...)
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), recapTimeout)
+		defer cancel()
+		r := loop.GenerateRecap(ctx, prov, model, copyMsgs)
+		msg := recapReadyMsg{text: r.Text, skipped: r.Skipped}
+		if r.Err != nil {
+			msg.err = r.Err.Error()
+		}
+		return msg
+	}
 }

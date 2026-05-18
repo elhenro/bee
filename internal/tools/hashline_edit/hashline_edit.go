@@ -1,10 +1,10 @@
 // Package hashline_edit implements LINE#ID-anchored file edits.
 //
-// Each edit cites a position as "<lineNumber>#<2-char tag>" (e.g. "42#VK").
+// Each edit cites a position as "<lineNumber>#<3-char tag>" (e.g. "42#VKM").
 // The tag is the content-hash of the line as it existed when the model saw
 // it (via view with hashline=true). Before applying, every claimed tag is
 // recomputed against the live file. If any tag is stale, the whole batch
-// is rejected and the file is left untouched — no partial writes.
+// is rejected and the file is left untouched, no partial writes.
 //
 // Edits are applied bottom-up (highest line number first) so each edit's
 // line number stays valid even after earlier edits change line counts.
@@ -67,7 +67,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 						"properties": map[string]any{
 							"pos": map[string]any{
 								"type":        "string",
-								"description": "Anchor in <lineNumber>#<2-char-tag> form.",
+								"description": "Anchor in <lineNumber>#<3-char-tag> form.",
 							},
 							"op": map[string]any{
 								"type":        "string",

@@ -88,6 +88,10 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 	if eng != nil {
 		m = m.WithShowNudges(eng.Cfg.ShowNudges)
 	}
+	// show-recap: cfg-driven; default false (no side call).
+	if eng != nil {
+		m = m.WithShowRecap(eng.Cfg.ShowRecap)
+	}
 	// compact: env wins over cfg; cfg persists across launches.
 	compact := os.Getenv("BEE_COMPACT") != ""
 	if !compact && eng != nil {
@@ -125,6 +129,9 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 	// bubbletea Update loop instead of corrupting the alt-screen.
 	if eng != nil && eng.StreamCh != nil {
 		m = m.WithStreamCh(eng.StreamCh)
+	}
+	if eng != nil && eng.ThinkCh != nil {
+		m = m.WithThinkCh(eng.ThinkCh)
 	}
 	if eng != nil && eng.LiveMsgCh != nil {
 		m = m.WithLiveMsgCh(eng.LiveMsgCh)

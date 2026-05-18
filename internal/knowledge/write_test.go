@@ -1,9 +1,12 @@
 package knowledge
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -74,6 +77,25 @@ func TestWriteValidates(t *testing.T) {
 	}
 }
 
+// regression: a leading dot would shadow system files (.gitconfig.md) in the
+// store dir; validation must reject those names outright.
+func TestWriteRejectsLeadingDot(t *testing.T) {
+	dir := t.TempDir()
+	cases := []string{".gitconfig", ".env", ".hidden"}
+	for _, name := range cases {
+		_, err := WriteRecord(dir, Record{
+			Entry: Entry{Name: name, Description: "d"},
+			Body:  "body",
+		})
+		if err == nil {
+			t.Errorf("name %q: want error, got nil", name)
+		}
+		if _, statErr := os.Stat(filepath.Join(dir, name+".md")); statErr == nil {
+			t.Errorf("name %q: file should not have been written", name)
+		}
+	}
+}
+
 func TestWriteWithExpiresRFC3339(t *testing.T) {
 	dir := t.TempDir()
 	exp := time.Date(2030, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -129,6 +151,41 @@ func TestRebuildIndexTable(t *testing.T) {
 	if z < 0 || a < 0 || z > a {
 		t.Errorf("index not priority-sorted: %s", s)
 	}
+}
+
+// regression: parallel WriteRecord + ScanStore callers must not corrupt
+// each other; run under `go test -race` to verify.
+func TestConcurrentWritesAndScans(t *testing.T) {
+	dir := t.TempDir()
+	const writers = 4
+	const reads = 8
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < 3; j++ {
+				name := fmt.Sprintf("rec-%d-%d", idx, j)
+				_, err := WriteRecord(dir, Record{
+					Entry: Entry{Name: name, Description: "d", Tags: []string{"misc"}, Priority: 3},
+					Body:  "body",
+				})
+				if err != nil {
+					t.Errorf("write %s: %v", name, err)
+				}
+			}
+		}(i)
+	}
+	for i := 0; i < reads; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := ScanStore(context.Background(), dir); err != nil {
+				t.Errorf("scan: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestYAMLEscape(t *testing.T) {

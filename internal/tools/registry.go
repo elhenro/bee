@@ -67,6 +67,10 @@ func (r *Registry) Names() []string {
 	return out
 }
 
+// Specs returns every registered tool's spec, sorted alphabetically by name.
+// The sort guarantees a stable order across calls and process runs — critical
+// for KV-cache prefix hits on the system prompt's tool manifest, which would
+// otherwise reshuffle on every turn (Go map iteration is randomized).
 func (r *Registry) Specs() []llm.ToolSpec {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -74,5 +78,6 @@ func (r *Registry) Specs() []llm.ToolSpec {
 	for _, t := range r.tools {
 		out = append(out, t.Spec())
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }

@@ -2,7 +2,10 @@ package knowledge_search
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/elhenro/bee/internal/llm"
@@ -82,6 +85,63 @@ func TestRunNoMatches(t *testing.T) {
 
 func TestToolInterface(t *testing.T) {
 	var _ tools.Tool = (*Tool)(nil)
+}
+
+// countingProvider tracks how many times Stream was invoked so tests can
+// assert phase-2 fired or didn't.
+type countingProvider struct {
+	resp  string
+	calls atomic.Int32
+}
+
+func (c *countingProvider) Name() string { return "counting" }
+
+func (c *countingProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
+	c.calls.Add(1)
+	ch := make(chan llm.Event, 2)
+	ch <- llm.Event{Type: llm.EventTextDelta, Delta: c.resp}
+	ch <- llm.Event{Type: llm.EventDone}
+	close(ch)
+	return ch, nil
+}
+
+// regression: phase-2 must fire when phase-1 returns fewer than topK
+// records, not only when results are below the old hard-coded 2.
+func TestPhase2FiresWhenBelowTopK(t *testing.T) {
+	dir := t.TempDir()
+	body := "---\nname: only\ndescription: solitary record\ntags: [misc]\npriority: 3\nexpires: never\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(dir, "only.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// phase-1 yields 1 record (matches name token "only"); topK=3 means
+	// phase-2 must still fire to look for more.
+	prov := &countingProvider{resp: "misc\n"}
+	tool := New(prov, "m", dir, 3)
+	if _, err := tool.Run(context.Background(), map[string]any{"query": "only"}); err != nil {
+		t.Fatal(err)
+	}
+	if prov.calls.Load() == 0 {
+		t.Fatal("phase-2 did not fire when results below topK")
+	}
+}
+
+// regression: phase-2 must NOT fire when phase-1 already filled the top-K.
+func TestPhase2SkipsWhenAtTopK(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"alpha", "beta", "gamma"} {
+		body := "---\nname: " + n + "\ndescription: query me\ntags: [misc]\npriority: 3\nexpires: never\n---\nbody\n"
+		if err := os.WriteFile(filepath.Join(dir, n+".md"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prov := &countingProvider{resp: "misc\n"}
+	tool := New(prov, "m", dir, 3)
+	if _, err := tool.Run(context.Background(), map[string]any{"query": "query"}); err != nil {
+		t.Fatal(err)
+	}
+	if prov.calls.Load() != 0 {
+		t.Fatalf("phase-2 fired when top-K already filled: %d calls", prov.calls.Load())
+	}
 }
 
 func TestSpecSchema(t *testing.T) {

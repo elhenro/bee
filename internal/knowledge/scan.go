@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,14 +18,54 @@ import (
 // stores still load but the tail is dropped after mtime sort.
 const MaxEntries = 200
 
+// storeMu serializes index writes against concurrent scans so a half-written
+// INDEX.md or in-progress rename never surfaces as a read error.
+var storeMu sync.RWMutex
+
 // FrontmatterMaxLines bounds the byte budget for header parsing. anything
 // past this is treated as body.
 const FrontmatterMaxLines = 30
 
+// scanCacheEntry holds a parsed snapshot plus the dir mtime at scan time.
+// callers receive a defensive copy so mutations cannot poison the cache.
+type scanCacheEntry struct {
+	dirMtime time.Time
+	entries  []Entry
+}
+
+var (
+	scanCacheMu sync.RWMutex
+	scanCache   = map[string]scanCacheEntry{}
+)
+
+// invalidateScanCache drops the cached snapshot for dir. write paths call
+// this so the next ScanStore rescans regardless of dir mtime resolution.
+func invalidateScanCache(dir string) {
+	if dir == "" {
+		return
+	}
+	scanCacheMu.Lock()
+	delete(scanCache, dir)
+	scanCacheMu.Unlock()
+}
+
 // ScanStore walks dir for *.md files, parses each frontmatter in parallel,
 // and returns entries sorted mtime desc, capped at MaxEntries. INDEX.md is
 // excluded. a missing dir returns (nil, nil) so callers can fall through.
+// repeat calls return a cached slice when the dir mtime is unchanged.
 func ScanStore(ctx context.Context, dir string) ([]Entry, error) {
+	info, statErr := os.Stat(dir)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return nil, nil
+		}
+		return nil, statErr
+	}
+	dirMtime := info.ModTime()
+	if cached, ok := lookupScanCache(dir, dirMtime); ok {
+		return cached, nil
+	}
+
 	paths, err := listFiles(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -35,6 +74,7 @@ func ScanStore(ctx context.Context, dir string) ([]Entry, error) {
 		return nil, err
 	}
 	if len(paths) == 0 {
+		storeScanCache(dir, dirMtime, nil)
 		return nil, nil
 	}
 
@@ -73,7 +113,36 @@ func ScanStore(ctx context.Context, dir string) ([]Entry, error) {
 	if len(out) > MaxEntries {
 		out = out[:MaxEntries]
 	}
-	return out, nil
+	storeScanCache(dir, dirMtime, out)
+	return cloneEntries(out), nil
+}
+
+func lookupScanCache(dir string, dirMtime time.Time) ([]Entry, bool) {
+	scanCacheMu.RLock()
+	c, ok := scanCache[dir]
+	scanCacheMu.RUnlock()
+	if !ok || !c.dirMtime.Equal(dirMtime) {
+		return nil, false
+	}
+	return cloneEntries(c.entries), true
+}
+
+func storeScanCache(dir string, dirMtime time.Time, entries []Entry) {
+	scanCacheMu.Lock()
+	scanCache[dir] = scanCacheEntry{
+		dirMtime: dirMtime,
+		entries:  cloneEntries(entries),
+	}
+	scanCacheMu.Unlock()
+}
+
+func cloneEntries(in []Entry) []Entry {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]Entry, len(in))
+	copy(out, in)
+	return out
 }
 
 // ListEntries returns every *.md path under dir except the INDEX. callers
@@ -90,31 +159,26 @@ func ListEntries(dir string) ([]string, error) {
 }
 
 func listFiles(dir string) ([]string, error) {
-	var out []string
-	rootIndex := filepath.Join(dir, IndexFileName)
-	// also tolerate the legacy index name when a store mixes old + new files.
-	legacyIndex := filepath.Join(dir, "MEMORY.md")
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if d != nil && d.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
-			return nil
-		}
-		if path == rootIndex || path == legacyIndex {
-			return nil
-		}
-		out = append(out, path)
-		return nil
-	})
+	storeMu.RLock()
+	defer storeMu.RUnlock()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
+	}
+	var out []string
+	for _, d := range entries {
+		// store is flat by design; never recurse into subdirs.
+		if d.IsDir() {
+			continue
+		}
+		name := d.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".md") {
+			continue
+		}
+		if name == IndexFileName || name == "MEMORY.md" {
+			continue
+		}
+		out = append(out, filepath.Join(dir, name))
 	}
 	return out, nil
 }

@@ -1,7 +1,7 @@
 // Package apply_patch provides patch application primitives plus the
 // LINE#ID anchor system used to reference specific source lines.
 //
-// LINE#ID format: "<lineNumber>#<2-char tag>", e.g. "42#VK". The tag is
+// LINE#ID format: "<lineNumber>#<3-char tag>", e.g. "42#VKM". The tag is
 // a deterministic content hash of the (normalized) line. Edits that cite
 // a tag which no longer matches the live content are rejected, which
 // catches stale or hallucinated line numbers before they corrupt files.
@@ -11,9 +11,10 @@
 //  2. seed: 0 if the line contains any Unicode letter or digit, else
 //     the 1-based line number (so blanks and pure-punctuation lines
 //     still vary by position).
-//  3. h = xxhash32(normalized, seed); idx = h % 256.
-//  4. tag = alphabet[idx/16] + alphabet[idx%16] using the 16-char set
-//     "ZPMQVRWSNKTXJBYH".
+//  3. h = xxhash32(normalized, seed); idx = h % 4096.
+//  4. tag = alphabet[idx/256] + alphabet[(idx/16)%16] + alphabet[idx%16]
+//     using the 16-char set "ZPMQVRWSNKTXJBYH". 4096 buckets cuts the
+//     birthday-collision probability ~16x vs the prior 256-bucket space.
 package apply_patch
 
 import (
@@ -26,7 +27,7 @@ const hashAlphabet = "ZPMQVRWSNKTXJBYH"
 
 var alnumRe = regexp.MustCompile(`[\p{L}\p{N}]`)
 
-// Tag returns the 2-character content-hash tag for one source line.
+// Tag returns the 3-character content-hash tag for one source line.
 // lineNumber is 1-based and used as the xxh seed when the line has no
 // alphanumerics (so blank lines and pure-punctuation lines still vary).
 func Tag(line string, lineNumber int) string {
@@ -38,8 +39,8 @@ func Tag(line string, lineNumber int) string {
 		}
 	}
 	h := xxh32([]byte(stripped), seed)
-	idx := h % 256
-	return string(hashAlphabet[idx/16]) + string(hashAlphabet[idx%16])
+	idx := h % 4096
+	return string(hashAlphabet[idx/256]) + string(hashAlphabet[(idx/16)%16]) + string(hashAlphabet[idx%16])
 }
 
 // Ref renders the standard "<lineNumber>#<tag>" anchor format.

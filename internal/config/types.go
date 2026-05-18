@@ -56,6 +56,12 @@ type Config struct {
 	// Loop behavior is unaffected; this is a render-time filter only.
 	ShowNudges bool `toml:"show_nudges"`
 
+	// ShowRecap enables a one-line post-turn recap synthesized by a cheap
+	// side-LLM call against the freshly finished assistant message. Off by
+	// default (extra tokens, off-fast-path). Toggle via /settings; persists
+	// across launches. Disabled = no generation, no render.
+	ShowRecap bool `toml:"show_recap"`
+
 	// Compact strips the spacing layer from the TUI (no outer gutter, no
 	// blank line between turns, no user bg-tint, no OSC 133 prompt zones).
 	// Default false = clean mode. Set true on small terminals or for a
@@ -207,7 +213,19 @@ type Profile struct {
 	ReadMaxLines int `toml:"read_max_lines"`
 	// GrepMaxMatches caps grep result count per call. 0 → tool default.
 	GrepMaxMatches int `toml:"grep_max_matches"`
+	// Temperature / TopP pin sampling for this profile. Zero values mean
+	// "use provider default". Tiny pins temperature=0 (deterministic tool
+	// turns) with top_p=0.8 to keep 4-bit MoE outputs anchored.
+	Temperature float64 `toml:"temperature"`
+	TopP        float64 `toml:"top_p"`
+	// ShowRecap, when non-nil, overrides Config.ShowRecap. Tiny sets false
+	// so the side-LLM recap round-trip doesn't double turn latency on slow
+	// local runs.
+	ShowRecap *bool `toml:"show_recap"`
 }
+
+// boolPtr is the canonical helper for the optional bool overrides in Profile.
+func boolPtr(b bool) *bool { return &b }
 
 // SandboxConfig is a two-axis sandbox policy.
 //

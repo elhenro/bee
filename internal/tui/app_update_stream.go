@@ -7,9 +7,20 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/elhenro/bee/internal/types"
 )
+
+// onThinkDelta accumulates a reasoning delta into m.thinkPartial so the
+// dim/italic CoT block renders live during streaming. The pump re-arms
+// itself; no flush — thinkPartial clears when the BlockThinking content
+// block lands via liveMsgMsg/turnDoneMsg (the final renders from the
+// message, the partial is just for the in-flight view).
+func (m Model) onThinkDelta(msg thinkDeltaMsg) (tea.Model, tea.Cmd) {
+	m.thinkPartial += msg.Delta
+	return m, m.waitThink()
+}
 
 func (m Model) onStreamDelta(msg streamDeltaMsg) (tea.Model, tea.Cmd) {
 	// append to live partial. View() picks it up next render. The pump
@@ -46,6 +57,9 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	m.messages = append(m.messages, msg.Msg)
 	m.commitFlushed()
 	m.partial = ""
+	// reasoning block now lives in m.messages; clear the live partial so
+	// scrollback doesn't double-render it next View().
+	m.thinkPartial = ""
 	flushCmd := m.flush()
 	return m, tea.Batch(flushCmd, m.waitLiveMsg())
 }
@@ -92,6 +106,29 @@ func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 	return m, m.flush()
 }
 
+func (m Model) onRecapReady(msg recapReadyMsg) (tea.Model, tea.Cmd) {
+	// dim italic, single line. "※" glyph marks meta-commentary so it
+	// doesn't read as another assistant turn. Error + skip cases render
+	// too so the toggle is observable — silent empties looked like the
+	// feature was off.
+	var body string
+	switch {
+	case msg.text != "":
+		body = "※ recap: " + msg.text
+	case msg.err != "":
+		body = "※ recap failed: " + msg.err
+	case msg.skipped:
+		body = "※ recap: (skipped)"
+	default:
+		return m, nil
+	}
+	line := lipgloss.NewStyle().
+		Foreground(fgOyster).
+		Italic(true).
+		Render(body)
+	return m, tea.Println(line)
+}
+
 func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	m.cancelRun = nil
 	// freeze elapsed at turn end. Guard zero turnStartedAt — late msgs
@@ -111,6 +148,7 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		}
 		m.commitFlushed()
 		m.partial = ""
+		m.thinkPartial = ""
 		m.state = StateIdle
 	case msg.err != nil:
 		// drop any progressively-flushed prefix on error — there's no
@@ -118,12 +156,14 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		m.streamFlushed = ""
 		m.streamFenceOpen = false
 		m.pendingFlushedPrefix = ""
+		m.thinkPartial = ""
 		m.state = StateError
 		m.lastErr = msg.err.Error()
 	default:
 		m.messages = msg.result.Messages
 		m.commitFlushed()
 		m.partial = ""
+		m.thinkPartial = ""
 		m.state = StateIdle
 	}
 	flushCmd := m.flush()
@@ -131,15 +171,25 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	// the call-count against the previous turn so multi-iteration loops
 	// fold all their per-iteration events into one visible delta.
 	costCmd := m.maybeStartCostFlash()
+	// recap: optional one-line side-LLM summary, dim italic, after the
+	// last assistant turn. Gated by m.showRecap so disabled = no extra
+	// tokens. Only on a clean finish (no error, no cancel), and only
+	// when the turn was substantive enough to warrant a recap — short
+	// greetings/Q&A skip the side call entirely (saves tokens, avoids
+	// noisy "(skipped)" lines from the model).
+	var recapCmd tea.Cmd
+	if msg.err == nil && m.showRecap && recapWorthwhile(msg.result.Messages, m.lastTurnDuration) {
+		recapCmd = m.recapCmd(msg.result.Messages)
+	}
 	// drain one queued follow-up per turn so the TUI stays responsive
 	// between fires. Only when last turn didn't error.
 	if msg.err == nil && len(m.queue) > 0 && m.eng != nil {
 		nxt := m.queue[0]
 		m.queue = m.queue[1:]
 		nm, runCmd := m.submit(nxt)
-		return nm, tea.Batch(flushCmd, costCmd, runCmd)
+		return nm, tea.Batch(flushCmd, costCmd, recapCmd, runCmd)
 	}
-	return m, tea.Batch(flushCmd, costCmd)
+	return m, tea.Batch(flushCmd, costCmd, recapCmd)
 }
 
 func (m Model) onCostTick(_ costTickMsg) (tea.Model, tea.Cmd) {
@@ -180,14 +230,14 @@ func (m Model) onIntroTick(_ introTickMsg) (tea.Model, tea.Cmd) {
 	// post-intro pulse: keep ticking until the bold-flash cycle settles,
 	// then push the banner to terminal scrollback so it stays anchored at
 	// the top of the conversation. Clearing introDone collapses the live
-	// region; the scrollback push adds the banner above, so the input bar
-	// only jumps by the difference (placeholder rows minus 1).
+	// region; the scrollback push adds the full placeholder block above, so
+	// the input bar stays vertically stable.
 	if m.introDone && m.introDoneFrame < introPulseFrames {
 		m.introDoneFrame++
 		if m.introDoneFrame < introPulseFrames {
 			return m, introTickCmd()
 		}
-		banner := buildIntroBannerLine(m.width, true)
+		banner := renderIntroPlaceholder(m.width, introPulseFrames)
 		m.introDone = false
 		return m, tea.Println(banner)
 	}

@@ -7,9 +7,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/sentinel"
 )
+
+// Runner is the surface Drive needs from the engine. Real callers wrap
+// *loop.Engine via NewLoopRunner; tests pass a stub.
+type Runner interface {
+	Run(ctx context.Context, prompt string) (loop.RunResult, error)
+	CostTotal() cost.Summary
+}
+
+// NewLoopRunner adapts *loop.Engine to the Runner interface so Drive isn't
+// bound to the concrete engine type.
+func NewLoopRunner(eng *loop.Engine) Runner { return &loopRunner{eng: eng} }
+
+type loopRunner struct{ eng *loop.Engine }
+
+func (r *loopRunner) Run(ctx context.Context, prompt string) (loop.RunResult, error) {
+	return r.eng.Run(ctx, prompt)
+}
+func (r *loopRunner) CostTotal() cost.Summary { return r.eng.Costs.Total() }
 
 // preamble is prepended to every iteration prompt. The engine runs without a
 // human at the keyboard so it must be told to make ONE small change and stop,
@@ -26,9 +45,31 @@ Objective:
 `
 
 const (
-	maxConsecutiveFails = 3
-	hardErrorRetries    = 3
+	defaultMaxConsecutiveFails = 3
+	defaultHardErrorRetries    = 3
+	defaultNotesTailIters      = 5
 )
+
+func cfgMaxConsecutiveFails(c Config) int {
+	if c.MaxConsecutiveFails > 0 {
+		return c.MaxConsecutiveFails
+	}
+	return defaultMaxConsecutiveFails
+}
+
+func cfgHardErrorRetries(c Config) int {
+	if c.HardErrorRetries > 0 {
+		return c.HardErrorRetries
+	}
+	return defaultHardErrorRetries
+}
+
+func cfgNotesTailIters(c Config) int {
+	if c.NotesTailIters == 0 {
+		return defaultNotesTailIters
+	}
+	return c.NotesTailIters
+}
 
 // Drive is the main overnight loop. Returns nil on a clean exit (objective
 // reached / max-iter / stop signal); error only on unrecoverable failure.
@@ -37,7 +78,7 @@ const (
 // after current iteration finishes. If ui also satisfies Steerable, operator
 // nudges are drained between iterations: notes get appended to the next
 // prompt, stop closes the local graceful-stop path.
-func Drive(ctx context.Context, stopCh <-chan struct{}, eng *loop.Engine, cfg Config, run *Run, ui UI) error {
+func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, run *Run, ui UI) error {
 	if err := preflightClean(run.RepoRoot); err != nil {
 		run.Status = StatusAborted
 		run.StopCause = "dirty git tree on startup"
@@ -51,6 +92,11 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng *loop.Engine, cfg Co
 	}
 	var pendingNotes []string
 	consecutiveFails := 0
+	maxFails := cfgMaxConsecutiveFails(cfg)
+	// priorTokens captures totals already on disk before this engine instance
+	// started recording. eng.Costs is fresh per invocation, so resume needs
+	// this baseline to keep accumulated tokens correct.
+	priorTokens := run.Tokens
 	for run.IterCount < cfg.MaxIterations {
 		if ctx.Err() != nil {
 			run.Status = StatusAborted
@@ -110,28 +156,47 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng *loop.Engine, cfg Co
 		ui.SetIter(iter, cfg.MaxIterations)
 		ui.SetPhase("prompting")
 
-		res, err := runOneIteration(ctx, eng, cfg, run, iter, ui, pendingNotes)
+		res, err := runOneIteration(ctx, eng, cfg, run, iter, ui, pendingNotes, priorTokens)
 		pendingNotes = nil
-		_ = AppendEvent(run.ID, eventFromResult(iter, res))
+		if appErr := AppendEvent(run.ID, eventFromResult(iter, res)); appErr != nil {
+			ui.Println("[zzz] events.jsonl write failed: " + appErr.Error())
+		}
+
+		// DONE wins regardless of iter shape — an agent that says "objective
+		// already complete" without touching files must not be force-looped.
+		if sentinel.IsDone(res.Subject) {
+			if res.Status == IterCommitted {
+				run.Commits = append(run.Commits, res.CommitSHA)
+				_ = AppendNote(run.ID, iter, res.Subject, res.DiffStat)
+				_ = SaveMeta(run)
+				if cfg.Push {
+					pushAfterCommit(run, res, ui, iter)
+				}
+			}
+			run.Status = StatusCompleted
+			run.StopCause = "agent emitted DONE"
+			goto finish
+		}
 
 		switch res.Status {
 		case IterCommitted:
 			consecutiveFails = 0
 			run.Commits = append(run.Commits, res.CommitSHA)
 			_ = AppendNote(run.ID, iter, res.Subject, res.DiffStat)
+			// persist SHA before any network attempt so push failures can't
+			// hide a committed iteration from meta.json.
+			_ = SaveMeta(run)
 			if cfg.Push {
-				if perr := Push(run.RepoRoot, run.Branch); perr != nil {
-					ui.Println("[zzz] push failed: " + perr.Error())
-				}
+				pushAfterCommit(run, res, ui, iter)
 			}
-			if sentinel.IsDone(res.Subject) {
-				run.Status = StatusCompleted
-				run.StopCause = "agent emitted DONE"
-				goto finish
-			}
-		case IterReset, IterNoop, IterFailed:
+		case IterNoop:
+			// noop is not a failure — agent may have surveyed without
+			// writing this turn. reset the fail streak so plan-then-act
+			// sequences aren't killed.
+			consecutiveFails = 0
+		case IterReset, IterFailed:
 			consecutiveFails++
-			if consecutiveFails >= maxConsecutiveFails {
+			if consecutiveFails >= maxFails {
 				run.Status = StatusFailed
 				run.StopCause = fmt.Sprintf("%d consecutive failures", consecutiveFails)
 				goto finish
@@ -170,49 +235,55 @@ finish:
 
 // runOneIteration performs the inner clean-build-run-classify-commit cycle
 // for one iteration. Hard errors are retried with exponential backoff.
-func runOneIteration(ctx context.Context, eng *loop.Engine, cfg Config, run *Run, iter int, ui UI, notes []string) (IterationResult, error) {
+// priorTokens is the on-disk total before this engine instance booted; used
+// to keep run.Tokens consistent across resume.
+func runOneIteration(ctx context.Context, eng Runner, cfg Config, run *Run, iter int, ui UI, notes []string, priorTokens TokenStat) (IterationResult, error) {
 	start := time.Now()
 	r := IterationResult{Iter: iter}
 
-	prompt, err := buildPrompt(run.ID, cfg.Objective, iter, notes)
+	prompt, err := buildPrompt(run.ID, cfg.Objective, iter, notes, cfgNotesTailIters(cfg))
 	if err != nil {
 		r.Status = IterFailed
 		r.Err = err
 		return r, err
 	}
 
-	beforeIn := eng.Costs.Total().Input
-	beforeOut := eng.Costs.Total().Output
-	beforeUSD := eng.Costs.Total().USD
+	beforeTotal := eng.CostTotal()
 
 	ui.SetPhase("engine.run")
-	res, runErr := runEngineWithRetry(ctx, eng, prompt)
+	res, runErr := runEngineWithRetry(ctx, eng, prompt, cfgHardErrorRetries(cfg))
 	r.Duration = time.Since(start)
 	r.Subject = strings.TrimSpace(res.FinalText)
 
-	afterIn := eng.Costs.Total().Input
-	afterOut := eng.Costs.Total().Output
-	afterUSD := eng.Costs.Total().USD
-	r.Tokens = TokenStat{Input: afterIn - beforeIn, Output: afterOut - beforeOut, USD: afterUSD - beforeUSD}
-	run.Tokens.Input = afterIn
-	run.Tokens.Output = afterOut
-	run.Tokens.USD = afterUSD
+	afterTotal := eng.CostTotal()
+	r.Tokens = TokenStat{
+		Input:  afterTotal.Input - beforeTotal.Input,
+		Output: afterTotal.Output - beforeTotal.Output,
+		USD:    afterTotal.USD - beforeTotal.USD,
+	}
+	run.Tokens.Input = priorTokens.Input + afterTotal.Input
+	run.Tokens.Output = priorTokens.Output + afterTotal.Output
+	run.Tokens.USD = priorTokens.USD + afterTotal.USD
 	ui.SetTokens(run.Tokens)
 
 	if runErr != nil {
 		r.Status = IterFailed
 		r.Err = runErr
 		ui.SetPhase("hard-error")
-		_ = ResetHard(run.RepoRoot, "")
-		_ = CleanFD(run.RepoRoot)
+		rollbackTree(run.RepoRoot)
 		return r, runErr
 	}
 
 	if sentinel.IsBlocked(r.Subject) {
 		r.Status = IterFailed
 		ui.SetPhase("agent-blocked")
-		_ = ResetHard(run.RepoRoot, "")
-		_ = CleanFD(run.RepoRoot)
+		// stash partial work before reset so operator can inspect what the
+		// blocked iter produced. best-effort — patch failure must not mask
+		// the BLOCKED signal.
+		if perr := SaveBlockedPatch(run.ID, iter, run.RepoRoot); perr != nil {
+			ui.Println("[zzz] blocked-patch save failed: " + perr.Error())
+		}
+		rollbackTree(run.RepoRoot)
 		return r, nil
 	}
 
@@ -229,19 +300,17 @@ func runOneIteration(ctx context.Context, eng *loop.Engine, cfg Config, run *Run
 	}
 
 	ui.SetPhase("commit")
-	if err := AddAll(run.RepoRoot); err != nil {
+	msg := CommitMessageFrom(r.Subject, iter, r.Tokens.Input, r.Tokens.Output)
+	// single git invocation: stage + commit. Atomicity comes from git itself
+	// once the index is set; preserves reset-on-failure on any error (a
+	// pre-commit hook that touched staged content would otherwise bleed
+	// into the next iter's diff).
+	sha, err := CommitAll(run.RepoRoot, msg, cfg.Sign, cfg.NoVerify)
+	if err != nil {
 		r.Status = IterReset
 		r.Err = err
-		_ = ResetHard(run.RepoRoot, "")
-		_ = CleanFD(run.RepoRoot)
-		return r, err
-	}
-	msg := CommitMessageFrom(r.Subject, iter, r.Tokens.Input, r.Tokens.Output)
-	sha, err := Commit(run.RepoRoot, msg, cfg.Sign, cfg.NoVerify)
-	if err != nil {
-		r.Status = IterFailed
-		r.Err = err
 		ui.SetPhase("commit-fail")
+		rollbackTree(run.RepoRoot)
 		return r, err
 	}
 	r.CommitSHA = sha
@@ -251,13 +320,34 @@ func runOneIteration(ctx context.Context, eng *loop.Engine, cfg Config, run *Run
 	return r, nil
 }
 
+// rollbackTree wipes both tracked and untracked changes. Best-effort; failures
+// surface on the next iter's preflight.
+func rollbackTree(dir string) {
+	_ = ResetHard(dir, "")
+	_ = CleanFD(dir)
+}
+
+// pushAfterCommit pushes the run's branch, recording per-iter outcome on the
+// run so meta.json reflects what's actually on the remote.
+func pushAfterCommit(run *Run, res IterationResult, ui UI, iter int) {
+	if perr := Push(run.RepoRoot, run.Branch); perr != nil {
+		ui.Println("[zzz] push failed: " + perr.Error())
+		run.PushFailedIters = append(run.PushFailedIters, iter)
+		return
+	}
+	run.PushedCommits = append(run.PushedCommits, res.CommitSHA)
+}
+
 // runEngineWithRetry calls eng.Run with bounded exponential backoff on hard
 // errors (network blips, transient provider 5xx). Agent-level "blocked"
 // responses are NOT retried here — they're classified upstream.
-func runEngineWithRetry(ctx context.Context, eng *loop.Engine, prompt string) (loop.RunResult, error) {
+func runEngineWithRetry(ctx context.Context, eng Runner, prompt string, retries int) (loop.RunResult, error) {
+	if retries < 1 {
+		retries = 1
+	}
 	var lastErr error
 	delay := time.Second
-	for attempt := 0; attempt < hardErrorRetries; attempt++ {
+	for attempt := 0; attempt < retries; attempt++ {
 		if ctx.Err() != nil {
 			return loop.RunResult{}, ctx.Err()
 		}
@@ -279,12 +369,17 @@ func runEngineWithRetry(ctx context.Context, eng *loop.Engine, prompt string) (l
 	return loop.RunResult{}, lastErr
 }
 
-// buildPrompt assembles preamble + notes.md (prior iterations) + operator
-// nudges from this turn + objective.
-func buildPrompt(runID, objective string, iter int, operatorNotes []string) (string, error) {
+// buildPrompt assembles preamble + tail of notes.md + operator nudges +
+// objective. tailIters<0 echoes the full notes file (legacy behavior);
+// tailIters>0 keeps only the last N "## iter X" sections so prompt size
+// stays bounded across long runs.
+func buildPrompt(runID, objective string, iter int, operatorNotes []string, tailIters int) (string, error) {
 	notes, err := ReadNotes(runID)
 	if err != nil {
 		return "", err
+	}
+	if tailIters > 0 {
+		notes = TailNoteSections(notes, tailIters)
 	}
 	var b strings.Builder
 	b.WriteString(preamble)
@@ -323,7 +418,7 @@ func preflightClean(dir string) error {
 		return fmt.Errorf("preflight: %w", err)
 	}
 	if !clean {
-		return errors.New("preflight: working tree is dirty — commit, stash, or discard before starting bee zzz")
+		return errors.New("preflight: working tree is dirty — commit, stash, or discard before continuing bee zzz")
 	}
 	return nil
 }

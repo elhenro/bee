@@ -22,7 +22,7 @@ func TestTagAlnumSeedIgnored(t *testing.T) {
 }
 
 func TestTagBlankLineVariesByNumber(t *testing.T) {
-	// blank-line tags fold xxh32 into a 256-bucket space, so adjacent
+	// blank-line tags fold xxh32 into a 4096-bucket space, so adjacent
 	// seeds may occasionally collide. assert that *some* variation
 	// exists across a small range, which proves the seed is in play.
 	first := Tag("", 1)
@@ -77,8 +77,8 @@ func TestTagShapeAndAlphabet(t *testing.T) {
 	}
 	for _, c := range cases {
 		got := Tag(c.line, c.ln)
-		if len(got) != 2 {
-			t.Fatalf("Tag(%q,%d) = %q, want len 2", c.line, c.ln, got)
+		if len(got) != 3 {
+			t.Fatalf("Tag(%q,%d) = %q, want len 3", c.line, c.ln, got)
 		}
 		for _, r := range got {
 			if !strings.ContainsRune(hashAlphabet, r) {
@@ -95,8 +95,8 @@ func TestTagAllLength(t *testing.T) {
 		t.Fatalf("want 5 tags, got %d", len(tags))
 	}
 	for i, tg := range tags {
-		if len(tg) != 2 {
-			t.Fatalf("tag %d = %q, want len 2", i, tg)
+		if len(tg) != 3 {
+			t.Fatalf("tag %d = %q, want len 3", i, tg)
 		}
 	}
 }
@@ -118,7 +118,7 @@ func TestRefFormat(t *testing.T) {
 	if !strings.HasPrefix(r, "42#") {
 		t.Fatalf("Ref prefix wrong: %q", r)
 	}
-	if len(r) != len("42#")+2 {
+	if len(r) != len("42#")+3 {
 		t.Fatalf("Ref length wrong: %q", r)
 	}
 	tag := Tag("hello world", 42)
@@ -131,7 +131,7 @@ func TestTagLongLineNoPanic(t *testing.T) {
 	// >16 bytes exercises the 4-lane main loop in xxh32.
 	long := strings.Repeat("abcdefgh", 8)
 	got := Tag(long, 1)
-	if len(got) != 2 {
+	if len(got) != 3 {
 		t.Fatalf("long line tag len = %d", len(got))
 	}
 }

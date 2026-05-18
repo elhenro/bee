@@ -123,6 +123,89 @@ func TestTokenize(t *testing.T) {
 	}
 }
 
+// regression: hyphenated and underscored slugs must yield both the joined
+// form and each sub-token so plain-word queries hit slug-style tags.
+func TestTokenizeSplitsSlugForms(t *testing.T) {
+	toks := tokenize("testing-policy user_pref")
+	for _, want := range []string{"testing-policy", "testing", "policy", "user_pref", "user", "pref"} {
+		if !toks[want] {
+			t.Errorf("missing %q in %v", want, toks)
+		}
+	}
+}
+
+// regression: description tokens must score against the query, weighted
+// below name tokens so a description-only hit still surfaces.
+func TestQueryScoresDescription(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name, desc string, tags ...string) {
+		_, err := WriteRecord(dir, Record{
+			Entry: Entry{Name: name, Description: desc, Tags: tags, Priority: 3},
+			Body:  "body",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("alpha", "typescript eslint preferences", "misc")
+	mk("beta", "unrelated note", "misc")
+	got, err := Query(context.Background(), dir, "eslint preferences", 5, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || got[0].Name != "alpha" {
+		t.Fatalf("expected alpha first via description match, got: %+v", got)
+	}
+}
+
+// regression: a name-only hit must outrank a description-only hit on the
+// same record budget (name carries roughly double the per-token weight).
+func TestQueryNameOutranksDescription(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name, desc string) {
+		_, err := WriteRecord(dir, Record{
+			Entry: Entry{Name: name, Description: desc, Tags: []string{"misc"}, Priority: 3},
+			Body:  "body",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("eslint", "unrelated description text")
+	mk("other", "this mentions eslint somewhere")
+	got, err := Query(context.Background(), dir, "eslint", 5, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || got[0].Name != "eslint" {
+		t.Fatalf("expected name-hit to outrank description-hit, got: %+v", got)
+	}
+}
+
+// regression: a slug-style tag must hit a plain-word query after the
+// hyphen-aware tokenizer fix.
+func TestQuerySlugTagHitsPlainWordQuery(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name string, tags ...string) {
+		_, err := WriteRecord(dir, Record{
+			Entry: Entry{Name: name, Description: "x", Tags: tags, Priority: 3},
+			Body:  "body",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("rec-a", "testing-policy")
+	mk("rec-b", "deployment")
+	got, err := Query(context.Background(), dir, "testing", 5, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || got[0].Name != "rec-a" {
+		t.Fatalf("expected rec-a (tag testing-policy) first, got: %+v", got)
+	}
+}
+
 func TestExtractTagsViaStubProvider(t *testing.T) {
 	p := &stubKnowledgeProv{resp: "testing\ndeployment\n"}
 	got, err := ExtractTags(context.Background(), p, "m", "how do I add a test for the deploy script?")

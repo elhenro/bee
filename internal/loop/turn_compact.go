@@ -46,3 +46,27 @@ func contextBudget(cfg config.Config) int {
 	}
 	return 0
 }
+
+// scaledCompactThreshold widens the user-configured compaction threshold for
+// large context windows. The fixed 0.75 default fires far too early on
+// 128k-class models (sparse MoE: Qwen3.6-35B-A3B-4bit etc.) — at 96k tokens
+// the agent still has 32k of breathing room, no reason to compact yet.
+//
+// Formula: derived = max(0.5, 1 - 8000/budget). Keeps at least 8000 tokens of
+// headroom for the next turn's output regardless of window size. Only widens;
+// never tightens the user's setting (so explicit low thresholds stay honored).
+//
+// budget<=0 or base<=0 returns base unchanged.
+func scaledCompactThreshold(base float64, budget int) float64 {
+	if budget <= 0 || base <= 0 {
+		return base
+	}
+	derived := 1.0 - 8000.0/float64(budget)
+	if derived < 0.5 {
+		derived = 0.5
+	}
+	if derived > base {
+		return derived
+	}
+	return base
+}

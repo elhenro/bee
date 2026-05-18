@@ -90,6 +90,11 @@ type Side interface {
 	SetShowNudges(v bool) error
 	// GetShowNudges returns the current show-nudges flag.
 	GetShowNudges() bool
+	// SetShowRecap toggles post-turn one-line side-LLM recap generation.
+	// Persists to config. Off = no side call.
+	SetShowRecap(v bool) error
+	// GetShowRecap returns the current show-recap flag.
+	GetShowRecap() bool
 	// SetCompact toggles compact TUI mode (no gutter/spacing/tint). Persists to config.
 	SetCompact(v bool) error
 	// GetCompact returns the current compact flag.

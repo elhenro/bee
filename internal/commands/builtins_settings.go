@@ -39,6 +39,9 @@ func renderSettingsStatus(s Side) string {
 	b.WriteString("  show_nudges   ")
 	b.WriteString(onOff(s.GetShowNudges()))
 	b.WriteString("  show loop [nudge] recovery turns\n")
+	b.WriteString("  show_recap    ")
+	b.WriteString(onOff(s.GetShowRecap()))
+	b.WriteString("  one-line side-LLM recap after each turn\n")
 	b.WriteString("  compact       ")
 	b.WriteString(onOff(s.GetCompact()))
 	b.WriteString("  drop tui spacing (gutter, blank, tint, OSC 133)\n\n")
@@ -58,6 +61,8 @@ func applySettingsArg(args []string, s Side) (string, error) {
 		key = "show_thoughts"
 	case "nudge", "nudges", "show_nudges", "show-nudges":
 		key = "show_nudges"
+	case "recap", "recaps", "show_recap", "show-recap":
+		key = "show_recap"
 	case "compact", "dense", "tight":
 		key = "compact"
 	case "bang", "shell_bang", "shell_bang_silent", "bang_silent":
@@ -67,7 +72,7 @@ func applySettingsArg(args []string, s Side) (string, error) {
 	case "loader", "show_loader", "generating":
 		key = "show_loader"
 	default:
-		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | compact | shell_bang_silent | show_banner | show_loader)", nil
+		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | show_recap | compact | shell_bang_silent | show_banner | show_loader)", nil
 	}
 	var newVal bool
 	if len(args) >= 2 {
@@ -85,6 +90,8 @@ func applySettingsArg(args []string, s Side) (string, error) {
 			newVal = !s.GetShowThoughts()
 		case "show_nudges":
 			newVal = !s.GetShowNudges()
+		case "show_recap":
+			newVal = !s.GetShowRecap()
 		case "compact":
 			newVal = !s.GetCompact()
 		case "shell_bang_silent":
@@ -103,6 +110,8 @@ func applySettingsArg(args []string, s Side) (string, error) {
 		err = s.SetShowThoughts(newVal)
 	case "show_nudges":
 		err = s.SetShowNudges(newVal)
+	case "show_recap":
+		err = s.SetShowRecap(newVal)
 	case "compact":
 		err = s.SetCompact(newVal)
 	case "shell_bang_silent":

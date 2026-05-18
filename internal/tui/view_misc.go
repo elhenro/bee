@@ -21,7 +21,7 @@ func prettyCwd(p string) string {
 }
 
 // renderIntro draws the current frame of the non-blocking startup animation.
-// Each row is colored via a honey gradient (bright honey → soft amber →
+// Each row is colored via a honey gradient (bright honey to soft amber to
 // quiet squid) so the braille pixel art reads as molten gold rather than
 // flat dim text. When the animation finishes the space stays reserved and
 // a static "🐝 bee v<version>" placeholder takes over so the live region
@@ -39,7 +39,7 @@ func (m Model) renderIntro() string {
 }
 
 func renderIntroFrame(f IntroFrame) string {
-	// gradient palette top→bottom — top sits brightest, fades to subtle
+	// gradient palette top-bottom, top sits brightest, fades to subtle
 	rowColors := []lipgloss.AdaptiveColor{accentHoney, accentBee, fgSquid, fgOyster}
 	lines := strings.Split(f.Text, "\n")
 	for i, ln := range lines {
@@ -54,14 +54,14 @@ func renderIntroFrame(f IntroFrame) string {
 }
 
 // introPulseFrames is the post-intro tick budget for the two bold-flashes
-// on "bee". 16 frames × 70ms ≈ 1.1s. After it elapses the label is pushed
-// to terminal scrollback and the live region collapses.
+// on "bee". 16 frames x 70ms ~= 1.1s. After it elapses the full placeholder
+// block is pushed to scrollback, preserving intro height.
 const introPulseFrames = 16
 
-// renderIntroPlaceholder fills the same vertical slot a live frame uses —
-// introArtRows of braille + 1 subtitle row — with a centered
+// renderIntroPlaceholder fills the same vertical slot a live frame uses,
+// introArtRows of braille + 1 subtitle row, with a centered
 // "🐝 bee v<x>" label so the live region doesn't snap shorter while the
-// pulse plays. Once the pulse settles, the caller hands the same label to
+// pulse plays. Once the pulse settles, the caller hands the same block to
 // tea.Println so the banner becomes a permanent scrollback entry at the
 // top of the conversation, and renderIntro stops returning anything.
 func renderIntroPlaceholder(width, pulseFrame int) string {
@@ -76,8 +76,8 @@ func renderIntroPlaceholder(width, pulseFrame int) string {
 // buildIntroBannerLine renders the centered "🐝 bee v<x>" label. "bee" is
 // bold honey when bold==true (the settled/flash state), slim honey when
 // false (the off-phase of the pulse). The version stays slim oyster.
-// Centering uses an explicit cell count — emoji = 2 cells, ASCII = 1 each
-// — because lipgloss.Width can under-count emoji on some runewidth configs,
+// Centering uses an explicit cell count, emoji = 2 cells, ASCII = 1 each,
+// because lipgloss.Width can under-count emoji on some runewidth configs,
 // shifting the label visibly off-center.
 func buildIntroBannerLine(width int, bold bool) string {
 	beeStyle := lipgloss.NewStyle().Foreground(accentHoney)

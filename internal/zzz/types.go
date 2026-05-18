@@ -18,6 +18,16 @@ type Config struct {
 	Push          bool // git push after each commit
 	Sign          bool // default false (gnhf parity, avoids overnight prompts)
 	NoVerify      bool // skip pre-commit hooks (opt-in)
+
+	// MaxConsecutiveFails ends the run after this many failed iters in a row.
+	// 0 → default (3). Noop iters do not count.
+	MaxConsecutiveFails int
+	// HardErrorRetries bounds engine.Run retries per iter on transient errors.
+	// 0 → default (3).
+	HardErrorRetries int
+	// NotesTailIters caps how many prior iteration sections are echoed into
+	// the next prompt. 0 → default (5). Negative → unlimited (legacy).
+	NotesTailIters int
 }
 
 // Run is the persisted metadata for one overnight session.
@@ -33,8 +43,10 @@ type Run struct {
 	Status    string    `json:"status"` // "running" | "completed" | "failed" | "aborted"
 	IterCount int       `json:"iter_count"`
 	Tokens    TokenStat `json:"tokens"`
-	Commits   []string  `json:"commits"`
-	StopCause string    `json:"stop_cause,omitempty"`
+	Commits         []string `json:"commits"`
+	PushedCommits   []string `json:"pushed_commits,omitempty"`
+	PushFailedIters []int    `json:"push_failed_iters,omitempty"`
+	StopCause       string   `json:"stop_cause,omitempty"`
 }
 
 // TokenStat is the running tally across all iterations.

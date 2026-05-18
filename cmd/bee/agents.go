@@ -38,7 +38,11 @@ func runAgents(args []string) {
 		}
 		// hand off to the existing `bee back` flow in-process. When that
 		// returns (user quit the session view) we loop back to the overview.
-		fmt.Fprintf(os.Stderr, "\nattaching to %s — press ctrl+c twice to return to overview.\n", res.AttachID)
+		// BEE_FROM_AGENTS lets the TUI know left-arrow should quit back here
+		// instead of opening the in-TUI agent overlay.
+		fmt.Fprintf(os.Stderr, "\nattaching to %s — press left arrow or ctrl+c twice to return to overview.\n", res.AttachID)
+		_ = os.Setenv("BEE_FROM_AGENTS", "1")
 		runTUIWithSession(res.AttachID)
+		_ = os.Unsetenv("BEE_FROM_AGENTS")
 	}
 }

@@ -11,14 +11,13 @@ import (
 
 // RunOverview launches the overview program in a fresh alt-screen. Returns
 // Result.AttachID when the user picked an agent (caller opens `bee back`).
-// Spawns a merger goroutine that retries merges on a ticker + manual key.
+// Spawns a merger goroutine that auto-merges done branches on a ticker.
 func RunOverview(repoRoot string) (Result, error) {
-	retryCh := make(chan string, 8)
 	mergerCtx, mergerCancel := context.WithCancel(context.Background())
 	defer mergerCancel()
-	go agents.MergerLoop(mergerCtx, repoRoot, 10*time.Second, retryCh)
+	go agents.MergerLoop(mergerCtx, repoRoot, 10*time.Second)
 
-	m := newModel(repoRoot, retryCh)
+	m := newModel(repoRoot)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	final, err := p.Run()
 	if err != nil {

@@ -79,7 +79,7 @@ func (e *Engine) runOneTrapped(ctx context.Context, u types.ToolUse) types.ToolR
 		}
 		return types.ToolResult{
 			UseID:   u.ID,
-			Content: fmt.Sprintf("tool error: %v", err),
+			Content: formatToolError(u.Name, err),
 			IsError: true,
 		}
 	}

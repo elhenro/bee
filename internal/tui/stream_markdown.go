@@ -16,6 +16,7 @@ func (r *StreamRenderer) renderText(s string) string {
 	if !needsMarkdown(s) {
 		return s
 	}
+	s = rewriteShellSessionFences(s)
 	out, err := r.md.Render(s)
 	if err != nil {
 		return s
@@ -76,6 +77,48 @@ func needsMarkdown(s string) bool {
 		}
 	}
 	return false
+}
+
+// rewriteShellSessionFences swaps ```bash/```sh/```shell fence tags to
+// ```console when the block's first non-empty line starts with a `$ ` or
+// `> ` prompt. chroma's `bash` lexer treats every line as bash, so prompt
+// output (git log subjects, etc) gets keyword-colored ("log", "for", "in",
+// "hash" lit up as bash builtins). The `bash_session`/`console` lexer
+// scopes bash coloring to the prompt line only and leaves output plain.
+func rewriteShellSessionFences(s string) string {
+	if !strings.Contains(s, "```") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	fenceIdx := -1 // index of open bash-tagged fence line awaiting probe; -1 = none
+	for i, ln := range lines {
+		t := strings.TrimRight(ln, " \t")
+		if fenceIdx < 0 {
+			if !strings.HasPrefix(t, "```") {
+				continue
+			}
+			tag := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(t, "```")))
+			switch tag {
+			case "bash", "sh", "shell", "zsh":
+				fenceIdx = i
+			}
+			continue
+		}
+		// inside a probe-pending fence
+		if strings.HasPrefix(t, "```") {
+			fenceIdx = -1 // empty body or closed before probe
+			continue
+		}
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		body := strings.TrimLeft(ln, " \t")
+		if strings.HasPrefix(body, "$ ") || strings.HasPrefix(body, "> ") || body == "$" {
+			lines[fenceIdx] = "```console"
+		}
+		fenceIdx = -1 // probe done; ignore rest of block
+	}
+	return strings.Join(lines, "\n")
 }
 
 // dedent strips the common leading-space prefix from every non-blank line and

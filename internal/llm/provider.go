@@ -29,6 +29,13 @@ type Request struct {
 	Tools       []ToolSpec
 	MaxTokens   int
 	Temperature float64
+	// TopP pins nucleus sampling. 0 = use provider default (omit on wire).
+	// Set by the active profile (tiny pins 0.8 for 4-bit MoE).
+	TopP float64
+	// Stop is the optional list of stop sequences. textmode wraps tool calls
+	// in `<bash>{…}</bash>`-style envelopes; passing the closing tag halts
+	// decode immediately after one tool call, saving 50–300 tokens per turn.
+	Stop []string
 	Stream      bool
 	// Thinking selects the extended-reasoning budget for providers that
 	// support it. Off means omit the field entirely.

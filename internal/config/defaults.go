@@ -36,7 +36,7 @@ func Defaults() Config {
 		},
 		Compaction: CompactionConfig{
 			Enabled:   true,
-			Threshold: 0.8,
+			Threshold: 0.75,
 		},
 		ShowBanner:    true,
 		ShowLoader:    true,
@@ -44,6 +44,7 @@ func Defaults() Config {
 		Verbose:        false,
 		ShowThoughts:   true,
 		ShowNudges:     false,
+		ShowRecap:      false,
 		Compact:        false,
 		ShowContextBar: false,
 		Highlight:      true,
@@ -141,17 +142,27 @@ func Defaults() Config {
 		},
 		Profiles: map[string]Profile{
 			// tiny: local + 4k-context models (ollama, lmstudio, flash/mini class).
-			// Caveman FULL: small models tolerate the terse style and still emit
-			// tool_calls in practice. top_k=1 keeps memory injection cheap.
+			// Caveman ULTRA: smallest rules block for tightest budget; small
+			// models still emit tool_calls. top_k=1 keeps memory injection cheap.
 			// Override per-run with `--caveman off` or in config: caveman = "off".
 			"tiny": {
 				SystemPromptBudget: 3000,
 				MemoryTopK:         1,
 				MemoryBodyChars:    400,
 				ToolDescChars:      220,
-				SkillManifestChars: 80,
-				Caveman:            "full",
+				// skills section omitted on tiny (-1 sentinel): 4-tool surface
+				// needs no extra advert, every saved byte counts on 4k-context
+				// local runs. 0 = unbounded; -1 = drop section entirely.
+				SkillManifestChars: -1,
+				Caveman:            "ultra",
 				MaxIterations:      50,
+				// xml: route through TextModeProvider so the bare-JSON
+				// envelopes small models emit (`{"name":"bash",...}`,
+				// `[{"name":"x"},{"name":"y"}]`) get parsed via the
+				// JSON fallback. Native tool_calls on local OAI-compat
+				// servers (omlx/lmstudio/ollama) is unreliable for
+				// non-frontier models — wrapping catches both formats.
+				ToolFormat: "xml",
 				// ~1500 tokens (~6k chars) per tool result. one fat read of
 				// a 1.5k-line file would otherwise blow a 4-8k MLX context.
 				ToolOutputTokens: 1500,
@@ -162,7 +173,13 @@ func Defaults() Config {
 				ReadDefaultLines:         100,
 				ReadMaxLines:             500,
 				GrepMaxMatches:           50,
-				NoMutationStallThreshold: 0,
+				// nudge tiny after 3 read-only turns: small models loop on reads.
+				NoMutationStallThreshold: 3,
+				// pin sampling: deterministic for tool turns, prevents temp drift on 4-bit MoE.
+				Temperature: 0.0,
+				TopP:        0.8,
+				// disable post-turn recap on tiny: side-LLM round-trip is ~2s on slow local runs.
+				ShowRecap: boolPtr(false),
 			},
 			// normal: deepseek-flash / gpt-4o-mini class. balanced.
 			"normal": {

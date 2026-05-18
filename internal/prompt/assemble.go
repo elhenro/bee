@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
@@ -52,7 +53,7 @@ func Assemble(
 
 	// knowledge + skills + context are the trimmable sections; render then enforce budget.
 	memSection := knowledgeSection(selectedRecords, prof.MemoryBodyChars)
-	skillSection := skillsSection(skillManifest)
+	skillSection := skillsSection(truncateManifest(skillManifest, prof.SkillManifestChars))
 	ctxSection := renderContextSection(ctxFiles)
 
 	out := join(rules, identity, ctxSection, toolMan, skillSection, memSection)
@@ -87,13 +88,28 @@ func Assemble(
 // EstimateTokens is a rough char/4 heuristic — fine for budget checks.
 func EstimateTokens(s string) int { return len(s) / 4 }
 
+// identityCache memoizes (cwd, git-root) per cwd. gitRootFor shells out to
+// git so we'd pay that cost on every Assemble call without this.
+type identityCacheEntry struct {
+	gitRoot string
+}
+
+var identityCache sync.Map // map[string]identityCacheEntry
+
 // identityBlock is the agent identity block. Plain English with explicit
 // tool-use framing when caveman is off (so small local models stay grounded
 // in action verbs); terse caveman-style otherwise. cwd + git root are
 // derived from the process — keeps Assemble's signature small.
 func identityBlock(_ config.Config, level caveman.Level) string {
 	cwd := getCwd()
-	return identityBlockFor(cwd, gitRootFor(cwd), level)
+	var gitRoot string
+	if v, ok := identityCache.Load(cwd); ok {
+		gitRoot = v.(identityCacheEntry).gitRoot
+	} else {
+		gitRoot = gitRootFor(cwd)
+		identityCache.Store(cwd, identityCacheEntry{gitRoot: gitRoot})
+	}
+	return identityBlockFor(cwd, gitRoot, level)
 }
 
 func identityBlockFor(cwd, gitRoot string, level caveman.Level) string {
@@ -154,6 +170,30 @@ func skillsSection(manifest string) string {
 		return ""
 	}
 	return "## Skills\n" + manifest
+}
+
+// truncateManifest caps the rendered skills manifest at maxChars, cutting at
+// line boundaries so no entry is half-printed. 0 = unbounded; -1 = drop the
+// section entirely (tiny profile: 4-tool surface needs no skill advert).
+func truncateManifest(manifest string, maxChars int) string {
+	if maxChars < 0 {
+		return ""
+	}
+	if maxChars == 0 || len(manifest) <= maxChars {
+		return manifest
+	}
+	lines := strings.Split(manifest, "\n")
+	var b strings.Builder
+	for _, ln := range lines {
+		if b.Len()+len(ln)+1 > maxChars {
+			break
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(ln)
+	}
+	return b.String()
 }
 
 // knowledgeSection emits one block per record. expired records carry a

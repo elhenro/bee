@@ -150,6 +150,12 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
+	// own process group so timeout/cancel kills backgrounded children too,
+	// not just the bash leader. Cancel hook fires on runCtx expiry; WaitDelay
+	// caps how long we wait for the group to die before returning.
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error { return killProcessGroup(cmd) }
+	cmd.WaitDelay = 2 * time.Second
 
 	err := cmd.Run()
 	output := truncate(buf.Bytes())

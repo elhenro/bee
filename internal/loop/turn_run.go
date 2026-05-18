@@ -2,9 +2,12 @@ package loop
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +42,24 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	if pc, ok := e.Cfg.Providers[e.Cfg.DefaultProvider]; ok {
 		_ = llm.ProbeContextLength(ctx, e.Cfg.DefaultProvider, pc, e.Cfg.DefaultModel)
 	}
+	// scale tiny-profile budgets up when the active model has much more
+	// context than the 4k default tiny assumes (sparse MoE: Qwen3-A3B-128k,
+	// etc.). Re-runs on model switch via profileScaledFor sentinel.
+	if e.profileScaledFor != e.Cfg.DefaultModel {
+		if name := config.ResolveAutoProfileForProvider(e.Cfg.DefaultProvider, e.Cfg.DefaultModel); name == "tiny" {
+			if ctxWindow := llm.ContextWindow(e.Cfg.DefaultModel); ctxWindow > 16000 {
+				e.Cfg.Profiles = cloneProfiles(e.Cfg.Profiles)
+				resolved := e.Cfg.Profile
+				if resolved == "auto" {
+					resolved = name
+				}
+				if p, ok := e.Cfg.Profiles[resolved]; ok {
+					e.Cfg.Profiles[resolved] = config.ScaleProfileForContext(p, resolved, ctxWindow)
+				}
+			}
+		}
+		e.profileScaledFor = e.Cfg.DefaultModel
+	}
 
 	// `@path` expansion: inline file contents for any `@<rel>` token the
 	// user typed. Applied to text blocks only; image blocks pass through.
@@ -59,14 +80,21 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	}
 
 	// resolve effective mode: auto fires a side classifier off userText.
-	// Tiny profile + local providers skip the classifier — round-trip is
-	// expensive on slow local models and small 7B models hallucinate the
-	// answer; default to edit so tools stay available.
+	// Tiny profile uses plan-first instead — small non-reasoning models can't
+	// be coaxed into hidden CoT via reasoning_effort, so we force an explicit
+	// plan turn before any edits run (see planFirst flow below). Local
+	// non-tiny providers skip the classifier — round-trip is expensive on
+	// slow local models; default to edit so tools stay available.
 	mode := ParseMode(e.Cfg.Mode)
+	planFirst := false
 	if mode == ModeAuto {
-		if e.Cfg.Profile == "tiny" || config.IsLocalProvider(e.Cfg.DefaultProvider) {
+		switch {
+		case e.Cfg.Profile == "tiny":
+			mode = ModePlan
+			planFirst = true
+		case config.IsLocalProvider(e.Cfg.DefaultProvider):
 			mode = ModeEdit
-		} else {
+		default:
 			mode = ClassifyMode(ctx, e.Provider, e.Cfg.DefaultModel, userText)
 		}
 	}
@@ -84,9 +112,14 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		extras = append(extras, u.Name)
 	}
 	specs = filterToolSpecsForProfile(specs, e.Cfg.Profile, extras...)
-	// strip per-parameter descriptions on tiny — saves ~600 toks for 4k models
-	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg.Profile)
-	// then narrow by mode: plan mode drops mutators entirely.
+	// strip per-parameter descriptions on tiny: saves ~600 toks for 4k models.
+	// no-op when the profile uses tool_format=xml (schema is nilled by the
+	// textmode wrapper before it reaches the wire).
+	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg)
+	// then narrow by mode: plan mode drops mutators entirely. Keep the
+	// pre-mode spec list so the plan-first flow can restore mutators when
+	// it transitions to edit mid-Run without re-running the upstream filters.
+	specsPreMode := specs
 	specs = filterToolSpecsForMode(specs, mode)
 	skillManifest := ""
 	if e.Skills != nil {
@@ -100,15 +133,42 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	}
 	ctxFiles := prompt.LoadContextFiles(e.Cwd, beeHome)
 
-	sys := prompt.Assemble(e.Cfg, specs, skillManifest, recs, ctxFiles)
-	if prefix := modePromptPrefix(mode); prefix != "" {
-		sys = prefix + "\n" + sys
+	// reuse cached system prompt when the inputs fingerprint matches. saves
+	// the Assemble + budget-trim work on every Run when nothing changed.
+	cacheKey := sysPromptCacheKey(e.Cfg, mode, specs, skillManifest, recs, ctxFiles)
+	var sys string
+	if e.sysPromptCache.key == cacheKey && cacheKey != "" {
+		sys = e.sysPromptCache.value
+	} else {
+		sys = prompt.Assemble(e.Cfg, specs, skillManifest, recs, ctxFiles)
+		if prefix := modePromptPrefix(mode); prefix != "" {
+			sys = prefix + "\n" + sys
+		}
+		if cacheKey != "" {
+			e.sysPromptCache.key = cacheKey
+			e.sysPromptCache.value = sys
+		}
 	}
 
 	// seed prior turns so multi-turn / resumed sessions have full context.
 	// not re-persisted: caller owns disk state.
 	if len(e.InitialMessages) > 0 {
 		res.Messages = append(res.Messages, e.InitialMessages...)
+	}
+
+	// pre-compact: free budget BEFORE appending the new user turn so the
+	// upcoming request has headroom. uses lastInputTokens from the prior
+	// run when available; otherwise falls back to estimator over sys+history.
+	if e.Cfg.Compaction.Enabled {
+		budget := contextBudget(e.Cfg)
+		if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) {
+			if compacted, _, cerr := Compact(ctx, e.Provider, e.Cfg.DefaultModel, res.Messages); cerr == nil {
+				res.Messages = compacted
+				e.lastInputTokens = 0
+			} else {
+				fmt.Fprintf(os.Stderr, "loop: auto-compact failed: %v\n", cerr)
+			}
+		}
 	}
 
 	// append user message; chain ParentID to last seeded msg when resuming
@@ -163,7 +223,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		// surfaces usage); fall back to the estimator on the first turn.
 		if e.Cfg.Compaction.Enabled {
 			budget := contextBudget(e.Cfg)
-			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, e.Cfg.Compaction.Threshold) {
+			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) {
 				if compacted, _, cerr := Compact(ctx, e.Provider, e.Cfg.DefaultModel, res.Messages); cerr == nil {
 					res.Messages = compacted
 					// post-compact: reset lastInputTokens so the next
@@ -175,13 +235,32 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 			}
 		}
 
+		prof := config.ActiveProfile(e.Cfg)
+		resolvedThinking := llm.ResolveThinking(llm.ParseThinking(e.Cfg.Thinking), e.Cfg.DefaultModel)
+		reqSys := sys
+		// Qwen3 hybrid family (a3b, coder, 235b) consumes `/think` / `/no_think`
+		// via a literal system-prompt token instead of a reasoning_effort wire
+		// field. Plan mode → /think (explicit reasoning); everything else →
+		// /no_think (skip the reasoning trace — saves 200-2000 tokens per turn
+		// on a sparse MoE). User-explicit Thinking=medium+ overrides.
+		if llm.IsQwen3HybridThinking(e.Cfg.DefaultModel) {
+			eff := resolvedThinking
+			if mode == ModePlan && eff == llm.ThinkingOff {
+				eff = llm.ThinkingMedium
+			}
+			if hint := llm.Qwen3ThinkingHint(eff); hint != "" {
+				reqSys = strings.TrimRight(reqSys, "\n") + "\n\n" + hint
+			}
+		}
 		req := llm.Request{
-			Model:    e.Cfg.DefaultModel,
-			System:   sys,
-			Messages: res.Messages,
-			Tools:    specs,
-			Stream:   true,
-			Thinking: llm.ResolveThinking(llm.ParseThinking(e.Cfg.Thinking), e.Cfg.DefaultModel),
+			Model:       e.Cfg.DefaultModel,
+			System:      reqSys,
+			Messages:    res.Messages,
+			Tools:       specs,
+			Stream:      true,
+			Temperature: prof.Temperature,
+			TopP:        prof.TopP,
+			Thinking:    resolvedThinking,
 		}
 		assistantMsg, finalText, toolUses, err := e.streamOnce(ctx, req)
 		if err != nil {
@@ -194,26 +273,63 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		res.Messages = append(res.Messages, assistantMsg)
 		res.FinalText = finalText
 
+		// plan-first transition: tiny+auto starts in ModePlan so the model
+		// emits an explicit plan before any edits. Once plan turn lands a
+		// text reply with no tool calls (and the user didn't ask to stop),
+		// swap to ModeEdit, restore mutators, drop the plan prefix, and
+		// inject a synthetic nudge telling the model to execute the plan.
+		if planFirst && mode == ModePlan && len(toolUses) == 0 && !detectDoneSignal(finalText) {
+			planFirst = false
+			mode = ModeEdit
+			specs = filterToolSpecsForMode(specsPreMode, ModeEdit)
+			sys = prompt.Assemble(e.Cfg, specs, skillManifest, recs, ctxFiles)
+			cont := types.Message{
+				ID:       newID(),
+				ParentID: assistantMsg.ID,
+				Role:     types.RoleUser,
+				Content: []types.ContentBlock{{Type: types.BlockText, Text: "[plan-first] plan above is approved. execute it now: call tools to make the changes step by step."}},
+				Time: time.Now().UTC(),
+			}
+			if err := e.appendMessage(ctx, cont); err != nil {
+				return res, err
+			}
+			res.Messages = append(res.Messages, cont)
+			continue
+		}
+
 		if len(toolUses) == 0 || detectDoneSignal(finalText) {
-			// reasoning-only stall: provider emitted a thinking block but no
-			// text and no tool_use. some hosted reasoners (deepseek-v4-flash
-			// via OpenRouter) hit this. nudge once with a synthetic user turn
-			// so the loop can recover without silent termination.
-			if !e.nudgedReasoningOnly && len(toolUses) == 0 &&
-				strings.TrimSpace(finalText) == "" && hasThinkingOnly(assistantMsg) {
-				e.nudgedReasoningOnly = true
-				nudge := types.Message{
-					ID:       newID(),
-					ParentID: assistantMsg.ID,
-					Role:     types.RoleUser,
-					Content:  []types.ContentBlock{{Type: types.BlockText, Text: "[nudge] previous turn was reasoning-only. respond now: emit final answer or call a tool."}},
-					Time:     time.Now().UTC(),
+			// stall recovery: turn ended with no tool calls and no done signal.
+			// two failure modes, both nudged once with a synthetic user turn:
+			//   1. thinking-only — provider streamed reasoning then stopped
+			//      without text or tool_use (e.g. some hosted reasoners).
+			//   2. format slip — model emitted a tool-call attempt as prose
+			//      (XML-ish tag or JSON envelope) but the textmode parser
+			//      didn't recognize it. silent termination here leaves the
+			//      user staring at JSON in the transcript; nudge with an
+			//      explicit format reminder instead.
+			if !e.nudgedReasoningOnly && len(toolUses) == 0 && !detectDoneSignal(finalText) {
+				nudgeText := ""
+				switch {
+				case strings.TrimSpace(finalText) == "" && hasThinkingOnly(assistantMsg):
+					nudgeText = "[nudge] previous turn was reasoning-only. respond now: emit final answer or call a tool."
+				case looksLikeAttemptedToolCall(finalText, specs):
+					nudgeText = "[nudge] previous turn looked like a tool call but the envelope was wrong. tools must be invoked as `<tool_name>{\"arg\":\"value\"}</tool_name>` XML blocks, not bare JSON or function-call objects. retry with the XML envelope."
 				}
-				if err := e.appendMessage(ctx, nudge); err != nil {
-					return res, err
+				if nudgeText != "" {
+					e.nudgedReasoningOnly = true
+					nudge := types.Message{
+						ID:       newID(),
+						ParentID: assistantMsg.ID,
+						Role:     types.RoleUser,
+						Content:  []types.ContentBlock{{Type: types.BlockText, Text: nudgeText}},
+						Time:     time.Now().UTC(),
+					}
+					if err := e.appendMessage(ctx, nudge); err != nil {
+						return res, err
+					}
+					res.Messages = append(res.Messages, nudge)
+					continue
 				}
-				res.Messages = append(res.Messages, nudge)
-				continue
 			}
 			return res, nil
 		}
@@ -282,4 +398,50 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		res.Messages = append(res.Messages, toolMsg)
 	}
 	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume", maxIter)
+}
+
+// sysPromptCacheKey builds a cheap fingerprint of the inputs to prompt.Assemble.
+// inputs include cwd + mode + profile + caveman level + tool specs (name+desc
+// lengths) + skill manifest length + record names/sizes + ctx-file paths/lengths.
+// returns "" if any required input is unstable enough to skip caching.
+func sysPromptCacheKey(cfg config.Config, mode Mode, specs []llm.ToolSpec, skillManifest string, recs []knowledge.Record, ctxFiles []prompt.ContextFile) string {
+	var b strings.Builder
+	b.WriteString(cfg.DefaultProvider)
+	b.WriteByte('|')
+	b.WriteString(cfg.DefaultModel)
+	b.WriteByte('|')
+	b.WriteString(cfg.Profile)
+	b.WriteByte('|')
+	b.WriteString(cfg.Caveman)
+	b.WriteByte('|')
+	b.WriteString(string(mode))
+	b.WriteByte('|')
+	for _, s := range specs {
+		b.WriteString(s.Name)
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(len(s.Description)))
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(len(s.PromptSnippet)))
+		b.WriteByte(';')
+	}
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(len(skillManifest)))
+	b.WriteByte('|')
+	for _, r := range recs {
+		b.WriteString(r.Name)
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(len(r.Body)))
+		b.WriteByte(':')
+		b.WriteString(strconv.FormatInt(r.Modified.UnixNano(), 10))
+		b.WriteByte(';')
+	}
+	b.WriteByte('|')
+	for _, f := range ctxFiles {
+		b.WriteString(f.Path)
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(len(f.Body)))
+		b.WriteByte(';')
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:8])
 }

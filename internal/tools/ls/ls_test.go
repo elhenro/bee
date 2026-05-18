@@ -2,6 +2,7 @@ package ls
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,5 +90,105 @@ func TestLS_BadPath(t *testing.T) {
 	res, _ := l.Run(context.Background(), map[string]any{"path": "/no/such/path/xyz123"})
 	if !res.IsError {
 		t.Errorf("want IsError for bad path")
+	}
+}
+
+func TestLS_TraversalRejected(t *testing.T) {
+	dir := t.TempDir()
+	l := New(dir)
+	res, _ := l.Run(context.Background(), map[string]any{"path": "../../../etc"})
+	if !res.IsError {
+		t.Errorf("want IsError for traversal, got: %s", res.Content)
+	}
+}
+
+func TestLS_AbsoluteOutsideRootRejected(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	l := New(root)
+	res, _ := l.Run(context.Background(), map[string]any{"path": outside})
+	if !res.IsError {
+		t.Errorf("want IsError for absolute path outside root, got: %s", res.Content)
+	}
+}
+
+func TestLS_RelativePathJoinedToRoot(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "inner.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l := New(dir)
+	res, err := l.Run(context.Background(), map[string]any{"path": "sub"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("err: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "inner.txt") {
+		t.Errorf("want inner.txt, got: %s", res.Content)
+	}
+}
+
+func TestLS_SymlinkMarkedL(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+	l := New(dir)
+	res, _ := l.Run(context.Background(), map[string]any{"path": dir})
+	lines := strings.Split(res.Content, "\n")
+	found := false
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) == 3 && parts[2] == "link" {
+			if parts[0] != "l" {
+				t.Errorf("want kind 'l' for symlink, got %q in %q", parts[0], line)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("symlink not listed; got: %s", res.Content)
+	}
+}
+
+func TestLS_Truncated(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 505; i++ {
+		name := fmt.Sprintf("f%04d.txt", i)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l := New(dir)
+	res, _ := l.Run(context.Background(), map[string]any{"path": dir})
+	if !strings.Contains(res.Content, "(truncated; 5 more)") {
+		t.Errorf("want truncation marker for 505 entries")
+	}
+	lines := strings.Split(res.Content, "\n")
+	// 500 entries + 1 truncation line
+	if len(lines) != 501 {
+		t.Errorf("want 501 lines, got %d", len(lines))
+	}
+}
+
+func TestLS_EmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	l := New(dir)
+	res, _ := l.Run(context.Background(), map[string]any{"path": dir})
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", res.Content)
+	}
+	if res.Content != "empty directory" {
+		t.Errorf("want 'empty directory', got: %q", res.Content)
 	}
 }

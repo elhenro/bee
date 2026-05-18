@@ -130,6 +130,8 @@ func (f *fakeSide) SetShowNudges(v bool) error {
 	return nil
 }
 func (f *fakeSide) GetShowNudges() bool                  { return f.showNudges }
+func (f *fakeSide) SetShowRecap(bool) error               { return nil }
+func (f *fakeSide) GetShowRecap() bool                    { return false }
 func (f *fakeSide) SetShowContextBar(bool) error          { return nil }
 func (f *fakeSide) GetShowContextBar() bool               { return false }
 func (f *fakeSide) SetHighlight(bool) error               { return nil }

@@ -20,6 +20,21 @@ import (
 // is applied once the turn finishes in RenderMessage. Continuation lines are
 // indented 2 cols so they align under the body column, not the role glyph.
 func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
+	// short-circuit when nothing changed since the last call. View() fires
+	// on every key/tick/window event; without this the full markdown +
+	// gutter pass runs ~120Hz on a 50KB partial during streaming.
+	if r.cachedStreamValid && r.cachedStreamPartial == partial && r.cachedStreamFrame == frame {
+		return r.cachedStreamOutput
+	}
+	out := r.renderStreamingUncached(partial, frame)
+	r.cachedStreamPartial = partial
+	r.cachedStreamFrame = frame
+	r.cachedStreamOutput = out
+	r.cachedStreamValid = true
+	return out
+}
+
+func (r *StreamRenderer) renderStreamingUncached(partial string, frame int) string {
 	if partial == "" {
 		// no right caret while loading — keeps the row visually minimal.
 		// blank line above so loader breathes; user prompt isn't squashed

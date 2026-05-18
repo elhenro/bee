@@ -41,6 +41,13 @@ var (
 	// reads "this was blocked, not broken". Pale cream over light, warm
 	// amber-brown over dark, so it sits adjacent to honey without clashing.
 	bgWarnHl = lipgloss.AdaptiveColor{Light: "#FFEAB8", Dark: "#5A4214"}
+
+	// soft green/red bgs for + / - lines in edit previews. Subtler than
+	// bgErrorHl (which is a single-row badge) because diff bodies span many
+	// rows and a saturated wash would visually scream. Mirrors github/gitlab
+	// diff highlighting: pale tint on light, deep low-sat tint on dark.
+	bgDiffAddHl = lipgloss.AdaptiveColor{Light: "#DDF5DD", Dark: "#1E3A24"}
+	bgDiffDelHl = lipgloss.AdaptiveColor{Light: "#F5DDDD", Dark: "#3A1E24"}
 )
 
 // Brand + semantic accents. Light-mode pairs darken the hue so it carries
@@ -83,6 +90,8 @@ type Styles struct {
 	ToolRail   lipgloss.Style // lilac left rail beside tool-output lines
 	DiffAdd    lipgloss.Style // green `+` line for inserted text in edit previews
 	DiffDel    lipgloss.Style // red `-` line for removed text in edit previews
+	DiffAddBg  lipgloss.Style // pale green wash behind whole `+` diff row
+	DiffDelBg  lipgloss.Style // pale red wash behind whole `-` diff row
 	DiffPath   lipgloss.Style // bold path header above diff body
 	DiffMeta   lipgloss.Style // dimmed meta line (occurrence, anchors, hunk hdrs)
 	Thought    lipgloss.Style // grayed italic — model's chain-of-thought
@@ -125,10 +134,12 @@ func DefaultStyles() Styles {
 		// diff lines for edit/write/apply_patch/hashline_edit previews — green
 		// add, red del, accent path header, dimmed meta. Same palette as
 		// `git diff --color` so users read it instantly.
-		DiffAdd:  lipgloss.NewStyle().Foreground(semSuccess),
-		DiffDel:  lipgloss.NewStyle().Foreground(semError),
-		DiffPath: lipgloss.NewStyle().Foreground(accentTool).Bold(true),
-		DiffMeta: lipgloss.NewStyle().Foreground(fgOyster).Italic(true),
+		DiffAdd:   lipgloss.NewStyle().Foreground(semSuccess),
+		DiffDel:   lipgloss.NewStyle().Foreground(semError),
+		DiffAddBg: lipgloss.NewStyle().Background(bgDiffAddHl),
+		DiffDelBg: lipgloss.NewStyle().Background(bgDiffDelHl),
+		DiffPath:  lipgloss.NewStyle().Foreground(accentTool).Bold(true),
+		DiffMeta:  lipgloss.NewStyle().Foreground(fgOyster).Italic(true),
 
 		// chain-of-thought: most subtle fg + italic so it reads as
 		// "background musing", visibly secondary to the answer.

@@ -86,11 +86,27 @@ func Query(ctx context.Context, dir, userQuery string, limit int, opts Options) 
 			}
 			if queryTokens[t] {
 				s++
+				continue
+			}
+			// slug-style tags like "testing-policy" should still hit plain
+			// queries like "testing"; tokenize splits + keeps the joined form.
+			tagToks := tokenize(t)
+			for qt := range queryTokens {
+				if tagToks[qt] {
+					s++
+					break
+				}
 			}
 		}
 		nameToks := tokenize(e.Name)
 		for tok := range queryTokens {
 			if nameToks[tok] {
+				s += 2
+			}
+		}
+		descToks := tokenize(e.Description)
+		for tok := range queryTokens {
+			if descToks[tok] {
 				s++
 			}
 		}
@@ -196,17 +212,30 @@ func parseTagLines(s string) []string {
 }
 
 // tokenize splits s on non-word boundaries, lowercases, and drops short
-// noise tokens. used by the deterministic phase-1 scorer.
+// noise tokens. hyphens and underscores yield both the joined slug form
+// and each split sub-token so natural and slug-style queries both hit.
 func tokenize(s string) map[string]bool {
 	out := map[string]bool{}
 	cur := strings.Builder{}
-	flush := func() {
-		t := strings.ToLower(cur.String())
-		cur.Reset()
+	emit := func(t string) {
 		if len(t) < 3 {
 			return
 		}
 		out[t] = true
+	}
+	flush := func() {
+		t := strings.ToLower(cur.String())
+		cur.Reset()
+		if t == "" {
+			return
+		}
+		emit(t)
+		// also emit sub-tokens for slug-style joined forms.
+		if strings.ContainsAny(t, "-_") {
+			for _, part := range splitSlug(t) {
+				emit(part)
+			}
+		}
 	}
 	for _, r := range s {
 		switch {
@@ -220,4 +249,8 @@ func tokenize(s string) map[string]bool {
 	}
 	flush()
 	return out
+}
+
+func splitSlug(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == '-' || r == '_' })
 }

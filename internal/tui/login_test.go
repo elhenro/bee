@@ -61,6 +61,8 @@ func (s *loginSideStub) SetCompact(bool) error                          { return
 func (s *loginSideStub) GetCompact() bool                               { return false }
 func (s *loginSideStub) SetShowNudges(bool) error                       { return nil }
 func (s *loginSideStub) GetShowNudges() bool                            { return false }
+func (s *loginSideStub) SetShowRecap(bool) error                        { return nil }
+func (s *loginSideStub) GetShowRecap() bool                             { return false }
 func (s *loginSideStub) OpenAgentView() error                           { return nil }
 func (s *loginSideStub) SetShowContextBar(bool) error                   { return nil }
 func (s *loginSideStub) GetShowContextBar() bool                        { return false }

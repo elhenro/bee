@@ -3,6 +3,7 @@ package approval
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 )
 
@@ -58,12 +59,23 @@ func TestCache_AllowOnceDoesNotCache(t *testing.T) {
 
 func TestCache_AllowAlwaysCallsPersist(t *testing.T) {
 	rec := &recordingApprover{verdict: AllowAlways}
+	var mu sync.Mutex
 	persisted := ""
-	c := NewCache(rec, nil, func(k string) error { persisted = k; return nil })
+	c := NewCache(rec, nil, func(k string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		persisted = k
+		return nil
+	})
 
 	c.Request(context.Background(), "rm -rf x", "rm-recursive", "")
-	if persisted != "rm-recursive" {
-		t.Fatalf("persistFunc got %q; want rm-recursive", persisted)
+	// persist runs async; wait for it to flush before reading.
+	c.Flush()
+	mu.Lock()
+	got := persisted
+	mu.Unlock()
+	if got != "rm-recursive" {
+		t.Fatalf("persistFunc got %q; want rm-recursive", got)
 	}
 	// Second call should be served from persistent cache.
 	c.Request(context.Background(), "rm -rf x", "rm-recursive", "")

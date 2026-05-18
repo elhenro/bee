@@ -84,8 +84,8 @@ return one tight report to queen.`,
 	RoleBuilder: {
 		prompt: `you are builder, hive's hands.
 execute the assignment exactly as queen described it.
-use apply_patch / write / edit_diff to ship code; shell to verify.
-no scope creep, no architecture debate — make the honey.`,
+use apply_patch / write / edit to ship code; shell to verify.
+no scope creep, no architecture debate, make the honey.`,
 		tools: cloneAll(),
 		temp:  0.2,
 	},

@@ -137,16 +137,29 @@ func (m *Model) dispatchInput(s string) {
 }
 
 func (m *Model) pushSteer(s zzz.Steer) {
-	select {
-	case m.steer <- s:
-		switch s.Kind {
-		case zzz.SteerNote:
-			m.log = append(m.log, logMsg{level: "info", text: styYou.Render("you ›") + " " + s.Text})
-		case zzz.SteerStop:
+	// stop/abort must never be silently dropped — if the buffer is full,
+	// drain one slot to make room. Notes can be dropped (operator can retry)
+	// but a missed ctrl+c is a UX trust violation.
+	if s.Kind == zzz.SteerStop || s.Kind == zzz.SteerAbort {
+		select {
+		case m.steer <- s:
+		default:
+			select {
+			case <-m.steer:
+			default:
+			}
+			m.steer <- s
+		}
+		if s.Kind == zzz.SteerStop {
 			m.log = append(m.log, logMsg{level: "warn", text: "[zzz] stop requested — finishing current iteration"})
-		case zzz.SteerAbort:
+		} else {
 			m.log = append(m.log, logMsg{level: "err", text: "[zzz] abort requested"})
 		}
+		return
+	}
+	select {
+	case m.steer <- s:
+		m.log = append(m.log, logMsg{level: "info", text: styYou.Render("you ›") + " " + s.Text})
 	default:
 		m.log = append(m.log, logMsg{level: "warn", text: "[zzz] steering buffer full — try again"})
 	}

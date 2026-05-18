@@ -85,7 +85,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 				},
 				"tail": map[string]any{
 					"type":        "integer",
-					"description": "Return the last N lines (file only). Overrides offset/limit when > 0.",
+					"description": "Return the last N lines (file only). Overrides offset/limit when > 0. Capped at 10000.",
 				},
 				"hashline": map[string]any{
 					"type":        "boolean",
@@ -103,7 +103,15 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	if !ok || path == "" {
 		return tools.Result{Content: "missing or empty 'path' field", IsError: true}, nil
 	}
-	if err := safety.CheckReadable(path); err != nil {
+	// resolve symlinks before safety check so a symlink can't bypass the
+	// lexical secret-file rules by pointing at e.g. ~/.ssh/id_rsa. broken
+	// symlinks fall through to the original path so the stat below reports
+	// the real error.
+	checkPath := path
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		checkPath = resolved
+	}
+	if err := safety.CheckReadable(checkPath); err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
 

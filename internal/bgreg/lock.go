@@ -1,3 +1,5 @@
+//go:build windows
+
 package bgreg
 
 import (
@@ -12,6 +14,7 @@ import (
 
 // sessionLock is a per-session advisory lock used by Update to serialize
 // read-modify-write cycles. Stored next to the status JSON as <id>.lock.
+// Windows falls back to the pid-file heuristic (no flock equivalent here).
 type sessionLock struct{ path string }
 
 func acquireSessionLock(id string) (*sessionLock, error) {

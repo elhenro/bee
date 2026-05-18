@@ -80,10 +80,27 @@ type StreamRenderer struct {
 	// compactingVariant selects one of the three /compact swarm animations.
 	// Picked at frame 0 of each compacting run, sticks for the duration.
 	compactingVariant int
+
+	// streaming render cache. View() is called on every key/tick/window event
+	// — often multiple times per frame for the same partial+frame. Cache the
+	// last rendered output so repeat calls short-circuit the re-render. Width
+	// is not a key because the renderer is reconstructed on resize.
+	cachedStreamPartial string
+	cachedStreamFrame   int
+	cachedStreamOutput  string
+	cachedStreamValid   bool
 }
 
+// invalidateStreamCache drops the cached streaming render so the next
+// RenderStreaming call rebuilds from source. Called by setters that change
+// rendering output and from SetCompact (gutter changes layout).
+func (r *StreamRenderer) invalidateStreamCache() { r.cachedStreamValid = false }
+
 // SetLoaderStyle picks which pre-token loader animation to render.
-func (r *StreamRenderer) SetLoaderStyle(s LoaderStyle) { r.loaderStyle = s }
+func (r *StreamRenderer) SetLoaderStyle(s LoaderStyle) {
+	r.loaderStyle = s
+	r.invalidateStreamCache()
+}
 
 // SetVerbose toggles full tool-output rendering. Compact (default) keeps
 // the preview at one line; verbose lets the whole output through.
@@ -106,7 +123,10 @@ func (r *StreamRenderer) SetHighlight(v bool) { r.highlight = v }
 // SetShowLoader toggles the streaming "generating" animation. Off swaps the
 // braille loader/caret for a static ⬢ marker so the row still signals
 // activity without motion.
-func (r *StreamRenderer) SetShowLoader(v bool) { r.showLoader = v }
+func (r *StreamRenderer) SetShowLoader(v bool) {
+	r.showLoader = v
+	r.invalidateStreamCache()
+}
 
 // hl returns content with chroma highlighting using the lexer matching
 // path. Returns the input unchanged when r.highlight is off or no lexer
@@ -129,18 +149,42 @@ func (r *StreamRenderer) hlLang(content, lang string) string {
 
 // diffSign renders one diff line as `<prefix-styled> <highlighted-content>`.
 // When highlight is off, falls back to wrapping the whole line in the prefix
-// style — preserves the pre-feature look exactly.
+// style — preserves the pre-feature look exactly. Result wraps in a soft
+// green/red background so the eye locks onto changed rows the same way it
+// does in github/gitlab diffs — `+`/`-` characters alone are easy to miss
+// when scanning a long block.
 func (r *StreamRenderer) diffSign(sign string, content string, path string, signStyle lipgloss.Style) string {
+	var inner string
 	if !r.highlight {
-		return signStyle.Render(sign + " " + content)
+		inner = signStyle.Render(sign + " " + content)
+	} else {
+		inner = signStyle.Render(sign) + " " + HighlightCode(content, langFromPath(path))
 	}
-	return signStyle.Render(sign) + " " + HighlightCode(content, langFromPath(path))
+	bg := r.styles.DiffAddBg
+	if sign == "-" {
+		bg = r.styles.DiffDelBg
+	}
+	return bg.Render(preserveBgAcrossResets(inner))
+}
+
+// preserveBgAcrossResets rewrites bare `\x1b[0m` SGR resets inside s so they
+// reset every attribute *except* the background color. Chroma terminates each
+// highlighted token with a full reset, which kills any outer Background()
+// applied by lipgloss — leaving gaps between syntax-colored tokens on a
+// diff row. Replacing `0m` with `22;23;24;27;29;39m` clears bold/italic/
+// underline/inverse/strikethrough + fg color but leaves bg intact, so the
+// row-wide tint stays continuous.
+func preserveBgAcrossResets(s string) string {
+	return strings.ReplaceAll(s, "\x1b[0m", "\x1b[22;23;24;27;29;39m")
 }
 
 // SetCompact toggles compact mode. When true, RenderMessage and friends emit
 // the dense pre-pi layout (no outer gutter, no inter-turn blank line, no
 // user bg-tint, no OSC 133 prompt zones). Default false = clean mode.
-func (r *StreamRenderer) SetCompact(v bool) { r.compact = v }
+func (r *StreamRenderer) SetCompact(v bool) {
+	r.compact = v
+	r.invalidateStreamCache()
+}
 
 // argsSummary returns the rune budget for tool-input summaries.
 func (r *StreamRenderer) argsSummary() int {

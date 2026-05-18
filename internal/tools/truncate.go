@@ -17,21 +17,24 @@ const MaxOutputTokens = 50_000
 // MaxWebfetchTokens is the aggressive cap for fetch-style tools that return arbitrary remote content.
 const MaxWebfetchTokens = 10_000
 
-// truncatableLimits is the per-tool cap table. Tools absent from this map fall
-// back to MaxOutputTokens via limitFor.
+// truncatableLimits is the per-tool cap table in tokens (chars/4 heuristic).
+// Tools absent from this map fall back to MaxOutputTokens via limitFor.
+// Caps trimmed by tool shape: chatty stdout (bash) and noisy file dumps
+// (read) get tighter ceilings than search/grep which the model often relies
+// on for breadth.
 var truncatableLimits = map[string]int{
-	"bash":          MaxOutputTokens,
-	"search":        MaxOutputTokens,
+	"bash":          20_000,
+	"read":          15_000,
+	"search":        30_000,
+	"grep":          30_000,
 	"glob":          MaxOutputTokens,
-	"ls":            MaxOutputTokens,
-	"read":          MaxOutputTokens,
+	"ls":            5_000,
 	"edit":          MaxOutputTokens,
 	"apply_patch":   MaxOutputTokens,
 	"hashline_edit": MaxOutputTokens,
 	"write":         MaxOutputTokens,
-	// future:
-	"webfetch":  MaxWebfetchTokens,
-	"skill_mcp": MaxOutputTokens,
+	"webfetch":      MaxWebfetchTokens,
+	"skill_mcp":     MaxOutputTokens,
 }
 
 // limitFor returns the per-tool cap. Unknown tools get MaxOutputTokens.
@@ -42,12 +45,47 @@ func limitFor(toolName string) int {
 	return MaxOutputTokens
 }
 
+// truncateMode controls which portion of the output is preserved when a
+// tool result exceeds its cap.
+type truncateMode int
+
+const (
+	truncateModeHead     truncateMode = iota // keep prefix only (read: file start)
+	truncateModeHeadTail                     // keep both ends with a marker between (default for execution tools: errors live at tail, context at head)
+)
+
+// truncateModes maps tool names to their preferred truncation shape. Tools
+// absent from the map fall back to truncateModeHead — safest for file
+// readers and search-style breadth tools.
+//
+// bash/shell-style outputs get head-tail: model loses the middle of a long
+// test log but keeps the panic/diff at the end, which is where the
+// actionable signal sits.
+var truncateModes = map[string]truncateMode{
+	"bash": truncateModeHeadTail,
+}
+
+func modeFor(toolName string) truncateMode {
+	if m, ok := truncateModes[toolName]; ok {
+		return m
+	}
+	return truncateModeHead
+}
+
 // Truncate caps content to limitFor(toolName) tokens (chars/4 heuristic). When
 // the content exceeds the cap, the head is kept and a trailer is appended.
 // Returns the (possibly modified) content and a bool indicating whether
 // truncation occurred.
 func Truncate(toolName, content string) (string, bool) {
 	return TruncateWithLimit(toolName, content, 0)
+}
+
+// TruncateForTool applies the per-tool default cap and returns only the
+// (possibly modified) content. Convenience wrapper for callers that don't
+// care about the truncated bool.
+func TruncateForTool(toolName, content string) string {
+	out, _ := TruncateWithLimit(toolName, content, 0)
+	return out
 }
 
 // TruncateWithLimit is Truncate with an explicit profile-provided cap in
@@ -65,6 +103,9 @@ func TruncateWithLimit(toolName, content string, limitTokens int) (string, bool)
 
 // TruncateWithLimitSpill is the testable variant: caller supplies the spill
 // directory. Empty spillDir disables spillover (truncate-and-discard).
+//
+// Per-tool truncateMode controls shape: head-only by default; head-tail for
+// bash so the panic/error at the end of a long test log survives the cut.
 func TruncateWithLimitSpill(toolName, content string, limitTokens int, spillDir string) (string, bool) {
 	if content == "" {
 		return content, false
@@ -77,6 +118,13 @@ func TruncateWithLimitSpill(toolName, content string, limitTokens int, spillDir 
 	total := len(content)
 	if total <= maxChars {
 		return content, false
+	}
+	// head-tail mode for execution-style outputs: keep ~2/3 head + ~1/3
+	// tail so the actionable error block at the end of a test/build log
+	// reaches the model alongside the initial context.
+	if modeFor(toolName) == truncateModeHeadTail {
+		out, _ := truncateHeadTailWithSpill(toolName, content, limitTokens, maxChars/3, spillDir)
+		return out, true
 	}
 	head := content[:maxChars]
 	// avoid splitting mid-line: trim back to the last newline in head
@@ -147,6 +195,51 @@ func safeToolName(s string) string {
 		return '_'
 	}
 	return strings.Map(repl, s)
+}
+
+// truncateHeadTailWithSpill is the head-tail variant of TruncateWithLimitSpill.
+// Identical spill behavior (full body persisted, trailer points to file when
+// available) but the message keeps both ends of the original.
+func truncateHeadTailWithSpill(toolName, content string, limitTokens, tailChars int, spillDir string) (string, bool) {
+	if content == "" {
+		return content, false
+	}
+	limit := limitFor(toolName)
+	if limitTokens > 0 && limitTokens < limit {
+		limit = limitTokens
+	}
+	maxChars := limit * 4
+	total := len(content)
+	if total <= maxChars {
+		return content, false
+	}
+	if tailChars < 0 {
+		tailChars = 4096
+	}
+	maxTailChars := total - maxChars
+	if tailChars > maxTailChars {
+		tailChars = maxTailChars
+	}
+	head := content[:maxChars-tailChars]
+	if idx := strings.LastIndexByte(head, '\n'); idx > 0 {
+		head = head[:idx]
+	}
+	tailStart := total - tailChars
+	if nl := strings.Index(content[tailStart:], "\n"); nl >= 0 {
+		tailStart += nl
+	}
+	tail := content[tailStart:]
+	skipped := total - len(head) - len(tail)
+	spillPath := writeSpill(spillDir, toolName, content)
+	var trailer string
+	if spillPath != "" {
+		trailer = fmt.Sprintf("\n...\n(truncated middle: kept first %d and last %d of %d; skipped %d)\n\n[full output saved to %s]\n...",
+			len(head), len(tail), total, skipped, spillPath)
+	} else {
+		trailer = fmt.Sprintf("\n...\n(truncated middle: kept first %d and last %d of %d; skipped %d)\n...",
+			len(head), len(tail), total, skipped)
+	}
+	return head + trailer + tail, true
 }
 
 // TruncateHeadTail is like Truncate but preserves both head and tail with a

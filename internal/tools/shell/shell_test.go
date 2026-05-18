@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -130,6 +131,55 @@ func TestSpec(t *testing.T) {
 	}
 	if s.Schema == nil {
 		t.Fatal("nil schema")
+	}
+}
+
+// TestShell_KillsBackgroundedChildren verifies that timeout kills the entire
+// process group, not just the bash leader. Without the fix, a backgrounded
+// `sleep` becomes an orphan after bash dies and continues running until its
+// natural exit. We grep for a unique sentinel arg so the check is robust to
+// other sleeps on the host.
+func TestShell_KillsBackgroundedChildren(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process groups + pgrep not portable to Windows")
+	}
+	if _, err := exec.LookPath("pgrep"); err != nil {
+		t.Skip("pgrep not on PATH")
+	}
+	// write the background child's pid to a sentinel file we can check
+	// directly. pgrep on macOS won't find a stray sleep by argv if extra
+	// args aren't valid for sleep, so a pid file is the robust signal.
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	cmdLine := "sleep 30 & echo $! > " + pidFile + "; wait"
+	done := make(chan struct{}, 1)
+	go func() {
+		_, _ = New().Run(context.Background(), map[string]any{
+			"command":         cmdLine,
+			"timeout_seconds": 1,
+		})
+		done <- struct{}{}
+	}()
+	// the bug: cmd.Run() returns only when stdout pipe closes, which is
+	// when sleep finally exits at 30s. With the fix, kill happens at 1s
+	// + WaitDelay, well under our 5s probe window below.
+	deadline := time.After(5 * time.Second)
+	select {
+	case <-done:
+	case <-deadline:
+	}
+	// probe the recorded child pid directly. signal 0 = existence check.
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("child pid file missing: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatalf("bad pid in sentinel: %q", raw)
+	}
+	alive := exec.Command("kill", "-0", strconv.Itoa(pid)).Run() == nil
+	if alive {
+		_ = exec.Command("kill", "-9", strconv.Itoa(pid)).Run()
+		t.Fatalf("backgrounded sleep (pid=%d) survived timeout", pid)
 	}
 }
 

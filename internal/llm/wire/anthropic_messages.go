@@ -5,9 +5,10 @@
 // and tool results live as tool_result blocks in user turns.
 //
 // Auth is API-key only (x-api-key). The OAuth subscription path and its
-// first-party-client identity headers, tool-name impersonation, and
-// ephemeral prompt caching are deliberately not implemented — bee uses
-// the public Anthropic API on its own terms.
+// first-party-client identity headers and tool-name impersonation are
+// deliberately not implemented. bee uses the public Anthropic API on its
+// own terms. Ephemeral prompt-cache breakpoints are emitted on the system
+// block and the last tool entry to reduce token cost on repeat prefixes.
 package wire
 
 import (
@@ -34,8 +35,14 @@ type AnthropicMessagesRequest struct {
 
 // AnthropicSysBlock is one entry of the top-level system array.
 type AnthropicSysBlock struct {
+	Type         string             `json:"type"`
+	Text         string             `json:"text"`
+	CacheControl *AnthropicCacheCtl `json:"cache_control,omitempty"`
+}
+
+// AnthropicCacheCtl marks a block as a prompt-cache breakpoint.
+type AnthropicCacheCtl struct {
 	Type string `json:"type"`
-	Text string `json:"text"`
 }
 
 // AnthropicThinking is the extended-thinking knob.
@@ -80,9 +87,10 @@ type AnthropicImageSource struct {
 
 // AnthropicTool advertises a function tool.
 type AnthropicTool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"input_schema"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description,omitempty"`
+	InputSchema  map[string]any     `json:"input_schema"`
+	CacheControl *AnthropicCacheCtl `json:"cache_control,omitempty"`
 }
 
 // BuildAnthropicMessagesRequest converts the internal Request shape into the
@@ -95,7 +103,12 @@ func BuildAnthropicMessagesRequest(model, system string, messages []types.Messag
 		Stream:    stream,
 	}
 	if system != "" {
-		req.System = append(req.System, AnthropicSysBlock{Type: "text", Text: system})
+		// mark system as a prompt-cache breakpoint so repeat prefixes hit cache
+		req.System = append(req.System, AnthropicSysBlock{
+			Type:         "text",
+			Text:         system,
+			CacheControl: &AnthropicCacheCtl{Type: "ephemeral"},
+		})
 	}
 
 	thinkingActive := false
@@ -119,6 +132,10 @@ func BuildAnthropicMessagesRequest(model, system string, messages []types.Messag
 			Description: t.Description,
 			InputSchema: normalizeInputSchema(t.Schema),
 		})
+	}
+	// cache breakpoint on the last tool covers the whole tools block
+	if n := len(req.Tools); n > 0 {
+		req.Tools[n-1].CacheControl = &AnthropicCacheCtl{Type: "ephemeral"}
 	}
 
 	// Anthropic enforces strict user/assistant alternation. Merge consecutive

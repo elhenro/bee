@@ -158,6 +158,15 @@ type Model struct {
 	// nil in tests; lifetime owned by the caller of WithStreamCh.
 	streamCh chan string
 
+	// thinkCh receives chain-of-thought deltas from the engine via
+	// Engine.ThinkCh so reasoning renders live above the answer instead
+	// of dumping all at once when the stream ends.
+	thinkCh chan string
+	// thinkPartial is the accumulated reasoning buffer for the in-flight
+	// turn. Rendered dim+italic above m.partial while streaming. Cleared
+	// when the final BlockThinking lands via liveMsgMsg/turnDoneMsg.
+	thinkPartial string
+
 	// liveMsgCh receives each persisted assistant/tool message from the
 	// engine's LiveMsgCh so cards render mid-Run instead of only on done.
 	liveMsgCh chan types.Message
@@ -223,6 +232,12 @@ type Model struct {
 	// showNudges gates render of synthetic `[nudge]` recovery turns from
 	// the loop. Default false. Toggle via /settings; persists to config.
 	showNudges bool
+
+	// showRecap controls whether a one-line post-turn recap is generated
+	// by a side-LLM call after each successful turn. Default false (extra
+	// tokens). Toggle via /settings; persists to config. Disabled = no
+	// generation, no render.
+	showRecap bool
 
 	// compact strips the spacing layer (gutter, inter-turn blank line,
 	// user bg-tint, OSC 133 zones) for a denser layout. Default false =

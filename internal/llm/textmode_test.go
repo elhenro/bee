@@ -244,6 +244,351 @@ func TestTextMode_PassesThroughThinkingDeltas(t *testing.T) {
 	}
 }
 
+// JSON fallback: model emits {"type":"shell","command":"ls"} instead of
+// <shell>{...}</shell>. seen with small local models and big hosted
+// reasoners that revert to native function-call JSON despite the XML hint.
+func TestTextMode_ParsesJSONShape_TypeWithInlineArgs(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `{"type":"shell","command":"ls -la"}`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 {
+		t.Fatalf("calls: got %d, want 1 (input=%q)", len(tools), text)
+	}
+	if tools[0].Name != "shell" {
+		t.Fatalf("name: %q", tools[0].Name)
+	}
+	if tools[0].Input["command"] != "ls -la" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+	if strings.Contains(text, "shell") {
+		t.Fatalf("JSON block leaked: %q", text)
+	}
+}
+
+// {"type":"<tool>","arguments":{...}} — OpenAI-flavored
+func TestTextMode_ParsesJSONShape_TypeWithArguments(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `{"type":"shell","arguments":{"command":"pwd"}}`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["command"] != "pwd" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// {"name":"<tool>","arguments":{...}} — Anthropic-flavored
+func TestTextMode_ParsesJSONShape_NameWithArguments(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `{"name":"write","arguments":{"path":"a","content":"b"}}`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "write" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["path"] != "a" || tools[0].Input["content"] != "b" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// {"name":"<tool>","input":{...}} — also Anthropic-style
+func TestTextMode_ParsesJSONShape_NameWithInput(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `{"name":"write","input":{"path":"a","content":"b"}}`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "write" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["path"] != "a" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// {"type":"function","function":{"name":"<tool>","arguments":"<json-string>"}}
+// — OpenAI raw shape with arguments as a JSON string.
+func TestTextMode_ParsesJSONShape_OpenAIFunction(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `{"type":"function","function":{"name":"shell","arguments":"{\"command\":\"git status\"}"}}`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["command"] != "git status" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// JSON inside a ```json fence — strip the fence with the block.
+func TestTextMode_ParsesJSONShape_InsideCodeFence(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "intro\n```json\n{\"type\":\"shell\",\"command\":\"ls\"}\n```\noutro"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if strings.Contains(text, "```") || strings.Contains(text, `"type"`) {
+		t.Fatalf("fence/JSON leaked: %q", text)
+	}
+	if !strings.Contains(text, "intro") || !strings.Contains(text, "outro") {
+		t.Fatalf("surrounding prose dropped: %q", text)
+	}
+}
+
+// Unknown tool name in JSON shape — leave verbatim, no synthetic call.
+func TestTextMode_IgnoresJSONShapeUnknownTool(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `{"type":"browseMemory","query":"x"}`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 0 {
+		t.Fatalf("unknown tool name should not create a call, got %+v", tools)
+	}
+	if !strings.Contains(text, "browseMemory") {
+		t.Fatalf("unknown JSON should round-trip in text, got %q", text)
+	}
+}
+
+// qwen3 / hermes wrapper: `<tool_call>{"name":...,"arguments":{...}}</tool_call>`.
+// the wrapper is stripped, then the JSON extractor picks up the bare envelope.
+func TestTextMode_ParsesHermesToolCallWrapper(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<tool_call>\n{\"name\":\"shell\",\"arguments\":{\"command\":\"ls -la\"}}\n</tool_call>"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v (text=%q)", tools, text)
+	}
+	if tools[0].Input["command"] != "ls -la" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+	if strings.Contains(text, "tool_call") {
+		t.Fatalf("hermes wrapper leaked: %q", text)
+	}
+}
+
+// qwen3 xml variant: `<function=NAME><parameter=K>V</parameter></function>`,
+// optionally inside a <tool_call> wrapper. seen in the wild from qwen3-35B-A3B
+// when textmode is forced and the model falls back to its chat-template's
+// native shape.
+func TestTextMode_ParsesHermesFunctionXML(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<tool_call>\n<function=shell>\n<parameter=command>git status --short</parameter>\n</function>\n</tool_call>"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v (text=%q)", tools, text)
+	}
+	if tools[0].Input["command"] != "git status --short" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// `<function=NAME>` without the outer `<tool_call>` wrapper still parses.
+func TestTextMode_ParsesHermesFunctionXMLUnwrapped(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<function=write>\n<parameter=path>x</parameter>\n<parameter=content>hi</parameter>\n</function>"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "write" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["path"] != "x" || tools[0].Input["content"] != "hi" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// `<tool_call><tool_name>NAME</tool_name>{json}</tool_call>` is yet another
+// shape seen from qwen3-A3B when it reads the advert's placeholder example
+// too literally. Args follow as a bare JSON object. Stop sequence still cuts
+// after the args close brace so </tool_call> may be missing too.
+func TestTextMode_ParsesToolNameTagVariant(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<tool_call>\n<tool_name>shell</tool_name>\n{\"command\":\"ls\"}\n</tool_call>"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["command"] != "ls" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// `<tool_name>NAME</tool_name>{json}` without the outer <tool_call> wrapper.
+func TestTextMode_ParsesToolNameTagUnwrapped(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<tool_name>write</tool_name>{\"path\":\"x\",\"content\":\"hi\"}"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "write" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["path"] != "x" || tools[0].Input["content"] != "hi" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// qwen3 in the wild closes <function=NAME> with </NAME>, not </function>.
+// also, the textmode stop sequence (`</NAME>`) chops the stream the moment
+// that close lands, so we never see </function> or </tool_call> past it.
+// regression: this caused the agent to hang on edit/shell calls because the
+// envelope stayed raw and no tool was extracted.
+func TestTextMode_ParsesHermesFunctionXMLNameClose(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<tool_call>\n<function=write>\n<parameter=path>x</parameter>\n<parameter=content>hi</parameter>\n</write>"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "write" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["path"] != "x" || tools[0].Input["content"] != "hi" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// stop sequence cut: model emits `<function=NAME>...<parameter=...>...` and
+// nothing past the first parameter body close. parser must consume rest of
+// buffer as body or the call is lost and the loop stalls forever.
+func TestTextMode_ParsesHermesFunctionXMLNoClose(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<tool_call>\n<function=shell>\n<parameter=command>ls -la</parameter>"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["command"] != "ls -la" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// schema parameter names get surfaced in the advert so the model uses the
+// real keys instead of guessing (the root regression in 333f7bb: tiny profile
+// gained xml format but advert dropped param hints, so qwen3 emitted
+// `{"args":{"cmd":"..."}}` for bash and the tool failed on missing `command`).
+func TestTextMode_AdvertIncludesSchemaParams(t *testing.T) {
+	inner := &fakeProvider{events: []Event{{Type: EventDone}}}
+	p := NewTextMode(inner, TextModeOptions{})
+	tools := []ToolSpec{
+		{
+			Name:          "shell",
+			PromptSnippet: "run shell",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{"type": "string"},
+					"cwd":     map[string]any{"type": "string"},
+				},
+				"required": []string{"command"},
+			},
+		},
+	}
+	ch, _ := p.Stream(context.Background(), Request{Tools: tools})
+	drainTM(ch)
+	sys := inner.gotReq.System
+	if !strings.Contains(sys, "command:string") {
+		t.Fatalf("required param `command` not surfaced in advert: %s", sys)
+	}
+	if !strings.Contains(sys, "[cwd:string]") {
+		t.Fatalf("optional param `cwd` not bracketed in advert: %s", sys)
+	}
+}
+
+// Plain JSON object that isn't a tool call — round-trip verbatim.
+func TestTextMode_LeavesNonToolJSONIntact(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `here's the config: {"port":8080,"host":"x"} done`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 0 {
+		t.Fatalf("non-tool JSON triggered a call: %+v", tools)
+	}
+	if !strings.Contains(text, `"port":8080`) {
+		t.Fatalf("non-tool JSON was stripped: %q", text)
+	}
+}
+
 // drainTM reads all events to completion.
 func drainTM(ch <-chan Event) {
 	for range ch {

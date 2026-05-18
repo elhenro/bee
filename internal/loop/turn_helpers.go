@@ -6,9 +6,22 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/prompt"
 	"github.com/elhenro/bee/internal/types"
 )
+
+// cloneProfiles shallow-copies the profiles map so per-engine mutations
+// (probe-aware scaling) don't leak into a sibling engine sharing the same
+// Defaults() map.
+func cloneProfiles(in map[string]config.Profile) map[string]config.Profile {
+	out := make(map[string]config.Profile, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
 
 // prependWarningToToolResult injects a context-warning prefix into the first
 // tool_result block so the model sees it in the next turn. Mutates the
@@ -58,6 +71,63 @@ func lastID(ms []types.Message) string {
 }
 
 func newID() string { return uuid.NewString() }
+
+// looksLikeAttemptedToolCall heuristically detects when the final text from
+// a turn contains a tool-call attempt that the textmode parser couldn't
+// recognize: typical when a model emits bare JSON envelopes
+// (`{"type":"shell",...}`) or unclosed XML (`<shell>` no body). Used by the
+// stall recovery in turn_run.go to fire a format-correction nudge instead of
+// terminating silently.
+//
+// Fenced regions (triple-backtick code blocks) are stripped before scanning
+// so the model can legitimately quote tool-call shapes inside a code fence
+// when explaining usage without triggering the nudge.
+func looksLikeAttemptedToolCall(text string, specs []llm.ToolSpec) bool {
+	if text == "" || len(specs) == 0 {
+		return false
+	}
+	low := strings.ToLower(stripFencedRegions(text))
+	hasTypeKey := strings.Contains(low, `"type"`) || strings.Contains(low, `"name"`)
+	for _, s := range specs {
+		name := strings.ToLower(s.Name)
+		if name == "" {
+			continue
+		}
+		// XML-ish opening tag with the tool name
+		if strings.Contains(low, "<"+name) {
+			return true
+		}
+		// JSON envelope referencing the tool name in a type/name field
+		if hasTypeKey && strings.Contains(low, `"`+name+`"`) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripFencedRegions removes ```...``` blocks from s. Unbalanced opening
+// fence drops the rest of the string (treats it as one open fence). Inline
+// single-backtick spans are left intact.
+func stripFencedRegions(s string) string {
+	const fence = "```"
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		j := strings.Index(s[i:], fence)
+		if j < 0 {
+			b.WriteString(s[i:])
+			break
+		}
+		b.WriteString(s[i : i+j])
+		k := strings.Index(s[i+j+len(fence):], fence)
+		if k < 0 {
+			break
+		}
+		i = i + j + len(fence) + k + len(fence)
+	}
+	return b.String()
+}
 
 // hasThinkingOnly reports whether msg carries a thinking block but no text
 // and no tool_use. provider produced reasoning then stopped — turn would

@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
@@ -150,6 +151,9 @@ func runHeadlessReal(args []string) {
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
 	app := buildHeadlessApprover(cfg, *yes || *yolo)
+	if c, ok := app.(*approval.Cache); ok {
+		defer c.Flush()
+	}
 	var reg *tools.Registry
 	if writeRe != nil {
 		reg, err = buildToolsFilteredWithApprover(cwd, cfg, writeRe, prov, storeDir, app)

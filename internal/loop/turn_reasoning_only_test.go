@@ -93,6 +93,75 @@ func (p *reasoningOnlyAlwaysProvider) Stream(_ context.Context, _ llm.Request) (
 	return ch, nil
 }
 
+// jsonToolAttemptThenSuccess emits a bare JSON tool-call envelope (no XML
+// wrapper, no native tool_use) on call 1, then plain text on call 2.
+// reproduces the silent-stall users hit when models revert to native
+// function-call JSON despite textmode prompting. loop must detect the
+// failed attempt and nudge once with a format-correction message.
+type jsonToolAttemptThenSuccess struct{ calls atomic.Int32 }
+
+func (p *jsonToolAttemptThenSuccess) Name() string { return "json-tool-attempt" }
+func (p *jsonToolAttemptThenSuccess) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
+	n := p.calls.Add(1)
+	ch := make(chan llm.Event, 4)
+	go func() {
+		defer close(ch)
+		switch n {
+		case 1:
+			ch <- llm.Event{Type: llm.EventTextDelta, Delta: `{"type":"shell","command":"git status"}`}
+			ch <- llm.Event{Type: llm.EventDone}
+		default:
+			ch <- llm.Event{Type: llm.EventTextDelta, Delta: "all done"}
+			ch <- llm.Event{Type: llm.EventDone}
+		}
+	}()
+	return ch, nil
+}
+
+func TestRun_FailedToolCallShape_NudgesFormatCorrection(t *testing.T) {
+	prov := &jsonToolAttemptThenSuccess{}
+	cfg := config.Defaults()
+	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
+	cfg.Mode = "edit"
+	cfg.Compaction = config.CompactionConfig{Enabled: false}
+	reg := tools.NewRegistry()
+	// register a stub `shell` so the spec list carries the name that the
+	// format-detection heuristic matches against the failed JSON envelope.
+	_ = reg.Register(&stubTool{name: "shell", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+		return tools.Result{}, nil
+	}})
+	eng := &Engine{
+		Provider: prov,
+		Tools:    reg,
+		Memory:   stubMemStore{},
+		Cfg:      cfg,
+		Cwd:      ".",
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	res, err := eng.Run(ctx, "test")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := prov.calls.Load(); got != 2 {
+		t.Fatalf("provider call count: want 2 (initial + format-nudge retry), got %d", got)
+	}
+	var sawNudge bool
+	for _, m := range res.Messages {
+		if m.Role != types.RoleUser {
+			continue
+		}
+		for _, b := range m.Content {
+			if b.Type == types.BlockText && strings.Contains(b.Text, "[nudge]") && strings.Contains(b.Text, "envelope") {
+				sawNudge = true
+			}
+		}
+	}
+	if !sawNudge {
+		t.Error("expected synthetic format-correction [nudge] in rollout")
+	}
+}
+
 func TestRun_ReasoningOnlyTurn_NudgesAtMostOnce(t *testing.T) {
 	prov := &reasoningOnlyAlwaysProvider{}
 	cfg := config.Defaults()

@@ -33,21 +33,23 @@ type SpawnResult struct {
 	LogPath      string
 }
 
-// preamble is prepended to the agent's first user message so it knows it's
-// running headless inside a worktree and how to signal completion.
-const agentPreamble = `You are running unattended as one of many parallel bee agents.
+// preamble is prepended to the agent's first user message so the headless
+// worker knows how to finish. Keep user-facing mentions generic: when a user
+// opens the session from the agents overview it should read like a normal bee
+// chat, not a themed/scaffolded worker transcript.
+const agentPreamble = `You are running unattended as one of many parallel agents.
 Rules:
-- You're inside an isolated git worktree on a fresh branch — commit freely.
-- Make focused changes toward the task. No questions; there is no user at the keyboard.
-- When the task is COMPLETE, end your final message with the line:
+- You are inside an isolated git worktree on a fresh branch. Commit freely.
+- Make focused changes toward the task. Do not ask questions unless blocked.
+- When the task is complete, end your final message with the line:
     DONE: <one-line summary>
 - If you cannot proceed, end with:
     BLOCKED: <reason>
 - If you need clarification mid-flight, end with:
     NEEDS-INPUT: <question>
 - The coordinator will rebase your branch onto main and fast-forward merge it
-  once you signal DONE. If the rebase conflicts you'll be re-prompted with the
-  conflicting files; resolve them, commit, and signal DONE again.
+  once you signal DONE. If the rebase conflicts, you will be re-prompted with
+  the conflicting files. Resolve them, commit, and signal DONE again.
 
 Task:
 `

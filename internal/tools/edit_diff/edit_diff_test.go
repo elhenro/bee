@@ -104,6 +104,27 @@ func TestEditDiff_MissingOld(t *testing.T) {
 	}
 }
 
+func TestEditDiff_RejectsEmptyNew(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(p, []byte("foo bar foo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := New(dir).Run(context.Background(), map[string]any{
+		"path": p, "old": "foo", "new": "", "replace_all": true,
+	})
+	if !res.IsError {
+		t.Fatalf("want IsError when new is empty")
+	}
+	if !strings.Contains(res.Content, "non-empty") {
+		t.Errorf("want 'non-empty' in msg, got: %s", res.Content)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "foo bar foo" {
+		t.Errorf("file must be untouched on empty-new rejection, got %q", data)
+	}
+}
+
 func TestEditDiff_ReplaceAll(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "a.txt")

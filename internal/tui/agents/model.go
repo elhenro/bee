@@ -12,6 +12,9 @@ import (
 
 	"github.com/elhenro/bee/internal/agents"
 	"github.com/elhenro/bee/internal/bgreg"
+	"github.com/elhenro/bee/internal/commands"
+	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/tui"
 )
 
 // Result is what Run returns after the overview exits. AttachID set means
@@ -39,7 +42,14 @@ type model struct {
 	notice    string // transient error / info line
 	noticeTTL time.Time
 
-	retryCh chan<- string // sends session ids to the merger goroutine
+	cmds    *commands.Registry
+	palette tui.PaletteModel
+
+	prefs        Prefs
+	settingsPane *settingsPane
+	picker       *tui.Picker
+	pickerOpen   bool
+	cfg          config.Config
 
 	exitReq  bool
 	attachID string
@@ -47,7 +57,7 @@ type model struct {
 
 type tickMsg time.Time
 
-func newModel(repoRoot string, retryCh chan<- string) model {
+func newModel(repoRoot string) model {
 	ti := textarea.New()
 	ti.Placeholder = "type a task and press enter to spawn an agent…"
 	ti.Prompt = "› "
@@ -63,11 +73,53 @@ func newModel(repoRoot string, retryCh chan<- string) model {
 	ti.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(honey)
 	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(dim)
 	ti.Focus()
-	return model{
-		repoRoot: repoRoot,
-		input:    ti,
-		retryCh:  retryCh,
+	reg := newAgentsCmdRegistry()
+	prefs := LoadPrefs()
+	cfg, err := config.Load()
+	if err != nil && len(cfg.Providers) == 0 {
+		cfg = config.Defaults()
 	}
+	if prefs.DefaultModel == "" {
+		prefs.DefaultModel = cfg.DefaultModel
+	}
+	if prefs.DefaultProvider == "" {
+		prefs.DefaultProvider = cfg.DefaultProvider
+	}
+	return model{
+		repoRoot:        repoRoot,
+		input:           ti,
+		cmds:            reg,
+		palette:         tui.NewPalette(reg, nil),
+		prefs:           prefs,
+		pendingModel:    prefs.DefaultModel,
+		pendingProvider: prefs.DefaultProvider,
+		settingsPane:    newSettingsPane(),
+		picker:          tui.NewPicker(cfg),
+		cfg:             cfg,
+	}
+}
+
+// newAgentsCmdRegistry builds palette metadata for the overview view. Run
+// funcs are stubs — dispatch happens in runSlash (no engine/Side here).
+func newAgentsCmdRegistry() *commands.Registry {
+	r := commands.NewRegistry()
+	add := func(name, desc string) {
+		r.Register(commands.Command{
+			Name:           name,
+			Description:    desc,
+			AllowDuringRun: true,
+			Run: func(context.Context, []string, commands.Side) (string, error) {
+				return "", nil
+			},
+		})
+	}
+	add("model", "set next-spawn model (e.g. /model claude-sonnet-4-6)")
+	add("provider", "set next-spawn provider (e.g. /provider anthropic)")
+	add("settings", "toggle overview view options (peek, badges, chip, …)")
+	add("help", "show keys & slash commands")
+	add("quit", "exit overview")
+	add("exit", "exit overview")
+	return r
 }
 
 func (m model) Init() tea.Cmd {
@@ -110,10 +162,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.input.SetWidth(max(20, msg.Width-4))
+		m.palette.SetWidth(msg.Width)
+		if m.picker != nil {
+			m.picker.SetSize(msg.Width-4, msg.Height-4)
+		}
 		return m, nil
 
 	case tickMsg:
 		m = m.refresh()
+		if m.picker != nil && m.picker.Active() {
+			newP, cmd := m.picker.Update(msg)
+			m.picker = newP
+			if m.exitReq {
+				return m, tea.Quit
+			}
+			return m, tea.Batch(tickCmd(), cmd)
+		}
 		if m.exitReq {
 			return m, tea.Quit
 		}
@@ -123,8 +187,67 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.refresh()
 		return m, nil
 
+	case tui.PaletteSelectMsg:
+		m.input.SetValue("/" + msg.Name)
+		// submit immediately: dispatch through runSlash.
+		text := strings.TrimSpace(m.input.Value())
+		m.input.Reset()
+		return m.runSlash(text)
+
+	case tui.PaletteDismissedMsg:
+		// clear staged "/foo" — user cancelled.
+		if strings.HasPrefix(m.input.Value(), "/") {
+			m.input.Reset()
+		}
+		return m, nil
+
+	case tui.PickedMsg:
+		m.applyPick(msg.Provider, msg.Model)
+		return m, nil
+
+	case tui.PickerDismissedMsg:
+		m.pickerOpen = false
+		return m, nil
+
+	case tui.PickerLoginRequestedMsg:
+		m.flash("run /login " + msg.Provider + " in main bee")
+		return m, nil
+
+	case agentsSettingsToggleMsg:
+		applyPrefToggle(&m.prefs, msg.key, msg.value)
+		if err := persistToggle(msg.key, msg.value); err != nil {
+			m.flash("persist failed: " + err.Error())
+		}
+		return m, nil
+
 	case tea.KeyMsg:
-		return m.handleKey(msg)
+		if m.picker != nil && m.picker.Active() {
+			newP, cmd := m.picker.Update(msg)
+			m.picker = newP
+			return m, cmd
+		}
+		// settings pane claims keys while open; everything else flows through.
+		if m.settingsPane.isOpen() {
+			cmd := m.settingsPane.update(msg)
+			return m, cmd
+		}
+		nm, cmd := m.handleKey(msg)
+		// mirror input → palette filter; close palette if user backspaced past
+		// "/" or started typing args (space after the command name).
+		if mm, ok := nm.(model); ok && mm.palette.Active {
+			val := mm.input.Value()
+			switch {
+			case !strings.HasPrefix(val, "/"):
+				mm.palette.Active = false
+			case strings.Contains(val, " "):
+				// args mode: hand the line off to runSlash on enter
+				mm.palette.Active = false
+			default:
+				mm.palette.SetFilter(val[1:])
+			}
+			return mm, cmd
+		}
+		return nm, cmd
 	}
 
 	var cmd tea.Cmd
@@ -147,8 +270,11 @@ func (m model) selected() (row, bool) {
 }
 
 func (m model) View() string {
+	if m.settingsPane.isOpen() {
+		return m.settingsPane.view(m.width, m.height)
+	}
 	var b strings.Builder
-	b.WriteString(renderHeader(m.all, m.pendingModel, m.pendingProvider))
+	b.WriteString(renderHeader(m.all, m.pendingModel, m.pendingProvider, m.prefs))
 	b.WriteString("\n\n")
 
 	if len(m.flat) == 0 {
@@ -157,18 +283,23 @@ func (m model) View() string {
 	} else {
 		idx := 0
 		for _, sec := range m.sections {
-			label := sectionStyle.Render(fmt.Sprintf(" ▸ %s (%d)", sec.kind.title(), len(sec.rows)))
-			if sec.kind == secDoneUnmerged {
-				label += dimStyle.Render("   [press m to re-merge]")
+			if sec.kind == secMerged && !m.prefs.ShowMerged {
+				// hidden section still consumes the flat-index range so the
+				// arrow-key cursor stays in sync with what's drawn.
+				idx += len(sec.rows)
+				continue
 			}
-			if sec.kind == secNeedsInput {
-				label += dimStyle.Render("   [press m to retry merge]")
+			style := sectionStyle
+			if sec.kind == secErrors {
+				style = errSectionStyle
 			}
+			label := style.Render(fmt.Sprintf(" ▸ %s (%d)", sec.kind.title(), len(sec.rows)))
+			label += dimStyle.Render(sectionHint(sec))
 			b.WriteString(label)
 			b.WriteString("\n")
 			for _, r := range sec.rows {
 				selected := idx == m.sel
-				b.WriteString(renderRow(r, selected, m.width))
+				b.WriteString(renderRow(r, selected, m.width, m.prefs))
 				b.WriteString("\n")
 				idx++
 			}
@@ -176,9 +307,15 @@ func (m model) View() string {
 		}
 	}
 
+	if m.palette.Active {
+		b.WriteString(m.palette.View())
+		b.WriteString("\n")
+	}
+	if m.picker != nil && m.picker.Active() {
+		b.WriteString(m.picker.View())
+		b.WriteString("\n")
+	}
 	b.WriteString(m.input.View())
-	b.WriteString("\n")
-	b.WriteString(hintStyle.Render("enter=spawn · l/→=open · h/←=back · m=merge · /model · /provider · ctrl+c=quit"))
 	if m.notice != "" {
 		b.WriteString("\n")
 		b.WriteString(badStyle.Render("• " + m.notice))

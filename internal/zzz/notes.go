@@ -24,6 +24,35 @@ func ReadNotes(id string) (string, error) {
 	return string(b), nil
 }
 
+// TailNoteSections returns the last n "## iter " sections of notes. Used to
+// cap prompt growth on long runs — without this, iter N's prompt embeds N
+// prior sections, costing O(n²) tokens across the run. n<=0 returns notes
+// unchanged.
+func TailNoteSections(notes string, n int) string {
+	if n <= 0 || notes == "" {
+		return notes
+	}
+	const marker = "\n## iter "
+	// scan from the end, collect up to n section starts
+	starts := []int{}
+	rest := notes
+	off := 0
+	for {
+		i := strings.Index(rest, marker)
+		if i < 0 {
+			break
+		}
+		starts = append(starts, off+i+1) // +1 to skip leading \n
+		off += i + len(marker)
+		rest = notes[off:]
+	}
+	if len(starts) <= n {
+		return notes
+	}
+	cut := starts[len(starts)-n]
+	return notes[cut:]
+}
+
 // AppendNote tacks one section onto notes.md. Used after every iteration so
 // later prompts can see what prior iterations did.
 func AppendNote(id string, iter int, subject, body string) error {

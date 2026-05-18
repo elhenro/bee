@@ -106,6 +106,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.stream.SetHighlight(m.highlight)
 		m.palette.SetWidth(msg.Width)
 		m.atpicker.SetWidth(msg.Width)
+		m.history.SetWidth(msg.Width)
 		if m.picker != nil {
 			m.picker.SetSize(msg.Width-4, msg.Height-4)
 		}
@@ -128,6 +129,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 
 	case streamDeltaMsg:
 		return m.onStreamDelta(msg)
+	case thinkDeltaMsg:
+		return m.onThinkDelta(msg)
 	case liveMsgMsg:
 		return m.onLiveMsg(msg)
 	case warningMsg:
@@ -140,6 +143,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onCompactDone(msg)
 	case turnDoneMsg:
 		return m.onTurnDone(msg)
+	case recapReadyMsg:
+		return m.onRecapReady(msg)
 	case costTickMsg:
 		return m.onCostTick(msg)
 	case introTickMsg:

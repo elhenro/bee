@@ -17,33 +17,35 @@ import (
 // fish-style autosuggestions can match against the user's whole history.
 const historyMax = 50000
 
-// historyRows is the number of result lines the picker shows.
-const historyRows = 8
-
 // HistorySelectMsg pastes the chosen entry into the main input.
 type HistorySelectMsg struct{ Text string }
 
 // HistoryDismissedMsg signals the picker closed without a pick.
 type HistoryDismissedMsg struct{}
 
-// HistoryPickerModel is the fzf-style reverse history search overlay.
+// HistoryPickerModel is the fzf-style reverse history search picker, rendered
+// inline above the input bar in the same dense palette style as /model.
 type HistoryPickerModel struct {
 	Active   bool
 	input    textinput.Model
 	entries  []string // newest first, deduped
 	matches  []fuzzy.Match
 	selected int
+	width    int
 }
 
 // NewHistoryPicker returns an inactive picker. Entries load lazily on Show.
 func NewHistoryPicker() HistoryPickerModel {
 	ti := textinput.New()
-	ti.Placeholder = "reverse search…"
-	ti.Prompt = "? "
+	ti.Placeholder = "type to filter history…"
+	ti.Prompt = "› "
 	ti.CharLimit = 256
 	ti.Focus()
 	return HistoryPickerModel{input: ti}
 }
+
+// SetWidth records terminal width so rows truncate cleanly. Mirrors palette/picker.
+func (p *HistoryPickerModel) SetWidth(w int) { p.width = w }
 
 // Show activates the picker, reloads history from disk, and resets the cursor.
 func (p *HistoryPickerModel) Show(initial string) {
@@ -113,64 +115,35 @@ func (p HistoryPickerModel) Update(msg tea.Msg) (HistoryPickerModel, tea.Cmd) {
 	return p, cmd
 }
 
-// View renders the picker. Shows up to historyRows matches with highlighted
-// matched runes; selected row marked with ▸.
+// View renders the picker as a borderless dense strip — same aesthetic as
+// the slash palette + /model picker. Crumb, filter input, palette rows, hint.
 func (p HistoryPickerModel) View() string {
 	if !p.Active {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Render("History search"))
-	b.WriteString("\n")
-	b.WriteString(p.input.View())
-	b.WriteString("\n")
-
-	if len(p.matches) == 0 {
-		b.WriteString(lipgloss.NewStyle().Faint(true).Render("(no matches)"))
-		b.WriteString("\n")
-		return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Render(b.String())
+	w := p.width
+	if w <= 0 {
+		w = 80
 	}
+	dim := lipgloss.NewStyle().Foreground(fgOyster)
+	headBold := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 
-	hl := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFAA00"))
+	crumb := headBold.Render("history") + dim.Render("  ⌃r search past prompts")
 
-	// window around selected so long lists scroll into view
-	start := 0
-	if p.selected >= historyRows {
-		start = p.selected - historyRows + 1
-	}
-	end := start + historyRows
-	if end > len(p.matches) {
-		end = len(p.matches)
-	}
+	body := renderRows(p.matches, p.selected, p.input.Value(), "›", w, func(idx int) (string, string) {
+		entry := p.entries[idx]
+		// keep first line only; mark continuation so user knows the prompt is multi-line.
+		// fuzzy match indices beyond the cut are dropped by renderRows' nameLen guard.
+		more := ""
+		if nl := strings.IndexByte(entry, '\n'); nl >= 0 {
+			entry = entry[:nl]
+			more = "  ↵ more"
+		}
+		return entry, more
+	})
 
-	for i := start; i < end; i++ {
-		m := p.matches[i]
-		entry := p.entries[m.Index]
-		marker := "  "
-		if i == p.selected {
-			marker = "▸ "
-		}
-		b.WriteString(marker)
-		set := map[int]struct{}{}
-		for _, idx := range m.MatchedIndexes {
-			set[idx] = struct{}{}
-		}
-		// trim very long lines so the picker doesn't wrap
-		display := entry
-		if len(display) > 100 {
-			display = display[:97] + "…"
-		}
-		for j := 0; j < len(display); j++ {
-			ch := string(display[j])
-			if _, ok := set[j]; ok {
-				b.WriteString(hl.Render(ch))
-			} else {
-				b.WriteString(ch)
-			}
-		}
-		b.WriteString("\n")
-	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Render(b.String())
+	hint := "enter pick · esc cancel · ↑↓ nav · ⌃r next"
+	return strings.Join([]string{crumb, p.input.View(), body, dim.Render(hint)}, "\n")
 }
 
 // ---- on-disk history ----

@@ -26,6 +26,11 @@ func parseEdits(raw []any) ([]edit, error) {
 		if op != "replace" && op != "prepend" && op != "append" {
 			return nil, fmt.Errorf("bad op %q", op)
 		}
+		// reject empty replace early: dropping a line with no replacement
+		// is silent data loss and the spec defines no delete op.
+		if op == "replace" && len(linesAny) == 0 {
+			return nil, fmt.Errorf("edit %d: replace requires at least one line", i)
+		}
 		lines := make([]string, 0, len(linesAny))
 		for j, l := range linesAny {
 			s, ok := l.(string)
@@ -41,16 +46,16 @@ func parseEdits(raw []any) ([]edit, error) {
 
 func parsePos(pos string) (int, string, error) {
 	hash := strings.IndexByte(pos, '#')
-	if hash <= 0 || hash != len(pos)-3 {
-		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<2-char-tag>", pos)
+	if hash <= 0 || hash != len(pos)-4 {
+		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<3-char-tag>", pos)
 	}
 	ln, err := strconv.Atoi(pos[:hash])
 	if err != nil || ln < 1 {
-		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<2-char-tag>", pos)
+		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<3-char-tag>", pos)
 	}
 	tag := pos[hash+1:]
-	if len(tag) != 2 {
-		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<2-char-tag>", pos)
+	if len(tag) != 3 {
+		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<3-char-tag>", pos)
 	}
 	return ln, tag, nil
 }

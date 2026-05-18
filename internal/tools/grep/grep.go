@@ -32,6 +32,29 @@ func isBinary(f *os.File) bool {
 
 const toolName = "search"
 
+// matchGlob filters file paths against the user-supplied glob arg. Accepts
+// three shapes so the model can't trip over its own convention drift:
+//   - bare extension ("go", "ts")       → suffix match on "."+ext
+//   - shell-style glob ("*.go", "*_test.go", "*.test.*") → filepath.Match on basename
+//   - leading-dot bare ext (".go")      → suffix match on ext
+//
+// Any unparseable pattern returns false (skip file) rather than erroring the
+// whole walk — bad glob just narrows results.
+func matchGlob(glob, path string) bool {
+	if glob == "" {
+		return true
+	}
+	if strings.ContainsAny(glob, "*?[") {
+		ok, err := filepath.Match(glob, filepath.Base(path))
+		return err == nil && ok
+	}
+	ext := glob
+	if !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+	return strings.HasSuffix(path, ext)
+}
+
 // Tool is the grep tool.
 type Tool struct {
 	root string
@@ -60,7 +83,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"Regex (Go RE2 syntax) over file contents. Returns up to 200 matches as path:line:text (match) or path:line-text (context). " +
 			"ANCHOR your pattern: `^func Test` not `func Test` — unanchored patterns match comments, strings, fixtures and inflate counts. " +
 			"For counting (e.g. 'how many tests'), use count_only=true to get per-file counts; an outlier file reveals fixtures/generated code skewing totals. " +
-			"Args: pattern (required), path (dir), glob (file ext like 'go'), context (int, 0-5 surrounding lines per match), count_only (bool, per-file match counts only).",
+			"Args: pattern (required), path (dir), glob (bare ext like 'go' OR shell glob like '*.go', '*_test.go'), context (int, 0-5 surrounding lines per match), count_only (bool, per-file match counts only).",
 		PromptSnippet: "search file contents by regex (use this, NOT shell `grep`)",
 		Schema: map[string]any{
 			"type": "object",
@@ -118,7 +141,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 			}
 			return nil
 		}
-		if glob != "" && !strings.HasSuffix(p, "."+glob) {
+		if glob != "" && !matchGlob(glob, p) {
 			return nil
 		}
 		f, err := os.Open(p)

@@ -47,6 +47,12 @@ type Engine struct {
 	// Sends are non-blocking — a slow consumer drops deltas rather than
 	// stalling the model stream.
 	StreamCh chan string
+	// ThinkCh, when non-nil, receives every chain-of-thought delta as it
+	// arrives. Separate from StreamCh so the TUI can render reasoning
+	// live in a dimmed/italic block above the answer instead of waiting
+	// for the whole thinking buffer to flush at end-of-stream. Sends are
+	// non-blocking — slow consumer drops deltas.
+	ThinkCh chan string
 	// LiveMsgCh, when non-nil, receives every assistant + tool message as
 	// it's persisted, so a UI can render tool_use / tool_result cards in
 	// real time instead of only after Run returns. User messages are NOT
@@ -95,6 +101,17 @@ type Engine struct {
 	// is injected in response to a thinking-only assistant turn. dedupes per
 	// Run so a wedged provider can't burn the whole iter budget.
 	nudgedReasoningOnly bool
+	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
+	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints.
+	sysPromptCache struct {
+		key   string
+		value string
+	}
+	// profileScaled tracks whether the tiny-profile budget was already widened
+	// for the active model's context window. Sticky: scaling is idempotent
+	// for a given (model, ctx) pair, and we re-scale on model switch via the
+	// model-id check.
+	profileScaledFor string
 }
 
 // mutatorTools are names that count as state-changing for stall detection.

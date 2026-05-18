@@ -85,10 +85,10 @@ func (m Model) renderTurnTimer() string {
 	}
 	if m.state == StateStreaming && !m.turnStartedAt.IsZero() {
 		d := time.Since(m.turnStartedAt)
-		return m.styles.RoleBee.Render("⏱ " + formatElapsed(d))
+		return m.styles.RoleBee.Render(formatElapsed(d))
 	}
 	if m.lastTurnDuration > 0 {
-		return m.styles.Dim.Render("⏱ " + formatElapsed(m.lastTurnDuration))
+		return m.styles.Dim.Render(formatElapsed(m.lastTurnDuration))
 	}
 	return ""
 }

@@ -26,7 +26,7 @@ func New(root string) *Tool { return &Tool{root: root, max: 500} }
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name:          toolName,
-		Description:   "ALWAYS use `glob` for filename pattern matching. NEVER invoke `find` or `fd` via the `bash` tool — shell variants miss bee's project-aware excludes (.claude, vendor, node_modules) and inflate counts with worktree duplicates. Filename glob (filepath.Match on basename, e.g. '*.go', '*_test.go'). Leading '**/' is accepted and stripped (recursion is implicit). Returns up to 500 paths. Args: pattern (required, alias: name), path (optional).",
+		Description:   "ALWAYS use `glob` for filename pattern matching. NEVER invoke `find` or `fd` via the `bash` tool, shell variants miss bee's project-aware excludes (.claude, vendor, node_modules, testdata) and inflate counts with worktree duplicates. Filename glob (filepath.Match on basename, e.g. '*.go', '*_test.go'). Leading '**/' is accepted and stripped (recursion is implicit). Mid-path '**' is supported: 'src/**/*.go' splits into a directory prefix filter ('src/') and a basename glob ('*.go'). Returns up to 500 paths. Args: pattern (required, alias: name), path (optional).",
 		PromptSnippet: "find files by name pattern (use this, NOT shell `find`)",
 		Schema: map[string]any{
 			"type": "object",
@@ -51,7 +51,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if pat == "" {
 		return tools.Result{Content: "missing pattern", IsError: true}, nil
 	}
-	// strip leading '**/' (and bare '**') — recursion is implicit. without
+	// strip leading '**/' (and bare '**'), recursion is implicit. without
 	// this, a pattern like '**/Bunker*.ts' would never match because
 	// filepath.Match is applied to the basename only.
 	for strings.HasPrefix(pat, "**/") {
@@ -59,6 +59,19 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	}
 	if pat == "**" {
 		pat = "*"
+	}
+	// handle mid-path '**' by splitting into a directory prefix filter and
+	// a basename glob. filepath.Match has no doublestar support, so
+	// 'src/**/*.go' is decomposed into prefix='src/' and basename='*.go'.
+	// if multiple '**' segments appear, the first split wins.
+	var dirPrefix string
+	if i := strings.Index(pat, "**"); i >= 0 {
+		dirPrefix = strings.TrimSuffix(pat[:i], "/")
+		rest := strings.TrimPrefix(pat[i+2:], "/")
+		if rest == "" {
+			rest = "*"
+		}
+		pat = rest
 	}
 	// validate the pattern up front
 	if _, err := filepath.Match(pat, "x"); err != nil {
@@ -80,7 +93,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if name == ".git" || name == "node_modules" || name == "vendor" || name == ".claude" {
+			if name == ".git" || name == "node_modules" || name == "vendor" || name == ".claude" || name == "testdata" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -88,6 +101,12 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		ok, err := filepath.Match(pat, filepath.Base(p))
 		if err != nil {
 			return err
+		}
+		if ok && dirPrefix != "" {
+			rel := tools.RelTo(root, p)
+			if rel != dirPrefix && !strings.HasPrefix(rel, dirPrefix+string(filepath.Separator)) {
+				ok = false
+			}
 		}
 		if ok {
 			if count >= t.max {

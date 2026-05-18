@@ -38,6 +38,9 @@ type Cache struct {
 	session     map[string]bool
 	persistent  map[string]bool
 	persistFunc func(key string) error
+	// persistWG tracks in-flight async persist goroutines so Flush can wait
+	// for them on shutdown.
+	persistWG sync.WaitGroup
 }
 
 // NewCache builds a Cache around inner. seed contains pattern keys already in
@@ -82,18 +85,32 @@ func (c *Cache) Request(ctx context.Context, cmd, key, desc string) (Decision, e
 	case AllowAlways:
 		c.session[key] = true
 		c.persistent[key] = true
-		// persistFunc may block on disk IO; release lock first.
+		// persistFunc may block 50-200ms on disk IO; run async so the user
+		// gets the verdict immediately. Snapshot key + pf locally so the
+		// goroutine never touches mutated cache state.
 		pf := c.persistFunc
+		k := key
 		c.mu.Unlock()
 		if pf != nil {
-			if perr := pf(key); perr != nil {
-				return d, perr
-			}
+			c.persistWG.Add(1)
+			go func() {
+				defer c.persistWG.Done()
+				_ = pf(k)
+			}()
 		}
 		return d, nil
 	}
 	c.mu.Unlock()
 	return d, nil
+}
+
+// Flush blocks until all in-flight persistFunc goroutines complete. Call
+// from the shutdown path so config.toml writes aren't lost on exit.
+func (c *Cache) Flush() {
+	if c == nil {
+		return
+	}
+	c.persistWG.Wait()
 }
 
 // AlwaysAllowKeys returns the union of session + persistent grants. Useful for

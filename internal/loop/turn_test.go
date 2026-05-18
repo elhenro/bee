@@ -663,6 +663,61 @@ func TestRun_MaxIter_TinyProfileOverrides(t *testing.T) {
 	}
 }
 
+func TestRun_PlanFirst_TinyAuto(t *testing.T) {
+	reg := tools.NewRegistry()
+	_ = reg.Register(&stubTool{
+		name: "bash",
+		desc: "x",
+		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+			return tools.Result{Content: "ok"}, nil
+		},
+	})
+	p := &stubProvider{scripts: [][]llm.Event{
+		// turn 1 — plan: text only, no tool calls.
+		{
+			{Type: llm.EventTextDelta, Delta: "1. read x\n2. edit y"},
+			{Type: llm.EventDone, StopReason: "stop"},
+		},
+		// turn 2 — execute: model calls a mutator and finishes.
+		{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u", Name: "bash", Input: map[string]any{"command": "x"}}},
+			{Type: llm.EventDone, StopReason: "tool_use"},
+		},
+		// turn 3 — wrap up.
+		{
+			{Type: llm.EventTextDelta, Delta: "done"},
+			{Type: llm.EventDone, StopReason: "stop"},
+		},
+	}}
+	eng, _ := newEngine(p, reg)
+	eng.Cfg.Profile = "tiny"
+	eng.Cfg.Mode = "auto"
+	eng.Cfg.MaxIterations = 0
+	res, err := eng.Run(context.Background(), "fix bug")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// expect: plan turn + continuation nudge + execute turn + tool result + wrap turn = 3 stream calls
+	if got := p.calls.Load(); got != 3 {
+		t.Errorf("tiny+auto plan-first: provider calls = %d, want 3 (plan + execute + wrap)", got)
+	}
+	// confirm the synthetic [plan-first] user nudge was injected.
+	found := false
+	for _, m := range res.Messages {
+		if m.Role != types.RoleUser {
+			continue
+		}
+		for _, b := range m.Content {
+			if b.Type == types.BlockText && strings.Contains(b.Text, "[plan-first]") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected [plan-first] continuation message in transcript")
+	}
+}
+
 func TestRun_MaxIter_NormalProfileFallsThrough(t *testing.T) {
 	reg := tools.NewRegistry()
 	_ = reg.Register(&stubTool{

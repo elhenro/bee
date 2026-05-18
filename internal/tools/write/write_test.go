@@ -220,6 +220,52 @@ func TestWrite_AllowsYAMLFrontmatter(t *testing.T) {
 	}
 }
 
+// empty string content must be refused; silently writing a zero-byte file
+// looks like an accidental file-delete and confuses callers.
+func TestWrite_RejectsEmptyContent(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(p, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	res, _ := w.Run(context.Background(), map[string]any{"path": p, "content": ""})
+	if !res.IsError {
+		t.Fatal("want IsError for empty content")
+	}
+	if !strings.Contains(res.Content, "non-empty") {
+		t.Errorf("want 'non-empty' in msg, got: %s", res.Content)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "keep me" {
+		t.Errorf("existing file must be untouched, got: %q", string(data))
+	}
+}
+
+// overwriting an executable file must preserve the 0o755 bit so the binary
+// stays runnable; hardcoded 0o644 would silently strip it.
+func TestWrite_PreservesExecutableMode(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "run.sh")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\necho old\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	res, _ := w.Run(context.Background(), map[string]any{
+		"path": p, "content": "#!/bin/sh\necho new\n",
+	})
+	if res.IsError {
+		t.Fatalf("err: %s", res.Content)
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Errorf("want mode 0o755 preserved, got %o", info.Mode().Perm())
+	}
+}
+
 func TestWrite_AllowsNormalCode(t *testing.T) {
 	dir := t.TempDir()
 	w := New(dir)

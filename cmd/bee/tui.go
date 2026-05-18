@@ -54,6 +54,56 @@ func detectDarkBg() bool {
 	return termenv.HasDarkBackground()
 }
 
+func stripAgentPreambleMessages(msgs []types.Message) []types.Message {
+	if len(msgs) == 0 || os.Getenv("BEE_AGENT_WORKTREE") == "1" {
+		return msgs
+	}
+	out := make([]types.Message, len(msgs))
+	copy(out, msgs)
+	for i, msg := range out {
+		if msg.Role != types.RoleUser {
+			continue
+		}
+		changed := false
+		blocks := make([]types.ContentBlock, len(msg.Content))
+		copy(blocks, msg.Content)
+		for j, block := range blocks {
+			if block.Type != types.BlockText {
+				continue
+			}
+			cleaned, ok := stripAgentPreambleText(block.Text)
+			if !ok {
+				continue
+			}
+			blocks[j].Text = cleaned
+			changed = true
+		}
+		if changed {
+			out[i].Content = blocks
+		}
+	}
+	return out
+}
+
+func stripAgentPreambleText(s string) (string, bool) {
+	markers := []string{"\n\nTask:\n", "\r\n\r\nTask:\r\n"}
+	for _, marker := range markers {
+		idx := strings.Index(s, marker)
+		if idx < 0 {
+			continue
+		}
+		prefix := s[:idx]
+		if !strings.Contains(prefix, "You are running unattended as one of many parallel") {
+			continue
+		}
+		if !strings.Contains(prefix, "DONE: <one-line summary>") {
+			continue
+		}
+		return strings.TrimLeft(s[idx+len(marker):], " \t\r\n"), true
+	}
+	return s, false
+}
+
 // runTUIWithSession is runTUI plus an optional pre-existing session id.
 // When non-empty, the rollout is reopened in append mode and prior messages
 // are seeded into the TUI / engine so the conversation continues.
@@ -105,6 +155,7 @@ func runTUIWithSession(resumeID string) {
 	storeDir, _ := knowledge.StoreDir()
 	tuiApprover := tui.NewApprover()
 	app := approval.NewCache(tuiApprover, cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
+	defer app.Flush()
 	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tools: %v\n", err)
@@ -145,12 +196,17 @@ func runTUIWithSession(resumeID string) {
 			fmt.Fprintf(os.Stderr, "bee: read session %s: %v\n", resumeID, rerr)
 			os.Exit(1)
 		}
-		prior = ms
+		prior = stripAgentPreambleMessages(ms)
 	}
 	// stream channel routes text deltas from the engine through bubbletea
 	// instead of letting them write to os.Stdout (which would corrupt the
 	// alt-screen). Buffered so brief consumer hiccups don't drop deltas.
 	streamCh := make(chan string, 64)
+	// thinkCh routes reasoning deltas from the engine through bubbletea so
+	// chain-of-thought renders live above the answer instead of arriving
+	// in one batch after streaming ends. Same buffer size as streamCh — a
+	// reasoning model can emit deltas just as fast as text.
+	thinkCh := make(chan string, 64)
 	// liveMsgCh surfaces each assistant/tool message as the loop appends it,
 	// so tool_use / tool_result cards render mid-Run instead of only at
 	// turnDoneMsg. Buffered to avoid stalling the loop during tool bursts.
@@ -170,6 +226,7 @@ func runTUIWithSession(resumeID string) {
 		// block; loop drains one per iteration anyway.
 		SteerCh:         make(chan string, 4),
 		StreamCh:        streamCh,
+		ThinkCh:         thinkCh,
 		LiveMsgCh:       liveMsgCh,
 		WarnCh:          warnCh,
 		Costs:           costs,

@@ -97,9 +97,16 @@ Hand bee an objective and a budget, walk away, wake up to a branch full of small
     bee zzz --list                       # past runs
     bee zzz --resume                     # pick up the most recent
     bee zzz --worktree "..."             # isolate in ~/.bee/zzz/worktrees/<id>
-    bee zzz --plain                      # disable the TUI
+    bee zzz --plain                      # disable the TUI (stdin steering still works)
+    bee zzz --max-consecutive-fails 5    # tolerance for transient agent stalls
+    bee zzz --hard-error-retries 5       # retries per iter on provider 5xx etc
+    bee zzz --notes-tail 5               # cap prior-iter sections echoed into prompts
+    bee zzz --gc --gc-worktrees          # prune old runs and their worktrees
+    bee zzz --gc --gc-stale-running 168h # also reap runs stuck "running" >7d
 
-Artifacts live in `~/.bee/zzz/runs/<id>/`: `notes.md` per-iter summaries, `events.jsonl` raw timeline, `meta.json` run state. Inspired by [gnhf](https://github.com/kunchenguid/gnhf).
+Artifacts live in `~/.bee/zzz/runs/<id>/`: `notes.md` per-iter summaries, `events.jsonl` raw timeline, `meta.json` run state, `blocked-<iter>.patch` for any iteration that emitted `BLOCKED:`. Inspired by [gnhf](https://github.com/kunchenguid/gnhf).
+
+**Trust model.** Commits land unsigned by default, use `--sign` to opt back in. Pre-commit hooks run unless `--no-verify` is set. Pushing (`--push`) is opt-in, and failures are recorded in `meta.json` so you can tell what reached the remote. `--yes`/`--yolo` auto-approves dangerous shell commands, so pair it with `--worktree` to contain the blast radius. The CLI prints a warning when `--yes` is used without `--worktree`.
 
 ## Parallel agents: `bee agents`
 

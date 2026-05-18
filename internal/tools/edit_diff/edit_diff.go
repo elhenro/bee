@@ -77,8 +77,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		return tools.Result{Content: "missing old", IsError: true}, nil
 	}
 	newStr, ok := in["new"].(string)
-	if !ok {
-		return tools.Result{Content: "missing new", IsError: true}, nil
+	if !ok || newStr == "" {
+		return tools.Result{Content: "new must be non-empty; use a separate tool for deletion", IsError: true}, nil
 	}
 	occ := tools.IntArg(in, "occurrence", 1)
 	if occ < 1 {

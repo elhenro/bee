@@ -105,7 +105,7 @@ func TestClaude_APIKey_HeadersAndStream(t *testing.T) {
 	}
 }
 
-func TestClaude_APIKey_NoCacheControlOrRemap(t *testing.T) {
+func TestClaude_APIKey_CacheControlAndNoRemap(t *testing.T) {
 	t.Setenv("CLAUDE_TEST_KEY", "sk-ant-api-foo")
 
 	var gotBody []byte
@@ -133,8 +133,12 @@ func TestClaude_APIKey_NoCacheControlOrRemap(t *testing.T) {
 	for range ch {
 	}
 	body := string(gotBody)
-	if strings.Contains(body, "cache_control") {
-		t.Errorf("api-key path must not emit cache_control: %s", body)
+	if !strings.Contains(body, `"cache_control":{"type":"ephemeral"}`) {
+		t.Errorf("expected ephemeral cache_control on system + last tool: %s", body)
+	}
+	// system breakpoint must sit inside the system block
+	if !strings.Contains(body, `"system":[`) || !strings.Contains(body, `"text":"be brief"`) {
+		t.Errorf("system block missing expected shape: %s", body)
 	}
 	if strings.Contains(body, `"name":"Bash"`) {
 		t.Errorf("api-key path must not remap shell→Bash: %s", body)

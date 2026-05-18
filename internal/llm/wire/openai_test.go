@@ -14,7 +14,7 @@ func TestBuildRequest_TextOnly(t *testing.T) {
 			{Type: types.BlockText, Text: "hello"},
 		}},
 	}
-	req := BuildRequest("gpt-4o-mini", "you are bee", msgs, nil, 100, 0.5, true)
+	req := BuildRequest("gpt-4o-mini", "you are bee", msgs, nil, 100, 0.5, 0, nil, true)
 
 	if req.Model != "gpt-4o-mini" {
 		t.Fatalf("model: got %q", req.Model)
@@ -49,7 +49,7 @@ func TestBuildRequest_TextOnly(t *testing.T) {
 }
 
 func TestBuildRequest_TemperatureZeroOmitted(t *testing.T) {
-	req := BuildRequest("m", "", nil, nil, 0, 0, false)
+	req := BuildRequest("m", "", nil, nil, 0, 0, 0, nil, false)
 	if req.Temperature != nil {
 		t.Fatalf("temperature should be omitted when zero, got %v", *req.Temperature)
 	}
@@ -70,7 +70,7 @@ func TestBuildRequest_ToolUseTranslation(t *testing.T) {
 			}},
 		}},
 	}
-	req := BuildRequest("m", "", msgs, nil, 0, 0, false)
+	req := BuildRequest("m", "", msgs, nil, 0, 0, 0, nil, false)
 	if len(req.Messages) != 1 {
 		t.Fatalf("messages: got %d, want 1", len(req.Messages))
 	}
@@ -112,7 +112,7 @@ func TestBuildRequest_ToolResultTranslation(t *testing.T) {
 			}},
 		}},
 	}
-	req := BuildRequest("m", "", msgs, nil, 0, 0, false)
+	req := BuildRequest("m", "", msgs, nil, 0, 0, 0, nil, false)
 	if len(req.Messages) != 3 {
 		t.Fatalf("messages: got %d, want 3 (user text + 2 tool)", len(req.Messages))
 	}
@@ -137,7 +137,7 @@ func TestBuildRequest_ImageBlockEmitsImageURLParts(t *testing.T) {
 			{Type: types.BlockImage, MediaType: "image/png", Data: []byte{0x89, 0x50, 0x4e, 0x47}},
 		}},
 	}
-	req := BuildRequest("gpt-4o", "", msgs, nil, 0, 0, false)
+	req := BuildRequest("gpt-4o", "", msgs, nil, 0, 0, 0, nil, false)
 	if len(req.Messages) != 1 {
 		t.Fatalf("messages: got %d, want 1", len(req.Messages))
 	}
@@ -175,7 +175,7 @@ func TestBuildRequest_TextOnlyKeepsStringContent(t *testing.T) {
 	msgs := []types.Message{
 		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "hi"}}},
 	}
-	req := BuildRequest("m", "", msgs, nil, 0, 0, false)
+	req := BuildRequest("m", "", msgs, nil, 0, 0, 0, nil, false)
 	if s, ok := req.Messages[0].Content.(string); !ok || s != "hi" {
 		t.Fatalf("expected string content, got %T %v", req.Messages[0].Content, req.Messages[0].Content)
 	}

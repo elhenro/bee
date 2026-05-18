@@ -211,14 +211,16 @@ func applyModify(f *gitdiff.File) (fileChange, error) {
 	if err := gitdiff.Apply(&buf, bytes.NewReader(src), f); err != nil {
 		return fileChange{}, err
 	}
-	// empty result = delete
-	if buf.Len() == 0 {
-		if err := os.Remove(path); err != nil {
-			return fileChange{}, err
-		}
-		return fileChange{path: path, kind: "delete", removed: countLines(f, lineRemoved)}, nil
+	// reject empty result on modify; require explicit deletion semantics
+	if buf.Len() == 0 && !f.IsDelete {
+		return fileChange{}, fmt.Errorf("modify patch for %s produced empty file; use deleted file mode to remove", path)
 	}
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+	// preserve original file mode; fall back to 0o644 if stat fails
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := os.WriteFile(path, buf.Bytes(), mode); err != nil {
 		return fileChange{}, err
 	}
 	return fileChange{

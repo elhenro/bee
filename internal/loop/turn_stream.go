@@ -90,6 +90,11 @@ func (e *Engine) streamAttempt(
 			gotContent = true
 			if e.JSONEmitter != nil {
 				e.JSONEmitter.Emit(jsonmode.Event{Type: "thinking", Delta: ev.Delta})
+			} else if e.ThinkCh != nil {
+				select {
+				case e.ThinkCh <- ev.Delta:
+				default:
+				}
 			}
 		case llm.EventTextDelta:
 			textBuf.WriteString(ev.Delta)

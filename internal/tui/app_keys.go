@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -27,6 +28,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.agentView, cmd = m.agentView.Update(msg)
 		return m, cmd
+	}
+	// left on empty input goes back to the `bee agents` overview when this
+	// TUI was launched from it (BEE_FROM_AGENTS=1 set by cmd/bee/agents.go);
+	// quitting the program lets the agents loop redraw the overview.
+	if keyStr == "left" && inputEmpty && os.Getenv("BEE_FROM_AGENTS") == "1" {
+		if m.cancelRun != nil {
+			m.cancelRun()
+			m.cancelRun = nil
+		}
+		return m, tea.Quit
 	}
 	if keyStr == "left" && inputEmpty && m.state == StateIdle {
 		return m, func() tea.Msg { return openHiveMsg{} }
@@ -85,7 +96,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return openPaletteMsg{} }
 	case key.Matches(msg, m.keys.HistorySearch):
 		// ctrl+r opens reverse history search with the current buffer as
-		// initial filter — fzf-style.
+		// initial filter — fzf-style, rendered inline above the input.
+		m.history.SetWidth(m.width)
 		m.history.Show(m.input.Value())
 		return m, nil
 	case key.Matches(msg, m.keys.CavemanCycle):

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -51,11 +52,8 @@ func (m Model) View() string {
 	if m.updatePrompt.Active {
 		return overlayCenter(frame, m.updatePrompt.View(), m.width)
 	}
-	// palette and atpicker render inline above the input in renderBottomBar —
-	// no extra overlay needed here.
-	if m.history.Active {
-		return overlayCenter(frame, m.history.View(), m.width)
-	}
+	// palette, atpicker, picker, history all render inline above the input in
+	// renderBottomBar — no extra overlay needed for any picker-style flow.
 	if m.tree != nil && m.tree.Open() {
 		return overlayCenter(frame, m.tree.View(m.width, m.height), m.width)
 	}
@@ -98,6 +96,13 @@ func (m Model) View() string {
 func (m Model) renderLive(maxRows int) string {
 	var parts []string
 	if m.state == StateStreaming {
+		// reasoning streams above the answer in a dim/italic block. Same
+		// styling as the finalized BlockThinking block so the live view
+		// matches the persisted scrollback. Empty while thoughts hidden
+		// or no thinking deltas arrived yet.
+		if think := m.thinkPartial; think != "" && m.showThoughts {
+			parts = append(parts, m.stream.RenderThinkingPartial(think))
+		}
 		// progressive flush may have pushed a prefix of m.partial to scroll-
 		// back already; only render what's still live.
 		visible := m.partial
@@ -114,9 +119,94 @@ func (m Model) renderLive(maxRows int) string {
 		parts = append(parts, m.stream.RenderCompacting(m.loaderFrame))
 	}
 	if m.state == StateError && m.lastErr != "" {
-		parts = append(parts, m.styles.Error.Render("✗ "+m.lastErr))
+		parts = append(parts, m.renderErrorBlock(m.lastErr))
 	}
 	return strings.Join(parts, "\n")
+}
+
+// renderErrorBlock formats m.lastErr for the live region: strips noisy
+// provider JSON tails, wraps on word boundaries to terminal width with a
+// hanging indent so continuation lines align under the body, and tints the
+// whole block via the Error style. Nothing about the message is truncated
+// — long errors wrap to multiple rows instead of being clipped off-screen.
+func (m Model) renderErrorBlock(s string) string {
+	body := cleanErrorMessage(s)
+	const glyph = "✗ "
+	const indent = "  "
+	w := m.width
+	if w <= 0 {
+		return m.styles.Error.Render(glyph + body)
+	}
+	bodyW := w - len(indent)
+	if bodyW < 20 {
+		bodyW = 20
+	}
+	lines := wrapHanging(body, bodyW)
+	for i := range lines {
+		if i == 0 {
+			lines[i] = glyph + lines[i]
+		} else {
+			lines[i] = indent + lines[i]
+		}
+	}
+	return m.styles.Error.Render(strings.Join(lines, "\n"))
+}
+
+// cleanErrorMessage trims trailing provider JSON envelopes off raw error
+// strings so the user sees the human-readable message instead of a wall of
+// `{"error":{"message":"..."}}`. Parses the JSON tail when present and
+// folds `.error.message` (or top-level `.message`) back into the prefix.
+// Falls back to the prefix-only form when the JSON is truncated/unparsable,
+// and to the original string when no JSON envelope is found.
+func cleanErrorMessage(s string) string {
+	i := strings.IndexByte(s, '{')
+	if i < 0 {
+		return s
+	}
+	prefix := strings.TrimRight(s[:i], " :")
+	tail := s[i:]
+	var probe struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(tail), &probe); err != nil {
+		return prefix
+	}
+	msg := probe.Error.Message
+	if msg == "" {
+		msg = probe.Message
+	}
+	if msg == "" {
+		return prefix
+	}
+	return prefix + ": " + msg
+}
+
+// wrapHanging breaks s into lines no wider than n cells, splitting on spaces
+// when possible and hard-cutting overlong tokens (URLs, opaque IDs) so a
+// single token can't overflow the budget.
+func wrapHanging(s string, n int) []string {
+	if n <= 0 || len(s) <= n {
+		return []string{s}
+	}
+	var out []string
+	for len(s) > n {
+		cut := n
+		for cut > 0 && s[cut] != ' ' {
+			cut--
+		}
+		if cut == 0 {
+			cut = n // no space in window: hard-cut.
+		}
+		out = append(out, s[:cut])
+		s = strings.TrimLeft(s[cut:], " ")
+	}
+	if s != "" {
+		out = append(out, s)
+	}
+	return out
 }
 
 // renderBottomBar shows just the input by default. Hints surface only when
@@ -144,6 +234,10 @@ func (m Model) renderBottomBar() string {
 	if m.atpicker.Active {
 		atp = m.atpicker.View() + "\n"
 	}
+	var history string
+	if m.history.Active {
+		history = m.history.View() + "\n"
+	}
 	// shell-mode visual: when buffer starts with `!` the user is about to
 	// dispatch a shell command, not a chat turn. Tint the typed text honey
 	// and bold the prompt so the mode is unmistakable. `m` is a value copy
@@ -167,10 +261,10 @@ func (m Model) renderBottomBar() string {
 		_ = m.input.Focus()
 	}
 	if !m.showHelp {
-		return quitHint + staged + palette + picker + atp + m.input.View()
+		return quitHint + staged + palette + picker + atp + history + m.input.View()
 	}
 	hint := fmt.Sprintf("mode:%s · caveman:%s · think:%s · ^P model · ^R history · ^W ws · ← agents · ^H hive · ^/ caveman · ^I image · shift+↵/^J newline · shift+tab mode · alt+t think · ? hide · esc cancel · ^V verbose", m.mode, string(m.caveLvl), m.thinking)
-	return quitHint + staged + palette + picker + atp + m.input.View() + "\n" + m.styles.BottomBar.Render(hint)
+	return quitHint + staged + palette + picker + atp + history + m.input.View() + "\n" + m.styles.BottomBar.Render(hint)
 }
 
 // overlayCenter draws modal beneath base, centered to width. bubbletea has no

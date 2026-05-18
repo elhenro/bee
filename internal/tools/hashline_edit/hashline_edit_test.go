@@ -71,7 +71,7 @@ func TestReplaceHashMismatch(t *testing.T) {
 	_, isErr := runTool(t, map[string]any{
 		"path": path,
 		"edits": []any{
-			map[string]any{"pos": "2#AA", "op": "replace", "lines": []any{"NOPE"}},
+			map[string]any{"pos": "2#AAA", "op": "replace", "lines": []any{"NOPE"}},
 		},
 	})
 	if !isErr {
@@ -213,7 +213,7 @@ func TestLineOutOfRange(t *testing.T) {
 
 func TestBadPos(t *testing.T) {
 	path := writeFile(t, "alpha\n")
-	for _, bad := range []string{"", "abc", "1#", "1#A", "1#ABC", "#AA", "0#AA", "-1#AA"} {
+	for _, bad := range []string{"", "abc", "1#", "1#A", "1#AB", "1#ABCD", "#AAA", "0#AAA", "-1#AAA"} {
 		_, isErr := runTool(t, map[string]any{
 			"path": path,
 			"edits": []any{
@@ -244,6 +244,57 @@ func TestUnknownOp(t *testing.T) {
 
 // Silence the unused helper warning if it ever stops being used.
 var _ = ref
+
+// replace with an empty lines array must be rejected; otherwise the
+// target line is spliced out with no replacement, silently deleting data.
+func TestReplaceEmptyLinesRejected(t *testing.T) {
+	content := "alpha\nbeta\ngamma\n"
+	path := writeFile(t, content)
+	pos := anchor(content, 2)
+	out, isErr := runTool(t, map[string]any{
+		"path": path,
+		"edits": []any{
+			map[string]any{"pos": pos, "op": "replace", "lines": []any{}},
+		},
+	})
+	if !isErr {
+		t.Fatalf("expected error for empty replace, got success: %s", out)
+	}
+	if !strings.Contains(out, "replace requires at least one line") {
+		t.Fatalf("error message missing guidance: %s", out)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != content {
+		t.Fatalf("file was modified on rejection; got %q", string(got))
+	}
+}
+
+// the tag is a 3-character suffix from the 16-char alphabet, giving a
+// 4096-bucket hash space. shape regression to lock the new contract.
+func TestAnchorIsThreeCharTag(t *testing.T) {
+	content := "alpha beta gamma\n"
+	path := writeFile(t, content)
+	pos := anchor(content, 1)
+	hash := strings.IndexByte(pos, '#')
+	if hash <= 0 || len(pos)-hash-1 != 3 {
+		t.Fatalf("anchor %q is not <n>#<3-char>", pos)
+	}
+	// pre-flight a known-bad 2-char tag at the same line: parsePos must
+	// reject the legacy shape outright.
+	bad := pos[:hash+1] + pos[hash+1:hash+3]
+	res, _ := New().Run(context.Background(), map[string]any{
+		"path": path,
+		"edits": []any{
+			map[string]any{"pos": bad, "op": "replace", "lines": []any{"x"}},
+		},
+	})
+	if !res.IsError {
+		t.Fatalf("2-char legacy tag must be rejected; got success")
+	}
+	if !strings.Contains(res.Content, "3-char-tag") {
+		t.Fatalf("error must mention 3-char-tag, got: %s", res.Content)
+	}
+}
 
 func TestHashlineEdit_FilterNilAllowsAll(t *testing.T) {
 	content := "alpha\nbeta\n"
@@ -335,7 +386,7 @@ func TestResultEchoesFreshAnchors(t *testing.T) {
 	if !strings.Contains(out, " │ THREE-NEW") {
 		t.Fatalf("echo missing new content with pipe separator:\n%s", out)
 	}
-	// every echoed line should match "<lineN>#<2-char> │ " — verify at least
+	// every echoed line should match "<lineN>#<3-char> │ "; verify at least
 	// one fully-formed anchor appears.
 	if !strings.Contains(out, "#") || !strings.Contains(out, " │ ") {
 		t.Fatalf("echo missing #TAG │ format:\n%s", out)

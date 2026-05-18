@@ -148,6 +148,40 @@ func TestTruncateWithLimit_DoesNotRaiseWebfetchCeiling(t *testing.T) {
 	}
 }
 
+func TestLimitFor_PerToolCaps(t *testing.T) {
+	cases := map[string]int{
+		"bash":   20_000,
+		"read":   15_000,
+		"search": 30_000,
+		"grep":   30_000,
+		"ls":     5_000,
+		"other":  MaxOutputTokens,
+	}
+	for name, want := range cases {
+		if got := limitFor(name); got != want {
+			t.Errorf("limitFor(%q) = %d, want %d", name, got, want)
+		}
+	}
+}
+
+func TestTruncateForTool_RespectsToolCap(t *testing.T) {
+	// ls cap = 5000 tokens = 20000 chars. Give it 30000 chars.
+	in := strings.Repeat("x\n", 15_000) // 30_000 chars
+	out := TruncateForTool("ls", in)
+	if !strings.Contains(out, trailerMarker) {
+		t.Fatalf("expected ls cap to bite at 20k chars, got len=%d", len(out))
+	}
+	// unknown tool falls back to default 50000 tokens = 200000 chars; same input
+	// must pass through without truncation.
+	pass := TruncateForTool("never_seen", in)
+	if strings.Contains(pass, trailerMarker) {
+		t.Fatalf("unknown tool should fall back to default cap, no truncation expected")
+	}
+	if pass != in {
+		t.Fatalf("unknown tool passthrough should match input")
+	}
+}
+
 func TestTruncate_EmptyContentNoop(t *testing.T) {
 	out, ok := Truncate("shell", "")
 	if ok {

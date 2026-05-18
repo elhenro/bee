@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -67,6 +69,27 @@ func AddAll(dir string) error {
 // command is invoked with overrides that disable any configured signing —
 // the run does NOT touch the user's git config. Returns the new short sha.
 func Commit(dir, msg string, sign, noVerify bool) (string, error) {
+	args := []string{}
+	if !sign {
+		args = append(args, "-c", "commit.gpgsign=false", "-c", "gpg.format=")
+	}
+	args = append(args, "commit", "-m", msg)
+	if noVerify {
+		args = append(args, "--no-verify")
+	}
+	if _, err := gitRun(dir, args...); err != nil {
+		return "", err
+	}
+	return HeadSHA(dir)
+}
+
+// CommitAll stages every tracked + untracked change and commits in a single
+// git invocation. The atomicity is git's own (index set then commit). Returns
+// the new short sha.
+func CommitAll(dir, msg string, sign, noVerify bool) (string, error) {
+	if _, err := gitRun(dir, "add", "-A"); err != nil {
+		return "", err
+	}
 	args := []string{}
 	if !sign {
 		args = append(args, "-c", "commit.gpgsign=false", "-c", "gpg.format=")
@@ -204,8 +227,8 @@ func CommitMessageFrom(finalText string, iter, inTok, outTok int) string {
 		subject = fmt.Sprintf("zzz: iter %d", iter)
 	}
 	subject = strings.TrimPrefix(subject, "# ")
-	if len(subject) > 70 {
-		subject = subject[:67] + "..."
+	if r := []rune(subject); len(r) > 70 {
+		subject = string(r[:67]) + "..."
 	}
 	if !looksConventional(subject) {
 		subject = "chore: " + subject
@@ -216,6 +239,32 @@ func CommitMessageFrom(finalText string, iter, inTok, outTok int) string {
 		return subject + "\n\n" + body + "\n\n" + footer
 	}
 	return subject + "\n\n" + footer
+}
+
+// SaveBlockedPatch dumps the current tracked diff + porcelain status to
+// ~/.bee/zzz/runs/<id>/blocked-<iter>.patch so the operator can inspect what
+// the BLOCKED iteration produced before the run reset the tree. Untracked
+// files are listed by name only (no content) to keep the patch self-explanatory.
+func SaveBlockedPatch(id string, iter int, dir string) error {
+	runDir, err := RunDir(id)
+	if err != nil {
+		return err
+	}
+	status, _ := gitRun(dir, "status", "--porcelain")
+	diff, _ := gitRun(dir, "diff", "HEAD")
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# zzz blocked-iter %d\n# status (porcelain):\n", iter))
+	if status == "" {
+		b.WriteString("# (clean)\n")
+	} else {
+		b.WriteString(status)
+		b.WriteString("\n")
+	}
+	b.WriteString("\n# diff HEAD (tracked changes only):\n")
+	b.WriteString(diff)
+	b.WriteString("\n")
+	path := filepath.Join(runDir, fmt.Sprintf("blocked-%d.patch", iter))
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
 // looksConventional checks if subject already has a conventional prefix so

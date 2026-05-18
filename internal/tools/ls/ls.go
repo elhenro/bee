@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -13,6 +14,9 @@ import (
 )
 
 const toolName = "ls"
+
+// maxEntries caps directory listings, matching find's 500 limit.
+const maxEntries = 500
 
 // Tool is the ls tool.
 type Tool struct {
@@ -25,8 +29,8 @@ func New(root string) *Tool { return &Tool{root: root} }
 // Spec advertises the tool to the model.
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
-		Name:        toolName,
-		Description:   "List entries of a directory (no recursion). One line per entry: <d|f>\\t<size>\\t<name>. Args: path (optional, default '.').",
+		Name:          toolName,
+		Description:   "List entries of a directory (no recursion). One line per entry: <d|f|l>\\t<size>\\t<name>. Args: path (optional, default '.').",
 		PromptSnippet: "List directory contents",
 		Schema: map[string]any{
 			"type": "object",
@@ -40,19 +44,42 @@ func (t *Tool) Spec() llm.ToolSpec {
 // Run lists the directory.
 func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error) {
 	path, _ := in["path"].(string)
-	if path == "" {
-		path = t.root
+	abs := path
+	if abs == "" {
+		abs = t.root
+	} else if !filepath.IsAbs(abs) {
+		abs = filepath.Join(t.root, abs)
 	}
-	entries, err := os.ReadDir(path)
+	abs = filepath.Clean(abs)
+
+	rootAbs, err := filepath.Abs(t.root)
+	if err != nil {
+		return tools.Result{Content: err.Error(), IsError: true}, nil
+	}
+	rel, err := filepath.Rel(rootAbs, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return tools.Result{Content: "path escapes workspace root", IsError: true}, nil
+	}
+
+	entries, err := os.ReadDir(abs)
 	if err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
+	total := len(entries)
+	truncated := 0
+	if total > maxEntries {
+		truncated = total - maxEntries
+		entries = entries[:maxEntries]
+	}
+
 	var b strings.Builder
 	for _, e := range entries {
 		kind := "f"
-		if e.IsDir() {
+		if e.Type()&os.ModeSymlink != 0 {
+			kind = "l"
+		} else if e.IsDir() {
 			kind = "d"
 		}
 		var size int64
@@ -61,5 +88,15 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}
 		fmt.Fprintf(&b, "%s\t%d\t%s\n", kind, size, e.Name())
 	}
-	return tools.Result{Content: strings.TrimRight(b.String(), "\n")}, nil
+	out := strings.TrimRight(b.String(), "\n")
+	if truncated > 0 {
+		if out != "" {
+			out += "\n"
+		}
+		out += fmt.Sprintf("(truncated; %d more)", truncated)
+	}
+	if out == "" {
+		return tools.Result{Content: "empty directory"}, nil
+	}
+	return tools.Result{Content: out}, nil
 }

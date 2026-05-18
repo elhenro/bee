@@ -54,3 +54,47 @@ func TestPrune_RetainsActive(t *testing.T) {
 		t.Errorf("running run removed: %v", res.RemovedRunIDs)
 	}
 }
+
+func TestPrune_ReapsStaleRunning(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	now := time.Now().UTC()
+	stale := &Run{
+		ID:        "stale-1",
+		Status:    StatusRunning,
+		StartedAt: now.Add(-30 * 24 * time.Hour),
+	}
+	fresh := &Run{
+		ID:        "fresh-1",
+		Status:    StatusRunning,
+		StartedAt: now.Add(-1 * time.Hour),
+	}
+	for _, r := range []*Run{stale, fresh} {
+		if err := SaveMeta(r); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+	res := Prune(PruneOpts{
+		StaleRunningAge: 24 * time.Hour,
+		KeepNewest:      0,
+		MaxAge:          0,
+	})
+	if len(res.ReapedStaleRunIDs) != 1 || res.ReapedStaleRunIDs[0] != "stale-1" {
+		t.Fatalf("want stale-1 reaped, got %v", res.ReapedStaleRunIDs)
+	}
+	loaded, err := LoadMeta("stale-1")
+	if err != nil {
+		t.Fatalf("LoadMeta: %v", err)
+	}
+	if loaded.Status != StatusAborted {
+		t.Errorf("stale-1 status want aborted, got %s", loaded.Status)
+	}
+	if loaded.StopCause == "" {
+		t.Error("reaped run should have a StopCause")
+	}
+	freshLoaded, _ := LoadMeta("fresh-1")
+	if freshLoaded.Status != StatusRunning {
+		t.Errorf("fresh-1 should still be running, got %s", freshLoaded.Status)
+	}
+}

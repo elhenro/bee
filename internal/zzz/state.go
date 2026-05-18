@@ -175,12 +175,17 @@ func LatestRun() (*Run, error) {
 	return runs[0], nil
 }
 
-// Summary renders a one-line listing entry.
+// Summary renders a one-line listing entry. Objective is truncated to keep
+// columns aligned in `bee zzz --list` output.
 func (r *Run) Summary() string {
 	dur := r.EndedAt.Sub(r.StartedAt).Truncate(time.Second)
 	if r.EndedAt.IsZero() {
 		dur = time.Since(r.StartedAt).Truncate(time.Second)
 	}
+	obj := r.Objective
+	if rs := []rune(obj); len(rs) > 80 {
+		obj = string(rs[:77]) + "..."
+	}
 	return fmt.Sprintf("%s  %-10s  iter=%d  tok=%d/%d  $%.4f  %s  %s",
-		r.ID, r.Status, r.IterCount, r.Tokens.Input, r.Tokens.Output, r.Tokens.USD, dur, r.Objective)
+		r.ID, r.Status, r.IterCount, r.Tokens.Input, r.Tokens.Output, r.Tokens.USD, dur, obj)
 }
