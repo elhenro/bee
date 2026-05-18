@@ -453,6 +453,74 @@ func TestTextMode_ParsesHermesFunctionXMLUnwrapped(t *testing.T) {
 	}
 }
 
+// some MoE models emit the DSML envelope as plain content (not native openai
+// tool_calls). bee previously stripped DSML tokens as markup-leak junk on the
+// native tool_call path, but content-side envelopes never reached that path —
+// they fell through unparsed and the call died. parser now turns the envelope
+// into the canonical <NAME>{json}</NAME> shape so the tool dispatches.
+func TestTextMode_ParsesDSMLEnvelope(t *testing.T) {
+	body := "<｜｜DSML｜｜tool_calls>\n" +
+		"<｜｜DSML｜｜invoke name=\"shell\">\n" +
+		"<｜｜DSML｜｜parameter name=\"command\" string=\"true\">grep foo .</｜｜DSML｜｜parameter>\n" +
+		"</｜｜DSML｜｜invoke>\n" +
+		"</｜｜DSML｜｜tool_calls>"
+	inner := &fakeProvider{
+		events: []Event{{Type: EventTextDelta, Delta: body}, {Type: EventDone}},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v (text=%q)", tools, text)
+	}
+	if tools[0].Input["command"] != "grep foo ." {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+	if strings.Contains(text, "DSML") {
+		t.Fatalf("DSML leaked into text: %q", text)
+	}
+}
+
+// single-pipe DSML variant — some templates emit `｜DSML｜` instead of `｜｜DSML｜｜`.
+func TestTextMode_ParsesDSMLSinglePipe(t *testing.T) {
+	body := "<｜DSML｜invoke name=\"write\">\n" +
+		"<｜DSML｜parameter name=\"path\">/tmp/x</｜DSML｜parameter>\n" +
+		"<｜DSML｜parameter name=\"content\">hi</｜DSML｜parameter>\n" +
+		"</｜DSML｜invoke>"
+	inner := &fakeProvider{
+		events: []Event{{Type: EventTextDelta, Delta: body}, {Type: EventDone}},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "write" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["path"] != "/tmp/x" || tools[0].Input["content"] != "hi" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// stop sequence cuts the stream past the first param close, so neither
+// </invoke> nor </tool_calls> ever arrives. parser must consume the rest of
+// the buffer as the body or the call is lost.
+func TestTextMode_ParsesDSMLEnvelopeNoClose(t *testing.T) {
+	body := "<｜｜DSML｜｜invoke name=\"shell\">\n" +
+		"<｜｜DSML｜｜parameter name=\"command\" string=\"true\">ls</｜｜DSML｜｜parameter>"
+	inner := &fakeProvider{
+		events: []Event{{Type: EventTextDelta, Delta: body}, {Type: EventDone}},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["command"] != "ls" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
 // `<tool_call><tool_name>NAME</tool_name>{json}</tool_call>` is yet another
 // shape seen from qwen3-A3B when it reads the advert's placeholder example
 // too literally. Args follow as a bare JSON object. Stop sequence still cuts

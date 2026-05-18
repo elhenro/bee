@@ -46,6 +46,25 @@ var hermesFunctionCloseRe = regexp.MustCompile(`(?is)</function>`)
 // from inside hermesFunctionRe match bodies.
 var hermesParamRe = regexp.MustCompile(`(?is)<parameter=([a-z_][a-z0-9_\-]*)>\s*(.*?)\s*</parameter>`)
 
+// DSML envelope (special-token tool-call format used by some MoE models):
+//
+//	<｜｜DSML｜｜tool_calls>
+//	  <｜｜DSML｜｜invoke name="bash">
+//	    <｜｜DSML｜｜parameter name="command" string="true">grep ...</｜｜DSML｜｜parameter>
+//	  </｜｜DSML｜｜invoke>
+//	</｜｜DSML｜｜tool_calls>
+//
+// Pipes are fullwidth `｜` (U+FF5C) and counts vary by tokenizer (single,
+// double, triple) so `[｜]+` covers all observed variants. Bee was previously
+// stripping these as markup leak from native tool_call fields; the envelope
+// also appears as raw content text, where it needs parsing not stripping —
+// rewritten into canonical `<NAME>{json}</NAME>` so the standard extractor
+// handles dispatch.
+var dsmlInvokeOpenRe = regexp.MustCompile(`(?is)<\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*invoke\s+name\s*=\s*["']([a-z_][a-z0-9_\-]*)["']\s*>`)
+var dsmlInvokeCloseRe = regexp.MustCompile(`(?is)</\s*\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*invoke\s*>`)
+var dsmlToolCallsWrapperRe = regexp.MustCompile(`(?is)</?\s*\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*tool_calls\s*>`)
+var dsmlParamRe = regexp.MustCompile(`(?is)<\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*parameter\s+name\s*=\s*["']([a-z_][a-z0-9_\-]*)["'](?:\s+string\s*=\s*["'](?:true|false)["'])?\s*>\s*(.*?)\s*</\s*\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*parameter\s*>`)
+
 // normalizeHermesEnvelopes rewrites qwen3 / hermes-style tool-call wrappers
 // into shapes the existing XML / JSON extractors already handle. Specifically:
 //
@@ -64,6 +83,10 @@ func normalizeHermesEnvelopes(s string) string {
 	// becomes a bare <function=...> match for pass 2. tolerate missing
 	// </tool_call> (stop sequence often cuts the stream before it lands).
 	s = unwrapToolCallEnvelopes(s)
+	// pass 1.2: rewrite DSML invoke/parameter envelopes into <NAME>{json}</NAME>.
+	// wrapper <｜｜DSML｜｜tool_calls> is dropped; each nested invoke becomes one
+	// canonical envelope.
+	s = normalizeDSMLEnvelopes(s)
 	// pass 1.5: rewrite <tool_name>NAME</tool_name>{json} → <NAME>{json}</NAME>.
 	// some templates emit the tool name as the content of a literal <tool_name>
 	// tag (qwen3-A3B reading the advert example too literally), then drop a
@@ -115,6 +138,82 @@ func normalizeHermesEnvelopes(s string) string {
 		cur = openEnd + advance
 	}
 	return b.String()
+}
+
+// normalizeDSMLEnvelopes turns DSML invoke blocks into the canonical
+// `<NAME>{json}</NAME>` shape and drops the surrounding
+// `<｜｜DSML｜｜tool_calls>` wrapper. Each `<｜｜DSML｜｜parameter name="K" …>V</…>`
+// inside an invoke becomes one JSON key. Missing `</invoke>` close is
+// tolerated (stop sequence cuts the stream past the first param close): we
+// consume to the next invoke open OR end of buffer. Re-running this on
+// already-normalized text is a no-op since the invoke regex won't match the
+// rewritten envelope.
+func normalizeDSMLEnvelopes(s string) string {
+	if !strings.Contains(s, "DSML") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	cur := 0
+	for cur < len(s) {
+		loc := dsmlInvokeOpenRe.FindStringSubmatchIndex(s[cur:])
+		if loc == nil {
+			b.WriteString(s[cur:])
+			break
+		}
+		openStart := cur + loc[0]
+		openEnd := cur + loc[1]
+		name := strings.ToLower(s[cur+loc[2] : cur+loc[3]])
+		tail := s[openEnd:]
+		// look for </…DSML…invoke> close OR the next <…DSML…invoke … > open
+		// (model emitted two calls without closing the first — rare but
+		// observed). Whichever comes first ends the body. Missing both →
+		// consume rest of buffer.
+		var bodyEnd, advance int
+		ci := dsmlInvokeCloseRe.FindStringIndex(tail)
+		ni := dsmlInvokeOpenRe.FindStringIndex(tail)
+		switch {
+		case ci == nil && ni == nil:
+			bodyEnd = len(tail)
+			advance = len(tail)
+		case ci == nil:
+			bodyEnd = ni[0]
+			advance = ni[0]
+		case ni == nil:
+			bodyEnd = ci[0]
+			advance = ci[1]
+		default:
+			if ci[0] <= ni[0] {
+				bodyEnd, advance = ci[0], ci[1]
+			} else {
+				bodyEnd, advance = ni[0], ni[0]
+			}
+		}
+		body := tail[:bodyEnd]
+		params := dsmlParamRe.FindAllStringSubmatch(body, -1)
+		args := make(map[string]any, len(params))
+		for _, p := range params {
+			if len(p) != 3 {
+				continue
+			}
+			// DSML param values are always raw strings (string="true" attr is
+			// just a type hint, value still arrives as text). Try scalar
+			// decode for parity with hermes params so `{"n":3}` → number,
+			// else keep verbatim.
+			args[p[1]] = decodeHermesScalar(strings.TrimSpace(p[2]))
+		}
+		buf, err := json.Marshal(args)
+		if err != nil {
+			b.WriteString(s[openStart : openEnd+advance])
+			cur = openEnd + advance
+			continue
+		}
+		b.WriteString(s[cur:openStart])
+		b.WriteString("<" + name + ">" + string(buf) + "</" + name + ">")
+		cur = openEnd + advance
+	}
+	// drop tool_calls wrappers wherever they remain.
+	return dsmlToolCallsWrapperRe.ReplaceAllString(b.String(), "")
 }
 
 // normalizeToolNameVariant rewrites `<tool_name>NAME</tool_name>{json}` into
