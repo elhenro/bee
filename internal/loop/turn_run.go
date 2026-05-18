@@ -80,18 +80,11 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	}
 
 	// resolve effective mode: auto fires a side classifier off userText.
-	// Tiny profile uses plan-first instead — small non-reasoning models can't
-	// be coaxed into hidden CoT via reasoning_effort, so we force an explicit
-	// plan turn before any edits run (see planFirst flow below). Local
-	// non-tiny providers skip the classifier — round-trip is expensive on
-	// slow local models; default to edit so tools stay available.
+	// Local providers skip the classifier — round-trip is expensive on slow
+	// local models; default to edit so tools stay available.
 	mode := ParseMode(e.Cfg.Mode)
-	planFirst := false
 	if mode == ModeAuto {
 		switch {
-		case e.Cfg.Profile == "tiny":
-			mode = ModePlan
-			planFirst = true
 		case config.IsLocalProvider(e.Cfg.DefaultProvider):
 			mode = ModeEdit
 		default:
@@ -116,10 +109,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	// no-op when the profile uses tool_format=xml (schema is nilled by the
 	// textmode wrapper before it reaches the wire).
 	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg)
-	// then narrow by mode: plan mode drops mutators entirely. Keep the
-	// pre-mode spec list so the plan-first flow can restore mutators when
-	// it transitions to edit mid-Run without re-running the upstream filters.
-	specsPreMode := specs
+	// then narrow by mode: plan mode drops mutators entirely.
 	specs = filterToolSpecsForMode(specs, mode)
 	skillManifest := ""
 	if e.Skills != nil {
@@ -272,30 +262,6 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		}
 		res.Messages = append(res.Messages, assistantMsg)
 		res.FinalText = finalText
-
-		// plan-first transition: tiny+auto starts in ModePlan so the model
-		// emits an explicit plan before any edits. Once plan turn lands a
-		// text reply with no tool calls (and the user didn't ask to stop),
-		// swap to ModeEdit, restore mutators, drop the plan prefix, and
-		// inject a synthetic nudge telling the model to execute the plan.
-		if planFirst && mode == ModePlan && len(toolUses) == 0 && !detectDoneSignal(finalText) {
-			planFirst = false
-			mode = ModeEdit
-			specs = filterToolSpecsForMode(specsPreMode, ModeEdit)
-			sys = prompt.Assemble(e.Cfg, specs, skillManifest, recs, ctxFiles)
-			cont := types.Message{
-				ID:       newID(),
-				ParentID: assistantMsg.ID,
-				Role:     types.RoleUser,
-				Content: []types.ContentBlock{{Type: types.BlockText, Text: "[plan-first] plan above is approved. execute it now: call tools to make the changes step by step."}},
-				Time: time.Now().UTC(),
-			}
-			if err := e.appendMessage(ctx, cont); err != nil {
-				return res, err
-			}
-			res.Messages = append(res.Messages, cont)
-			continue
-		}
 
 		if len(toolUses) == 0 || detectDoneSignal(finalText) {
 			// stall recovery: turn ended with no tool calls and no done signal.
