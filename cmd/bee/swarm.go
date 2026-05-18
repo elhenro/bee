@@ -22,6 +22,7 @@ import (
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/worktree"
 )
 
 // runSwarm is invoked from main.go via swarm(args).
@@ -30,6 +31,7 @@ func runSwarm(args []string) {
 	nWorkers := fs.Int("workers", 4, "number of worker bees")
 	plannerModel := fs.String("planner-model", "", "override planner model id")
 	workerModel := fs.String("worker-model", "", "override worker model id")
+	isolated := fs.Bool("isolated", false, "give each worker its own git worktree (avoids write races)")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
@@ -63,7 +65,7 @@ func runSwarm(args []string) {
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
-	reg, err := buildTools(cwd, cfg, prov, storeDir)
+	plannerReg, err := buildTools(cwd, cfg, prov, storeDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee swarm: tools: %v\n", err)
 		os.Exit(1)
@@ -76,7 +78,7 @@ func runSwarm(args []string) {
 	if *plannerModel != "" {
 		plannerCfg.DefaultModel = *plannerModel
 	}
-	planner, plannerSess, err := newEngine(prov, reg, skillReg, plannerCfg, cwd, io.Discard, "planner")
+	planner, plannerSess, err := newEngine(prov, plannerReg, skillReg, plannerCfg, cwd, io.Discard, "planner")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee swarm: planner session: %v\n", err)
 		os.Exit(1)
@@ -90,8 +92,38 @@ func runSwarm(args []string) {
 	}
 	workers := make([]hivepkg.Runner, 0, *nWorkers)
 	closers := make([]io.Closer, 0, *nWorkers)
+	worktrees := make([]*worktree.Worktree, 0, *nWorkers)
+	defer func() {
+		for _, c := range closers {
+			_ = c.Close()
+		}
+		for _, w := range worktrees {
+			if err := w.Cleanup(); err != nil {
+				fmt.Fprintf(os.Stderr, "bee swarm: cleanup worktree: %v\n", err)
+			}
+		}
+	}()
 	for i := 0; i < *nWorkers; i++ {
-		eng, sess, err := newEngine(prov, reg, skillReg, workerCfg, cwd, io.Discard, fmt.Sprintf("worker-%d", i))
+		workerCwd := cwd
+		workerReg := plannerReg
+		if *isolated {
+			wt, err := worktree.Create(cwd, fmt.Sprintf("swarm-w%d", i))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "bee swarm: worker %d worktree: %v\n", i, err)
+				os.Exit(1)
+			}
+			worktrees = append(worktrees, wt)
+			workerCwd = wt.Path
+			// rebuild the registry so file-rooted tools (grep, find, ls,
+			// write, edit_diff) target the isolated tree instead of cwd.
+			reg, err := buildTools(workerCwd, cfg, prov, storeDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "bee swarm: worker %d tools: %v\n", i, err)
+				os.Exit(1)
+			}
+			workerReg = reg
+		}
+		eng, sess, err := newEngine(prov, workerReg, skillReg, workerCfg, workerCwd, io.Discard, fmt.Sprintf("worker-%d", i))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "bee swarm: worker %d session: %v\n", i, err)
 			os.Exit(1)
@@ -99,11 +131,6 @@ func runSwarm(args []string) {
 		workers = append(workers, eng)
 		closers = append(closers, sess)
 	}
-	defer func() {
-		for _, c := range closers {
-			_ = c.Close()
-		}
-	}()
 
 	q := hivepkg.NewQueen(planner, workers)
 
