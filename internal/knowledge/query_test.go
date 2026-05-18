@@ -94,6 +94,49 @@ func TestQueryEmptyDir(t *testing.T) {
 	}
 }
 
+func TestKindBoost(t *testing.T) {
+	cases := map[string]struct {
+		tags []string
+		want int
+	}{
+		"none":         {nil, 0},
+		"guidance":     {[]string{"guidance"}, 2},
+		"personal":     {[]string{"personal"}, 1},
+		"project":      {[]string{"project"}, 0},
+		"external":     {[]string{"external"}, 0},
+		"unrelated":    {[]string{"foo"}, 0},
+		"mixedTakesMax": {[]string{"personal", "guidance"}, 2},
+	}
+	for name, c := range cases {
+		if got := kindBoost(c.tags); got != c.want {
+			t.Errorf("%s: kindBoost(%v)=%d, want %d", name, c.tags, got, c.want)
+		}
+	}
+}
+
+func TestQueryGuidanceOutranksEqualPriorityProject(t *testing.T) {
+	dir := t.TempDir()
+	must := func(name, desc string, prio int, tags ...string) {
+		_, err := WriteRecord(dir, Record{
+			Entry: Entry{Name: name, Description: desc, Tags: tags, Priority: prio},
+			Body:  "body",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// equal explicit Priority — kind boost should break the tie.
+	must("rule-x", "general rule", 3, "guidance")
+	must("note-y", "project note", 3, "project")
+	got, err := Query(context.Background(), dir, "general", 5, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || got[0].Name != "rule-x" {
+		t.Errorf("want rule-x first via kindBoost; got %+v", got)
+	}
+}
+
 func TestParseTagLines(t *testing.T) {
 	cases := map[string][]string{
 		"testing\ndeployment\nrust":      {"testing", "deployment", "rust"},
