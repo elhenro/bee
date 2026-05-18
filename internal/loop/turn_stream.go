@@ -150,6 +150,13 @@ func (e *Engine) streamAttempt(
 			if ev.Usage != nil && ev.Usage.InputTokens > 0 {
 				e.lastInputTokens = ev.Usage.InputTokens
 			}
+			// cumulative spend feeds the adaptive token-budget cap in
+			// turn_run. tracked separately from lastInputTokens (which is
+			// a per-request snapshot, not a sum).
+			if ev.Usage != nil {
+				e.cumInputTokens += ev.Usage.InputTokens
+				e.cumOutputTokens += ev.Usage.OutputTokens
+			}
 		}
 	}
 	// post-stream ctx check: if the channel closed without an explicit

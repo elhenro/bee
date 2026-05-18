@@ -23,6 +23,7 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/worktree"
 )
 
 // runFan parses flags, resolves the workload, builds N Engines, and runs
@@ -41,6 +42,7 @@ func runFan(args []string) {
 	model := fs.String("model", "", "override config default_model")
 	providerName := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope")
+	isolated := fs.Bool("isolated", false, "give each worker its own git worktree (avoids write races)")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
@@ -86,14 +88,37 @@ func runFan(args []string) {
 
 	pool := hivepkg.NewPool(*maxConc)
 	rolls := make([]*session.Rollout, 0, len(workers))
+	worktrees := make([]*worktree.Worktree, 0, len(workers))
 	defer func() {
 		for _, r := range rolls {
 			_ = r.Close()
 		}
+		for _, w := range worktrees {
+			if err := w.Cleanup(); err != nil {
+				fmt.Fprintf(os.Stderr, "bee fan: cleanup worktree: %v\n", err)
+			}
+		}
 	}()
 
-	for _, wspec := range workers {
-		eng, roll, err := newWorkerEngine(prov, reg, cfg, cwd)
+	for i, wspec := range workers {
+		workerCwd := cwd
+		workerReg := reg
+		if *isolated {
+			wt, err := worktree.Create(cwd, fmt.Sprintf("fan-w%d", i))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "bee fan: worker %s worktree: %v\n", wspec.name, err)
+				os.Exit(1)
+			}
+			worktrees = append(worktrees, wt)
+			workerCwd = wt.Path
+			r2, err := buildTools(workerCwd, cfg, prov, storeDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "bee fan: worker %s tools: %v\n", wspec.name, err)
+				os.Exit(1)
+			}
+			workerReg = r2
+		}
+		eng, roll, err := newWorkerEngine(prov, workerReg, cfg, workerCwd)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "bee fan: build worker %s: %v\n", wspec.name, err)
 			os.Exit(1)

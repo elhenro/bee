@@ -79,7 +79,7 @@ func Query(ctx context.Context, dir, userQuery string, limit int, opts Options) 
 		if opts.Exclude[e.Path] {
 			continue
 		}
-		s := e.Priority
+		s := e.Priority + kindBoost(e.Tags)
 		for _, t := range e.Tags {
 			if hintTags[t] {
 				s += 2
@@ -209,6 +209,29 @@ func parseTagLines(s string) []string {
 		return nil
 	}
 	return out
+}
+
+// kindBoost adds a small constant to the score of records carrying a
+// well-known taxonomy tag. The taxonomy mirrors Claude Code's memory split
+// (user/feedback/project/reference); guidance entries are standing rules
+// that should rank above plain priority noise, personal preferences come
+// next, project and external context add no extra weight beyond the user-
+// set Priority field.
+func kindBoost(tags []string) int {
+	boost := 0
+	for _, t := range tags {
+		switch t {
+		case TagGuidance:
+			if boost < 2 {
+				boost = 2
+			}
+		case TagPersonal:
+			if boost < 1 {
+				boost = 1
+			}
+		}
+	}
+	return boost
 }
 
 // tokenize splits s on non-word boundaries, lowercases, and drops short

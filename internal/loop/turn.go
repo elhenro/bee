@@ -97,6 +97,14 @@ type Engine struct {
 	warnedIterEighty bool
 	warnedStall      bool
 	noMutationStreak int
+	// cumulative token spend across iterations of one Run. drives the
+	// adaptive token-budget cap so long productive turns aren't bounded
+	// purely by iter count. reset per Run.
+	cumInputTokens  int
+	cumOutputTokens int
+	// warnedTokenHalf / Eighty: token-budget warnings dedupe per Run.
+	warnedTokenHalf   bool
+	warnedTokenEighty bool
 	// nudgedReasoningOnly flips true after one synthetic continuation nudge
 	// is injected in response to a thinking-only assistant turn. dedupes per
 	// Run so a wedged provider can't burn the whole iter budget.
