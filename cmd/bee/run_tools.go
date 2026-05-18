@@ -23,6 +23,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/ls"
 	"github.com/elhenro/bee/internal/tools/read"
 	"github.com/elhenro/bee/internal/tools/shell"
+	"github.com/elhenro/bee/internal/tools/tool_lookup"
 	"github.com/elhenro/bee/internal/tools/usertool"
 	"github.com/elhenro/bee/internal/tools/write"
 )
@@ -129,6 +130,13 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 			return nil, err
 		}
 	}
+	// tool_lookup registers last and reads back from r so it can answer
+	// queries about every other tool, including user tools.
+	if !isDisabledTool(cfg.DisabledTools, "tool_lookup") {
+		if err := r.Register(tool_lookup.New(r)); err != nil {
+			return nil, err
+		}
+	}
 	return r, nil
 }
 
@@ -193,6 +201,11 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 			continue
 		}
 		if err := r.Register(t); err != nil {
+			return nil, err
+		}
+	}
+	if !isDisabledTool(cfg.DisabledTools, "tool_lookup") {
+		if err := r.Register(tool_lookup.New(r)); err != nil {
 			return nil, err
 		}
 	}
