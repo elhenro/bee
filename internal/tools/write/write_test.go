@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -245,6 +246,9 @@ func TestWrite_RejectsEmptyContent(t *testing.T) {
 // overwriting an executable file must preserve the 0o755 bit so the binary
 // stays runnable; hardcoded 0o644 would silently strip it.
 func TestWrite_PreservesExecutableMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows has no executable bit")
+	}
 	dir := t.TempDir()
 	p := filepath.Join(dir, "run.sh")
 	if err := os.WriteFile(p, []byte("#!/bin/sh\necho old\n"), 0o755); err != nil {

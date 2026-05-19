@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/elhenro/bee/internal/cost"
 )
 
 // BannerVariant selects which startup banner art to render. random picks
@@ -100,9 +101,24 @@ func RenderBannerVariant(v BannerVariant, version, model string) string {
 	if version != "" {
 		info += " " + version
 	}
+	if suf := lifetimeTokensTrailer(); suf != "" {
+		info += suf
+	}
 	b.WriteString(smoke.Render(info))
 	b.WriteString("\n")
 	return b.String()
+}
+
+// lifetimeTokensTrailer is the "  1.2M tok" trailer shared by all banner
+// renderers. Empty until the counter file accumulates a non-zero total so
+// fresh installs stay uncluttered.
+func lifetimeTokensTrailer() string {
+	in, out := cost.LifetimeTotals()
+	total := in + out
+	if total <= 0 {
+		return ""
+	}
+	return "  " + cost.FormatLifetimeTokens(total) + " tok"
 }
 
 // RenderBannerCompact returns a single-line banner for headless mode. model
@@ -115,7 +131,11 @@ func RenderBannerCompact(version, model string) string {
 
 	parts := []string{honey.Render("⬢")}
 	if version != "" {
-		parts = append(parts, dim.Render("bee "+version))
+		label := "bee " + version
+		if suf := lifetimeTokensTrailer(); suf != "" {
+			label += suf
+		}
+		parts = append(parts, dim.Render(label))
 	}
 	return strings.Join(parts, "  ") + "\n"
 }

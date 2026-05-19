@@ -106,6 +106,16 @@ func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 	return m, m.flush()
 }
 
+// onRecapIdleTick fires recapIdleDelay after a clean turn finish. Drops
+// itself if a newer submit bumped m.recapGen, or if the user is no longer
+// idle (state != StateIdle, or showRecap toggled off mid-wait).
+func (m Model) onRecapIdleTick(msg recapIdleTickMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.recapGen || m.state != StateIdle || !m.showRecap {
+		return m, nil
+	}
+	return m, m.recapCmd(msg.msgs)
+}
+
 func (m Model) onRecapReady(msg recapReadyMsg) (tea.Model, tea.Cmd) {
 	// dim italic, single line. "※" glyph marks meta-commentary so it
 	// doesn't read as another assistant turn. Error + skip cases render
@@ -176,10 +186,11 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	// tokens. Only on a clean finish (no error, no cancel), and only
 	// when the turn was substantive enough to warrant a recap — short
 	// greetings/Q&A skip the side call entirely (saves tokens, avoids
-	// noisy "(skipped)" lines from the model).
+	// noisy "(skipped)" lines from the model). Deferred recapIdleDelay
+	// so a follow-up submit cancels the pending tick (gen mismatch).
 	var recapCmd tea.Cmd
 	if msg.err == nil && m.showRecap && recapWorthwhile(msg.result.Messages, m.lastTurnDuration) {
-		recapCmd = m.recapCmd(msg.result.Messages)
+		recapCmd = recapIdleCmd(m.recapGen, msg.result.Messages)
 	}
 	// drain one queued follow-up per turn so the TUI stays responsive
 	// between fires. Only when last turn didn't error.

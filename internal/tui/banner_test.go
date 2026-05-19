@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/elhenro/bee/internal/cost"
 )
 
 func TestParseBannerVariant_NamedValues(t *testing.T) {
@@ -64,5 +67,29 @@ func TestRenderBanner_LegacyDelegatesToHex(t *testing.T) {
 	hex := stripANSI(RenderBannerVariant(BannerHex, "v0.1", "m"))
 	if legacy != hex {
 		t.Errorf("RenderBanner not equal to RenderBannerVariant(BannerHex):\nlegacy=%q\nhex=%q", legacy, hex)
+	}
+}
+
+func TestRenderBanner_LifetimeTokensTrailer(t *testing.T) {
+	// Pin a fresh totals file so persisted state on the dev box doesn't
+	// leak into the assertion (and so the test doesn't pollute it).
+	dir := t.TempDir()
+	t.Setenv("BEE_LIFETIME_TOKENS", filepath.Join(dir, "lt.json"))
+	cost.ResetLifetimeForTest()
+
+	out := stripANSI(RenderBannerVariant(BannerHex, "v0.1", ""))
+	if strings.Contains(out, "tok") {
+		t.Errorf("fresh install banner should omit token trailer: %q", out)
+	}
+
+	cost.AddLifetime(1_200_000, 300_000)
+	out = stripANSI(RenderBannerVariant(BannerHex, "v0.1", ""))
+	if !strings.Contains(out, "1.5M tok") {
+		t.Errorf("banner missing lifetime trailer: %q", out)
+	}
+
+	compact := stripANSI(RenderBannerCompact("v0.1", ""))
+	if !strings.Contains(compact, "1.5M tok") {
+		t.Errorf("compact banner missing lifetime trailer: %q", compact)
 	}
 }

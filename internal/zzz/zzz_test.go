@@ -159,7 +159,7 @@ func TestCommitMessageFromShape(t *testing.T) {
 }
 
 func TestStateRoundTripAndNotes(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BEE_HOME", t.TempDir())
 	id := NewID()
 	r := &Run{
 		ID:        id,
@@ -256,7 +256,7 @@ func TestCommitMessageFromUnicodeSafeTruncation(t *testing.T) {
 
 func TestSaveBlockedPatch(t *testing.T) {
 	repo := newRepo(t)
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BEE_HOME", t.TempDir())
 	id := NewID()
 	// dirty the tree so the patch has content.
 	if err := os.WriteFile(filepath.Join(repo, "scratch.txt"), []byte("partial work"), 0o644); err != nil {

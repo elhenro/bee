@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/jsonmode"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
@@ -146,6 +147,14 @@ func (e *Engine) streamAttempt(
 			}
 			if e.Costs != nil && ev.Usage != nil {
 				e.Costs.Record(e.Cfg.DefaultProvider, req.Model, ev.Usage.InputTokens, ev.Usage.OutputTokens)
+			}
+			// Bump persisted lifetime totals so the splash banner can show
+			// "1.2M tok" across all bee sessions ever. Separate from the
+			// process-local Costs tracker (which resets on /new), and
+			// hooked here so unit tests using cost.New() directly stay
+			// hermetic — production has exactly one place tokens enter.
+			if ev.Usage != nil {
+				cost.AddLifetime(ev.Usage.InputTokens, ev.Usage.OutputTokens)
 			}
 			if ev.Usage != nil && ev.Usage.InputTokens > 0 {
 				e.lastInputTokens = ev.Usage.InputTokens

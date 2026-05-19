@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -335,6 +336,9 @@ func TestApplyPatch_EmptyResultRejected(t *testing.T) {
 }
 
 func TestApplyPatch_PreservesMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows has no executable bit")
+	}
 	runInDir(t)
 	if err := os.WriteFile("run.sh", []byte("echo old\n"), 0o755); err != nil {
 		t.Fatal(err)

@@ -6,16 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // sessionLock is a per-session advisory lock used by Update to serialize
 // read-modify-write cycles. Stored next to the status JSON as <id>.lock.
-// Windows falls back to the pid-file heuristic (no flock equivalent here).
-type sessionLock struct{ path string }
+// Backed by Windows LockFileEx with LOCKFILE_EXCLUSIVE_LOCK so a crashed
+// holder's lock is released by the OS when the handle closes.
+type sessionLock struct {
+	path string
+	f    *os.File
+}
 
 func acquireSessionLock(id string) (*sessionLock, error) {
 	d, err := dir()
@@ -26,30 +29,26 @@ func acquireSessionLock(id string) (*sessionLock, error) {
 		return nil, err
 	}
 	p := lockPath(d, id)
-	// short bounded retry loop. Lock holders should release quickly; if a
-	// process died holding the lock we steal once based on a stored pid.
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		var ol windows.Overlapped
+		err := windows.LockFileEx(
+			windows.Handle(f.Fd()),
+			windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY,
+			0, 1, 0, &ol,
+		)
 		if err == nil {
+			_ = f.Truncate(0)
+			_, _ = f.Seek(0, 0)
 			fmt.Fprintf(f, "%d\n", os.Getpid())
-			_ = f.Close()
-			return &sessionLock{path: p}, nil
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return nil, err
-		}
-		// stale-holder check
-		body, rerr := os.ReadFile(p)
-		if rerr == nil {
-			pidStr := strings.TrimSpace(string(body))
-			pid, perr := strconv.Atoi(pidStr)
-			if perr == nil && pid > 0 && !sessionPidAlive(pid) {
-				_ = os.Remove(p)
-				continue
-			}
+			return &sessionLock{path: p, f: f}, nil
 		}
 		if time.Now().After(deadline) {
+			_ = f.Close()
 			return nil, errors.New("bgreg: session lock contention")
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -57,24 +56,13 @@ func acquireSessionLock(id string) (*sessionLock, error) {
 }
 
 func (l *sessionLock) release() {
-	if l == nil || l.path == "" {
+	if l == nil || l.f == nil {
 		return
 	}
+	var ol windows.Overlapped
+	_ = windows.UnlockFileEx(windows.Handle(l.f.Fd()), 0, 1, 0, &ol)
+	_ = l.f.Close()
 	_ = os.Remove(l.path)
 }
 
 func lockPath(d, id string) string { return d + string(os.PathSeparator) + id + ".lock" }
-
-func sessionPidAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	if err := proc.Signal(syscall.Signal(0)); err == nil {
-		return true
-	}
-	return false
-}

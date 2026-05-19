@@ -85,10 +85,16 @@ func buildIntroBannerLine(width int, bold bool) string {
 		beeStyle = beeStyle.Bold(true)
 	}
 	bee := beeStyle.Render("bee")
-	ver := lipgloss.NewStyle().Foreground(fgOyster).Render("v" + Version)
+	dim := lipgloss.NewStyle().Foreground(fgOyster)
+	ver := dim.Render("v" + Version)
 	label := "🐝 " + bee + " " + ver
 	// visible cells: 🐝 (2) + " " + "bee" (3) + " " + "v<ver>" (1+len)
 	visibleCells := 2 + 1 + 3 + 1 + 1 + len(Version)
+	if suf := lifetimeTokensTrailer(); suf != "" {
+		label += dim.Render(suf)
+		// trailer is " " + ASCII digits/letters/dot, so byte len == cells.
+		visibleCells += len(suf)
+	}
 	if width > visibleCells {
 		label = strings.Repeat(" ", (width-visibleCells)/2) + label
 	}

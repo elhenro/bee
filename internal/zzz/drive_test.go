@@ -84,7 +84,7 @@ func (u *stubUI) Steer() <-chan Steer    { return u.steer }
 func setupDriveTest(t *testing.T) (*Run, string) {
 	t.Helper()
 	repo := newRepo(t)
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BEE_HOME", t.TempDir())
 	id := NewID()
 	r := &Run{
 		ID:        id,

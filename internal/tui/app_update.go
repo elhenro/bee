@@ -143,6 +143,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onCompactDone(msg)
 	case turnDoneMsg:
 		return m.onTurnDone(msg)
+	case recapIdleTickMsg:
+		return m.onRecapIdleTick(msg)
 	case recapReadyMsg:
 		return m.onRecapReady(msg)
 	case costTickMsg:

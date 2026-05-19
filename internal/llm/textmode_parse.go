@@ -249,7 +249,6 @@ func normalizeToolNameVariant(s string) string {
 		if end < 0 {
 			// unbalanced — assume rest of buffer is args body (stop-seq cut).
 			b.WriteString("<" + name + ">" + tail[i:] + "}</" + name + ">")
-			cur = len(s)
 			break
 		}
 		argsJSON := tail[i : end+1]

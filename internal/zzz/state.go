@@ -13,12 +13,18 @@ import (
 )
 
 // HomeDir returns ~/.bee/zzz. Created on first call.
+// BEE_HOME overrides ~/.bee (matches bgreg/agents and lets tests stay
+// hermetic on Windows where os.UserHomeDir reads USERPROFILE, not HOME).
 func HomeDir() (string, error) {
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	root := os.Getenv("BEE_HOME")
+	if root == "" {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		root = filepath.Join(h, ".bee")
 	}
-	d := filepath.Join(h, ".bee", "zzz")
+	d := filepath.Join(root, "zzz")
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return "", err
 	}

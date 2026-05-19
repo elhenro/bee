@@ -7,7 +7,7 @@ import (
 
 func TestPrune_KeepNewest(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	t.Setenv("BEE_HOME", dir)
 
 	now := time.Now().UTC()
 	for i, st := range []string{StatusCompleted, StatusCompleted, StatusCompleted, StatusFailed, StatusAborted} {
@@ -36,7 +36,7 @@ func TestPrune_KeepNewest(t *testing.T) {
 
 func TestPrune_RetainsActive(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	t.Setenv("BEE_HOME", dir)
 
 	now := time.Now().UTC()
 	active := &Run{
@@ -57,7 +57,7 @@ func TestPrune_RetainsActive(t *testing.T) {
 
 func TestPrune_ReapsStaleRunning(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	t.Setenv("BEE_HOME", dir)
 
 	now := time.Now().UTC()
 	stale := &Run{

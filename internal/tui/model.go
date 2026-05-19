@@ -239,6 +239,11 @@ type Model struct {
 	// generation, no render.
 	showRecap bool
 
+	// recapGen is bumped on every submit so a pending idle-delay tick for
+	// the previous turn drops its scheduled side-call. Only when the gen
+	// observed by the firing tick still matches m.recapGen do we generate.
+	recapGen int
+
 	// compact strips the spacing layer (gutter, inter-turn blank line,
 	// user bg-tint, OSC 133 zones) for a denser layout. Default false =
 	// clean mode. Toggle via /settings; persists to config.

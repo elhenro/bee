@@ -177,6 +177,8 @@ func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 	// "final" to "live" mode immediately, no stale final reading lingering.
 	m.turnStartedAt = time.Now()
 	m.lastTurnDuration = 0
+	// invalidate any pending post-turn recap tick from the previous turn.
+	m.recapGen++
 
 	// build content blocks: text first, then a pending image if staged.
 	content := []types.ContentBlock{{Type: types.BlockText, Text: text}}

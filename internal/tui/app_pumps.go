@@ -15,6 +15,11 @@ import (
 // second or two against deepseek-v4-flash class models.
 const recapTimeout = 20 * time.Second
 
+// recapIdleDelay defers the side-call until the user has been idle for
+// this long after a turn finishes. New submits bump m.recapGen and the
+// scheduled tick drops itself when its captured gen no longer matches.
+const recapIdleDelay = 30 * time.Second
+
 // quitConfirmWindow is how long a single ctrl+d arms the quit-confirm flow.
 // After this elapses, the next ctrl+d re-arms instead of quitting.
 const quitConfirmWindow = 2 * time.Second
@@ -103,6 +108,24 @@ type recapReadyMsg struct {
 	text    string
 	skipped bool
 	err     string
+}
+
+// recapIdleTickMsg fires recapIdleDelay after a turn finished. gen is the
+// m.recapGen value captured when the tick was scheduled — a new submit
+// since then bumps m.recapGen so the firing tick drops itself instead of
+// kicking off the side-call. msgs is the snapshot to summarise.
+type recapIdleTickMsg struct {
+	gen  int
+	msgs []types.Message
+}
+
+// recapIdleCmd schedules a recapIdleTickMsg after recapIdleDelay carrying
+// the supplied gen and msgs. tea.Tick can't pass closure data, so we wrap
+// time.After in a goroutine-style cmd.
+func recapIdleCmd(gen int, msgs []types.Message) tea.Cmd {
+	return tea.Tick(recapIdleDelay, func(time.Time) tea.Msg {
+		return recapIdleTickMsg{gen: gen, msgs: msgs}
+	})
 }
 
 // sentinel msgs for unwired panes — slice 3B/3C consume them later.

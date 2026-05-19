@@ -78,6 +78,33 @@ func TestRecapWorthwhile(t *testing.T) {
 	}
 }
 
+func TestRecapIdleTickDropsOnGenMismatch(t *testing.T) {
+	m := Model{showRecap: true, state: StateIdle, recapGen: 7}
+	out, cmd := m.onRecapIdleTick(recapIdleTickMsg{gen: 6, msgs: nil})
+	if cmd != nil {
+		t.Fatalf("stale gen tick should drop, got cmd=%v", cmd)
+	}
+	if got := out.(Model).recapGen; got != 7 {
+		t.Fatalf("recapGen mutated: got %d want 7", got)
+	}
+}
+
+func TestRecapIdleTickDropsWhenNotIdle(t *testing.T) {
+	m := Model{showRecap: true, state: StateStreaming, recapGen: 3}
+	_, cmd := m.onRecapIdleTick(recapIdleTickMsg{gen: 3, msgs: nil})
+	if cmd != nil {
+		t.Fatalf("non-idle tick should drop, got cmd=%v", cmd)
+	}
+}
+
+func TestRecapIdleTickDropsWhenDisabled(t *testing.T) {
+	m := Model{showRecap: false, state: StateIdle, recapGen: 3}
+	_, cmd := m.onRecapIdleTick(recapIdleTickMsg{gen: 3, msgs: nil})
+	if cmd != nil {
+		t.Fatalf("disabled tick should drop, got cmd=%v", cmd)
+	}
+}
+
 func repeat(s string, n int) string {
 	out := make([]byte, 0, len(s)*n)
 	for i := 0; i < n; i++ {

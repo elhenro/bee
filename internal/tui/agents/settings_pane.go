@@ -307,5 +307,6 @@ func overlayBox(body string, width, height int) string {
 		BorderForeground(honey).
 		Padding(0, 1).
 		Width(width - 4).
+		Height(height - 2).
 		Render(body)
 }
