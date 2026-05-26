@@ -17,9 +17,27 @@ var ErrTwoStrike = errors.New("loop: tool call failed twice in a row")
 // a row regardless of args. signals the model is wedged on a specific tool.
 var ErrPerToolFailureCap = errors.New("loop: tool failed beyond per-tool cap")
 
-// ErrEscalate is the typed sentinel for the `escalate` tool. PR3 lands the
-// tool; PR1 only declares the sentinel so other code can reference it.
+// ErrEscalate is the typed sentinel for the `escalate` tool. callers match
+// via errors.Is to detect "the model chose to stop and ask the user".
 var ErrEscalate = errors.New("loop: model escalated to user")
+
+// EscalateError wraps the escalate tool's payload so callers (TUI, headless
+// run) can surface the model's reason + suggested-next-action in the exit
+// message instead of just a generic sentinel.
+type EscalateError struct {
+	Reason     string
+	NextAction string
+}
+
+func (e *EscalateError) Error() string {
+	if e.NextAction == "" {
+		return fmt.Sprintf("%s: %s", ErrEscalate.Error(), e.Reason)
+	}
+	return fmt.Sprintf("%s: %s — next: %s", ErrEscalate.Error(), e.Reason, e.NextAction)
+}
+
+func (e *EscalateError) Is(target error) bool { return target == ErrEscalate }
+func (e *EscalateError) Unwrap() error        { return ErrEscalate }
 
 // TwoStrikeError wraps the offending ToolUse so callers (TUI, headless
 // `bee run`) can surface tool name + args in the exit message.

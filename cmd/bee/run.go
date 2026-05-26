@@ -249,6 +249,11 @@ func runHeadlessReal(args []string) {
 		if errors.Is(err, loop.ErrTwoStrike) {
 			os.Exit(7)
 		}
+		// escalate → another distinct code so the user/CI knows the model
+		// asked for help rather than crashed.
+		if errors.Is(err, loop.ErrEscalate) {
+			os.Exit(8)
+		}
 		os.Exit(1)
 	}
 	_ = res

@@ -38,6 +38,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	e.nudgedRepeat = false
 	e.nudgedPerToolFail = false
 	e.dupWrites = newDuplicateWriteTracker()
+	e.escalateErr = nil
 	res := RunResult{}
 
 	// probe the active model's context window before the first iteration so
@@ -321,6 +322,13 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		// failed) then surface the typed error to the caller.
 		if repeatErr != nil {
 			return res, repeatErr
+		}
+		// escalate bail: same shape — append the synthetic tool_result first
+		// (transcript shows the model's reason) then surface ErrEscalate.
+		if e.escalateErr != nil {
+			esc := e.escalateErr
+			e.escalateErr = nil
+			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction}
 		}
 	}
 	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume", maxIter)

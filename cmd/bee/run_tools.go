@@ -16,6 +16,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/apply_patch"
 	"github.com/elhenro/bee/internal/tools/codegraph"
 	"github.com/elhenro/bee/internal/tools/edit_diff"
+	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/tools/find"
 	"github.com/elhenro/bee/internal/tools/grep"
 	"github.com/elhenro/bee/internal/tools/hashline_edit"
@@ -114,6 +115,9 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 		write.New(cwd),
 		edit_diff.New(cwd),
 		hashline_edit.New(),
+		// escalate gives the model an explicit exit door — important for
+		// small models that wedge on uncertain tasks instead of asking.
+		escalate.New(),
 	}
 	// apply_patch dropped on tiny — small models mis-emit unified diffs.
 	if !prof.SkipApplyPatch {
@@ -202,6 +206,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 		write.NewWithFilter(cwd, writeRe),
 		edit_diff.NewWithFilter(cwd, writeRe),
 		hashline_edit.NewWithFilter(writeRe),
+		escalate.New(),
 	}
 	if !prof.SkipApplyPatch {
 		all = append(all, apply_patch.NewWithFilter(writeRe))

@@ -14,6 +14,7 @@ import (
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -120,6 +121,10 @@ type Engine struct {
 	// dupWrites tracks (path, content-hash) of writes within one Run so the
 	// engine can warn on duplicate identical writes. opt-in per profile.
 	dupWrites *duplicateWriteTracker
+	// escalateErr stashes the escalate-tool payload during dispatch so
+	// dispatchTools can return ErrEscalate after the synthetic tool_result
+	// lands in the transcript. nil = no escalation in flight.
+	escalateErr *escalate.Error
 	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
 	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints.
 	sysPromptCache struct {

@@ -229,6 +229,22 @@ type Profile struct {
 	// a hallucinating small model can't piggyback on one "yes" to run more
 	// destructive commands later. See safety.DefaultsForProfile.
 	Safety ProfileSafety `toml:"safety"`
+
+	// Escalation carries the optional "larger fallback model" wiring. The
+	// engine itself never re-enters Run with this — handoff is caller-driven
+	// (cmd/bee/run.go or the `bee escalate` subcommand). All fields default
+	// to zero / off so this is fully opt-in.
+	Escalation ProfileEscalation `toml:"escalation"`
+}
+
+// ProfileEscalation configures the optional handoff path for when a tiny
+// model wedges (two-strike) or calls the escalate tool. The model id is
+// generic so this stays vendor-neutral.
+type ProfileEscalation struct {
+	// Provider id from Config.Providers. Empty = no handoff configured.
+	Provider string `toml:"provider"`
+	// Model id understood by Provider. Empty = no handoff configured.
+	Model string `toml:"model"`
 }
 
 // ProfileSafety mirrors safety.ProfileSafety in the config schema. Kept here
