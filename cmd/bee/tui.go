@@ -154,7 +154,8 @@ func runTUIWithSession(resumeID string) {
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
 	tuiApprover := tui.NewApprover()
-	app := approval.NewCache(tuiApprover, cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
+	app := approval.NewCacheWithRequire(tuiApprover, cfg.Sandbox.CommandAllowlist,
+		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
 	defer app.Flush()
 	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
 	if err != nil {

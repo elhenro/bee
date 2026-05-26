@@ -37,6 +37,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	e.repeats = newRepeatTracker()
 	e.nudgedRepeat = false
 	e.nudgedPerToolFail = false
+	e.dupWrites = newDuplicateWriteTracker()
 	res := RunResult{}
 
 	// probe the active model's context window before the first iteration so
@@ -303,6 +304,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 
 		blocks := toolResultBlocks(toolResults)
 		blocks, repeatErr := observeRepeats(e, toolUses, toolResults, blocks)
+		blocks = observeDuplicateWrites(e, toolUses, toolResults, blocks)
 		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget)
 		toolMsg := types.Message{
 			ID:       newID(),

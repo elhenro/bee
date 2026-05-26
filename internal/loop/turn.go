@@ -117,6 +117,9 @@ type Engine struct {
 	// prefixes — fire at most once per Run.
 	nudgedRepeat      bool
 	nudgedPerToolFail bool
+	// dupWrites tracks (path, content-hash) of writes within one Run so the
+	// engine can warn on duplicate identical writes. opt-in per profile.
+	dupWrites *duplicateWriteTracker
 	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
 	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints.
 	sysPromptCache struct {

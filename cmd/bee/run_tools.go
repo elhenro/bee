@@ -92,7 +92,11 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 		return approval.Static{Verdict: approval.AllowOnce}
 	}
 	cli := approval.NewCLI(os.Stdin, os.Stderr)
-	return approval.NewCache(cli, cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
+	// profile-level RequireApprovalKeys bypass the session AllowSession cache:
+	// destructive ops re-prompt every time on tiny so a hallucinating small
+	// model can't snowball one yes into a series of dangerous commands.
+	return approval.NewCacheWithRequire(cli, cfg.Sandbox.CommandAllowlist,
+		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
 }
 
 // buildToolsWithApprover is buildTools that wires app into the shell tool so
