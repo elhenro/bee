@@ -14,6 +14,7 @@ import (
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -109,6 +110,21 @@ type Engine struct {
 	// is injected in response to a thinking-only assistant turn. dedupes per
 	// Run so a wedged provider can't burn the whole iter budget.
 	nudgedReasoningOnly bool
+	// repeats tracks tool-call signatures across iterations of one Run so
+	// the loop can detect identical-call loops, per-tool failure cascades,
+	// and two-strike escalations. allocated lazily on first dispatch.
+	repeats *repeatTracker
+	// nudgedRepeat / nudgedPerToolFail dedupe the corresponding warning
+	// prefixes — fire at most once per Run.
+	nudgedRepeat      bool
+	nudgedPerToolFail bool
+	// dupWrites tracks (path, content-hash) of writes within one Run so the
+	// engine can warn on duplicate identical writes. opt-in per profile.
+	dupWrites *duplicateWriteTracker
+	// escalateErr stashes the escalate-tool payload during dispatch so
+	// dispatchTools can return ErrEscalate after the synthetic tool_result
+	// lands in the transcript. nil = no escalation in flight.
+	escalateErr *escalate.Error
 	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
 	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints.
 	sysPromptCache struct {

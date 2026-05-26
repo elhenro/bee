@@ -180,6 +180,26 @@ func Defaults() Config {
 				TopP:        0.8,
 				// disable post-turn recap on tiny: side-LLM round-trip is ~2s on slow local runs.
 				ShowRecap: boolPtr(false),
+				// destructive-op approval keys bypass the session AllowSession
+				// cache — small models that hallucinate intents can't reuse one
+				// "yes" for the rest of the run. mirrors safety.DefaultsForProfile("tiny");
+				// kept inline so users can see what they're getting.
+				Safety: ProfileSafety{
+					RequireApprovalKeys: []string{
+						"rm-recursive",
+						"find-delete",
+						"xargs-rm",
+						"find-exec-rm",
+						"git-reset-hard",
+						"git-push-force",
+						"git-push-force-short",
+						"git-clean-force",
+						"git-branch-delete",
+						"chown-root",
+						"chmod-world-write",
+					},
+					WarnOnDuplicateWrites: true,
+				},
 			},
 			// normal: deepseek-flash / gpt-4o-mini class. balanced.
 			"normal": {

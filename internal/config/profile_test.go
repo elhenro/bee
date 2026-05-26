@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestActiveProfile_Named(t *testing.T) {
 	c := Defaults()
@@ -64,7 +67,7 @@ func TestActiveProfile_FallbackToNormal(t *testing.T) {
 func TestActiveProfile_FallbackToZero(t *testing.T) {
 	c := Config{Profile: "ghost", Profiles: map[string]Profile{}}
 	p := ActiveProfile(c)
-	if p != (Profile{}) {
+	if !reflect.DeepEqual(p, Profile{}) {
 		t.Errorf("expected zero profile, got %+v", p)
 	}
 }

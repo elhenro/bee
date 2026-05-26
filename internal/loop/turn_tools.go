@@ -11,6 +11,7 @@ import (
 	"github.com/elhenro/bee/internal/jsonmode"
 	"github.com/elhenro/bee/internal/safety"
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -70,10 +71,24 @@ func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]typ
 
 // runOneTrapped wraps runOne so ctx cancel propagates while ordinary tool
 // errors are folded into a ToolResult the model can react to. Used by the
-// parallel dispatcher where caller can't directly return an err.
+// parallel dispatcher where caller can't directly return an err. The escalate
+// tool is special: its typed *escalate.Error stashes a Run-level signal on
+// the Engine so dispatchTools can surface ErrEscalate to the main loop after
+// all in-flight results land.
 func (e *Engine) runOneTrapped(ctx context.Context, u types.ToolUse) types.ToolResult {
 	res, err := e.runOne(ctx, u)
 	if err != nil {
+		var esc *escalate.Error
+		if errors.As(err, &esc) {
+			// stash so dispatchTools can return ErrEscalate post-flush; also
+			// surface a synthetic tool_result so the transcript records why.
+			e.escalateErr = esc
+			return types.ToolResult{
+				UseID:   u.ID,
+				Content: "[escalate] " + esc.Error(),
+				IsError: true,
+			}
+		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return types.ToolResult{UseID: u.ID, Content: err.Error(), IsError: true}
 		}

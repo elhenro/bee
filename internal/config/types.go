@@ -222,6 +222,40 @@ type Profile struct {
 	// so the side-LLM recap round-trip doesn't double turn latency on slow
 	// local runs.
 	ShowRecap *bool `toml:"show_recap"`
+
+	// Safety carries per-profile calibration applied on top of the global
+	// sandbox + approval config. Tiny profile defaults to requiring the user
+	// to re-confirm destructive ops even after AllowSession was granted, so
+	// a hallucinating small model can't piggyback on one "yes" to run more
+	// destructive commands later. See safety.DefaultsForProfile.
+	Safety ProfileSafety `toml:"safety"`
+
+	// Escalation carries the optional "larger fallback model" wiring. The
+	// engine itself never re-enters Run with this — handoff is caller-driven
+	// (cmd/bee/run.go or the `bee escalate` subcommand). All fields default
+	// to zero / off so this is fully opt-in.
+	Escalation ProfileEscalation `toml:"escalation"`
+}
+
+// ProfileEscalation configures the optional handoff path for when a tiny
+// model wedges (two-strike) or calls the escalate tool. The model id is
+// generic so this stays vendor-neutral.
+type ProfileEscalation struct {
+	// Provider id from Config.Providers. Empty = no handoff configured.
+	Provider string `toml:"provider"`
+	// Model id understood by Provider. Empty = no handoff configured.
+	Model string `toml:"model"`
+}
+
+// ProfileSafety mirrors safety.ProfileSafety in the config schema. Kept here
+// (rather than importing the safety package) so config has no upward dep on
+// the safety package; defaults are seeded by safety.DefaultsForProfile via
+// the bridge in defaults.go.
+type ProfileSafety struct {
+	WriteRoot             string   `toml:"write_root"`
+	ExtraSafeCommands     []string `toml:"extra_safe_commands"`
+	RequireApprovalKeys   []string `toml:"require_approval_keys"`
+	WarnOnDuplicateWrites bool     `toml:"warn_on_duplicate_writes"`
 }
 
 // boolPtr is the canonical helper for the optional bool overrides in Profile.

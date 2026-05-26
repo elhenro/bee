@@ -16,6 +16,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/apply_patch"
 	"github.com/elhenro/bee/internal/tools/codegraph"
 	"github.com/elhenro/bee/internal/tools/edit_diff"
+	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/tools/find"
 	"github.com/elhenro/bee/internal/tools/grep"
 	"github.com/elhenro/bee/internal/tools/hashline_edit"
@@ -92,7 +93,11 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 		return approval.Static{Verdict: approval.AllowOnce}
 	}
 	cli := approval.NewCLI(os.Stdin, os.Stderr)
-	return approval.NewCache(cli, cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
+	// profile-level RequireApprovalKeys bypass the session AllowSession cache:
+	// destructive ops re-prompt every time on tiny so a hallucinating small
+	// model can't snowball one yes into a series of dangerous commands.
+	return approval.NewCacheWithRequire(cli, cfg.Sandbox.CommandAllowlist,
+		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
 }
 
 // buildToolsWithApprover is buildTools that wires app into the shell tool so
@@ -110,6 +115,9 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 		write.New(cwd),
 		edit_diff.New(cwd),
 		hashline_edit.New(),
+		// escalate gives the model an explicit exit door — important for
+		// small models that wedge on uncertain tasks instead of asking.
+		escalate.New(),
 	}
 	// apply_patch dropped on tiny — small models mis-emit unified diffs.
 	if !prof.SkipApplyPatch {
@@ -198,6 +206,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 		write.NewWithFilter(cwd, writeRe),
 		edit_diff.NewWithFilter(cwd, writeRe),
 		hashline_edit.NewWithFilter(writeRe),
+		escalate.New(),
 	}
 	if !prof.SkipApplyPatch {
 		all = append(all, apply_patch.NewWithFilter(writeRe))

@@ -2,12 +2,9 @@ package loop
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +34,11 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	e.cumInputTokens = 0
 	e.cumOutputTokens = 0
 	e.nudgedReasoningOnly = false
+	e.repeats = newRepeatTracker()
+	e.nudgedRepeat = false
+	e.nudgedPerToolFail = false
+	e.dupWrites = newDuplicateWriteTracker()
+	e.escalateErr = nil
 	res := RunResult{}
 
 	// probe the active model's context window before the first iteration so
@@ -187,30 +189,10 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	if p := config.ActiveProfile(e.Cfg); p.MaxIterations > 0 {
 		maxIter = p.MaxIterations
 	}
-	// adaptive caps fire BEFORE the iter ceiling so a wasteful run stops
-	// on real cost (tokens) or real stall (read-only streak) instead of
-	// running out the arbitrary iter count.
-	//   tokenBudget: 10× the model's context window. 0 = unknown, disabled.
-	//   stallCap:   3× profile NoMutationStallThreshold, default 8. when
-	//               the model spins on reads without committing edits, bail.
-	tokenBudget := 10 * contextBudget(e.Cfg)
-	stallCap := 8
-	if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 {
-		stallCap = t * 3
-	}
+	tokenBudget, stallCap := computeBudgetCaps(e.Cfg)
 	for i := 0; i < maxIter; i++ {
-		// early-stop: token budget exhausted (cumulative input + output
-		// across iterations). only enforced when the model's context
-		// window is known so unknown-model runs aren't bounded by a
-		// fabricated number.
-		if tokenBudget > 0 && (e.cumInputTokens+e.cumOutputTokens) > tokenBudget {
-			return res, fmt.Errorf("loop: hit token budget (%d > %d tokens, %d iters) — type 'continue' to resume", e.cumInputTokens+e.cumOutputTokens, tokenBudget, i)
-		}
-		// early-stop: read-only stall. model kept calling reads for
-		// `stallCap` iters without any mutation — almost always stuck
-		// in explore-loop. bail rather than burning the rest of maxIter.
-		if e.noMutationStreak >= stallCap {
-			return res, fmt.Errorf("loop: %d read-only iters with no edits, stopping — type 'continue' to resume", e.noMutationStreak)
+		if err := checkEarlyStop(e, i, tokenBudget, stallCap); err != nil {
+			return res, err
 		}
 		// mid-turn steering: drain pending user input into a synthetic
 		// user message before the next LLM round. Non-blocking so quiet
@@ -292,38 +274,12 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		res.FinalText = finalText
 
 		if len(toolUses) == 0 || detectDoneSignal(finalText) {
-			// stall recovery: turn ended with no tool calls and no done signal.
-			// two failure modes, both nudged once with a synthetic user turn:
-			//   1. thinking-only — provider streamed reasoning then stopped
-			//      without text or tool_use (e.g. some hosted reasoners).
-			//   2. format slip — model emitted a tool-call attempt as prose
-			//      (XML-ish tag or JSON envelope) but the textmode parser
-			//      didn't recognize it. silent termination here leaves the
-			//      user staring at JSON in the transcript; nudge with an
-			//      explicit format reminder instead.
-			if !e.nudgedReasoningOnly && len(toolUses) == 0 && !detectDoneSignal(finalText) {
-				nudgeText := ""
-				switch {
-				case strings.TrimSpace(finalText) == "" && hasThinkingOnly(assistantMsg):
-					nudgeText = "[nudge] previous turn was reasoning-only. respond now: emit final answer or call a tool."
-				case looksLikeAttemptedToolCall(finalText, specs):
-					nudgeText = "[nudge] previous turn looked like a tool call but the envelope was wrong. tools must be invoked as `<tool_name>{\"arg\":\"value\"}</tool_name>` XML blocks, not bare JSON or function-call objects. retry with the XML envelope."
+			if nudge := attemptRecoveryNudge(e, assistantMsg, finalText, toolUses, specs); nudge != nil {
+				if err := e.appendMessage(ctx, *nudge); err != nil {
+					return res, err
 				}
-				if nudgeText != "" {
-					e.nudgedReasoningOnly = true
-					nudge := types.Message{
-						ID:       newID(),
-						ParentID: assistantMsg.ID,
-						Role:     types.RoleUser,
-						Content:  []types.ContentBlock{{Type: types.BlockText, Text: nudgeText}},
-						Time:     time.Now().UTC(),
-					}
-					if err := e.appendMessage(ctx, nudge); err != nil {
-						return res, err
-					}
-					res.Messages = append(res.Messages, nudge)
-					continue
-				}
+				res.Messages = append(res.Messages, *nudge)
+				continue
 			}
 			return res, nil
 		}
@@ -348,53 +304,9 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		}
 
 		blocks := toolResultBlocks(toolResults)
-		// context-window warning: if usage crosses threshold, prepend a
-		// one-shot notice to the next tool result message so the model
-		// summarizes/drops noise on the following turn. dedupes per Run.
-		if !e.warnedContext {
-			limit := contextBudget(e.Cfg)
-			if w := prompt.FormatContextWarning(e.lastInputTokens, limit); w != "" {
-				blocks = prependWarningToToolResult(blocks, w)
-				e.warnedContext = true
-			}
-		}
-		// iteration / stall warnings; each fires at most once per Run.
-		// iter is 0-based; current = i+1 (we've just finished one round).
-		current := i + 1
-		if !e.warnedIterHalf && current*2 >= maxIter {
-			w := fmt.Sprintf("[iter %d/%d] half the budget spent. summarize progress; commit edits or stop if stuck.\n\n", current, maxIter)
-			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedIterHalf = true
-		}
-		if !e.warnedIterEighty && current*5 >= maxIter*4 {
-			w := fmt.Sprintf("[iter %d/%d] near iter cap. finish current edit or stop and ask user.\n\n", current, maxIter)
-			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedIterEighty = true
-		}
-		// token-budget warnings mirror the iter-cap warnings so the model
-		// hears about cost pressure separately from iter pressure. each
-		// fires at most once per Run.
-		if tokenBudget > 0 {
-			spent := e.cumInputTokens + e.cumOutputTokens
-			if !e.warnedTokenHalf && spent*2 >= tokenBudget {
-				w := fmt.Sprintf("[tokens %d/%d] half the token budget spent. summarize and commit edits.\n\n", spent, tokenBudget)
-				blocks = prependWarningToToolResult(blocks, w)
-				e.warnedTokenHalf = true
-			}
-			if !e.warnedTokenEighty && spent*5 >= tokenBudget*4 {
-				w := fmt.Sprintf("[tokens %d/%d] near token cap. finish current edit or stop.\n\n", spent, tokenBudget)
-				blocks = prependWarningToToolResult(blocks, w)
-				e.warnedTokenEighty = true
-			}
-		}
-		// stall warning is opt-in: profile must set a positive threshold.
-		if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 {
-			if !e.warnedStall && e.noMutationStreak >= t {
-				w := fmt.Sprintf("[stall] %d read-only iters; commit edits when ready.\n\n", e.noMutationStreak)
-				blocks = prependWarningToToolResult(blocks, w)
-				e.warnedStall = true
-			}
-		}
+		blocks, repeatErr := observeRepeats(e, toolUses, toolResults, blocks)
+		blocks = observeDuplicateWrites(e, toolUses, toolResults, blocks)
+		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget)
 		toolMsg := types.Message{
 			ID:       newID(),
 			ParentID: assistantMsg.ID,
@@ -406,52 +318,19 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 			return res, err
 		}
 		res.Messages = append(res.Messages, toolMsg)
+		// two-strike bail: append the result first (so transcript shows what
+		// failed) then surface the typed error to the caller.
+		if repeatErr != nil {
+			return res, repeatErr
+		}
+		// escalate bail: same shape — append the synthetic tool_result first
+		// (transcript shows the model's reason) then surface ErrEscalate.
+		if e.escalateErr != nil {
+			esc := e.escalateErr
+			e.escalateErr = nil
+			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction}
+		}
 	}
 	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume", maxIter)
 }
 
-// sysPromptCacheKey builds a cheap fingerprint of the inputs to prompt.Assemble.
-// inputs include cwd + mode + profile + caveman level + tool specs (name+desc
-// lengths) + skill manifest length + record names/sizes + ctx-file paths/lengths.
-// returns "" if any required input is unstable enough to skip caching.
-func sysPromptCacheKey(cfg config.Config, mode Mode, specs []llm.ToolSpec, skillManifest string, recs []knowledge.Record, ctxFiles []prompt.ContextFile) string {
-	var b strings.Builder
-	b.WriteString(cfg.DefaultProvider)
-	b.WriteByte('|')
-	b.WriteString(cfg.DefaultModel)
-	b.WriteByte('|')
-	b.WriteString(cfg.Profile)
-	b.WriteByte('|')
-	b.WriteString(cfg.Caveman)
-	b.WriteByte('|')
-	b.WriteString(string(mode))
-	b.WriteByte('|')
-	for _, s := range specs {
-		b.WriteString(s.Name)
-		b.WriteByte(':')
-		b.WriteString(strconv.Itoa(len(s.Description)))
-		b.WriteByte(':')
-		b.WriteString(strconv.Itoa(len(s.PromptSnippet)))
-		b.WriteByte(';')
-	}
-	b.WriteByte('|')
-	b.WriteString(strconv.Itoa(len(skillManifest)))
-	b.WriteByte('|')
-	for _, r := range recs {
-		b.WriteString(r.Name)
-		b.WriteByte(':')
-		b.WriteString(strconv.Itoa(len(r.Body)))
-		b.WriteByte(':')
-		b.WriteString(strconv.FormatInt(r.Modified.UnixNano(), 10))
-		b.WriteByte(';')
-	}
-	b.WriteByte('|')
-	for _, f := range ctxFiles {
-		b.WriteString(f.Path)
-		b.WriteByte(':')
-		b.WriteString(strconv.Itoa(len(f.Body)))
-		b.WriteByte(';')
-	}
-	sum := sha256.Sum256([]byte(b.String()))
-	return hex.EncodeToString(sum[:8])
-}

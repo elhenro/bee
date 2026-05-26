@@ -31,13 +31,19 @@ type Approver interface {
 }
 
 // Cache wraps an inner Approver with session memory + a persistent allowlist.
-// Lookup precedence: persistent -> session -> inner.Request.
+// Lookup precedence: requireAlways (bypass) → persistent → session → inner.
 type Cache struct {
 	inner       Approver
 	mu          sync.Mutex
 	session     map[string]bool
 	persistent  map[string]bool
-	persistFunc func(key string) error
+	// requireAlways lists pattern keys that must always prompt the user, even
+	// when the same key was previously granted AllowSession or AllowAlways.
+	// Use for genuinely destructive ops (rm -rf, git push --force, etc.) on
+	// untrusted models so one "yes" never trusts the model again. Persistent
+	// AllowAlways still wins → user can grant explicit always-trust on these.
+	requireAlways map[string]bool
+	persistFunc   func(key string) error
 	// persistWG tracks in-flight async persist goroutines so Flush can wait
 	// for them on shutdown.
 	persistWG sync.WaitGroup
@@ -47,28 +53,40 @@ type Cache struct {
 // the user's persistent allowlist. persist is invoked whenever a new key is
 // granted AllowAlways; pass nil to disable persistence.
 func NewCache(inner Approver, seed []string, persist func(key string) error) *Cache {
+	return NewCacheWithRequire(inner, seed, nil, persist)
+}
+
+// NewCacheWithRequire is NewCache plus a requireAlways set: keys in this set
+// bypass the session AllowSession cache and re-prompt every call. Persistent
+// AllowAlways grants still win.
+func NewCacheWithRequire(inner Approver, seed []string, requireAlways []string, persist func(key string) error) *Cache {
 	c := &Cache{
-		inner:       inner,
-		session:     map[string]bool{},
-		persistent:  map[string]bool{},
-		persistFunc: persist,
+		inner:         inner,
+		session:       map[string]bool{},
+		persistent:    map[string]bool{},
+		requireAlways: map[string]bool{},
+		persistFunc:   persist,
 	}
 	for _, k := range seed {
 		c.persistent[k] = true
+	}
+	for _, k := range requireAlways {
+		c.requireAlways[k] = true
 	}
 	return c
 }
 
 // Request consults the caches first, then defers to the inner Approver.
 // AllowOnce never caches. AllowSession caches in-memory. AllowAlways caches +
-// fires the persistFunc.
+// fires the persistFunc. Keys in requireAlways skip the session cache → the
+// user must re-confirm each invocation. Persistent AllowAlways grants still win.
 func (c *Cache) Request(ctx context.Context, cmd, key, desc string) (Decision, error) {
 	c.mu.Lock()
 	if c.persistent[key] {
 		c.mu.Unlock()
 		return AllowAlways, nil
 	}
-	if c.session[key] {
+	if c.session[key] && !c.requireAlways[key] {
 		c.mu.Unlock()
 		return AllowSession, nil
 	}
