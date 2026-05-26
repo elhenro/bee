@@ -14,6 +14,7 @@ import (
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/apply_patch"
+	"github.com/elhenro/bee/internal/tools/codegraph"
 	"github.com/elhenro/bee/internal/tools/edit_diff"
 	"github.com/elhenro/bee/internal/tools/find"
 	"github.com/elhenro/bee/internal/tools/grep"
@@ -121,6 +122,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 			knowledge_write.New(storeDir),
 		)
 	}
+	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
@@ -138,6 +140,18 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 		}
 	}
 	return r, nil
+}
+
+// appendCodegraphTool registers the codegraph wrapper iff the project
+// has a `.codegraph/codegraph.db` index AND the `codegraph` binary is on
+// PATH. Silent no-op otherwise so projects without the optional dep see
+// no extra tool surface.
+func appendCodegraphTool(all []tools.Tool, cwd string) []tools.Tool {
+	bin, ok := codegraph.Available(cwd)
+	if !ok {
+		return all
+	}
+	return append(all, codegraph.New(cwd, bin))
 }
 
 // appendUserTools wraps each [[user_tools]] entry as a tool. Malformed
@@ -195,6 +209,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 			knowledge_write.New(storeDir),
 		)
 	}
+	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {

@@ -14,3 +14,4 @@ cmd/bee/bee
 .claude/
 /.bee/
 *.jsonl
+.codegraph/
