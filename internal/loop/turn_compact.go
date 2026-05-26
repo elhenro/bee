@@ -6,28 +6,27 @@ import (
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/session"
+	"github.com/elhenro/bee/internal/types"
 )
 
-// Compact replaces the session's older messages with a summary in-place.
-// Used by the /compact slash command. Persisting compacted history requires
-// a session-file rewrite which is out of scope for F4 — the call returns
-// success and the next turn loop's in-memory slice is re-evaluated by
-// ShouldAutoCompact / Compact. Known limitation: replayed sessions on disk
+// Compact summarizes the session's older messages and returns the compacted
+// slice plus stats. Caller is responsible for replacing the in-memory message
+// list (e.g. TUI scrollback / InitialMessages) so the next turn sees the
+// shorter history. Session file on disk is not rewritten — replayed sessions
 // still contain the full history.
-func (e *Engine) Compact(ctx context.Context) (CompactStats, error) {
+func (e *Engine) Compact(ctx context.Context) ([]types.Message, CompactStats, error) {
 	if e.Sessions == nil {
-		return CompactStats{}, nil
+		return nil, CompactStats{}, nil
 	}
 	msgs, err := session.Read(e.Sessions.ID())
 	if err != nil {
-		return CompactStats{}, err
+		return nil, CompactStats{}, err
 	}
 	out, stats, err := Compact(ctx, e.Provider, e.Cfg.DefaultModel, msgs)
 	if err != nil {
-		return stats, err
+		return nil, stats, err
 	}
-	_ = out
-	return stats, nil
+	return out, stats, nil
 }
 
 // contextBudget returns the active model's real token window. Cache wins

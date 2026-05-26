@@ -93,6 +93,18 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.state = StateIdle
 		m.lastErr = ""
 	}
+	// /compact runs async with state=StateIdle (loader driven by m.compacting).
+	// Without this guard, sending "continue" mid-compact would race the engine —
+	// submit() would kick off RunWithContent while Compact still mutates session
+	// state. Swallow the input with a hint until compaction finishes.
+	if m.compacting {
+		m.input.Reset()
+		m.messages = append(m.messages, types.Message{
+			Role:    types.RoleAssistant,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(compacting — wait for it to finish)"}},
+		})
+		return m, m.flush()
+	}
 	if m.state != StateIdle {
 		// mid-run slash commands: allow read-only ones (model, cost, tree,
 		// help, settings, effort) so the user can flip settings or open a

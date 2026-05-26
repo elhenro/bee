@@ -27,7 +27,7 @@ func (s *tuiSide) Compact(ctx context.Context) error {
 	if s.m == nil || s.m.eng == nil {
 		return nil
 	}
-	_, err := s.m.eng.Compact(ctx)
+	_, _, err := s.m.eng.Compact(ctx)
 	return err
 }
 

@@ -79,8 +79,8 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 				if eng == nil {
 					return compactDoneMsg{}
 				}
-				stats, err := eng.Compact(ctx)
-				return compactDoneMsg{err: err, stats: stats}
+				msgs, stats, err := eng.Compact(ctx)
+				return compactDoneMsg{err: err, stats: stats, msgs: msgs}
 			},
 		)
 	}

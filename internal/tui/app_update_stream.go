@@ -99,6 +99,21 @@ func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 		m.state = StateError
 		return m, nil
 	}
+	// swap in the compacted history so the next submit's engine.InitialMessages
+	// (rebuilt from m.messages in handleSubmit) carries the shorter slice.
+	// nil msgs = engine no-op (no session, no shrink) — leave m.messages alone.
+	if len(msg.msgs) > 0 {
+		m.messages = append([]types.Message(nil), msg.msgs...)
+		if m.eng != nil {
+			m.eng.InitialMessages = nil
+			// nudge the context-fill indicator down immediately — without
+			// this, the % stays frozen at the pre-compact value until the
+			// next assistant turn lands and overwrites LastInput.
+			if m.eng.Costs != nil && msg.stats.AfterTokens > 0 {
+				m.eng.Costs.SetEstimatedInput(msg.stats.AfterTokens)
+			}
+		}
+	}
 	m.messages = append(m.messages, types.Message{
 		Role:    types.RoleAssistant,
 		Content: []types.ContentBlock{{Type: types.BlockText, Text: formatCompactDone(msg.stats)}},

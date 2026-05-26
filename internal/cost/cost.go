@@ -39,6 +39,10 @@ type Summary struct {
 type Tracker struct {
 	mu     sync.RWMutex
 	events []Event
+	// estimatedInput overrides LastInput when non-zero so callers can reflect
+	// a post-/compact size drop in the context-fill indicator before the next
+	// real provider event lands. Cleared by Record and Reset.
+	estimatedInput int
 }
 
 // New returns an empty tracker.
@@ -60,6 +64,7 @@ func (t *Tracker) Record(provider, model string, in, out int) Event {
 	}
 	t.mu.Lock()
 	t.events = append(t.events, ev)
+	t.estimatedInput = 0
 	t.mu.Unlock()
 	return ev
 }
@@ -69,6 +74,17 @@ func (t *Tracker) Record(provider, model string, in, out int) Event {
 func (t *Tracker) Reset() {
 	t.mu.Lock()
 	t.events = nil
+	t.estimatedInput = 0
+	t.mu.Unlock()
+}
+
+// SetEstimatedInput stores an override that LastInput returns until the next
+// Record call overwrites it. /compact uses this so the context-fill indicator
+// drops to the post-compact estimate immediately, instead of staying frozen
+// at the prior turn's input until the next assistant reply.
+func (t *Tracker) SetEstimatedInput(n int) {
+	t.mu.Lock()
+	t.estimatedInput = n
 	t.mu.Unlock()
 }
 
@@ -88,6 +104,9 @@ func (t *Tracker) Events() []Event {
 func (t *Tracker) LastInput() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	if t.estimatedInput > 0 {
+		return t.estimatedInput
+	}
 	if len(t.events) == 0 {
 		return 0
 	}

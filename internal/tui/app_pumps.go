@@ -55,9 +55,13 @@ type loaderTickMsg struct{}
 // compactDoneMsg is published when an async /compact goroutine finishes.
 // nil err means the summarization succeeded. stats carries before/after token
 // counts and elapsed time so the success line can show what was achieved.
+// msgs is the compacted message slice — the handler swaps m.messages to this
+// so subsequent submits send the shorter history. nil msgs (engine no-op or
+// short-history path) leaves m.messages untouched.
 type compactDoneMsg struct {
 	err   error
 	stats loop.CompactStats
+	msgs  []types.Message
 }
 
 // loaderTickInterval is the frame cadence. 120ms is fast enough that the
