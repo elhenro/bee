@@ -2,6 +2,8 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -108,6 +110,25 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 	var buf strings.Builder
 	var done Event
 	gotDone := false
+	// dedup: qwen3 / hermes models occasionally re-emit the same call twice
+	// in one turn (training artifact when the chat template echoes the
+	// envelope into both the assistant message AND a trailing tool_calls
+	// field). Fingerprint = name + canonicalized args JSON. Dispatch once
+	// per stream; later identical calls dropped.
+	seen := map[string]bool{}
+	dispatch := func(c parsedCall) bool {
+		fp := callFingerprint(c)
+		if seen[fp] {
+			return false
+		}
+		seen[fp] = true
+		out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+			ID:    "call_" + uuid.NewString(),
+			Name:  c.Name,
+			Input: c.Input,
+		}}
+		return true
+	}
 	for ev := range in {
 		switch ev.Type {
 		case EventTextDelta:
@@ -118,11 +139,7 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 			if hasAnyCloseTag(buf.String(), known) {
 				early, remaining := extractIncremental(buf.String(), known, canonical)
 				for _, c := range early {
-					out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-						ID:    "call_" + uuid.NewString(),
-						Name:  c.Name,
-						Input: c.Input,
-					}}
+					dispatch(c)
 				}
 				if len(early) > 0 {
 					buf.Reset()
@@ -134,6 +151,15 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 		case EventToolUse:
 			// inner provider also emits native tool_use (e.g. when the model
 			// surprises us). pass through verbatim so we don't drop signal.
+			// dedup against parsed calls too — if the model duplicates via
+			// both channels, only the first wins.
+			if ev.ToolUse != nil {
+				fp := callFingerprint(parsedCall{Name: ev.ToolUse.Name, Input: ev.ToolUse.Input})
+				if seen[fp] {
+					continue
+				}
+				seen[fp] = true
+			}
 			out <- ev
 		case EventDone:
 			done = ev
@@ -146,6 +172,12 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 		}
 	}
 	text := buf.String()
+	// snapshot pre-normalization for the nudge detector: normalization
+	// strips envelope markers (e.g. `<tool_call>`) on its way to canonical
+	// form, so by the time extraction fails we've lost the signal that the
+	// model TRIED to emit a call. Keep the raw text to feed
+	// detectMalformedEnvelope below.
+	rawText := text
 	// rewrite hermes / qwen3 wrappers (<tool_call>, <function=NAME>) into the
 	// bee canonical `<name>{...}</name>` or bare-json shapes the existing
 	// extractors handle.
@@ -160,11 +192,29 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 		cleaned = jsonCleaned
 	}
 	for _, c := range calls {
-		out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-			ID:    "call_" + uuid.NewString(),
-			Name:  c.Name,
-			Input: c.Input,
-		}}
+		dispatch(c)
+	}
+	// nudge path: if zero calls dispatched all turn AND the cleaned text
+	// shows malformed tool-call envelope markers, synthesize a _parse_error
+	// tool use so the loop surfaces a diagnostic to the model instead of
+	// silently ending the turn (which stalls progress). Without this, a
+	// model that emits `function=bash>` (no leading `<`, observed from
+	// qwen3-A3B with markup-stripped output) or any partial hermes envelope
+	// just falls through as prose and the agent appears to hang.
+	if len(seen) == 0 {
+		if name, snippet, ok := detectMalformedEnvelope(rawText); ok {
+			out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+				ID:   "call_" + uuid.NewString(),
+				Name: name,
+				Input: map[string]any{
+					"_parse_error": "tool-call envelope detected but could not be parsed. emit ONE canonical block: `<NAME>{\"arg\":\"val\"}</NAME>` — replace NAME with the actual tool name. no markdown fences, no stray angle brackets.",
+					"_raw_args":    snippet,
+				},
+			}}
+			// suppress the malformed prose so it doesn't leak into the
+			// user-facing transcript on top of the nudge.
+			cleaned = ""
+		}
 	}
 	if cleaned != "" {
 		out <- Event{Type: EventTextDelta, Delta: cleaned}
@@ -174,6 +224,50 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 	} else {
 		out <- Event{Type: EventDone, StopReason: "stop"}
 	}
+}
+
+// envelope marker regexes for detectMalformedEnvelope. Anchored on strong
+// signals (hermes/DSML/tool_call) rather than any `<...>` so legit prose
+// containing angle brackets doesn't trigger a spurious nudge.
+var (
+	// `<function=NAME>` AND the bare `function=NAME>` variant (rendering or
+	// markup-strip dropped the `<`). Used together so either form triggers.
+	malformedFunctionRe = regexp.MustCompile(`(?im)(^|[\s>])function=([a-z_][a-z0-9_\-]*)>`)
+	malformedParameterRe = regexp.MustCompile(`(?i)<parameter=[a-z_]`)
+	malformedToolCallRe  = regexp.MustCompile(`(?i)</?tool_call>`)
+)
+
+// detectMalformedEnvelope scans s for strong tool-call envelope signals and,
+// when found, returns a best-guess tool name and a short snippet of the
+// offending text. Returns ok=false when no envelope marker is present.
+//
+// Name resolution order: `<function=NAME>` (preferred — most specific) →
+// `<tool_call>` envelope (name unknown, returns `"unknown"`) → bare
+// `function=NAME>` (stripped angle bracket). Snippet caps at 240 bytes for
+// the model nudge.
+func detectMalformedEnvelope(s string) (name, snippet string, ok bool) {
+	if s == "" {
+		return "", "", false
+	}
+	if m := malformedFunctionRe.FindStringSubmatch(s); m != nil {
+		return strings.ToLower(m[2]), truncate(s, 240), true
+	}
+	if malformedParameterRe.MatchString(s) || malformedToolCallRe.MatchString(s) {
+		return "unknown", truncate(s, 240), true
+	}
+	return "", "", false
+}
+
+// callFingerprint canonicalizes a parsed tool call for dedup. Uses
+// json.Marshal on args (Go sorts map keys when marshaling), so semantically
+// identical args with reordered keys collide as expected. Falls back to
+// fmt-format on marshal error.
+func callFingerprint(c parsedCall) string {
+	buf, err := json.Marshal(c.Input)
+	if err != nil {
+		return c.Name + "|<unmarshalable>"
+	}
+	return c.Name + "|" + string(buf)
 }
 
 // hasAnyCloseTag is a cheap substring scan: returns true when s contains a
@@ -259,7 +353,10 @@ func buildToolInstruction(tools []ToolSpec, extra string) string {
 	b.WriteString("DO NOT invent keys like `args`/`cmd`/`input` — use the schema names verbatim.\n")
 	b.WriteString("Accepted alternative shapes (parsed as fallback):\n")
 	b.WriteString("- bare JSON: `{\"name\":\"tool\",\"arguments\":{...}}`\n")
-	b.WriteString("- hermes wrapper: `<tool_call>{\"name\":\"tool\",\"arguments\":{...}}</tool_call>`\n\n")
+	b.WriteString("- hermes wrapper: `<tool_call>{\"name\":\"tool\",\"arguments\":{...}}</tool_call>`\n")
+	b.WriteString("- hermes xml: `<tool_call><function=NAME><parameter=KEY>VALUE</parameter></function></tool_call>`\n")
+	b.WriteString("  (qwen3 / hermes chat-template native — use if your training prefers it)\n\n")
+	b.WriteString("Do NOT wrap commands in markdown fences (```bash ... ```) — fences are NOT parsed as tool calls.\n\n")
 	b.WriteString("Available tools:\n")
 	for _, t := range tools {
 		desc := t.PromptSnippet

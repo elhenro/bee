@@ -657,6 +657,175 @@ func TestTextMode_LeavesNonToolJSONIntact(t *testing.T) {
 	}
 }
 
+// qwen3 / hermes models sometimes echo the same tool call twice in one
+// turn (chat-template artifact). dedup must collapse identical calls
+// (same name + args) to one dispatch.
+func TestTextMode_DedupesDuplicateCalls(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `<shell>{"command":"ls"}</shell>` + "\n" +
+				`<shell>{"command":"ls"}</shell>`},
+			{Type: EventDone, StopReason: "stop"},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 {
+		t.Fatalf("dedup failed: got %d calls, want 1", len(tools))
+	}
+	if tools[0].Name != "shell" || tools[0].Input["command"] != "ls" {
+		t.Fatalf("wrong call survived: %+v", tools[0])
+	}
+}
+
+// distinct calls with same name but different args must NOT collapse.
+func TestTextMode_DoesNotDedupeDistinctArgs(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `<shell>{"command":"ls"}</shell>` + "\n" +
+				`<shell>{"command":"pwd"}</shell>`},
+			{Type: EventDone, StopReason: "stop"},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 2 {
+		t.Fatalf("over-deduped: got %d calls, want 2", len(tools))
+	}
+}
+
+// dedup spans incremental + final passes: same call appearing first via the
+// streaming fast-path and again at EventDone (e.g. provider re-delivers via
+// native tool_use channel) must only fire once.
+func TestTextMode_DedupesAcrossIncrementalAndNative(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `<shell>{"command":"ls"}</shell>`},
+			{Type: EventToolUse, ToolUse: &types.ToolUse{
+				ID:    "native_1",
+				Name:  "shell",
+				Input: map[string]any{"command": "ls"},
+			}},
+			{Type: EventDone, StopReason: "stop"},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 {
+		t.Fatalf("cross-channel dedup failed: got %d calls, want 1", len(tools))
+	}
+}
+
+// advert must explicitly endorse the hermes xml shape so qwen3-trained
+// models don't fight their training. also must warn against markdown fences.
+func TestTextMode_AdvertEndorsesHermesAndWarnsFences(t *testing.T) {
+	inner := &fakeProvider{events: []Event{{Type: EventDone}}}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	drainTM(ch)
+	sys := inner.gotReq.System
+	if !strings.Contains(sys, "<function=NAME>") {
+		t.Fatalf("hermes xml shape not endorsed in advert: %s", sys)
+	}
+	if !strings.Contains(sys, "markdown fences") {
+		t.Fatalf("markdown-fence warning missing: %s", sys)
+	}
+}
+
+// malformed hermes envelope with stripped leading `<` (qwen3-A3B with
+// markup-stripped output, observed in the wild). parser can't extract a
+// real call; nudge path must synthesize a _parse_error tool use so the loop
+// surfaces a diagnostic instead of silently ending the turn.
+func TestTextMode_NudgesOnMalformedFunctionEnvelope(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "function=bash>\n<parameter=command>\nls -la\n</parameter>\n</function>\n</tool_call>"},
+			{Type: EventDone, StopReason: "stop"},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 nudge tool use, got %d", len(tools))
+	}
+	if tools[0].Name != "bash" {
+		t.Fatalf("expected name inferred from `function=bash>`, got %q", tools[0].Name)
+	}
+	if pe, _ := tools[0].Input["_parse_error"].(string); pe == "" {
+		t.Fatalf("expected _parse_error nudge, got input %+v", tools[0].Input)
+	}
+	if text != "" {
+		t.Fatalf("malformed prose should be suppressed when nudging, got %q", text)
+	}
+}
+
+// stray <tool_call> envelope with no parseable body — name is unknown but
+// nudge must still fire so the loop tells the model to retry.
+func TestTextMode_NudgesOnStrayToolCallEnvelope(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<tool_call>\nuhh\n</tool_call>"},
+			{Type: EventDone, StopReason: "stop"},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 {
+		t.Fatalf("expected nudge tool use, got %d", len(tools))
+	}
+	if tools[0].Name != "unknown" {
+		t.Fatalf("expected unknown-name nudge, got %q", tools[0].Name)
+	}
+	if _, ok := tools[0].Input["_parse_error"].(string); !ok {
+		t.Fatalf("expected _parse_error key in nudge args: %+v", tools[0].Input)
+	}
+}
+
+// plain prose with angle brackets but no envelope markers must NOT trigger
+// the nudge — false positives spam the model with bogus retries.
+func TestTextMode_NoNudgeOnInnocentProse(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "use the <kbd>Tab</kbd> key, then check if x > 5 and y < 10"},
+			{Type: EventDone, StopReason: "stop"},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 0 {
+		t.Fatalf("false-positive nudge on innocent prose: %+v", tools)
+	}
+	if !strings.Contains(text, "Tab") {
+		t.Fatalf("prose was eaten: %q", text)
+	}
+}
+
+// when a real call DOES extract, the nudge path must stay silent even if
+// the same text also contains envelope markers (e.g. mixed valid + stray).
+func TestTextMode_NoNudgeWhenRealCallExtracted(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `<shell>{"command":"ls"}</shell>` + "\nleftover </tool_call>"},
+			{Type: EventDone, StopReason: "stop"},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 {
+		t.Fatalf("expected only the real call, got %d: %+v", len(tools), tools)
+	}
+	if _, isErr := tools[0].Input["_parse_error"]; isErr {
+		t.Fatalf("real call should not carry _parse_error: %+v", tools[0].Input)
+	}
+}
+
 // drainTM reads all events to completion.
 func drainTM(ch <-chan Event) {
 	for range ch {
