@@ -25,6 +25,7 @@ type frontmatter struct {
 	Endpoint    string            `yaml:"endpoint"`
 	Auth        *httpAuthRaw      `yaml:"auth"`
 	Env         map[string]string `yaml:"env"`
+	Steps       []recipeStepRaw   `yaml:"steps"`
 }
 
 type mcpServerRaw struct {
@@ -69,11 +70,11 @@ func Parse(path string, raw []byte) (Skill, error) {
 
 	kind := Kind(strings.ToLower(strings.TrimSpace(meta.Type)))
 	switch kind {
-	case KindPrompt, KindExec, KindMCP, KindHTTP:
+	case KindPrompt, KindExec, KindMCP, KindHTTP, KindRecipe:
 	case "":
 		return Skill{}, fmt.Errorf("%s: missing type", path)
 	default:
-		return Skill{}, fmt.Errorf("%s: invalid type %q (want prompt|exec|mcp|http)", path, meta.Type)
+		return Skill{}, fmt.Errorf("%s: invalid type %q (want prompt|exec|mcp|http|recipe)", path, meta.Type)
 	}
 
 	s := Skill{
@@ -118,6 +119,14 @@ func Parse(path string, raw []byte) (Skill, error) {
 				Env:    meta.Auth.Env,
 				Header: meta.Auth.Header,
 			}
+		}
+	case KindRecipe:
+		// recipeBuild renders the steps into s.Body so the rest of bee
+		// treats a recipe like an enriched prompt skill — no new engine
+		// runtime needed. knownTools=nil at parse time (no registry); the
+		// runtime catches unknown-tool calls via the existing tools.Get path.
+		if err := recipeBuild(&s, meta.Steps, nil); err != nil {
+			return Skill{}, fmt.Errorf("%s: %w", path, err)
 		}
 	}
 
