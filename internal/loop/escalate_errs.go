@@ -1,0 +1,39 @@
+package loop
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/elhenro/bee/internal/types"
+)
+
+// loop-level sentinel errors. callers can match via errors.Is / errors.As.
+
+// ErrTwoStrike indicates the same tool call (name + args) errored twice in
+// a row. caller should stop looping and surface the cause to the user.
+var ErrTwoStrike = errors.New("loop: tool call failed twice in a row")
+
+// ErrPerToolFailureCap indicates a single tool name has errored K times in
+// a row regardless of args. signals the model is wedged on a specific tool.
+var ErrPerToolFailureCap = errors.New("loop: tool failed beyond per-tool cap")
+
+// ErrEscalate is the typed sentinel for the `escalate` tool. PR3 lands the
+// tool; PR1 only declares the sentinel so other code can reference it.
+var ErrEscalate = errors.New("loop: model escalated to user")
+
+// TwoStrikeError wraps the offending ToolUse so callers (TUI, headless
+// `bee run`) can surface tool name + args in the exit message.
+type TwoStrikeError struct {
+	Use   types.ToolUse
+	Class string // tool-error class tag (toolErrNotFound, toolErrTimeout, etc.)
+}
+
+func (e *TwoStrikeError) Error() string {
+	return fmt.Sprintf("%s: tool=%s class=%s", ErrTwoStrike.Error(), e.Use.Name, e.Class)
+}
+
+// Is lets errors.Is(err, ErrTwoStrike) match wrapped variants.
+func (e *TwoStrikeError) Is(target error) bool { return target == ErrTwoStrike }
+
+// Unwrap surfaces the sentinel for errors.Is chains.
+func (e *TwoStrikeError) Unwrap() error { return ErrTwoStrike }

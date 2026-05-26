@@ -109,6 +109,14 @@ type Engine struct {
 	// is injected in response to a thinking-only assistant turn. dedupes per
 	// Run so a wedged provider can't burn the whole iter budget.
 	nudgedReasoningOnly bool
+	// repeats tracks tool-call signatures across iterations of one Run so
+	// the loop can detect identical-call loops, per-tool failure cascades,
+	// and two-strike escalations. allocated lazily on first dispatch.
+	repeats *repeatTracker
+	// nudgedRepeat / nudgedPerToolFail dedupe the corresponding warning
+	// prefixes — fire at most once per Run.
+	nudgedRepeat      bool
+	nudgedPerToolFail bool
 	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
 	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints.
 	sysPromptCache struct {

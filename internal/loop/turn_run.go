@@ -34,6 +34,9 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	e.cumInputTokens = 0
 	e.cumOutputTokens = 0
 	e.nudgedReasoningOnly = false
+	e.repeats = newRepeatTracker()
+	e.nudgedRepeat = false
+	e.nudgedPerToolFail = false
 	res := RunResult{}
 
 	// probe the active model's context window before the first iteration so
@@ -299,6 +302,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		}
 
 		blocks := toolResultBlocks(toolResults)
+		blocks, repeatErr := observeRepeats(e, toolUses, toolResults, blocks)
 		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget)
 		toolMsg := types.Message{
 			ID:       newID(),
@@ -311,6 +315,11 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 			return res, err
 		}
 		res.Messages = append(res.Messages, toolMsg)
+		// two-strike bail: append the result first (so transcript shows what
+		// failed) then surface the typed error to the caller.
+		if repeatErr != nil {
+			return res, repeatErr
+		}
 	}
 	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume", maxIter)
 }

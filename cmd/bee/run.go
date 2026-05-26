@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -243,6 +244,11 @@ func runHeadlessReal(args []string) {
 			fmt.Fprintf(os.Stderr, "\nbee run: %v\n", err)
 		}
 		fmt.Fprintf(os.Stderr, "bee back %s\n", sessID)
+		// two-strike → distinct exit code so wrappers (zzz, swarm, CI) can
+		// tell "the model wedged on a repeat" apart from generic failures.
+		if errors.Is(err, loop.ErrTwoStrike) {
+			os.Exit(7)
+		}
 		os.Exit(1)
 	}
 	_ = res
