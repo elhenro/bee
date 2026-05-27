@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -606,6 +607,69 @@ func TestTextMode_ParsesHermesFunctionXMLNoClose(t *testing.T) {
 	}
 }
 
+// F1: self-closing tag with attributes (`<read path="x" limit="10"/>`).
+// Some models reach for HTML/XML attribute syntax instead of bee's JSON-in-body
+// envelope. Regression: session 55a4e994 — model emitted
+// `<read path="..." limit="146" offset="100"/>` repeatedly, parser silently
+// dropped it, loop nudged once then exited.
+func TestTextMode_ParsesSelfClosingAttrEnvelope(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `<shell command="ls -la" cwd="/tmp"/>`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["command"] != "ls -la" || tools[0].Input["cwd"] != "/tmp" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// F1: same attribute syntax with explicit close (`<read path="x">...</read>` form).
+func TestTextMode_ParsesAttrEnvelopeWithClose(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: `<write path="x.go" content="package x"></write>`},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "write" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["path"] != "x.go" || tools[0].Input["content"] != "package x" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
+// F2: real tool name as outer tag with hermes-style `<parameter=K>V</parameter>`
+// children. Existing hermes path only handles `<function=NAME>`. Session 55a4e994
+// msg 18 — qwen3 mixed shapes, parser passed garbage args to tool.
+func TestTextMode_ParsesHermesParamsInRealToolTag(t *testing.T) {
+	inner := &fakeProvider{
+		events: []Event{
+			{Type: EventTextDelta, Delta: "<shell>\n<parameter=command>git status</parameter>\n<parameter=cwd>/repo</parameter>\n</shell>"},
+			{Type: EventDone},
+		},
+	}
+	p := NewTextMode(inner, TextModeOptions{})
+	ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+	tools, _, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "shell" {
+		t.Fatalf("tool: %+v", tools)
+	}
+	if tools[0].Input["command"] != "git status" || tools[0].Input["cwd"] != "/repo" {
+		t.Fatalf("args: %+v", tools[0].Input)
+	}
+}
+
 // schema parameter names get surfaced in the advert so the model uses the
 // real keys instead of guessing (the root regression in 333f7bb: tiny profile
 // gained xml format but advert dropped param hints, so qwen3 emitted
@@ -848,4 +912,80 @@ func collect(ch <-chan Event) ([]*types.ToolUse, string, string) {
 		}
 	}
 	return tools, text.String(), think.String()
+}
+
+func TestLenientRepair_InvalidEscapeInShellCommand(t *testing.T) {
+	// session 5e20f3f8: grep alternation `\\|` decoded by JSON parser as
+	// invalid `\|` escape. Repair pass should double-escape so the args
+	// parse and the bash command runs verbatim.
+	body := `{"command":"grep -r 'foo\|bar' ."}`
+	repaired, ok := lenientJSONRepair(body)
+	if !ok {
+		t.Fatal("expected repair to apply")
+	}
+	if !strings.Contains(repaired, `\\|`) {
+		t.Errorf("expected doubled backslash, got: %s", repaired)
+	}
+	// must parse cleanly now.
+	var v map[string]any
+	if err := json.Unmarshal([]byte(repaired), &v); err != nil {
+		t.Fatalf("repaired body still invalid: %v\n%s", err, repaired)
+	}
+	cmd, _ := v["command"].(string)
+	if !strings.Contains(cmd, `\|`) {
+		t.Errorf("expected literal backslash-pipe in cmd, got: %q", cmd)
+	}
+}
+
+func TestLenientRepair_TrimsEnvelopeTrailingTag(t *testing.T) {
+	// session 5e20f3f8 last turns: model emitted args followed by stray
+	// tag text past the closing brace. trimUnbalancedTail should drop it.
+	body := `{"command":"cat file.go | head -200"}</bash`
+	repaired, ok := lenientJSONRepair(body)
+	if !ok {
+		t.Fatal("expected repair to apply")
+	}
+	var v map[string]any
+	if err := json.Unmarshal([]byte(repaired), &v); err != nil {
+		t.Fatalf("repaired body still invalid: %v\n%s", err, repaired)
+	}
+	if v["command"] != "cat file.go | head -200" {
+		t.Errorf("unexpected command value: %v", v["command"])
+	}
+}
+
+func TestLenientRepair_PreservesValidEscapes(t *testing.T) {
+	// valid escapes (\n, \", \\) must pass through unchanged.
+	body := `{"content":"line1\nline2\t\"quoted\""}`
+	repaired, ok := lenientJSONRepair(body)
+	// no repair needed → ok=false
+	if ok {
+		t.Errorf("expected no repair, got: %s", repaired)
+	}
+}
+
+func TestEscapeInvalidBackslashes_PreservesUnicode(t *testing.T) {
+	// \u escapes must survive untouched.
+	in := `{"x":"é"}`
+	out := escapeInvalidBackslashesInStrings(in)
+	if out != in {
+		t.Errorf("unicode escape mangled: %q -> %q", in, out)
+	}
+}
+
+func TestTrimUnbalancedTail_LeavesValidJSON(t *testing.T) {
+	in := `{"a":"b","c":1}`
+	out := trimUnbalancedTail(in)
+	if out != in {
+		t.Errorf("valid JSON modified: %q", out)
+	}
+}
+
+func TestTrimUnbalancedTail_LeavesUntermJSON(t *testing.T) {
+	// genuine truncation (no matched close) — leave for error path.
+	in := `{"a":"b"`
+	out := trimUnbalancedTail(in)
+	if out != in {
+		t.Errorf("unterminated JSON modified: %q", out)
+	}
 }

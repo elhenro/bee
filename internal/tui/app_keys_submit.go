@@ -94,14 +94,28 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.lastErr = ""
 	}
 	// /compact runs async with state=StateIdle (loader driven by m.compacting).
-	// Without this guard, sending "continue" mid-compact would race the engine —
-	// submit() would kick off RunWithContent while Compact still mutates session
-	// state. Swallow the input with a hint until compaction finishes.
+	// Without this guard, submit() mid-compact would race the engine —
+	// RunWithContent would kick off while Compact still mutates session state.
+	// Queue plain-text submits so "continue" typed mid-compact lands once the
+	// compacted history is in place. Slash commands and shell-bangs aren't
+	// queued (meta, weird to delay) — they get a hint and are dropped.
 	if m.compacting {
+		text := strings.TrimSpace(m.input.Value())
 		m.input.Reset()
+		if text == "" {
+			return m, nil
+		}
+		if strings.HasPrefix(text, "/") || strings.HasPrefix(text, "!") {
+			m.messages = append(m.messages, types.Message{
+				Role:    types.RoleAssistant,
+				Content: []types.ContentBlock{{Type: types.BlockText, Text: "(compacting, slash/shell commands not queued)"}},
+			})
+			return m, m.flush()
+		}
+		m.queuedMidCompact = text
 		m.messages = append(m.messages, types.Message{
 			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(compacting — wait for it to finish)"}},
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(queued, runs after compact: " + text + ")"}},
 		})
 		return m, m.flush()
 	}

@@ -118,6 +118,15 @@ func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 		Role:    types.RoleAssistant,
 		Content: []types.ContentBlock{{Type: types.BlockText, Text: formatCompactDone(msg.stats)}},
 	})
+	// drain mid-compact queue: a "continue" typed while compacting is held
+	// until now so it runs against the shrunken history. submit() pushes its
+	// own messages + cmds — batch the prior flush with whatever it returns.
+	if q := m.queuedMidCompact; q != "" {
+		m.queuedMidCompact = ""
+		flushed := m.flush()
+		newM, subCmd := m.submit(q)
+		return newM, tea.Batch(flushed, subCmd)
+	}
 	return m, m.flush()
 }
 

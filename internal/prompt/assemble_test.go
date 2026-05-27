@@ -16,6 +16,30 @@ func baseCfg() config.Config {
 	return c
 }
 
+func TestTinyDisciplineInjection(t *testing.T) {
+	cfg := baseCfg()
+	cfg.Profile = "tiny"
+	out := Assemble(cfg, nil, "", nil, nil)
+	if !strings.Contains(out, "## Discipline") {
+		t.Errorf("tiny profile missing Discipline section, got: %q", out)
+	}
+	if !strings.Contains(out, "verify path with `read` before `edit`") {
+		t.Errorf("tiny profile missing path-verify rule")
+	}
+	if !strings.Contains(out, "switch approach or call `escalate`") {
+		t.Errorf("tiny profile missing stuck-loop rule")
+	}
+}
+
+func TestNormalProfileNoDiscipline(t *testing.T) {
+	cfg := baseCfg()
+	cfg.Profile = "normal"
+	out := Assemble(cfg, nil, "", nil, nil)
+	if strings.Contains(out, "## Discipline") {
+		t.Errorf("non-tiny profile should not get Discipline section")
+	}
+}
+
 func TestAssembleSectionOrder(t *testing.T) {
 	cfg := baseCfg()
 	// pin normal profile: default "auto" resolves to tiny for flash, which

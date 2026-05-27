@@ -74,6 +74,34 @@ func TestFormatToolError_ContainsTagsAndSuggestion(t *testing.T) {
 	}
 }
 
+// regression: workspace-escape and write-filter denials must classify as
+// invalid_arg with a workspace-aware suggestion so the model can self-correct.
+// previously fell through to toolErrUnknown with no hint → two-strike bail.
+func TestClassifyToolError_WorkspaceEscape(t *testing.T) {
+	err := errors.New(`path "/tmp/foo" escapes workspace root "/repo"`)
+	if got := classifyToolError(err); got != toolErrInvalidArg {
+		t.Fatalf("classify: want %q, got %q", toolErrInvalidArg, got)
+	}
+}
+
+func TestClassifyToolError_WriteFilterDenied(t *testing.T) {
+	err := errors.New(`path "foo.exe" denied by write filter`)
+	if got := classifyToolError(err); got != toolErrInvalidArg {
+		t.Fatalf("classify: want %q, got %q", toolErrInvalidArg, got)
+	}
+}
+
+func TestFormatToolError_WorkspaceEscapeHasWorkspaceHint(t *testing.T) {
+	err := errors.New(`path "/tmp/x" escapes workspace root "/repo"`)
+	got := formatToolError("write", err)
+	if !strings.Contains(got, "[type="+toolErrInvalidArg+"]") {
+		t.Errorf("want invalid_arg class; got: %q", got)
+	}
+	if !strings.Contains(got, "workspace") {
+		t.Errorf("suggestion must mention workspace; got: %q", got)
+	}
+}
+
 func TestFormatToolError_NoSuggestionForUnknown(t *testing.T) {
 	err := errors.New("opaque failure")
 	got := formatToolError("bash", err)

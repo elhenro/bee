@@ -18,6 +18,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/edit_diff"
 	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/tools/find"
+	"github.com/elhenro/bee/internal/tools/godoc"
 	"github.com/elhenro/bee/internal/tools/grep"
 	"github.com/elhenro/bee/internal/tools/hashline_edit"
 	"github.com/elhenro/bee/internal/tools/knowledge_search"
@@ -27,6 +28,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/shell"
 	"github.com/elhenro/bee/internal/tools/tool_lookup"
 	"github.com/elhenro/bee/internal/tools/usertool"
+	"github.com/elhenro/bee/internal/tools/web_fetch"
 	"github.com/elhenro/bee/internal/tools/write"
 )
 
@@ -106,6 +108,14 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver) (*tools.Registry, error) {
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
+	
+	// Initialize web_fetch tool
+	webFetch, err := web_fetch.New(web_fetch.DefaultConfig())
+	if err != nil {
+		// Silently skip if disabled
+		webFetch = nil
+	}
+	
 	all := []tools.Tool{
 		newShellTool(app, cfg),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),
@@ -115,9 +125,15 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 		write.New(cwd),
 		edit_diff.New(cwd),
 		hashline_edit.New(),
+		// godoc lets tiny models verify Go APIs before calling them, killing
+		// phantom-function hallucinations at source.
+		godoc.New(cwd),
 		// escalate gives the model an explicit exit door — important for
 		// small models that wedge on uncertain tasks instead of asking.
 		escalate.New(),
+	}
+	if webFetch != nil {
+		all = append(all, webFetch)
 	}
 	// apply_patch dropped on tiny — small models mis-emit unified diffs.
 	if !prof.SkipApplyPatch {

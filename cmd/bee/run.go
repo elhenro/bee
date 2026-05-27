@@ -249,6 +249,17 @@ func runHeadlessReal(args []string) {
 		if errors.Is(err, loop.ErrTwoStrike) {
 			os.Exit(7)
 		}
+		// per-tool failure cap → same wedge family as two-strike but
+		// triggered by N failures on the same tool name regardless of args.
+		if errors.Is(err, loop.ErrPerToolFailureCap) {
+			os.Exit(7)
+		}
+		// format-strike → model wedged emitting malformed envelopes the
+		// parser can't recognize. distinct from two-strike (which is about
+		// tool errors) — signals "switch model or rephrase prompt".
+		if errors.Is(err, loop.ErrFormatStrike) {
+			os.Exit(7)
+		}
 		// escalate → another distinct code so the user/CI knows the model
 		// asked for help rather than crashed.
 		if errors.Is(err, loop.ErrEscalate) {

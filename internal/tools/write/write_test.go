@@ -101,6 +101,30 @@ func TestWrite_Escape(t *testing.T) {
 	}
 }
 
+// regression: error must echo the offending path + workspace root so the
+// model can self-correct (previous "path escapes workspace root" gave no
+// signal what to change → loop hit two-strike bail).
+func TestWrite_EscapeEchoesPathAndRoot(t *testing.T) {
+	dir := t.TempDir()
+	w := New(dir)
+	res, _ := w.Run(context.Background(), map[string]any{
+		"path":    "/tmp/test_web_fetch.go",
+		"content": "package main",
+	})
+	if !res.IsError {
+		t.Fatal("want IsError for absolute escape path")
+	}
+	if !strings.Contains(res.Content, "/tmp/test_web_fetch.go") {
+		t.Errorf("error must echo offending path; got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, dir) {
+		t.Errorf("error must echo workspace root %q; got: %s", dir, res.Content)
+	}
+	if !strings.Contains(res.Content, "relative to") || !strings.Contains(res.Content, "workspace root") {
+		t.Errorf("error must hint at fix (relative to workspace root); got: %s", res.Content)
+	}
+}
+
 func TestWrite_MissingPath(t *testing.T) {
 	w := New(t.TempDir())
 	res, _ := w.Run(context.Background(), map[string]any{"content": "x"})

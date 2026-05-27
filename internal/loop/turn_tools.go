@@ -120,6 +120,12 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if !ok {
 		return types.ToolResult{UseID: u.ID, Content: unknownToolMsg(u.Name, e.Tools.Names()), IsError: true}, nil
 	}
+	// schema validation BEFORE Run: catches `{"cmd":"x"}` vs `{"command":"x"}`
+	// with a corrected example envelope, instead of the tool's own "missing
+	// field" generic. Tiny local models lock onto literal example shapes.
+	if err := tools.ValidateInput(t.Spec(), u.Input); err != nil {
+		return types.ToolResult{UseID: u.ID, Content: err.Error(), IsError: true}, nil
+	}
 	input := u.Input
 	if u.Name == "bash" {
 		input = wrapShellInput(input, e.Cfg.Sandbox, e.Cwd)

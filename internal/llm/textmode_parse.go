@@ -78,6 +78,12 @@ var dsmlParamRe = regexp.MustCompile(`(?is)<\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*param
 // relay() unchanged and avoids fighting brace-matching on the
 // `<function=NAME>` form where the body isn't valid JSON at all.
 func normalizeHermesEnvelopes(s string) string {
+	// pass 0: rewrite attribute-style `<NAME k="v" k="v"/>` (and explicit
+	// close form `<NAME k="v">...</NAME>`) into canonical
+	// `<NAME>{"k":"v",...}</NAME>`. catches the HTML/XML-flavored envelope
+	// some models reach for when the JSON-in-body form doesn't stick. tool
+	// name resolution is deferred to extractToolCalls.
+	s = normalizeAttrEnvelopes(s)
 	// pass 1: unwrap <tool_call>...</tool_call> envelopes. body re-emitted
 	// inline so a json body becomes bare json, and a <function=...> body
 	// becomes a bare <function=...> match for pass 2. tolerate missing
@@ -258,6 +264,88 @@ func normalizeToolNameVariant(s string) string {
 	return b.String()
 }
 
+// attrEnvelopeRe matches `<NAME k=v k="v" k='v' ...>` (with or without
+// self-close `/>`). Captures the tool-name and the raw attribute span so the
+// rewriter can convert attrs into a JSON args object. Tool-name shape mirrors
+// openTagRe (snake/lowercase with optional hyphens). The attribute span is
+// permissive: anything up to the closing `>` that isn't another `<`.
+var attrEnvelopeRe = regexp.MustCompile(`(?is)<([a-z_][a-z0-9_\-]*)((?:\s+[a-z_][a-z0-9_\-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s/>]+))+)\s*(/?)>`)
+
+// attrPairRe captures one key/value attribute. Values may be double-quoted,
+// single-quoted, or bare (no whitespace).
+var attrPairRe = regexp.MustCompile(`(?is)([a-z_][a-z0-9_\-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s/>]+))`)
+
+// normalizeAttrEnvelopes rewrites `<NAME k="v" .../>` and `<NAME k="v">...</NAME>`
+// into `<NAME>{"k":"v",...}</NAME>`. Only rewrites when the tag has at least one
+// attribute (bare `<NAME>` is left for extractToolCalls). Body between explicit
+// open/close is preserved appended after the synthesized JSON — rare, but lets
+// `<write path="x">content body</write>` round-trip when a model mixes shapes.
+// Tool name validity is checked downstream; this pass is purely syntactic.
+func normalizeAttrEnvelopes(s string) string {
+	if !strings.Contains(s, "=") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 32)
+	cur := 0
+	for cur < len(s) {
+		loc := attrEnvelopeRe.FindStringSubmatchIndex(s[cur:])
+		if loc == nil {
+			b.WriteString(s[cur:])
+			break
+		}
+		matchStart := cur + loc[0]
+		matchEnd := cur + loc[1]
+		name := strings.ToLower(s[cur+loc[2] : cur+loc[3]])
+		attrSpan := s[cur+loc[4] : cur+loc[5]]
+		selfClose := loc[6] >= 0 && (cur+loc[7]) > (cur+loc[6]) && s[cur+loc[6]] == '/'
+
+		args := parseAttrPairs(attrSpan)
+		buf, err := json.Marshal(args)
+		if err != nil {
+			b.WriteString(s[cur:matchEnd])
+			cur = matchEnd
+			continue
+		}
+		b.WriteString(s[cur:matchStart])
+		b.WriteString("<" + name + ">" + string(buf) + "</" + name + ">")
+		cur = matchEnd
+		if selfClose {
+			continue
+		}
+		// non-self-close: consume up to and including matching `</NAME>` so the
+		// body doesn't double-emit. Missing close is tolerated — body discarded.
+		closeRe := regexp.MustCompile(`(?is)</` + regexp.QuoteMeta(name) + `>`)
+		if cl := closeRe.FindStringIndex(s[cur:]); cl != nil {
+			cur += cl[1]
+		}
+	}
+	return b.String()
+}
+
+// parseAttrPairs walks an HTML-style attribute span and returns a key→value
+// map. Values are decoded via decodeHermesScalar so `count=3` → number,
+// `enabled="true"` → bool, everything else → string.
+func parseAttrPairs(span string) map[string]any {
+	pairs := attrPairRe.FindAllStringSubmatch(span, -1)
+	args := make(map[string]any, len(pairs))
+	for _, p := range pairs {
+		if len(p) < 5 {
+			continue
+		}
+		key := p[1]
+		val := p[2]
+		if val == "" {
+			val = p[3]
+		}
+		if val == "" {
+			val = p[4]
+		}
+		args[key] = decodeHermesScalar(val)
+	}
+	return args
+}
+
 // unwrapToolCallEnvelopes replaces <tool_call>BODY</tool_call> with BODY, AND
 // also strips a dangling `<tool_call>` opener with no close — happens when the
 // textmode stop sequence (`</NAME>`) terminates the stream past the function
@@ -391,6 +479,24 @@ func parseToolArgs(body string) map[string]any {
 		return map[string]any{}
 	}
 	body = stripCodeFence(body)
+	// F2: hermes-style `<parameter=K>V</parameter>` children inside a real
+	// tool tag. qwen3 mixes shapes — outer tag is the canonical tool name,
+	// inner params follow hermes convention. detect BEFORE StripMarkupBytes
+	// because that strips trailing `</parameter>` runs and destroys the last
+	// param block.
+	if strings.Contains(body, "<parameter=") {
+		params := hermesParamRe.FindAllStringSubmatch(body, -1)
+		if len(params) > 0 {
+			args := make(map[string]any, len(params))
+			for _, p := range params {
+				if len(p) != 3 {
+					continue
+				}
+				args[p[1]] = decodeHermesScalar(strings.TrimSpace(p[2]))
+			}
+			return args
+		}
+	}
 	body = string(wire.StripMarkupBytes([]byte(body)))
 	var v map[string]any
 	if err := json.Unmarshal([]byte(body), &v); err == nil {
@@ -434,20 +540,126 @@ func stripCodeFence(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// lenientJSONRepair handles the two failure modes seen most often from
-// local models: a trailing comma inside an object/array, and raw newlines
-// inside string values (model wrote a multiline content arg without
-// escaping). Other errors fall through to caller's failure path.
+// lenientJSONRepair handles the most common failure modes from local
+// models: trailing comma, raw newlines inside strings, invalid backslash
+// escapes (e.g. shell-regex `\|` or `\(` in a bash command), and a
+// trailing unbalanced brace from envelope-leak truncation. Other errors
+// fall through to caller's failure path.
+//
+// Order matters: escape-fix runs before newline-fix because a fixed
+// `\|` lengthens the string by one char (`\\|`) and could shift any
+// later byte-offset based pass; newline-fix is byte-walking so it's
+// resilient to length changes. Trailing-comma runs last because it
+// only looks at boundary chars.
 func lenientJSONRepair(s string) (string, bool) {
 	if s == "" {
 		return "", false
 	}
-	repaired := stripTrailingCommas(s)
+	repaired := escapeInvalidBackslashesInStrings(s)
 	repaired = escapeBareNewlinesInStrings(repaired)
+	repaired = stripTrailingCommas(repaired)
+	repaired = trimUnbalancedTail(repaired)
 	if repaired == s {
 		return "", false
 	}
 	return repaired, true
+}
+
+// escapeInvalidBackslashesInStrings finds `\X` inside JSON string literals
+// where X is not a valid JSON escape (b, f, n, r, t, ", \, /, u) and
+// doubles the backslash so JSON parses it as literal `\X`. Catches the
+// common case of bash commands with grep regex alternation (`\|`) or
+// regex group syntax (`\(`, `\)`) emitted directly into a `command` arg.
+func escapeInvalidBackslashesInStrings(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+	inStr := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !inStr {
+			b.WriteByte(c)
+			if c == '"' {
+				inStr = true
+			}
+			continue
+		}
+		if c == '\\' && i+1 < len(s) {
+			next := s[i+1]
+			switch next {
+			case 'b', 'f', 'n', 'r', 't', '"', '\\', '/', 'u':
+				b.WriteByte(c)
+				b.WriteByte(next)
+				i++
+				continue
+			}
+			// invalid escape — double the backslash.
+			b.WriteString(`\\`)
+			b.WriteByte(next)
+			i++
+			continue
+		}
+		b.WriteByte(c)
+		if c == '"' {
+			inStr = false
+		}
+	}
+	return b.String()
+}
+
+// trimUnbalancedTail handles envelope truncation: model hit the `</tool>`
+// stop sequence mid-emission, leaving a trailing unbalanced `}` or extra
+// closing brace past the real end of the JSON object. Walks the prefix
+// counting brace depth; returns the longest prefix where depth returns
+// to zero. If no such prefix exists, returns the input unchanged.
+//
+// Conservative: only trims trailing garbage, never modifies the parsed
+// region. A genuinely unterminated JSON ({"a":"b" with no close) is left
+// alone so the caller's error path surfaces the real issue.
+func trimUnbalancedTail(s string) string {
+	depth := 0
+	inStr := false
+	esc := false
+	lastBalanced := -1
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 {
+				lastBalanced = i
+			}
+		}
+	}
+	if lastBalanced < 0 || lastBalanced == len(s)-1 {
+		return s
+	}
+	// any non-whitespace past the balanced point → trim.
+	for i := lastBalanced + 1; i < len(s); i++ {
+		switch s[i] {
+		case ' ', '\t', '\n', '\r':
+			continue
+		}
+		return s[:lastBalanced+1]
+	}
+	return s
 }
 
 // stripTrailingCommas removes `,` immediately before `}` or `]`, honoring

@@ -83,7 +83,11 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	}
 	rel, err := filepath.Rel(rootAbs, abs)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return tools.Result{Content: "path escapes workspace root", IsError: true}, nil
+		return tools.Result{
+			Content: fmt.Sprintf("path %q escapes workspace root %q (resolved %q). use a path relative to workspace root, or under %s.",
+				path, rootAbs, abs, rootAbs),
+			IsError: true,
+		}, nil
 	}
 
 	if t.pathRe != nil {

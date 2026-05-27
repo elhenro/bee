@@ -359,3 +359,32 @@ func TestRun_HashlineIgnoredForDir(t *testing.T) {
 		t.Fatalf("directory listing changed shape:\n%s", res.Content)
 	}
 }
+
+func TestSpec_LimitDescriptionShowsActualBounds(t *testing.T) {
+	// tiny profile limits — description must reflect them so the model
+	// knows it can pass `limit: 500` rather than chunked-reading.
+	tool := NewWithLimits(100, 500)
+	props, _ := tool.Spec().Schema["properties"].(map[string]any)
+	limitProp, _ := props["limit"].(map[string]any)
+	desc, _ := limitProp["description"].(string)
+	if !strings.Contains(desc, "Default 100") {
+		t.Errorf("expected default 100 in limit desc, got: %q", desc)
+	}
+	if !strings.Contains(desc, "up to 500") {
+		t.Errorf("expected max 500 in limit desc, got: %q", desc)
+	}
+}
+
+func TestSpec_LimitDescriptionPackageDefaults(t *testing.T) {
+	// non-tiny: package defaults (2000 / 10000) should render.
+	tool := New()
+	props, _ := tool.Spec().Schema["properties"].(map[string]any)
+	limitProp, _ := props["limit"].(map[string]any)
+	desc, _ := limitProp["description"].(string)
+	if !strings.Contains(desc, "Default 2000") {
+		t.Errorf("expected default 2000 in limit desc, got: %q", desc)
+	}
+	if !strings.Contains(desc, "up to 10000") {
+		t.Errorf("expected max 10000 in limit desc, got: %q", desc)
+	}
+}

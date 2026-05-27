@@ -96,8 +96,15 @@ type Engine struct {
 	// iteration progress / stall tracking; reset per Run.
 	warnedIterHalf bool
 	warnedIterEighty bool
-	warnedStall      bool
-	noMutationStreak int
+	warnedStall         bool
+	warnedStallEscalate bool
+	noMutationStreak    int
+	// editsByFile counts edits per path since the last verify (build/test
+	// run or read of the same path). Resets per Run.
+	editsByFile map[string]int
+	// nudgedEditNoVerify dedupes the per-file edit-no-verify nudge so the
+	// model isn't spammed every iter once threshold crossed.
+	nudgedEditNoVerify map[string]bool
 	// cumulative token spend across iterations of one Run. drives the
 	// adaptive token-budget cap so long productive turns aren't bounded
 	// purely by iter count. reset per Run.
@@ -110,14 +117,24 @@ type Engine struct {
 	// is injected in response to a thinking-only assistant turn. dedupes per
 	// Run so a wedged provider can't burn the whole iter budget.
 	nudgedReasoningOnly bool
+	// formatNudgeCount counts how many format-correction nudges have fired
+	// this Run. Allows up to formatNudgeMax retries with escalating wording
+	// before format-strike bail fires. separate from reasoning-only dedupe
+	// because the two failure modes need independent budgets.
+	formatNudgeCount int
+	// formatSlipStreak counts consecutive turns where the assistant produced
+	// no tool_use but the text looked like a malformed envelope. Reset by any
+	// turn that dispatches a tool. Drives FormatStrikeError at formatStrikeAt.
+	formatSlipStreak int
 	// repeats tracks tool-call signatures across iterations of one Run so
 	// the loop can detect identical-call loops, per-tool failure cascades,
 	// and two-strike escalations. allocated lazily on first dispatch.
 	repeats *repeatTracker
-	// nudgedRepeat / nudgedPerToolFail dedupe the corresponding warning
-	// prefixes — fire at most once per Run.
+	// nudgedRepeat / nudgedPerToolFail / nudgedTwoStrike dedupe the
+	// corresponding warning prefixes — each fires at most once per Run.
 	nudgedRepeat      bool
 	nudgedPerToolFail bool
+	nudgedTwoStrike   bool
 	// dupWrites tracks (path, content-hash) of writes within one Run so the
 	// engine can warn on duplicate identical writes. opt-in per profile.
 	dupWrites *duplicateWriteTracker

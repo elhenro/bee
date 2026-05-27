@@ -60,8 +60,20 @@ func NewWithLimits(def, max int) tools.Tool {
 	return &Tool{cache: make(map[string]*cacheEntry), defaultLines: def, maxLines: max}
 }
 
-// Spec advertises the tool to the model.
+// Spec advertises the tool to the model. defaultLines/maxLines values are
+// rendered into the limit description so tiny-profile models learn the
+// actual ceiling (was hardcoded "Default 2000" — wrong for tiny, which
+// caps at 500 with default 100).
 func (t *Tool) Spec() llm.ToolSpec {
+	defLines := t.defaultLines
+	if defLines <= 0 {
+		defLines = defaultLimit
+	}
+	maxLines := t.maxLines
+	if maxLines <= 0 {
+		maxLines = maxLimit
+	}
+	limitDesc := fmt.Sprintf("Max lines to return (file only). Default %d. Pass an explicit value up to %d to read more in one call instead of multiple offset-paged reads.", defLines, maxLines)
 	return llm.ToolSpec{
 		Name: toolName,
 		Description: "Read a text file or list a directory. Output format: '<line> │ <content>' (separator is space-pipe-space, never a tab). " +
@@ -81,7 +93,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "Max lines to return (file only). Default 2000.",
+					"description": limitDesc,
 				},
 				"tail": map[string]any{
 					"type":        "integer",

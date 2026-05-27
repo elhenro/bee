@@ -54,6 +54,16 @@ func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentI
 			blocks = prependWarningToToolResult(blocks, w)
 			e.warnedStall = true
 		}
+		// escalation tier: streak hit 2x threshold AND first nudge already
+		// fired. previous session evidence (5e20f3f8): two soft nudges
+		// fired, model ignored both, kept reading. Hard stop at 3x threshold
+		// arrives too late — burns more tokens. At 2x emit an actionable
+		// pointer to the escalate tool so the model exits cleanly.
+		if e.warnedStall && !e.warnedStallEscalate && e.noMutationStreak >= 2*t {
+			w := fmt.Sprintf("[stall %d iters] previous nudge ignored. if stuck, call `escalate` with a reason — clean exit beats another read.\n\n", e.noMutationStreak)
+			blocks = prependWarningToToolResult(blocks, w)
+			e.warnedStallEscalate = true
+		}
 	}
 	return blocks
 }

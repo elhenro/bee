@@ -76,6 +76,38 @@ func TestTracker_PerToolFailureStreak(t *testing.T) {
 	}
 }
 
+// ConsecutiveSameSigFailures generalizes two-strike to N: count of identical
+// failing calls in an unbroken streak. Reset by success or different sig.
+func TestTracker_ConsecutiveSameSigFailures(t *testing.T) {
+	tr := newRepeatTracker()
+	u := types.ToolUse{ID: "1", Name: "write", Input: map[string]any{"path": "/tmp/x"}}
+	for i := 1; i <= 5; i++ {
+		obs := tr.Observe(u, true)
+		if obs.ConsecutiveSameSigFailures != i {
+			t.Fatalf("iter %d: want streak=%d, got %d", i, i, obs.ConsecutiveSameSigFailures)
+		}
+	}
+	// success in the middle resets the streak.
+	tr.Observe(u, false)
+	obs := tr.Observe(u, true)
+	if obs.ConsecutiveSameSigFailures != 1 {
+		t.Fatalf("after success: want streak reset to 1, got %d", obs.ConsecutiveSameSigFailures)
+	}
+}
+
+// different-sig failure also breaks the same-sig streak.
+func TestTracker_SameSigStreakBrokenByDifferentSig(t *testing.T) {
+	tr := newRepeatTracker()
+	u := types.ToolUse{ID: "1", Name: "write", Input: map[string]any{"path": "/tmp/x"}}
+	other := types.ToolUse{ID: "2", Name: "write", Input: map[string]any{"path": "/tmp/y"}}
+	tr.Observe(u, true)
+	tr.Observe(other, true)
+	obs := tr.Observe(u, true)
+	if obs.ConsecutiveSameSigFailures != 1 {
+		t.Fatalf("after intervening sig: want streak=1, got %d", obs.ConsecutiveSameSigFailures)
+	}
+}
+
 // RepeatCount tracks the same sig across the whole Run (no sliding window).
 func TestTracker_RepeatCount(t *testing.T) {
 	tr := newRepeatTracker()

@@ -198,6 +198,13 @@ type Model struct {
 	// summarization LLM call streams, since state stays StateIdle.
 	compacting bool
 
+	// queuedMidCompact holds plain-text submits typed while compacting.
+	// Drained by onCompactDone — the queued text is fed back through
+	// submit() once the compacted history is in place. Slash commands and
+	// shell-bangs are not queued (they're meta, weird to delay). Last
+	// queued wins on rapid retyping.
+	queuedMidCompact string
+
 	// printedCount tracks how many messages from m.messages have already
 	// been emitted to the terminal scrollback via tea.Println. The live
 	// View() never renders past messages — they live in native scrollback.

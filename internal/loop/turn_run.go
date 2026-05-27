@@ -30,13 +30,19 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	e.warnedTokenHalf = false
 	e.warnedTokenEighty = false
 	e.warnedStall = false
+	e.warnedStallEscalate = false
 	e.noMutationStreak = 0
+	e.editsByFile = make(map[string]int)
+	e.nudgedEditNoVerify = make(map[string]bool)
 	e.cumInputTokens = 0
 	e.cumOutputTokens = 0
 	e.nudgedReasoningOnly = false
+	e.formatNudgeCount = 0
+	e.formatSlipStreak = 0
 	e.repeats = newRepeatTracker()
 	e.nudgedRepeat = false
 	e.nudgedPerToolFail = false
+	e.nudgedTwoStrike = false
 	e.dupWrites = newDuplicateWriteTracker()
 	e.escalateErr = nil
 	res := RunResult{}
@@ -274,6 +280,18 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		res.FinalText = finalText
 
 		if len(toolUses) == 0 || detectDoneSignal(finalText) {
+			// format-slip streak: a turn with zero tool_uses but text that
+			// looks like an attempted call counts toward the strike budget.
+			// done-signal turns are intentional exits, not slips. real done
+			// resets the streak so the FormatStrikeError reads as consecutive.
+			if len(toolUses) == 0 && !detectDoneSignal(finalText) && looksLikeAttemptedToolCall(finalText, specs) {
+				e.formatSlipStreak++
+				if e.formatSlipStreak >= formatStrikeAt {
+					return res, &FormatStrikeError{Streak: e.formatSlipStreak}
+				}
+			} else {
+				e.formatSlipStreak = 0
+			}
 			if nudge := attemptRecoveryNudge(e, assistantMsg, finalText, toolUses, specs); nudge != nil {
 				if err := e.appendMessage(ctx, *nudge); err != nil {
 					return res, err
@@ -283,6 +301,9 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 			}
 			return res, nil
 		}
+		// any successful tool dispatch resets the format-slip streak; the model
+		// proved it can produce a parseable envelope this turn.
+		e.formatSlipStreak = 0
 
 		// dispatch tools (read-only ones run in parallel, mutators serial)
 		toolResults, err := e.dispatchTools(ctx, toolUses)
@@ -306,6 +327,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		blocks := toolResultBlocks(toolResults)
 		blocks, repeatErr := observeRepeats(e, toolUses, toolResults, blocks)
 		blocks = observeDuplicateWrites(e, toolUses, toolResults, blocks)
+		blocks = observeEditNoVerify(e, toolUses, toolResults, blocks)
 		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget)
 		toolMsg := types.Message{
 			ID:       newID(),

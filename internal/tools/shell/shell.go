@@ -99,6 +99,13 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	if !ok || strings.TrimSpace(cmdStr) == "" {
 		return tools.Result{Content: "missing or empty 'command' field", IsError: true}, nil
 	}
+	// auto-strip redundant `cd <cwd> &&` prefix. Tiny models (qwen3, gemma3)
+	// habitually prepend `cd /abs/path && ...` even when the process is
+	// already there — wastes tokens and clutters transcripts. Stripping
+	// silently is cleaner than re-nagging through the system prompt. If the
+	// target is a different dir, leave the command alone (legitimate intent).
+	var stripNote string
+	cmdStr, stripNote = stripRedundantCd(cmdStr)
 	// display command = unwrapped form when engine pre-wrapped with sandbox-exec;
 	// otherwise the modal would show the helper profile, not the user's intent.
 	displayCmd := cmdStr
@@ -179,6 +186,11 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 			Content: fmt.Sprintf("exec error: %v\n%s", err, output),
 			IsError: true,
 		}, nil
+	}
+	if stripNote != "" {
+		// prepend so the model sees the nudge even when output is truncated
+		// from the tail by the loop's per-tool token cap.
+		output = stripNote + "\n" + output
 	}
 	return tools.Result{Content: output}, nil
 }

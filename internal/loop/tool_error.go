@@ -49,7 +49,10 @@ func classifyToolError(err error) string {
 		strings.Contains(msg, "missing required"),
 		strings.Contains(msg, "missing field"),
 		strings.Contains(msg, "argparse"),
-		strings.Contains(msg, "unexpected type"):
+		strings.Contains(msg, "unexpected type"),
+		strings.Contains(msg, "escapes workspace"),
+		strings.Contains(msg, "denied by write filter"),
+		strings.Contains(msg, "denied by"):
 		return toolErrInvalidArg
 	case strings.Contains(msg, "json"):
 		return toolErrParseError
@@ -72,7 +75,7 @@ func suggestionFor(class string) string {
 	case toolErrNotFound:
 		return "check the path"
 	case toolErrInvalidArg:
-		return "inspect tool schema"
+		return "inspect tool schema; for paths stay inside workspace root"
 	case toolErrParseError:
 		return "ensure valid json"
 	case toolErrPermissionDenied:

@@ -24,7 +24,8 @@ type Observation struct {
 	Sig                         ToolCallSignature
 	RepeatCount                 int  // how many times this exact Sig has fired this Run
 	ConsecutiveSameToolFailures int  // streak of failures on the same tool name (any args)
-	IsTwoStrike                 bool // same Sig failed twice in a row → bail
+	ConsecutiveSameSigFailures  int  // streak of failures on the same (tool,args) sig
+	IsTwoStrike                 bool // same Sig failed twice in a row → nudge (no longer bails)
 }
 
 // repeatTracker is a per-Run signal collector. cheap to allocate.
@@ -33,6 +34,8 @@ type repeatTracker struct {
 	sigCounts map[ToolCallSignature]int
 	// fail-streak by tool name; resets when that tool succeeds.
 	failByTool map[string]int
+	// fail-streak by (tool,args) sig; resets on success or different sig.
+	failBySig int
 	// last signature seen and whether it failed. used for two-strike detect.
 	lastSig    ToolCallSignature
 	lastFailed bool
@@ -60,6 +63,14 @@ func (t *repeatTracker) Observe(u types.ToolUse, isErr bool) Observation {
 	if t.hasLast && t.lastFailed && isErr && t.lastSig == sig {
 		twoStrike = true
 	}
+	// failBySig: extend streak only when current is err AND sig matches last err sig.
+	if isErr && t.hasLast && t.lastFailed && t.lastSig == sig {
+		t.failBySig++
+	} else if isErr {
+		t.failBySig = 1
+	} else {
+		t.failBySig = 0
+	}
 	t.lastSig = sig
 	t.lastFailed = isErr
 	t.hasLast = true
@@ -67,6 +78,7 @@ func (t *repeatTracker) Observe(u types.ToolUse, isErr bool) Observation {
 		Sig:                         sig,
 		RepeatCount:                 t.sigCounts[sig],
 		ConsecutiveSameToolFailures: t.failByTool[u.Name],
+		ConsecutiveSameSigFailures:  t.failBySig,
 		IsTwoStrike:                 twoStrike,
 	}
 }

@@ -49,6 +49,7 @@ func Assemble(
 
 	rules := caveman.Rules(level)
 	identity := identityBlock(cfg, level)
+	discipline := tinyDiscipline(cfg.Profile)
 	toolMan := toolsManifest(regToolSpecs, prof.ToolDescChars)
 
 	// knowledge + skills + context are the trimmable sections; render then enforce budget.
@@ -56,7 +57,7 @@ func Assemble(
 	skillSection := skillsSection(truncateManifest(skillManifest, prof.SkillManifestChars))
 	ctxSection := renderContextSection(ctxFiles)
 
-	out := join(rules, identity, ctxSection, toolMan, skillSection, memSection)
+	out := join(rules, identity, discipline, ctxSection, toolMan, skillSection, memSection)
 
 	budget := prof.SystemPromptBudget
 	if budget <= 0 {
@@ -67,16 +68,16 @@ func Assemble(
 	for EstimateTokens(out) > budget && len(selectedRecords) > 0 {
 		selectedRecords = selectedRecords[:len(selectedRecords)-1]
 		memSection = knowledgeSection(selectedRecords, prof.MemoryBodyChars)
-		out = join(rules, identity, ctxSection, toolMan, skillSection, memSection)
+		out = join(rules, identity, discipline, ctxSection, toolMan, skillSection, memSection)
 	}
 	if EstimateTokens(out) > budget && skillSection != "" {
 		skillSection = ""
-		out = join(rules, identity, ctxSection, toolMan, skillSection, memSection)
+		out = join(rules, identity, discipline, ctxSection, toolMan, skillSection, memSection)
 	}
 	for EstimateTokens(out) > budget && len(ctxFiles) > 0 {
 		ctxFiles = ctxFiles[:len(ctxFiles)-1]
 		ctxSection = renderContextSection(ctxFiles)
-		out = join(rules, identity, ctxSection, toolMan, skillSection, memSection)
+		out = join(rules, identity, discipline, ctxSection, toolMan, skillSection, memSection)
 	}
 	if EstimateTokens(out) > budget {
 		log.Printf("prompt: assembled %d tokens > budget %d (model=%s profile=%s)",
@@ -113,25 +114,49 @@ func identityBlock(_ config.Config, level caveman.Level) string {
 }
 
 func identityBlockFor(cwd, gitRoot string, level caveman.Level) string {
-	// shared rule across both modes: bash tool inherits this cwd, so cd-prefixes
-	// (`cd /path && ...`) are pure noise — costs tokens, no behavior change.
-	const cdRule = "Shell tool already runs in cwd; never prefix commands with `cd <dir> &&`."
+	// the `cd <dir> &&` rule used to live here. dropped — shell tool now
+	// auto-strips redundant cd prefixes (see internal/tools/shell/cd_strip.go),
+	// so the model gets a one-shot breadcrumb in the tool result instead of
+	// burning prompt budget every turn.
 	if level == caveman.Off {
 		// minimal-prompt shape: name the action verbs, ban narration. Small
 		// local models (qwen, llama, ds-coder) drift into describing what
 		// they'd do unless explicitly told to invoke tools.
 		header := "You are the bee coding agent. You help by reading files, running shell commands, and editing or writing code. Always invoke tools to act; do not narrate intent."
 		if gitRoot != "" && gitRoot != cwd {
-			return fmt.Sprintf("%s\nWorking directory: %s.\nProject root: %s.\n%s", header, cwd, gitRoot, cdRule)
+			return fmt.Sprintf("%s\nWorking directory: %s.\nProject root: %s.", header, cwd, gitRoot)
 		}
-		return fmt.Sprintf("%s\nWorking directory: %s.\n%s", header, cwd, cdRule)
+		return fmt.Sprintf("%s\nWorking directory: %s.", header, cwd)
 	}
-	// terse-mode identity: style rule lives in caveman rules — no duplicate
-	// here. every byte counts on tiny-profile budgets.
 	if gitRoot != "" && gitRoot != cwd {
-		return fmt.Sprintf("bee coding agent. cwd: %s. project: %s. %s", cwd, gitRoot, cdRule)
+		return fmt.Sprintf("bee coding agent. cwd: %s. project: %s.", cwd, gitRoot)
 	}
-	return fmt.Sprintf("bee coding agent. cwd: %s. %s", cwd, cdRule)
+	return fmt.Sprintf("bee coding agent. cwd: %s.", cwd)
+}
+
+// tinyDiscipline returns a short anti-loop ruleset for the tiny profile.
+// Distinct from caveman (which is style compression): this targets the
+// failure modes observed in real local-model runs — phantom APIs, path
+// typos, write-test-before-impl, stuck-loop deliberation. Empty for any
+// profile other than tiny so larger models don't see redundant nags.
+//
+// Kept to ~7 short lines so the SystemPromptBudget=3000 for tiny isn't
+// blown. Each line a hard rule, not advice — 3B-active MoEs respond to
+// imperative > suggestive.
+func tinyDiscipline(profile string) string {
+	if profile != "tiny" {
+		return ""
+	}
+	return strings.Join([]string{
+		"## Discipline",
+		"- verify path with `read` before `edit`. typo wastes turn.",
+		"- use existing modules only. no `go get`. no new deps.",
+		"- run impl ONCE before writing tests. tests match observed output.",
+		"- 3 failed attempts on same fix → switch approach or call `escalate`.",
+		"- act, dont narrate. no multi-paragraph deliberation.",
+		"- wrong-key arg error → copy exact key from spec. retry once.",
+		"- build before claiming done. red test = not done.",
+	}, "\n")
 }
 
 // toolsManifest renders each tool as "name: snippet". When PromptSnippet is

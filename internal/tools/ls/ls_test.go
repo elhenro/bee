@@ -192,3 +192,24 @@ func TestLS_EmptyDirectory(t *testing.T) {
 		t.Errorf("want 'empty directory', got: %q", res.Content)
 	}
 }
+
+// regression: ls escape error must echo offending path + workspace root so
+// model can self-correct (matches write tool behavior — see write_test.go
+// TestWrite_EscapeEchoesPathAndRoot).
+func TestLS_EscapeEchoesPathAndRoot(t *testing.T) {
+	dir := t.TempDir()
+	l := New(dir)
+	res, _ := l.Run(context.Background(), map[string]any{"path": "/tmp"})
+	if !res.IsError {
+		t.Fatal("want IsError for escape path")
+	}
+	if !strings.Contains(res.Content, "/tmp") {
+		t.Errorf("error must echo offending path; got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, dir) {
+		t.Errorf("error must echo workspace root %q; got: %s", dir, res.Content)
+	}
+	if !strings.Contains(res.Content, "relative to") || !strings.Contains(res.Content, "workspace root") {
+		t.Errorf("error must hint at fix; got: %s", res.Content)
+	}
+}
