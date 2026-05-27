@@ -29,6 +29,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/tool_lookup"
 	"github.com/elhenro/bee/internal/tools/usertool"
 	"github.com/elhenro/bee/internal/tools/web_fetch"
+	"github.com/elhenro/bee/internal/tools/web_search"
 	"github.com/elhenro/bee/internal/tools/write"
 )
 
@@ -116,6 +117,13 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 		webFetch = nil
 	}
 	
+	// Initialize web_search tool
+	webSearch, err := web_search.New(web_search.DefaultConfig())
+	if err != nil {
+		// Silently skip if disabled
+		webSearch = nil
+	}
+	
 	all := []tools.Tool{
 		newShellTool(app, cfg),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),
@@ -134,6 +142,9 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	}
 	if webFetch != nil {
 		all = append(all, webFetch)
+	}
+	if webSearch != nil {
+		all = append(all, webSearch)
 	}
 	// apply_patch dropped on tiny — small models mis-emit unified diffs.
 	if !prof.SkipApplyPatch {

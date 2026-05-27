@@ -54,16 +54,13 @@ func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name:        "web_fetch",
 		Description: "Fetch a URL and extract its content as markdown. Skips scripts, styles, and navigation elements. Respects domain allow/block lists.",
+		PromptSnippet: "fetch a URL → returns http status, content-type, size, markdown body",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"url": map[string]any{
 					"type":        "string",
 					"description": "The URL to fetch content from",
-				},
-				"prompt": map[string]any{
-					"type":        "string",
-					"description": "Optional prompt to run on the fetched content (for future extraction)",
 				},
 			},
 			"required": []string{"url"},

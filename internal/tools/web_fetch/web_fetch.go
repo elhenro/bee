@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -143,21 +144,36 @@ type FetchResult struct {
 	DurationMs  int64  `json:"duration_ms"`
 }
 
-// FetchURL fetches content from a URL and converts it to markdown
+// MaxContentLen caps body read at 2x this value via io.LimitReader.
+const MaxContentLen = 50000
+
+// FetchURL fetches content from a URL and converts it to markdown.
 func FetchURL(rawURL string, policy *DomainPolicy) (*FetchResult, error) {
 	start := time.Now()
-	
+
 	// Parse and validate URL
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
-	
-	// Check domain policy
-	if policy != nil && !policy.IsAllowed(parsedURL.Hostname()) {
-		return nil, fmt.Errorf("domain %s is not allowed", parsedURL.Hostname())
+
+	// Fast hostname blocklist pre-check
+	host := parsedURL.Hostname()
+	if policy != nil && !policy.IsAllowed(host) {
+		return nil, fmt.Errorf("domain %s is not allowed", host)
 	}
-	
+
+	// DNS resolution check: reject private/loopback/unspecified/link-local IPs
+	addrs, err := net.LookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("DNS lookup failed for %s: %w", host, err)
+	}
+	for _, ip := range addrs {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
+			return nil, fmt.Errorf("host %s resolves to blocked IP %s", host, ip)
+		}
+	}
+
 	// Check cache
 	if entry, exists := cache.Get(rawURL); exists {
 		return &FetchResult{
@@ -170,39 +186,45 @@ func FetchURL(rawURL string, policy *DomainPolicy) (*FetchResult, error) {
 			DurationMs:  time.Since(start).Milliseconds(),
 		}, nil
 	}
-	
-	// Fetch the URL
+
+	// Build HTTP client with timeout and redirect cap
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: 20 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("too many redirects (>%d)", 5)
+			}
+			return nil
+		},
 	}
-	
+
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
-	// Set a realistic user agent
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Bee/1.0; +https://github.com/elhenro/bee)")
+
+	// Set headers
+	req.Header.Set("User-Agent", "bee/0.1 (+https://github.com/elhenro/bee)")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
 	defer resp.Body.Close()
-	
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
+
+	// Cap body read at MaxContentLen*2 to prevent OOM
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(MaxContentLen)*2))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-	
+
 	// Convert HTML to markdown
 	markdown, err := htmlToMarkdown(body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert HTML to markdown: %w", err)
 	}
-	
+
 	// Create cache entry
 	entry := &CacheEntry{
 		Bytes:       len(body),
@@ -212,10 +234,10 @@ func FetchURL(rawURL string, policy *DomainPolicy) (*FetchResult, error) {
 		Content:     markdown,
 		ExpiresAt:   time.Now().Add(15 * time.Minute),
 	}
-	
+
 	// Store in cache
 	cache.Set(rawURL, entry)
-	
+
 	return &FetchResult{
 		URL:         rawURL,
 		Code:        resp.StatusCode,

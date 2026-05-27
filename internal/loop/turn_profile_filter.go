@@ -14,11 +14,13 @@ import "github.com/elhenro/bee/internal/llm"
 // A profile absent from this map passes through unfiltered.
 var profileToolAllowlist = map[string]map[string]bool{
 	"tiny": {
-		"bash":     true,
-		"read":     true,
-		"write":    true,
-		"edit":     true,
-		"escalate": true,
+		"bash":       true,
+		"read":       true,
+		"write":      true,
+		"edit":       true,
+		"web_fetch":  true,
+		"web_search": true,
+		"escalate":   true,
 	},
 	"normal": {
 		"bash":             true,
@@ -28,6 +30,8 @@ var profileToolAllowlist = map[string]map[string]bool{
 		"search":           true,
 		"glob":             true,
 		"ls":               true,
+		"web_fetch":        true,
+		"web_search":       true,
 		"knowledge_search": true,
 		"knowledge_write":  true,
 		"escalate":         true,

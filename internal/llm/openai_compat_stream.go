@@ -98,7 +98,6 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
-		bumpActivity()
 		select {
 		case <-ctx.Done():
 			out <- Event{Type: EventError, Err: ctx.Err()}
@@ -133,6 +132,9 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 		if chunk.Usage != nil {
 			usage = chunk.Usage
 		}
+		// Bump watchdog only when real output arrives (content/tool-calls/finish).
+		// Thinking-only deltas (reasoning_content / reasoning) do NOT reset the timer.
+		hasRealOutput := false
 		for _, ch := range chunk.Choices {
 			// reasoning_content / reasoning arrive on the delta for DeepSeek-
 			// reasoner and OpenAI-compat reasoning models. Surface as a
@@ -145,14 +147,20 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 				out <- Event{Type: EventThinkingDelta, Delta: ch.Delta.Reasoning}
 			}
 			if ch.Delta.Content != "" {
+				hasRealOutput = true
 				out <- Event{Type: EventTextDelta, Delta: ch.Delta.Content}
 			}
 			if len(ch.Delta.ToolCalls) > 0 {
+				hasRealOutput = true
 				acc.Apply(ch.Delta.ToolCalls)
 			}
 			if ch.FinishReason != nil && *ch.FinishReason != "" {
+				hasRealOutput = true
 				stopReason = *ch.FinishReason
 			}
+		}
+		if hasRealOutput {
+			bumpActivity()
 		}
 	}
 

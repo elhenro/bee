@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/elhenro/bee/internal/auth"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/session"
@@ -118,16 +119,20 @@ func checkConfigLoaded() ([]check, config.Config) {
 
 	// per-provider creds: scan all configured, not just the default. Local
 	// providers with no EnvKey are always "ok".
+	// Resolve the auth dir once; probe failures are best-effort (warn, don't crash).
+	authDir, authErr := auth.DefaultDir()
 	for name, p := range cfg.Providers {
 		label := "provider:" + name
 		if p.EnvKey == "" {
 			out = append(out, check{label, "ok", "no key required", ""})
 			continue
 		}
-		if os.Getenv(p.EnvKey) == "" {
-			out = append(out, check{label, "warn", p.EnvKey + " not set", "export " + p.EnvKey + "=…"})
-		} else {
+		if os.Getenv(p.EnvKey) != "" {
 			out = append(out, check{label, "ok", p.EnvKey + " set", ""})
+		} else if authErr == nil && auth.HasAPIKey(authDir, name) {
+			out = append(out, check{label, "ok", "stored key", ""})
+		} else {
+			out = append(out, check{label, "warn", p.EnvKey + " not set", "export " + p.EnvKey + "=…"})
 		}
 	}
 	return out, cfg
