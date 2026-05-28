@@ -14,12 +14,13 @@ func RegisterBuiltins(r *Registry) {
 	registerTools(r)
 	registerBackground(r)
 	registerGoal(r)
+	registerRemoteControl(r)
 	r.Register(Command{
 		Name:           "help",
 		Description:    "list slash commands",
 		AllowDuringRun: true,
 		Run: func(_ context.Context, _ []string, _ Side) (string, error) {
-			return "/compact, /model, /effort, /settings, /tools, /resume, /new, /clear, /copy, /tree, /fork, /clone, /login, /logout, /bg, /agent, /attach, /goal, /quit, /exit, /help", nil
+			return "/compact, /model, /effort, /settings, /tools, /resume, /new, /clear, /copy, /tree, /fork, /clone, /login, /logout, /bg, /agent, /attach, /goal, /remote-control, /quit, /exit, /help", nil
 		},
 	})
 }

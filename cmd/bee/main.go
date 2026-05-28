@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/session"
@@ -40,24 +42,25 @@ var (
 // to the built-in subcommand. Lookup must check this before consulting
 // the skill registry.
 var reservedSubcommands = map[string]bool{
-	"run":       true,
-	"back":      true,
-	"fan":       true,
-	"swarm":     true,
-	"hyperplan": true,
-	"hive":      true,
-	"bg":        true,
-	"agents":    true,
-	"zzz":       true,
-	"doctor":    true,
-	"version":   true,
-	"-v":        true,
-	"--version": true,
-	"help":      true,
-	"-h":        true,
-	"--help":    true,
-	"-p":        true,
-	"--print":   true,
+	"run":            true,
+	"back":           true,
+	"fan":            true,
+	"swarm":          true,
+	"hyperplan":      true,
+	"hive":           true,
+	"bg":             true,
+	"agents":         true,
+	"remote-control": true,
+	"zzz":            true,
+	"doctor":         true,
+	"version":        true,
+	"-v":             true,
+	"--version":      true,
+	"help":           true,
+	"-h":             true,
+	"--help":         true,
+	"-p":             true,
+	"--print":        true,
 }
 
 func main() {
@@ -85,6 +88,8 @@ func main() {
 		bg(os.Args[2:])
 	case "agents":
 		runAgents(os.Args[2:])
+	case "remote-control":
+		runRemoteControl(os.Args[2:])
 	case "zzz":
 		runZzz(os.Args[2:])
 	case "doctor":
@@ -124,11 +129,14 @@ usage:
   bee bg --tail <id>                 follow a background log
   bee bg --kill <id>                 stop a background bee
   bee agents                        parallel-agents overview (worktree-per-agent)
+  bee remote-control [--port N] [--yes]  serve a local web relay (URL + QR) to drive bee from another device
   bee zzz [flags] <objective>        overnight loop: clean→prompt→commit-or-reset
   bee zzz --list                     list overnight runs
   bee zzz --resume <id>              resume an aborted run
   bee zzz --gc [--gc-max-age <d>] [--gc-keep <n>]  prune terminal runs + bg sessions
   bee doctor [--json]       preflight: dirs, sandbox, provider creds
+  bee explore <target>      trace a file/symbol/concept and print a markdown map
+  bee research <topic>      deep multi-source web research, structured report
   bee <skill> [args...]     run a skill non-interactively
   bee version               print version
   bee help                  show this help
@@ -276,7 +284,7 @@ func back(args []string) {
 		fmt.Fprintf(os.Stderr, "bee back: session %s not found\n", id)
 		os.Exit(1)
 	}
-	runTUIWithSession(id)
+	runTUIWithSession(id, "")
 }
 
 func fan(args []string)   { runFan(args) }
@@ -287,6 +295,11 @@ func bg(args []string)    { runBg(args) }
 // dispatchSkill resolves name against ~/.bee/skills. Returns false if
 // the skill doesn't exist so main can fall through to "unknown command".
 // Reserved names short-circuit before we even read the registry.
+//
+// Surfacing: a prompt skill run from an interactive terminal opens the TUI
+// seeded with "/<name> <args>" so the user watches thoughts + tool cards live
+// and can steer. Piped/redirected stdio (or non-prompt kinds) stays headless
+// so `bee research foo > out.md` and scripts keep working.
 func dispatchSkill(name string, rest []string) bool {
 	if reservedSubcommands[name] {
 		return false
@@ -294,11 +307,27 @@ func dispatchSkill(name string, rest []string) bool {
 	ensureFirstRun()
 	reg := skills.NewRegistry()
 	_ = reg.Load(skills.BaseDir())
-	if _, ok := reg.Get(name); !ok {
+	s, ok := reg.Get(name)
+	if !ok {
 		return false
+	}
+	if s.Kind == skills.KindPrompt && stdioIsInteractive() {
+		seed := "/" + name
+		if joined := strings.TrimSpace(strings.Join(rest, " ")); joined != "" {
+			seed += " " + joined
+		}
+		runTUIWithSession("", seed)
+		return true
 	}
 	// translate to the headless engine: `bee run --skill <name> -- <rest...>`
 	args := append([]string{"--skill", name, "--"}, rest...)
 	runHeadless(args)
 	return true
+}
+
+// stdioIsInteractive reports whether both stdin and stdout are terminals.
+// Requires both: the seeded TUI auto-submits to stdout but still needs a tty
+// stdin for steering and approvals.
+func stdioIsInteractive() bool {
+	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stdin.Fd()))
 }

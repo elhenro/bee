@@ -9,43 +9,43 @@ import (
 
 // fakeSide tracks calls for behavior assertions.
 type fakeSide struct {
-	compactCalled bool
-	switchedTo    string
-	listSessions  []string
-	listErr       error
-	opened        string
-	newCalled     bool
-	copyCalled    bool
-	quitCalled    bool
-	treeOpened    bool
-	forkedFrom    string
-	forkCalled    bool
-	cloneCalled   bool
-	loginProvider string
-	loginErr      error
-	loginStatus   []ProviderAuth
-	openLoginCalled bool
-	openLoginErr    error
-	logoutOf        string
-	logoutErr       error
-	costOpened    bool
-	thinking      string
-	thinkErr      error
+	compactCalled    bool
+	switchedTo       string
+	listSessions     []string
+	listErr          error
+	opened           string
+	newCalled        bool
+	copyCalled       bool
+	quitCalled       bool
+	treeOpened       bool
+	forkedFrom       string
+	forkCalled       bool
+	cloneCalled      bool
+	loginProvider    string
+	loginErr         error
+	loginStatus      []ProviderAuth
+	openLoginCalled  bool
+	openLoginErr     error
+	logoutOf         string
+	logoutErr        error
+	costOpened       bool
+	thinking         string
+	thinkErr         error
 	openResumeCalled bool
 	openResumeErr    error
-	pickerOpened    bool
-	pickerErr       error
-	verbose         bool
-	verboseSet      bool
-	showThoughts    bool
-	showThoughtsSet bool
-	compact         bool
-	compactSet      bool
-	showNudges      bool
-	showNudgesSet   bool
-	saveKeyProvider string
-	saveKeyValue    string
-	saveKeyErr      error
+	pickerOpened     bool
+	pickerErr        error
+	verbose          bool
+	verboseSet       bool
+	showThoughts     bool
+	showThoughtsSet  bool
+	compact          bool
+	compactSet       bool
+	showNudges       bool
+	showNudgesSet    bool
+	saveKeyProvider  string
+	saveKeyValue     string
+	saveKeyErr       error
 
 	toolsList       []ToolInfo
 	toolDisabled    map[string]bool
@@ -59,13 +59,13 @@ type fakeSide struct {
 	openToolsErr    error
 }
 
-func (f *fakeSide) Compact(context.Context) error   { f.compactCalled = true; return nil }
-func (f *fakeSide) SwitchModel(n string) error      { f.switchedTo = n; return nil }
+func (f *fakeSide) Compact(context.Context) error { f.compactCalled = true; return nil }
+func (f *fakeSide) SwitchModel(n string) error    { f.switchedTo = n; return nil }
 func (f *fakeSide) SwitchProviderModel(p, m string) error {
 	f.switchedTo = m
 	return nil
 }
-func (f *fakeSide) OpenPicker() error { f.pickerOpened = true; return f.pickerErr }
+func (f *fakeSide) OpenPicker() error               { f.pickerOpened = true; return f.pickerErr }
 func (f *fakeSide) ListSessions() ([]string, error) { return f.listSessions, f.listErr }
 func (f *fakeSide) OpenSession(id string) error     { f.opened = id; return nil }
 func (f *fakeSide) NewSession() error               { f.newCalled = true; return nil }
@@ -79,7 +79,7 @@ func (f *fakeSide) Login(_ context.Context, p string) error {
 	f.loginProvider = p
 	return f.loginErr
 }
-func (f *fakeSide) Logout(p string) error       { f.logoutOf = p; return f.logoutErr }
+func (f *fakeSide) Logout(p string) error { f.logoutOf = p; return f.logoutErr }
 func (f *fakeSide) SaveAPIKey(p, k string) error {
 	f.saveKeyProvider, f.saveKeyValue = p, k
 	return f.saveKeyErr
@@ -98,6 +98,7 @@ func (f *fakeSide) OpenResume() error {
 	f.openResumeCalled = true
 	return f.openResumeErr
 }
+
 // fake returns an error so the /effort command falls back to its inline
 // "effort: <level>" path — which is what the existing tests assert.
 func (f *fakeSide) OpenEffortPicker() error { return errors.New("no picker") }
@@ -129,35 +130,35 @@ func (f *fakeSide) SetShowNudges(v bool) error {
 	f.showNudgesSet = true
 	return nil
 }
-func (f *fakeSide) GetShowNudges() bool                  { return f.showNudges }
-func (f *fakeSide) SetShowRecap(bool) error               { return nil }
-func (f *fakeSide) GetShowRecap() bool                    { return false }
-func (f *fakeSide) SetShowContextBar(bool) error          { return nil }
-func (f *fakeSide) GetShowContextBar() bool               { return false }
-func (f *fakeSide) SetHighlight(bool) error               { return nil }
-func (f *fakeSide) GetHighlight() bool                    { return true }
-func (f *fakeSide) SetShellBangSilent(bool) error         { return nil }
-func (f *fakeSide) GetShellBangSilent() bool              { return true }
-func (f *fakeSide) SetShowBee(bool) error                 { return nil }
-func (f *fakeSide) GetShowBee() bool                      { return true }
-func (f *fakeSide) SetShowContextPct(bool) error          { return nil }
-func (f *fakeSide) GetShowContextPct() bool               { return true }
-func (f *fakeSide) SetShowModel(bool) error               { return nil }
-func (f *fakeSide) GetShowModel() bool                    { return true }
-func (f *fakeSide) SetShowCwd(bool) error                 { return nil }
-func (f *fakeSide) GetShowCwd() bool                      { return true }
-func (f *fakeSide) SetShowEffort(bool) error              { return nil }
-func (f *fakeSide) GetShowEffort() bool                   { return true }
-func (f *fakeSide) SetShowTurnTimer(bool) error           { return nil }
-func (f *fakeSide) GetShowTurnTimer() bool                { return true }
-func (f *fakeSide) SetShowGitBranch(bool) error           { return nil }
-func (f *fakeSide) GetShowGitBranch() bool                { return false }
-func (f *fakeSide) SetShowTotalTokens(bool) error         { return nil }
-func (f *fakeSide) GetShowTotalTokens() bool              { return false }
-func (f *fakeSide) SetShowBanner(bool) error              { return nil }
-func (f *fakeSide) GetShowBanner() bool                   { return true }
-func (f *fakeSide) SetShowLoader(bool) error              { return nil }
-func (f *fakeSide) GetShowLoader() bool                   { return true }
+func (f *fakeSide) GetShowNudges() bool           { return f.showNudges }
+func (f *fakeSide) SetShowRecap(bool) error       { return nil }
+func (f *fakeSide) GetShowRecap() bool            { return false }
+func (f *fakeSide) SetShowContextBar(bool) error  { return nil }
+func (f *fakeSide) GetShowContextBar() bool       { return false }
+func (f *fakeSide) SetHighlight(bool) error       { return nil }
+func (f *fakeSide) GetHighlight() bool            { return true }
+func (f *fakeSide) SetShellBangSilent(bool) error { return nil }
+func (f *fakeSide) GetShellBangSilent() bool      { return true }
+func (f *fakeSide) SetShowBee(bool) error         { return nil }
+func (f *fakeSide) GetShowBee() bool              { return true }
+func (f *fakeSide) SetShowContextPct(bool) error  { return nil }
+func (f *fakeSide) GetShowContextPct() bool       { return true }
+func (f *fakeSide) SetShowModel(bool) error       { return nil }
+func (f *fakeSide) GetShowModel() bool            { return true }
+func (f *fakeSide) SetShowCwd(bool) error         { return nil }
+func (f *fakeSide) GetShowCwd() bool              { return true }
+func (f *fakeSide) SetShowEffort(bool) error      { return nil }
+func (f *fakeSide) GetShowEffort() bool           { return true }
+func (f *fakeSide) SetShowTurnTimer(bool) error   { return nil }
+func (f *fakeSide) GetShowTurnTimer() bool        { return true }
+func (f *fakeSide) SetShowGitBranch(bool) error   { return nil }
+func (f *fakeSide) GetShowGitBranch() bool        { return false }
+func (f *fakeSide) SetShowTotalTokens(bool) error { return nil }
+func (f *fakeSide) GetShowTotalTokens() bool      { return false }
+func (f *fakeSide) SetShowBanner(bool) error      { return nil }
+func (f *fakeSide) GetShowBanner() bool           { return true }
+func (f *fakeSide) SetShowLoader(bool) error      { return nil }
+func (f *fakeSide) GetShowLoader() bool           { return true }
 
 // OpenSettings returns an error so /settings (no args) falls back to its
 // inline text status — matches the headless-fallback pattern used elsewhere.
@@ -201,7 +202,7 @@ func (f *fakeSide) OpenToolsPane() error {
 func TestRegisterBuiltins_Names(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
-	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "settings", "tools", "bg", "agent", "attach", "agents", "goal"}
+	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "settings", "tools", "bg", "agent", "attach", "agents", "goal", "remote-control"}
 	for _, n := range want {
 		if _, ok := r.Get(n); !ok {
 			t.Errorf("missing builtin %q", n)

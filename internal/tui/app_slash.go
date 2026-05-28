@@ -65,6 +65,21 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		return m.handleGoal(parts[1:])
 	}
 
+	// /remote-control is informational in the TUI: starting a server bound to
+	// the live engine would race the in-flight turn. Tell the user to run the
+	// standalone command instead.
+	if parts[0] == "remote-control" {
+		info := "remote-control runs a local web relay so another device can drive bee.\n" +
+			"run `bee remote-control` in a separate terminal to start it.\n" +
+			"it prints a URL + QR code to open on a phone or browser.\n" +
+			"the machine must be reachable on your LAN; commands execute locally here."
+		m.messages = append(m.messages, types.Message{
+			Role:    types.RoleAssistant,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: info}},
+		})
+		return m, m.flush()
+	}
+
 	// /compact runs async with a loader animation so the LLM summarization
 	// call doesn't freeze the UI. State stays StateIdle; m.compacting drives
 	// the loader tick. See compactDoneMsg handler in Update.
