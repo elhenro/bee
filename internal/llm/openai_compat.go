@@ -36,6 +36,10 @@ type OpenAICompatConfig struct {
 	// to the package default (streamStallTimeout). Negative disables the
 	// watchdog (test-only).
 	StallTimeout time.Duration
+	// ChatTemplateKwargs flows into the MLX/vllm `chat_template_kwargs` body
+	// field. Lets local servers flip Qwen3 template switches that change tool
+	// emission shape. Nil = omit. Per-provider (TOML `chat_template_kwargs`).
+	ChatTemplateKwargs map[string]any
 }
 
 // OpenAICompatProvider implements Provider against an OpenAI-compatible API.
@@ -132,7 +136,7 @@ func (p *OpenAICompatProvider) Name() string { return p.cfg.Name }
 // exp-backoff. Once a 2xx response lands and streamLoop starts emitting, no
 // further retries — replaying would duplicate tokens.
 func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan Event, error) {
-	wireReq := buildWireRequest(req)
+	wireReq := p.buildWireRequest(req)
 	if _, banned := p.noTools.Load(req.Model); banned {
 		wireReq.Tools = nil
 	}
@@ -223,7 +227,7 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 	return out, nil
 }
 
-func buildWireRequest(req Request) wire.ChatRequest {
+func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 	tools := make([]wire.ToolAdvert, 0, len(req.Tools))
 	for _, t := range req.Tools {
 		tools = append(tools, wire.ToolAdvert{
@@ -240,6 +244,9 @@ func buildWireRequest(req Request) wire.ChatRequest {
 			eff = string(ThinkingHigh)
 		}
 		wr.ReasoningEffort = eff
+	}
+	if len(p.cfg.ChatTemplateKwargs) > 0 {
+		wr.ChatTemplateKwargs = p.cfg.ChatTemplateKwargs
 	}
 	return wr
 }

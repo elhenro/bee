@@ -113,6 +113,55 @@ func TestRun_FormatNudgeIncludesRealToolName(t *testing.T) {
 	}
 }
 
+// parenProseSlip: model emits markdown-summary prose like
+// `(read)\n internal/config/config.go` instead of `<read>{...}</read>`.
+// Observed with qwen3.6-A3B in textmode — model drifts from envelope shape to
+// a parenthesised prose recap. Without paren detection, the slip detector
+// missed and the loop returned silently. Now it should slip-strike + nudge.
+type parenProseSlip struct{ calls atomic.Int32 }
+
+func (p *parenProseSlip) Name() string { return "paren-prose" }
+func (p *parenProseSlip) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
+	p.calls.Add(1)
+	ch := make(chan llm.Event, 2)
+	go func() {
+		defer close(ch)
+		ch <- llm.Event{Type: llm.EventTextDelta, Delta: "Let's check the config structure first.\n(read)\n internal/config/config.go"}
+		ch <- llm.Event{Type: llm.EventDone}
+	}()
+	return ch, nil
+}
+
+func TestRun_FormatSlipDetectsParenProse(t *testing.T) {
+	prov := &parenProseSlip{}
+	cfg := config.Defaults()
+	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
+	cfg.Mode = "edit"
+	cfg.Compaction = config.CompactionConfig{Enabled: false}
+	reg := tools.NewRegistry()
+	_ = reg.Register(&stubTool{name: "read", desc: "read file", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+		return tools.Result{}, nil
+	}})
+	eng := &Engine{Provider: prov, Tools: reg, Memory: stubMemStore{}, Cfg: cfg, Cwd: "."}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	res, _ := eng.Run(ctx, "test")
+	sawNudge := false
+	for _, m := range res.Messages {
+		if m.Role != types.RoleUser {
+			continue
+		}
+		for _, b := range m.Content {
+			if b.Type == types.BlockText && strings.Contains(b.Text, "[nudge]") {
+				sawNudge = true
+			}
+		}
+	}
+	if !sawNudge {
+		t.Fatalf("expected format nudge after `(read)` paren-prose slip, got none (msgs=%d)", len(res.Messages))
+	}
+}
+
 // jsonToolAttemptForever: always emits malformed envelope. previously bee
 // nudged once then exited silently — model effectively wedged. F4: count 3
 // consecutive format slips → bail with FormatStrikeError.

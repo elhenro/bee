@@ -181,6 +181,13 @@ func (m Model) WithInitialMessages(msgs []types.Message) Model {
 	return m
 }
 
+// WithSeedPrompt arms a one-shot auto-submit fired from Init. Used by
+// skill dispatch to start a turn live in the TUI (e.g. "/research <topic>").
+func (m Model) WithSeedPrompt(text string) Model {
+	m.seedPrompt = text
+	return m
+}
+
 // WithCommands swaps in a caller-provided registry. The palette is rebuilt
 // against it so Ctrl+K shows the new set. Skills source is preserved.
 func (m Model) WithCommands(r *commands.Registry) Model {

@@ -25,20 +25,10 @@ func beeHomeDirs() (skillsDir, memoryDir, sessionsDir string) {
 
 // ensureFirstRun is best-effort. Called from `bee run` and TUI startup.
 // Silent on success, never fatal: a broken HOME shouldn't block the agent.
+// WriteDefaults is idempotent and preserves user edits (existing files are
+// never overwritten), so calling it every start back-fills any bundled
+// skills added since the user's last seed.
 func ensureFirstRun() {
 	skillsDir, _, _ := beeHomeDirs()
-	if !dirEmptyOrMissing(skillsDir) {
-		return
-	}
 	_, _ = bundled.WriteDefaults(skillsDir)
-}
-
-// dirEmptyOrMissing returns true when the dir doesn't exist or contains
-// zero entries. We seed defaults in both cases.
-func dirEmptyOrMissing(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return true
-	}
-	return len(entries) == 0
 }

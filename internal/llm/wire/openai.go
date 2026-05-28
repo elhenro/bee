@@ -30,6 +30,12 @@ type ChatRequest struct {
 	// ReasoningEffort is OpenAI's o-series extended-reasoning knob. Values:
 	// "low" | "medium" | "high". Omitted when empty.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// ChatTemplateKwargs is an MLX/vllm extension to OpenAI's chat completions
+	// body — kwargs forwarded into the model's chat template at apply time.
+	// Used to flip Qwen3 / Hermes template switches like `enable_thinking=false`
+	// or `tools=true` that flip the model out of prose-summary mode into the
+	// `<tool_call>` envelope shape bee expects. Omitted when empty.
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 }
 
 // StreamOptions matches OpenAI's stream_options envelope. Only include_usage

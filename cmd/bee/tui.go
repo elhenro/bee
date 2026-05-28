@@ -30,7 +30,7 @@ import (
 
 // runTUI wires the full engine the same way runHeadlessReal does, then
 // hands control to internal/tui. Returns once the program exits.
-func runTUI() { runTUIWithSession("") }
+func runTUI() { runTUIWithSession("", "") }
 
 // detectDarkBg picks lipgloss bg mode.
 //   - BEE_THEME=light|dark forces it
@@ -104,10 +104,11 @@ func stripAgentPreambleText(s string) (string, bool) {
 	return s, false
 }
 
-// runTUIWithSession is runTUI plus an optional pre-existing session id.
-// When non-empty, the rollout is reopened in append mode and prior messages
-// are seeded into the TUI / engine so the conversation continues.
-func runTUIWithSession(resumeID string) {
+// runTUIWithSession is runTUI plus an optional pre-existing session id and an
+// optional seed prompt. resumeID reopens a prior rollout in append mode and
+// seeds its messages; seedPrompt auto-submits one turn on startup (skill
+// dispatch into the TUI). Both empty = fresh interactive session.
+func runTUIWithSession(resumeID, seedPrompt string) {
 	// Pre-declare bg so lipgloss skips its OSC 11 query — bubbletea owns
 	// stdin in altscreen mode and the reply otherwise leaks into the
 	// textinput. BEE_THEME=light|dark wins, else parse COLORFGBG from the
@@ -266,9 +267,17 @@ func runTUIWithSession(resumeID string) {
 	}
 	km := tui.LoadKeyMap(beeHome)
 
-	if err := tui.RunWithCommandsKeyMapApprover(context.Background(), eng, cmdReg, km, tuiApprover); err != nil {
+	if err := tui.RunSeeded(context.Background(), eng, cmdReg, km, tuiApprover, seedPrompt); err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tui: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Fprintf(os.Stderr, "bee back %s\n", sessID)
+	// /new, /back, /fork, /clone swap eng.Sessions mid-run; print the active
+	// id, not the one we opened with, or `bee back` resumes the wrong session.
+	finalID := sessID
+	if eng.Sessions != nil {
+		if id := eng.Sessions.ID(); id != "" {
+			finalID = id
+		}
+	}
+	fmt.Fprintf(os.Stderr, "bee back %s\n", finalID)
 }

@@ -289,6 +289,32 @@ func TestModel_SubmitSlashSkill_NonPromptKindErrors(t *testing.T) {
 	}
 }
 
+func TestModel_AutoSubmitMsg_RunsSeededSkill(t *testing.T) {
+	m := newTestModel(t)
+	sk := &fakeSkills{list: []skills.Skill{
+		{Name: "research", Kind: skills.KindPrompt, Body: "you research"},
+	}}
+	m = m.WithSkills(sk).WithSeedPrompt("/research my topic")
+	m2, _ := m.Update(autoSubmitMsg{text: m.seedPrompt})
+	m = m2.(Model)
+	if m.state == StateError {
+		t.Fatalf("seeded auto-submit errored: %s", m.lastErr)
+	}
+	if m.seedPrompt != "" {
+		t.Error("seedPrompt not cleared after auto-submit (could refire)")
+	}
+	if len(m.messages) == 0 {
+		t.Fatal("expected user message appended")
+	}
+	body := m.messages[len(m.messages)-1].Content[0].Text
+	if !strings.Contains(body, "you research") {
+		t.Errorf("missing skill body: %q", body)
+	}
+	if !strings.Contains(body, "my topic") {
+		t.Errorf("missing seeded args: %q", body)
+	}
+}
+
 func TestModel_SubmitSlashUnknown_SetsError(t *testing.T) {
 	m := newTestModel(t)
 	m.input.SetValue("/nopenopenope")

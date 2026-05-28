@@ -50,7 +50,7 @@ const indexHTML = `<!doctype html>
     return d;
   }
 
-  var es = new EventSource('/events');
+  var es = new EventSource('events');
   es.addEventListener('message', function(e){
     var m = JSON.parse(e.data);
     var stick = atBottom();
@@ -74,7 +74,7 @@ const indexHTML = `<!doctype html>
     if (!t) return;
     text.value = '';
     cur = null;
-    fetch('/send', {
+    fetch('send', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({text:t})

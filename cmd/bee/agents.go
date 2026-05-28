@@ -42,7 +42,7 @@ func runAgents(args []string) {
 		// instead of opening the in-TUI agent overlay.
 		fmt.Fprintf(os.Stderr, "\nattaching to %s — press left arrow or ctrl+c twice to return to overview.\n", res.AttachID)
 		_ = os.Setenv("BEE_FROM_AGENTS", "1")
-		runTUIWithSession(res.AttachID)
+		runTUIWithSession(res.AttachID, "")
 		_ = os.Unsetenv("BEE_FROM_AGENTS")
 	}
 }

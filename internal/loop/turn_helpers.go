@@ -101,6 +101,12 @@ func looksLikeAttemptedToolCall(text string, specs []llm.ToolSpec) bool {
 		if hasTypeKey && strings.Contains(low, `"`+name+`"`) {
 			return true
 		}
+		// markdown summary slip: `(toolname)` paren mention. Qwen3-A3B
+		// drift — model writes a prose recap (`(edit) path - did X`,
+		// `(read)\n path/to/file`) instead of emitting the envelope.
+		if strings.Contains(low, "("+name+")") {
+			return true
+		}
 	}
 	return false
 }

@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	if r.URL.Path != "/"+s.token+"/" {
 		http.NotFound(w, r)
 		return
 	}
@@ -16,9 +18,36 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, indexHTML, title, title)
 }
 
+// validOrigin returns true when the Origin header is absent (non-browser client)
+// or matches the request's own host. Rejects DNS-rebinding and cross-origin
+// form submissions while allowing curl and native HTTP clients.
+func (s *Server) validOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return u.Host == r.Host
+}
+
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// reject text/plain form CSRF (application/x-www-form-urlencoded / multipart
+	// cannot set Content-Type to application/json from a cross-origin form).
+	ct := r.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/json") {
+		http.Error(w, "content-type must be application/json", http.StatusUnsupportedMediaType)
+		return
+	}
+	// reject cross-origin browser requests (DNS rebinding defence).
+	if !s.validOrigin(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	var body struct {

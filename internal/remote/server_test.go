@@ -19,7 +19,8 @@ func (stubEngine) Send(ctx context.Context, text string, onDelta func(string)) (
 func TestIndex(t *testing.T) {
 	s := New(stubEngine{}, Options{Title: "test bee"})
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	path := "/" + s.Token() + "/"
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -36,10 +37,22 @@ func TestIndex(t *testing.T) {
 	}
 }
 
+func TestUnknownPathReturns404(t *testing.T) {
+	s := New(stubEngine{}, Options{})
+	rec := httptest.NewRecorder()
+	// root without token should 404, not expose anything
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for unknown path", rec.Code)
+	}
+}
+
 func TestSend(t *testing.T) {
 	s := New(stubEngine{}, Options{})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/send", strings.NewReader(`{"text":"hi"}`))
+	path := "/" + s.Token() + "/send"
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"text":"hi"}`))
+	req.Header.Set("Content-Type", "application/json")
 	s.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -60,10 +73,41 @@ func TestSend(t *testing.T) {
 func TestSendEmpty(t *testing.T) {
 	s := New(stubEngine{}, Options{})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/send", strings.NewReader(`{"text":""}`))
+	path := "/" + s.Token() + "/send"
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"text":""}`))
+	req.Header.Set("Content-Type", "application/json")
 	s.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestSendWrongContentType(t *testing.T) {
+	s := New(stubEngine{}, Options{})
+	rec := httptest.NewRecorder()
+	path := "/" + s.Token() + "/send"
+	// form submission — classic CSRF vector
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("text=hi"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want 415", rec.Code)
+	}
+}
+
+func TestSendBadOrigin(t *testing.T) {
+	s := New(stubEngine{}, Options{})
+	rec := httptest.NewRecorder()
+	path := "/" + s.Token() + "/send"
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"text":"hi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	// cross-origin request — different host in Origin
+	req.Header.Set("Origin", "http://evil.attacker.com")
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
 	}
 }

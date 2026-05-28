@@ -2,6 +2,8 @@ package remote
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -39,9 +41,10 @@ type sseEvent struct {
 
 // Server is a local web relay that drives a single bee session over LAN.
 type Server struct {
-	eng  Engine
-	opts Options
-	log  io.Writer
+	eng   Engine
+	opts  Options
+	log   io.Writer
+	token string // random per-instance bearer token embedded in the URL path
 
 	mu          sync.Mutex
 	history     []Msg
@@ -51,6 +54,9 @@ type Server struct {
 }
 
 // New builds a Server. Defaults: Addr ":0", Title "bee remote", Log io.Discard.
+// A random bearer token is generated; it is embedded in every route as a URL
+// path prefix so only clients that received the printed URL (or scanned the QR)
+// can reach the agent-execution endpoint.
 func New(eng Engine, opts Options) *Server {
 	if opts.Addr == "" {
 		opts.Addr = ":0"
@@ -66,9 +72,22 @@ func New(eng Engine, opts Options) *Server {
 		eng:         eng,
 		opts:        opts,
 		log:         logw,
+		token:       genToken(),
 		subscribers: make(map[int]chan sseEvent),
 	}
 }
+
+// genToken returns a 16-char URL-safe random string.
+func genToken() string {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		panic("remote: crypto/rand: " + err.Error())
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// Token returns the per-instance bearer token embedded in the URL path.
+func (s *Server) Token() string { return s.token }
 
 // History returns a copy of the current transcript.
 func (s *Server) History() []Msg {
@@ -79,12 +98,14 @@ func (s *Server) History() []Msg {
 	return out
 }
 
-// Handler returns the http mux.
+// Handler returns the http mux. All routes are scoped under /<token>/ so only
+// clients that received the printed URL can reach the agent endpoints.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/events", s.handleEvents)
-	mux.HandleFunc("/send", s.handleSend)
+	base := "/" + s.token
+	mux.HandleFunc(base+"/", s.handleIndex)
+	mux.HandleFunc(base+"/events", s.handleEvents)
+	mux.HandleFunc(base+"/send", s.handleSend)
 	return mux
 }
 
@@ -127,6 +148,7 @@ func (s *Server) broadcast(ev sseEvent) {
 }
 
 // Start binds a listener and returns it plus the best LAN URL to advertise.
+// The URL includes the bearer token path so the QR code carries full auth.
 func (s *Server) Start() (net.Listener, string, error) {
 	ln, err := net.Listen("tcp", s.opts.Addr)
 	if err != nil {
@@ -137,7 +159,7 @@ func (s *Server) Start() (net.Listener, string, error) {
 	if host == "" {
 		host = "localhost"
 	}
-	url := fmt.Sprintf("http://%s:%d", host, port)
+	url := fmt.Sprintf("http://%s:%d/%s/", host, port, s.token)
 	return ln, url, nil
 }
 

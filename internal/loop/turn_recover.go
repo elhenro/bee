@@ -80,7 +80,7 @@ func guessAttemptedSpec(text string, specs []llm.ToolSpec) llm.ToolSpec {
 		if name == "" {
 			continue
 		}
-		if strings.Contains(low, "<"+name) || strings.Contains(low, `"`+name+`"`) {
+		if strings.Contains(low, "<"+name) || strings.Contains(low, `"`+name+`"`) || strings.Contains(low, "("+name+")") {
 			return s
 		}
 	}

@@ -104,9 +104,10 @@ func buildProviderInner(cfg config.Config) (llm.Provider, error) {
 	switch prov.WireAPI {
 	case "", "chat":
 		return llm.NewOpenAICompat(llm.OpenAICompatConfig{
-			Name:    cfg.DefaultProvider,
-			BaseURL: prov.BaseURL,
-			EnvKey:  prov.EnvKey,
+			Name:               cfg.DefaultProvider,
+			BaseURL:            prov.BaseURL,
+			EnvKey:             prov.EnvKey,
+			ChatTemplateKwargs: prov.ChatTemplateKwargs,
 		}), nil
 	case "gemini":
 		key := cfg.APIKey

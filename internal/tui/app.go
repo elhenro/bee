@@ -95,5 +95,15 @@ func (m Model) Init() tea.Cmd {
 	if m.introActive {
 		cmds = append(cmds, introTickCmd())
 	}
+	// one-shot auto-submit: fire the seeded prompt as if the user typed it.
+	// banner is non-blocking so submitting now is safe.
+	if m.seedPrompt != "" {
+		seed := m.seedPrompt
+		cmds = append(cmds, func() tea.Msg { return autoSubmitMsg{text: seed} })
+	}
 	return tea.Batch(cmds...)
 }
+
+// autoSubmitMsg carries a seeded prompt from Init into Update so it runs
+// through the normal submit path exactly once.
+type autoSubmitMsg struct{ text string }

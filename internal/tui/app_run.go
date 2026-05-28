@@ -38,6 +38,13 @@ func RunWithCommandsAndKeyMap(ctx context.Context, eng *loop.Engine, reg *comman
 // approver that surfaces dangerous-command prompts in the modal. Pass nil for
 // the legacy no-gating behavior.
 func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver) error {
+	return RunSeeded(ctx, eng, reg, km, app, "")
+}
+
+// RunSeeded is RunWithCommandsKeyMapApprover plus an optional seed prompt that
+// auto-submits one turn on startup (skill dispatch into the TUI). Pass "" for
+// no auto-submit.
+func RunSeeded(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver, seed string) error {
 	cwd := ""
 	modelName := ""
 	scope := ""
@@ -145,6 +152,9 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 	// resume: seed scrollback from prior session
 	if eng != nil && len(eng.InitialMessages) > 0 {
 		m = m.WithInitialMessages(eng.InitialMessages)
+	}
+	if seed != "" {
+		m = m.WithSeedPrompt(seed)
 	}
 	m.ctx = ctx
 	// Always inline: View() owns only the live region (status + partial +

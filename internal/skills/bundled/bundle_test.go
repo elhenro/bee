@@ -13,7 +13,7 @@ func TestFiles_haveAllFour(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Files: %v", err)
 	}
-	want := []string{"calc.md", "caveman-review.md", "caveman-commit.md", "hermes.md"}
+	want := []string{"calc.md", "caveman-review.md", "caveman-commit.md", "hermes.md", "explore.md", "research.md"}
 	for _, w := range want {
 		if !slices.Contains(names, w) {
 			t.Errorf("bundled skills missing %q (got %v)", w, names)
