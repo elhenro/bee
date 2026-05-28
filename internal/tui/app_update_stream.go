@@ -224,7 +224,14 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		nm, runCmd := m.submit(nxt)
 		return nm, tea.Batch(flushCmd, costCmd, recapCmd, runCmd)
 	}
-	return m, tea.Batch(flushCmd, costCmd, recapCmd)
+	// goal loop: on a clean finish with the queue empty, judge the active
+	// goal and either announce success, stop on caps, or auto-continue. No-op
+	// when no goal is active or the turn errored/cancelled.
+	var goalCmd tea.Cmd
+	if msg.err == nil {
+		m, goalCmd = m.maybeStartGoalEval()
+	}
+	return m, tea.Batch(flushCmd, costCmd, recapCmd, goalCmd)
 }
 
 func (m Model) onCostTick(_ costTickMsg) (tea.Model, tea.Cmd) {

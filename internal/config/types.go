@@ -8,21 +8,24 @@ package config
 // Config is the merged, post-resolution view of bee's settings. Adapters and
 // the agent loop read from this; nothing else.
 type Config struct {
-	DefaultProvider string                    `toml:"default_provider"`
-	DefaultModel    string                    `toml:"default_model"`
-	Caveman         string                    `toml:"caveman"`
-	Profile         string                    `toml:"profile"`
-	Thinking        string                    `toml:"thinking"` // auto | off | low | medium | high
+	DefaultProvider string `toml:"default_provider"`
+	DefaultModel    string `toml:"default_model"`
+	// FastModel is a cheap model for side evals like /goal completion checks;
+	// empty => use default_model.
+	FastModel string `toml:"fast_model"`
+	Caveman   string `toml:"caveman"`
+	Profile   string `toml:"profile"`
+	Thinking  string `toml:"thinking"` // auto | off | low | medium | high
 	// Mode gates how the agent reacts to user input. plan = read-only
 	// research + proposed plan, no mutations. edit = full tool surface
 	// (default). auto = side-LLM classifier picks plan|edit per turn.
-	Mode string `toml:"mode"` // plan | auto | edit
-	Sandbox         SandboxConfig             `toml:"sandbox"`
-	Shell           ShellConfig               `toml:"shell"`
-	Memory          MemoryConfig              `toml:"memory"`
-	Compaction      CompactionConfig          `toml:"compaction"`
-	Providers       map[string]ProviderConfig `toml:"providers"`
-	Profiles        map[string]Profile        `toml:"profiles"`
+	Mode       string                    `toml:"mode"` // plan | auto | edit
+	Sandbox    SandboxConfig             `toml:"sandbox"`
+	Shell      ShellConfig               `toml:"shell"`
+	Memory     MemoryConfig              `toml:"memory"`
+	Compaction CompactionConfig          `toml:"compaction"`
+	Providers  map[string]ProviderConfig `toml:"providers"`
+	Profiles   map[string]Profile        `toml:"profiles"`
 
 	// APIKey is the resolved key for the active provider. Populated by Load
 	// from os.Getenv(provider.EnvKey). Not persisted to disk.
@@ -151,6 +154,11 @@ type ProviderConfig struct {
 	// Load won't error if EnvKey is set but unresolved and no key file is
 	// stored — bee proceeds without an Authorization header.
 	KeyOptional bool `toml:"key_optional"`
+	// ChatTemplateKwargs flows into the MLX/vllm-extended chat completion body
+	// as `chat_template_kwargs`. Used to flip Qwen3 / Hermes chat-template
+	// switches like `enable_thinking=false` so the model emits canonical tool
+	// envelopes instead of prose summaries. Omitted when empty.
+	ChatTemplateKwargs map[string]any `toml:"chat_template_kwargs"`
 }
 
 // OAuthConfig configures a generic OAuth 2.0 PKCE flow for a provider. bee

@@ -54,6 +54,12 @@ func (m Model) renderTopBar() string {
 			left += m.styles.Dim.Render("Σ" + tokensHuman(n))
 		}
 	}
+	if gl := m.goalStatusLine(); gl != "" {
+		if left != "" {
+			left += "  "
+		}
+		left += m.styles.Dim.Render("◎ " + gl)
+	}
 	right := ""
 	if timer := m.renderTurnTimer(); timer != "" {
 		right += timer + "  "

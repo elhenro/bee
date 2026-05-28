@@ -52,6 +52,13 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 			}
 		}
 	}
+	// Seeded auto-submit from Init (skill dispatch into the TUI). Route it
+	// through the normal submit path once; clear the seed so it can't refire.
+	if as, ok := msg.(autoSubmitMsg); ok {
+		m.seedPrompt = ""
+		m.input.SetValue(as.text)
+		return m.handleSubmit()
+	}
 	// Dangerous-command prompt arrives from the engine goroutine via the
 	// Approver adapter. Surface the modal so the user can pick.
 	if ask, ok := msg.(ApprovalAskMsg); ok {
@@ -143,6 +150,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onCompactDone(msg)
 	case turnDoneMsg:
 		return m.onTurnDone(msg)
+	case goalEvalDoneMsg:
+		return m.onGoalEvalDone(msg)
 	case recapIdleTickMsg:
 		return m.onRecapIdleTick(msg)
 	case recapReadyMsg:

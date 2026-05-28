@@ -41,7 +41,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 					if userMsg == "" {
 						userMsg = extra
 					} else {
-						userMsg += "\n\nUser: " + extra
+						userMsg += "\n\nInput: " + extra
 					}
 				}
 				if strings.TrimSpace(userMsg) == "" {
@@ -58,6 +58,12 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.palette.Bump(parts[0])
+
+	// /goal drives a TUI-special completion loop (set/show/clear/stats);
+	// special-cased before the generic Run fallback like /compact.
+	if parts[0] == "goal" {
+		return m.handleGoal(parts[1:])
+	}
 
 	// /compact runs async with a loader animation so the LLM summarization
 	// call doesn't freeze the UI. State stays StateIdle; m.compacting drives

@@ -9,6 +9,7 @@ import (
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/cost"
+	"github.com/elhenro/bee/internal/goal"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -63,6 +64,13 @@ type Model struct {
 	// while enter still submits via handleKey before textarea sees it.
 	input textarea.Model
 
+	// seedPrompt auto-submits one turn on startup. Set by skill dispatch
+	// (`bee research <topic>`) when stdout is a tty: the dispatcher seeds
+	// "/<skill> <args>" so the existing slash-skill path runs it live and
+	// the user can watch tool cards + thoughts, then steer. Fired once
+	// from Init via autoSubmitMsg; piped/non-tty dispatch stays headless.
+	seedPrompt string
+
 	// status bar metadata
 	cwd      string
 	model    string
@@ -94,8 +102,8 @@ type Model struct {
 	quitRequested bool
 
 	// session tree modal — toggled by Ctrl+T or /tree.
-	tree           *SessionTree
-	treeRequested  bool
+	tree          *SessionTree
+	treeRequested bool
 
 	// resume picker modal — opened by /resume.
 	resume          *ResumePicker
@@ -215,7 +223,7 @@ type Model struct {
 	// engine. Read for the top-bar total and the /cost monitor pane.
 	costs *cost.Tracker
 	// costPane is the Ctrl+Y modal — opens on demand, claims keys while open.
-	costPane *CostPane
+	costPane      *CostPane
 	costRequested bool
 	// costFlashFrame counts up while a brief post-turn animation plays in
 	// the top bar: colour-cycling the dollar amount and showing the delta.
@@ -324,4 +332,12 @@ type Model struct {
 	// updateApplying flags an in-flight install subprocess so the user can't
 	// trigger a second one before the first finishes.
 	updateApplying bool
+
+	// goal holds the active /goal completion-condition loop state. Zero value
+	// = inactive. After each clean turn a fast model judges whether the
+	// condition is met; not-met auto-submits a continuation.
+	goal goal.State
+	// goalGen bumps on each scheduled eval so a stale async verdict (from a
+	// cleared/replaced goal) is ignored when it lands.
+	goalGen int
 }

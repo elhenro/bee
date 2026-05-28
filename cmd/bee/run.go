@@ -187,7 +187,7 @@ func runHeadlessReal(args []string) {
 			if userMsg == "" {
 				userMsg = s.Body
 			} else {
-				userMsg = s.Body + "\n\nUser: " + userMsg
+				userMsg = s.Body + "\n\nInput: " + userMsg
 			}
 		}
 	}
@@ -230,6 +230,20 @@ func runHeadlessReal(args []string) {
 			fmt.Fprintf(os.Stderr, "bee run: bg-loop: %v\n", err)
 			os.Exit(1)
 		}
+		return
+	}
+
+	// headless /goal: a "/goal <condition>" message drives an auto-loop instead
+	// of a single turn. Bare/clear/show have no persistent state to act on, so
+	// they print a hint and exit cleanly.
+	if cond, isGoal := parseGoalMessage(userMsg); isGoal {
+		if cond == "" {
+			fmt.Fprintln(os.Stderr, "bee: /goal needs a condition in headless mode")
+			os.Exit(0)
+		}
+		goalCtx, goalStop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer goalStop()
+		runGoalHeadless(goalCtx, eng, cfg, sessID, cond)
 		return
 	}
 
