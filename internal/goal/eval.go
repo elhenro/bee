@@ -104,6 +104,19 @@ func Continuation(condition, reason string) string {
 		"\nKeep working toward the goal. When done, state clearly what you completed."
 }
 
+// RecoverContinuation is injected after a turn that bailed because the model
+// wedged — repeating a failing call or emitting a malformed envelope. Reframes
+// the goal with an explicit "stop repeating, fill every required argument or
+// switch tools" nudge so the next turn starts a fresh loop instead of the loop
+// dying on a transient generation failure.
+func RecoverContinuation(condition, reason string) string {
+	return "[recover] Previous turn stopped early: " + reason +
+		"\nYou got stuck repeating a failing or malformed tool call. Do not repeat it." +
+		"\nRe-read the last error, fill EVERY required argument with a real value, or use a different tool to make progress." +
+		"\nGoal still open: " + condition +
+		"\nWhen done, state clearly what you completed."
+}
+
 // buildTranscript renders the last few messages as "role: text" lines. It
 // surfaces tool activity (calls and their results) alongside prose: a goal like
 // "create a file" is proven by the write tool's result, not by the agent saying

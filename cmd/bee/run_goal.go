@@ -17,6 +17,23 @@ import (
 // headless loop.
 const goalEvalTimeout = 30 * time.Second
 
+// maxConsecutiveWedges bounds recovery from wedged turns: after this many turns
+// in a row bail with no progress, the loop gives up rather than burning the
+// whole turn cap on a hopeless spiral. Reset by any turn that finishes cleanly.
+const maxConsecutiveWedges = 3
+
+// isWedgedTurn reports whether err is a "this turn got stuck" signal (repeated
+// failing call, per-tool cap, malformed envelope, output loop) rather than a
+// fatal error. Interactive sessions survive these — the headless goal loop
+// should too: spend the turn, reframe, retry. Escalate is excluded — that is
+// the model deliberately stopping to ask the user.
+func isWedgedTurn(err error) bool {
+	return errors.Is(err, loop.ErrTwoStrike) ||
+		errors.Is(err, loop.ErrPerToolFailureCap) ||
+		errors.Is(err, loop.ErrFormatStrike) ||
+		errors.Is(err, loop.ErrRepeatStream)
+}
+
 // parseGoalMessage detects a "/goal …" headless request and returns the
 // trimmed condition. show/clear/aliases and the bare command return ("", true)
 // so the caller can print a hint and exit. Non-goal messages return ("", false).
@@ -42,6 +59,7 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 	var st goal.State
 	st.Set(cond, 0, time.Now())
 	msg := cond
+	wedgeStreak := 0
 	for {
 		if ctx.Err() != nil {
 			fmt.Fprintln(os.Stderr, "goal: cancelled")
@@ -53,10 +71,28 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 				fmt.Fprintln(os.Stderr, "goal: cancelled")
 				return
 			}
+			// wedged turn: not fatal. spend the turn, reframe, retry — but give
+			// up after several in a row so a hopeless spiral can't burn the cap.
+			if isWedgedTurn(err) {
+				st.Tick()
+				wedgeStreak++
+				if wedgeStreak >= maxConsecutiveWedges {
+					fmt.Fprintf(os.Stderr, "goal: stopped (model wedged %d turns in a row: %v)\n", wedgeStreak, err)
+					break
+				}
+				if exceeded, reason := st.CapsExceeded(cumTokens(eng)); exceeded {
+					fmt.Fprintln(os.Stderr, "goal: stopped ("+reason+")")
+					break
+				}
+				fmt.Fprintf(os.Stderr, "goal: turn wedged (%v), recovering…\n", err)
+				msg = goal.RecoverContinuation(cond, err.Error())
+				continue
+			}
 			fmt.Fprintf(os.Stderr, "\nbee run: %v\n", err)
 			fmt.Fprintf(os.Stderr, "bee back %s\n", sessID)
 			os.Exit(1)
 		}
+		wedgeStreak = 0
 		st.Tick()
 		if exceeded, reason := st.CapsExceeded(cumTokens(eng)); exceeded {
 			fmt.Fprintln(os.Stderr, "goal: stopped ("+reason+")")
