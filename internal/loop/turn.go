@@ -94,8 +94,8 @@ type Engine struct {
 	// injected into a tool result this Run. dedupes — caller sees one notice.
 	warnedContext bool
 	// iteration progress / stall tracking; reset per Run.
-	warnedIterHalf bool
-	warnedIterEighty bool
+	warnedIterHalf      bool
+	warnedIterEighty    bool
 	warnedStall         bool
 	warnedStallEscalate bool
 	noMutationStreak    int
@@ -135,6 +135,13 @@ type Engine struct {
 	nudgedRepeat      bool
 	nudgedPerToolFail bool
 	nudgedTwoStrike   bool
+	// lastTurnLooped flags that the just-finished stream was cut mid-repetition
+	// so the turn loop injects a corrective nudge instead of treating the
+	// partial text as a clean finish. read and cleared each iteration.
+	lastTurnLooped bool
+	// loopCutStreak counts consecutive turns cut for degenerate repetition.
+	// drives RepeatStreamError at loopCutBailAt; reset by any clean stream.
+	loopCutStreak int
 	// dupWrites tracks (path, content-hash) of writes within one Run so the
 	// engine can warn on duplicate identical writes. opt-in per profile.
 	dupWrites *duplicateWriteTracker

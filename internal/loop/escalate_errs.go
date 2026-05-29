@@ -91,3 +91,21 @@ func (e *FormatStrikeError) Error() string {
 
 func (e *FormatStrikeError) Is(target error) bool { return target == ErrFormatStrike }
 func (e *FormatStrikeError) Unwrap() error        { return ErrFormatStrike }
+
+// ErrRepeatStream indicates the model's stream was cut for degenerate
+// repetition (the same phrase looped) N turns in a row — it's wedged in a token
+// loop that nudging won't fix. bail and let the user / wrapper switch model.
+var ErrRepeatStream = errors.New("loop: stream stuck repeating itself")
+
+// RepeatStreamError wraps a repetition-loop bail with the streak length so
+// callers can render "model looped its output 3x — switch model".
+type RepeatStreamError struct {
+	Streak int
+}
+
+func (e *RepeatStreamError) Error() string {
+	return fmt.Sprintf("%s: streak=%d", ErrRepeatStream.Error(), e.Streak)
+}
+
+func (e *RepeatStreamError) Is(target error) bool { return target == ErrRepeatStream }
+func (e *RepeatStreamError) Unwrap() error        { return ErrRepeatStream }

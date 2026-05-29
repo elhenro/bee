@@ -43,6 +43,8 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	e.nudgedRepeat = false
 	e.nudgedPerToolFail = false
 	e.nudgedTwoStrike = false
+	e.lastTurnLooped = false
+	e.loopCutStreak = 0
 	e.dupWrites = newDuplicateWriteTracker()
 	e.escalateErr = nil
 	res := RunResult{}
@@ -279,6 +281,30 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		res.Messages = append(res.Messages, assistantMsg)
 		res.FinalText = finalText
 
+		// stream was cut mid-repetition: nudge the model back on track, or bail
+		// after loopCutBailAt consecutive cuts (wedged in a token loop).
+		if e.lastTurnLooped {
+			e.lastTurnLooped = false
+			e.loopCutStreak++
+			if e.loopCutStreak >= loopCutBailAt {
+				return res, &RepeatStreamError{Streak: e.loopCutStreak}
+			}
+			nudge := types.Message{
+				ID:       newID(),
+				ParentID: assistantMsg.ID,
+				Role:     types.RoleUser,
+				Content: []types.ContentBlock{{Type: types.BlockText, Text: "[nudge] your output got stuck repeating the same text and was cut off. " +
+					"stop repeating — call a tool to make progress or give a short final answer."}},
+				Time: time.Now().UTC(),
+			}
+			if err := e.appendMessage(ctx, nudge); err != nil {
+				return res, err
+			}
+			res.Messages = append(res.Messages, nudge)
+			continue
+		}
+		e.loopCutStreak = 0
+
 		if len(toolUses) == 0 || detectDoneSignal(finalText) {
 			// format-slip streak: a turn with zero tool_uses but text that
 			// looks like an attempted call counts toward the strike budget.
@@ -355,4 +381,3 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	}
 	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume", maxIter)
 }
-

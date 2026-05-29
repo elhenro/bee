@@ -64,6 +64,10 @@ type Message struct {
 	Role     Role           `json:"role"`
 	Content  []ContentBlock `json:"content"`
 	Time     time.Time      `json:"ts"`
+	// Ephemeral marks a scrollback-only UI echo (slash-command confirmations,
+	// queued/steer notices). Shown in the TUI but never replayed to the LLM,
+	// so the model can't mistake "(/new done)" for a finish signal and parrot it.
+	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
 // Session is a tree of messages. Each Message has a ParentID; the root has

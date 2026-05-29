@@ -32,6 +32,7 @@ func (m Model) handleImagePaste() (tea.Model, tea.Cmd) {
 			Type: types.BlockText,
 			Text: "(image staged: " + bytesHuman(len(img)) + ")",
 		}},
+		Ephemeral: true,
 	})
 	return m, m.flush()
 }
@@ -46,8 +47,9 @@ func (m Model) handleFollowUp() (tea.Model, tea.Cmd) {
 	m.input.Reset()
 	m.queue = append(m.queue, text)
 	m.messages = append(m.messages, types.Message{
-		Role:    types.RoleAssistant,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: "(queued: " + text + ")"}},
+		Role:      types.RoleAssistant,
+		Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(queued: " + text + ")"}},
+		Ephemeral: true,
 	})
 	return m, m.flush()
 }
@@ -63,21 +65,24 @@ func (m Model) handleSteer() (tea.Model, tea.Cmd) {
 	m.input.Reset()
 	if m.eng == nil || m.eng.SteerCh == nil {
 		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(steer dropped: no channel)"}},
+			Role:      types.RoleAssistant,
+			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(steer dropped: no channel)"}},
+			Ephemeral: true,
 		})
 		return m, m.flush()
 	}
 	select {
 	case m.eng.SteerCh <- text:
 		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(steering: " + text + ")"}},
+			Role:      types.RoleAssistant,
+			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(steering: " + text + ")"}},
+			Ephemeral: true,
 		})
 	default:
 		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(steer dropped: queue full)"}},
+			Role:      types.RoleAssistant,
+			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(steer dropped: queue full)"}},
+			Ephemeral: true,
 		})
 	}
 	return m, m.flush()
@@ -107,15 +112,17 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		}
 		if strings.HasPrefix(text, "/") || strings.HasPrefix(text, "!") {
 			m.messages = append(m.messages, types.Message{
-				Role:    types.RoleAssistant,
-				Content: []types.ContentBlock{{Type: types.BlockText, Text: "(compacting, slash/shell commands not queued)"}},
+				Role:      types.RoleAssistant,
+				Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(compacting, slash/shell commands not queued)"}},
+				Ephemeral: true,
 			})
 			return m, m.flush()
 		}
 		m.queuedMidCompact = text
 		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(queued, runs after compact: " + text + ")"}},
+			Role:      types.RoleAssistant,
+			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(queued, runs after compact: " + text + ")"}},
+			Ephemeral: true,
 		})
 		return m, m.flush()
 	}
@@ -146,8 +153,9 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		}
 		m.input.Reset()
 		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(/" + name + " unavailable while bee is running)"}},
+			Role:      types.RoleAssistant,
+			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(/" + name + " unavailable while bee is running)"}},
+			Ephemeral: true,
 		})
 		return m, m.flush()
 	}
@@ -186,6 +194,21 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m.runSlash(text)
 	}
 	return m.submit(text)
+}
+
+// nonEphemeral copies msgs, dropping scrollback-only UI echoes (slash
+// confirmations, queue/steer notices). Without this the model sees an
+// assistant turn like "(/new done)" replayed in context and parrots it back as
+// a bogus finish signal, ending turns early without doing the work.
+func nonEphemeral(msgs []types.Message) []types.Message {
+	out := make([]types.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Ephemeral {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
 }
 
 // submit records the user message locally and kicks off engine.Run in a goroutine.
@@ -250,7 +273,7 @@ func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 	// submits. exclude the optimistic user msg we just appended — engine
 	// adds its own properly-IDed copy.
 	if n := len(m.messages); n > 0 {
-		eng.InitialMessages = append([]types.Message{}, m.messages[:n-1]...)
+		eng.InitialMessages = nonEphemeral(m.messages[:n-1])
 	} else {
 		eng.InitialMessages = nil
 	}

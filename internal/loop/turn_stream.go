@@ -74,13 +74,20 @@ func (e *Engine) streamAttempt(
 	content *[]types.ContentBlock,
 	toolUses *[]types.ToolUse,
 ) (types.Message, string, []types.ToolUse, bool, bool, error) {
-	ch, err := e.Provider.Stream(ctx, req)
+	// child context so the repetition watchdog can cut a wedged stream without
+	// disturbing the caller's ctx (which still governs real cancellation).
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ch, err := e.Provider.Stream(sctx, req)
 	if err != nil {
 		// pre-stream HTTP errors already exhaust the provider's own retry
 		// budget — surface as terminal, no further retry.
 		return types.Message{}, "", nil, false, false, fmt.Errorf("provider stream: %w", err)
 	}
 	gotContent := false
+	sinceScan := 0 // bytes appended since the last repetition check
+	looped := false
+	loopPeriodText, loopPeriodThink := 0, 0
 	for ev := range ch {
 		if ctx.Err() != nil {
 			return types.Message{}, "", nil, false, false, ctx.Err()
@@ -89,6 +96,7 @@ func (e *Engine) streamAttempt(
 		case llm.EventThinkingDelta:
 			thinkBuf.WriteString(ev.Delta)
 			gotContent = true
+			sinceScan += len(ev.Delta)
 			if e.JSONEmitter != nil {
 				e.JSONEmitter.Emit(jsonmode.Event{Type: "thinking", Delta: ev.Delta})
 			} else if e.ThinkCh != nil {
@@ -100,6 +108,7 @@ func (e *Engine) streamAttempt(
 		case llm.EventTextDelta:
 			textBuf.WriteString(ev.Delta)
 			gotContent = true
+			sinceScan += len(ev.Delta)
 			if e.JSONEmitter != nil {
 				e.JSONEmitter.Emit(jsonmode.Event{Type: "text", Delta: ev.Delta})
 			} else if e.StreamCh != nil {
@@ -167,6 +176,25 @@ func (e *Engine) streamAttempt(
 				e.cumOutputTokens += ev.Usage.OutputTokens
 			}
 		}
+		// repetition watchdog: a wedged local model can loop the same phrase
+		// until max_tokens, so the stream never closes and the turn can't make
+		// progress. detect a periodic tail and cut the stream — turn_run then
+		// nudges, or bails after loopCutBailAt consecutive cuts.
+		if sinceScan >= loopScanStride {
+			sinceScan = 0
+			if p := degenerateTailPeriod(textBuf.String()); p > 0 {
+				loopPeriodText, looped = p, true
+			} else if p := degenerateTailPeriod(thinkBuf.String()); p > 0 {
+				loopPeriodThink, looped = p, true
+			}
+			if looped {
+				e.warnf("output stuck repeating — cut the stream")
+				cancel()
+				for range ch { // drain so the provider goroutine exits cleanly
+				}
+				break
+			}
+		}
 	}
 	// post-stream ctx check: if the channel closed without an explicit
 	// terminal event because the caller canceled, surface that as the err
@@ -176,12 +204,20 @@ func (e *Engine) streamAttempt(
 	if ctx.Err() != nil {
 		return types.Message{}, "", nil, gotContent, false, ctx.Err()
 	}
-	// thinking block first so the rendered transcript reads in causal order
-	if th := thinkBuf.String(); th != "" {
-		*content = append(*content, types.ContentBlock{Type: types.BlockThinking, Text: th})
+	thinkStr, textStr := thinkBuf.String(), textBuf.String()
+	if looped {
+		// collapse the repeated tail so it doesn't bloat the transcript, and
+		// flag the turn so turn_run nudges/bails instead of finishing on garbage.
+		thinkStr = trimLoopedTail(thinkStr, loopPeriodThink)
+		textStr = trimLoopedTail(textStr, loopPeriodText)
+		e.lastTurnLooped = true
 	}
-	if t := textBuf.String(); t != "" {
-		*content = append(*content, types.ContentBlock{Type: types.BlockText, Text: t})
+	// thinking block first so the rendered transcript reads in causal order
+	if thinkStr != "" {
+		*content = append(*content, types.ContentBlock{Type: types.BlockThinking, Text: thinkStr})
+	}
+	if textStr != "" {
+		*content = append(*content, types.ContentBlock{Type: types.BlockText, Text: textStr})
 	}
 	for i := range *toolUses {
 		tu := (*toolUses)[i]
@@ -193,7 +229,7 @@ func (e *Engine) streamAttempt(
 		Content: *content,
 		Time:    time.Now().UTC(),
 	}
-	return msg, textBuf.String(), *toolUses, gotContent, false, nil
+	return msg, textStr, *toolUses, gotContent, false, nil
 }
 
 // isTransientStreamErr returns true for momentary network / provider hiccups.

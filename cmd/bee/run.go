@@ -274,6 +274,11 @@ func runHeadlessReal(args []string) {
 		if errors.Is(err, loop.ErrFormatStrike) {
 			os.Exit(7)
 		}
+		// repetition loop → model wedged emitting the same text until cut.
+		// same wedge family — signals "switch model or rephrase prompt".
+		if errors.Is(err, loop.ErrRepeatStream) {
+			os.Exit(7)
+		}
 		// escalate → another distinct code so the user/CI knows the model
 		// asked for help rather than crashed.
 		if errors.Is(err, loop.ErrEscalate) {

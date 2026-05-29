@@ -74,8 +74,9 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 			"it prints a URL + QR code to open on a phone or browser.\n" +
 			"the machine must be reachable on your LAN; commands execute locally here."
 		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: info}},
+			Role:      types.RoleAssistant,
+			Content:   []types.ContentBlock{{Type: types.BlockText, Text: info}},
+			Ephemeral: true,
 		})
 		return m, m.flush()
 	}
@@ -162,15 +163,17 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 	if out == "" {
 		// pure side-effect: echo a brief confirmation into scrollback.
 		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(/" + parts[0] + " done)"}},
+			Role:      types.RoleAssistant,
+			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(/" + parts[0] + " done)"}},
+			Ephemeral: true,
 		})
 		return m, m.flush()
 	}
 	// command produced text — render it as assistant output, not a LLM turn.
 	m.messages = append(m.messages, types.Message{
-		Role:    types.RoleAssistant,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: out}},
+		Role:      types.RoleAssistant,
+		Content:   []types.ContentBlock{{Type: types.BlockText, Text: out}},
+		Ephemeral: true,
 	})
 	return m, m.flush()
 }
