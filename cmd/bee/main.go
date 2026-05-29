@@ -94,6 +94,8 @@ func main() {
 		runZzz(os.Args[2:])
 	case "doctor":
 		runDoctor(os.Args[2:])
+	case "bench":
+		runBench(os.Args[2:])
 	case "version", "-v", "--version":
 		if commit != "" && commit != "dev" {
 			fmt.Printf("bee %s (%s)\n", version, commit)

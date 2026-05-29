@@ -1,0 +1,9 @@
+{
+  "id": "create-file",
+  "prompt": "create a file named hello.txt in the current directory containing exactly the text: hello bee",
+  "checks": [
+    {"kind": "grep", "file": "$SANDBOX/hello.txt", "pattern": "^hello bee"}
+  ],
+  "judge": "a file hello.txt was created containing 'hello bee'",
+  "budget": {"max_turns": 6, "max_tokens": 20000}
+}

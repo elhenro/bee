@@ -1,0 +1,12 @@
+{
+  "id": "add-func",
+  "prompt": "in math.go, add an exported function Add(a, b int) int that returns a + b. keep the existing Sub function.",
+  "setup": "cp -r bench/fixtures/calc/. $SANDBOX/",
+  "checks": [
+    {"kind": "cmd", "run": "cd $SANDBOX && go build ./...", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/math.go", "pattern": "func Add\\("},
+    {"kind": "grep", "file": "$SANDBOX/math.go", "pattern": "func Sub\\("}
+  ],
+  "judge": "math.go has both Add and Sub and compiles",
+  "budget": {"max_turns": 12, "max_tokens": 40000}
+}

@@ -15,3 +15,6 @@ cmd/bee/bee
 /.bee/
 *.jsonl
 .codegraph/
+
+# bench: generated scoreboards (numbers captured in bench/journal)
+bench/results/

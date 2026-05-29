@@ -1,0 +1,29 @@
+{
+  "scenarios": [
+    {
+      "name": "do-write",
+      "match": {"role": "user"},
+      "events": [
+        {"type": "text_delta", "delta": "writing the file"},
+        {"type": "tool_use", "tool": {"id": "toolu_w1", "name": "write", "input": {"path": "out.txt", "content": "verbose-marker"}}},
+        {"type": "done", "stop_reason": "tool_use"}
+      ]
+    },
+    {
+      "name": "after-write",
+      "match": {"role": "tool"},
+      "events": [
+        {"type": "text_delta", "delta": "done, wrote out.txt"},
+        {"type": "done", "stop_reason": "stop", "usage": {"input": 40, "output": 8}}
+      ]
+    },
+    {
+      "name": "goal-eval",
+      "match": {"contains": "CONDITION:"},
+      "events": [
+        {"type": "text_delta", "delta": "{\"met\": true, \"reason\": \"wrote out.txt\"}"},
+        {"type": "done", "stop_reason": "stop"}
+      ]
+    }
+  ]
+}
