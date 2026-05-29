@@ -147,6 +147,12 @@ func (p *PaletteModel) recomputeMatches() {
 		}
 		return
 	}
+	// only the first token is the command name; trailing words are args
+	// for the command, not fuzzy candidates. lets "/research golang" still
+	// match "research".
+	if i := strings.IndexByte(needle, ' '); i >= 0 {
+		needle = needle[:i]
+	}
 	// match against "name description" so descriptions can rank too; the
 	// renderer masks highlight indices to the name range below.
 	hay := make([]string, len(p.pool))

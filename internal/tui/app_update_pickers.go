@@ -24,7 +24,15 @@ func (m Model) onPaletteSelect(msg PaletteSelectMsg) (tea.Model, tea.Cmd) {
 	// dispatches to the command registry first, then falls through to the
 	// skill registry. unified path keeps "/calc" and "#calc → enter"
 	// behaving the same.
-	m.input.SetValue("/" + msg.Name)
+	// preserve any args typed after the command name so
+	// "/research golang webfetch" reaches the dispatcher intact.
+	args := ""
+	if rest := strings.TrimPrefix(m.input.Value(), "/"); rest != "" {
+		if i := strings.IndexByte(rest, ' '); i >= 0 {
+			args = rest[i:] // includes leading space
+		}
+	}
+	m.input.SetValue("/" + msg.Name + args)
 	return m.handleSubmit()
 }
 
