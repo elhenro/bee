@@ -18,7 +18,9 @@ type Verdict struct {
 }
 
 // evalSystem instructs the judge. It sees only the conversation — no file or
-// command access — and must reply with strict JSON.
+// command access. Small reasoning models narrate before they can answer and
+// won't reliably emit JSON-only, so the protocol lets them think and then asks
+// for one terminal verdict line that is trivial to emit and to parse.
 const evalSystem = `You are a strict completion judge for an autonomous coding agent.
 
 You can ONLY see the conversation transcript below. You have no access to files,
@@ -27,8 +29,10 @@ the filesystem, or any commands — judge solely by what the conversation surfac
 Decide whether the CONDITION is demonstrably satisfied by the conversation. Be
 conservative: if the evidence is missing, vague, or merely promised, it is NOT met.
 
-Reply with STRICT JSON only, no prose, no markdown fences:
-{"met": true|false, "reason": "<=15 words"}`
+The LAST line of your reply MUST be exactly one of:
+VERDICT: MET — <=10 word reason
+VERDICT: UNMET — <=10 word reason
+You may reason briefly before that line, but the final line must start with VERDICT:.`
 
 // evalMaxTranscript caps how much conversation text is fed to the judge. The
 // tail is kept — recent messages carry the evidence.
@@ -179,12 +183,16 @@ func compactInput(in map[string]any) string {
 	return strings.Join(pairs, " ")
 }
 
-// parseVerdict extracts the first {...} JSON object and unmarshals it. Tolerant
-// of surrounding prose or fences the model may add.
+// parseVerdict reads the judge's reply. It prefers a "VERDICT: MET|UNMET" line
+// (the protocol small models hit reliably), and falls back to a legacy JSON
+// object so stricter models that still emit JSON keep working.
 func parseVerdict(raw string) (Verdict, error) {
+	if v, ok := verdictFromLine(raw); ok {
+		return v, nil
+	}
 	obj := firstJSONObject(raw)
 	if obj == "" {
-		return Verdict{Met: false, Reason: "unparseable eval: " + truncate(raw, 60)}, fmt.Errorf("no json object in eval response")
+		return Verdict{Met: false, Reason: "unparseable eval: " + truncate(raw, 60)}, fmt.Errorf("no verdict in eval response")
 	}
 	var v struct {
 		Met    bool   `json:"met"`
@@ -194,6 +202,39 @@ func parseVerdict(raw string) (Verdict, error) {
 		return Verdict{Met: false, Reason: "unparseable eval: " + truncate(raw, 60)}, err
 	}
 	return Verdict{Met: v.Met, Reason: strings.TrimSpace(v.Reason)}, nil
+}
+
+// verdictFromLine finds the last "VERDICT: MET|UNMET …" marker, case-insensitive.
+// Scanning from the end takes the model's final answer, not a mention of the
+// format earlier in its reasoning.
+func verdictFromLine(raw string) (Verdict, bool) {
+	const marker = "verdict:"
+	low := strings.ToLower(raw)
+	i := strings.LastIndex(low, marker)
+	if i < 0 {
+		return Verdict{}, false
+	}
+	rest := strings.TrimSpace(raw[i+len(marker):])
+	restLow := strings.ToLower(rest)
+	reason := func(after int) string {
+		r := strings.TrimSpace(rest[after:])
+		r = strings.TrimLeft(r, "—-: ")
+		return strings.TrimSpace(firstLineOf(r))
+	}
+	switch {
+	case strings.HasPrefix(restLow, "unmet"):
+		return Verdict{Met: false, Reason: reason(len("unmet"))}, true
+	case strings.HasPrefix(restLow, "met"):
+		return Verdict{Met: true, Reason: reason(len("met"))}, true
+	}
+	return Verdict{}, false
+}
+
+func firstLineOf(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // firstJSONObject returns the substring from the first '{' to its matching '}'.

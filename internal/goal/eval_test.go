@@ -162,3 +162,44 @@ func TestBuildTranscript_MarksErroredResult(t *testing.T) {
 		t.Errorf("errored result not marked\ngot: %s", out)
 	}
 }
+
+func TestParseVerdict_VerdictLine(t *testing.T) {
+	cases := []struct {
+		raw     string
+		wantMet bool
+		wantRsn string
+	}{
+		{"some reasoning here\nVERDICT: MET — file created with exact content", true, "file created with exact content"},
+		{"VERDICT: UNMET — no evidence of the file", false, "no evidence of the file"},
+		{"thinking...\nverdict: met", true, ""},
+		{"The user wants X. I checked.\nVERDICT: UNMET", false, ""},
+		// a stray mention earlier must not win over the final verdict line
+		{"I will end with VERDICT: ... \nVERDICT: MET — done", true, "done"},
+	}
+	for _, c := range cases {
+		v, err := parseVerdict(c.raw)
+		if err != nil {
+			t.Errorf("parseVerdict(%q) err: %v", c.raw, err)
+			continue
+		}
+		if v.Met != c.wantMet {
+			t.Errorf("parseVerdict(%q) met=%v want %v", c.raw, v.Met, c.wantMet)
+		}
+		if c.wantRsn != "" && v.Reason != c.wantRsn {
+			t.Errorf("parseVerdict(%q) reason=%q want %q", c.raw, v.Reason, c.wantRsn)
+		}
+	}
+}
+
+func TestParseVerdict_JSONFallback(t *testing.T) {
+	v, err := parseVerdict(`prose {"met": true, "reason": "ok"} trailing`)
+	if err != nil || !v.Met || v.Reason != "ok" {
+		t.Errorf("json fallback broken: %+v err=%v", v, err)
+	}
+}
+
+func TestParseVerdict_Unparseable(t *testing.T) {
+	if _, err := parseVerdict("The user wants to check if the condition is met: Condition"); err == nil {
+		t.Error("expected error on reply with neither verdict line nor json")
+	}
+}
