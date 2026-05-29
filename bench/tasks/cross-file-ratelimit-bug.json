@@ -1,0 +1,13 @@
+{
+  "id": "cross-file-ratelimit-bug",
+  "prompt": "this token-bucket rate limiter does not actually throttle: the test fails. Fix the bug so `go test ./...` passes. The doc comments describe intended behavior: each key must keep its own Bucket across calls to Take, a key exhausting its tokens stays throttled until Replenish refills it, and keys must not share state. Do not edit any _test.go file and do not change the Bucket type's Allow/Refill logic in bucket.go (it is correct).",
+  "setup": "cp -r bench/fixtures/ratelimit/. $SANDBOX/",
+  "checks": [
+    {"kind": "cmd", "run": "cd $SANDBOX && go test ./...", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/limiter_test.go", "pattern": "fourth take should be throttled"},
+    {"kind": "grep", "file": "$SANDBOX/bucket.go", "pattern": "b\\.tokens -= n"},
+    {"kind": "cmd", "run": "cd $SANDBOX && cat > zz_gt_test.go <<'EOF'\npackage ratelimit\nimport \"testing\"\nfunc TestGTLimiter(t *testing.T) {\n\tl := NewLimiter()\n\tfor i := 0; i < 3; i++ { if !l.Take(\"a\") { t.Fatalf(\"a take %d\", i) } }\n\tif l.Take(\"a\") { t.Fatalf(\"a should be throttled\") }\n\t// separate key must be unaffected\n\tif !l.Take(\"b\") { t.Fatalf(\"b should start fresh\") }\n\t// refill restores a\n\tl.Replenish(1)\n\tif !l.Take(\"a\") { t.Fatalf(\"a should be allowed after replenish\") }\n\tif l.Take(\"a\") { t.Fatalf(\"a should be throttled again\") }\n}\nEOF\ngo test ./... && rm -f zz_gt_test.go", "expect_exit": 0}
+  ],
+  "judge": "Take persists a per-key bucket, keys are isolated, Replenish refills them, Bucket logic untouched, tests not edited, all pass",
+  "budget": {"max_turns": 20, "max_tokens": 70000}
+}

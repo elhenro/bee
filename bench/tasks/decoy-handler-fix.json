@@ -1,0 +1,12 @@
+{
+  "id": "decoy-handler-fix",
+  "prompt": "this Go module has several similarly named handler functions across users.go and admins.go. Exactly one handler has a bug: it returns the wrong status for an empty id. Find the right one and fix only it so `go test ./...` passes. The doc comment on each handler states its intended behavior. Do not edit any _test.go file and do not modify any handler that is already correct.",
+  "setup": "cp -r bench/fixtures/router/. $SANDBOX/",
+  "checks": [
+    {"kind": "cmd", "run": "cd $SANDBOX && go test ./...", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/users_test.go", "pattern": "TestUserDeleteEmptyID"},
+    {"kind": "cmd", "run": "cd $SANDBOX && cat > zz_gt_test.go <<'EOF'\npackage router\nimport \"testing\"\nfunc TestGTHandlers(t *testing.T) {\n\tk := map[string]bool{\"x\": true}\n\tcases := []struct{ name string; got, want int }{\n\t\t{\"del-empty\", handleUserDelete(\"\", k), StatusBadRequest},\n\t\t{\"del-unknown\", handleUserDelete(\"z\", k), StatusNotFound},\n\t\t{\"get-empty\", handleUserGet(\"\", k), StatusBadRequest},\n\t\t{\"get-unknown\", handleUserGet(\"z\", k), StatusNotFound},\n\t\t{\"upd-empty\", handleUserUpdate(\"\", k), StatusBadRequest},\n\t\t{\"adm-del-empty\", handleAdminDelete(\"\", k), StatusBadRequest},\n\t\t{\"adm-get-empty\", handleAdminGet(\"\", k), StatusBadRequest},\n\t}\n\tfor _, c := range cases {\n\t\tif c.got != c.want { t.Fatalf(\"%s=%d want %d\", c.name, c.got, c.want) }\n\t}\n\tk2 := map[string]bool{\"x\": true}\n\tif handleUserDelete(\"x\", k2) != StatusOK { t.Fatalf(\"del-known\") }\n}\nEOF\ngo test ./... && rm -f zz_gt_test.go", "expect_exit": 0}
+  ],
+  "judge": "only handleUserDelete's empty-id branch fixed to BadRequest, every other handler left correct, tests not edited, all pass",
+  "budget": {"max_turns": 18, "max_tokens": 60000}
+}
