@@ -126,3 +126,39 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+// TestBuildTranscript_IncludesToolEvidence verifies the judge transcript
+// surfaces tool calls and their results, not just prose. Without this a goal
+// like "create a file" is invisible to the judge — the proof lives in the
+// write tool's result, not in the agent's claim.
+func TestBuildTranscript_IncludesToolEvidence(t *testing.T) {
+	msgs := []types.Message{
+		{Role: types.RoleAssistant, Content: []types.ContentBlock{
+			{Type: types.BlockText, Text: "creating it"},
+			{Type: types.BlockToolUse, Use: &types.ToolUse{
+				Name: "write", Input: map[string]any{"path": "hello.txt", "content": "hello bee"}}},
+		}},
+		{Role: types.RoleTool, Content: []types.ContentBlock{
+			{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "wrote 9 bytes to hello.txt"}},
+		}},
+	}
+	out := buildTranscript(msgs)
+	for _, want := range []string{"called write", "path=hello.txt", "ok result", "wrote 9 bytes"} {
+		if !contains(out, want) {
+			t.Errorf("transcript missing %q\ngot: %s", want, out)
+		}
+	}
+}
+
+// TestBuildTranscript_MarksErroredResult shows failed tool calls are flagged so
+// the judge does not mistake an error for success.
+func TestBuildTranscript_MarksErroredResult(t *testing.T) {
+	msgs := []types.Message{
+		{Role: types.RoleTool, Content: []types.ContentBlock{
+			{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "permission denied", IsError: true}},
+		}},
+	}
+	if out := buildTranscript(msgs); !contains(out, "error result") {
+		t.Errorf("errored result not marked\ngot: %s", out)
+	}
+}

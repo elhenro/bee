@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm"
@@ -36,6 +37,12 @@ const evalMaxTranscript = 6000
 // evalRecentMessages bounds how many trailing messages are scanned.
 const evalRecentMessages = 12
 
+// evalMaxTokens caps the judge's reply. Reasoning-style small models narrate
+// before concluding; too small a budget truncates them mid-thought so the JSON
+// verdict never lands, parseVerdict fails, and the goal loop spins. Generous
+// enough to let them reach the verdict — the reply is still tiny vs a work turn.
+const evalMaxTokens = 512
+
 // Evaluate asks a fast model whether condition is demonstrably met based on the
 // recent conversation. Single cheap side call, no tools. On any provider/parse
 // error it returns Verdict{Met:false, ...} and the error.
@@ -53,7 +60,7 @@ func Evaluate(ctx context.Context, p llm.Provider, model, condition string, rece
 				{Type: types.BlockText, Text: user},
 			}},
 		},
-		MaxTokens:   200,
+		MaxTokens:   evalMaxTokens,
 		Temperature: 0,
 		Stream:      true,
 	}
@@ -93,8 +100,11 @@ func Continuation(condition, reason string) string {
 		"\nKeep working toward the goal. When done, state clearly what you completed."
 }
 
-// buildTranscript renders the last few messages as "role: text" lines, keeping
-// only text blocks, and trims to the tail when over the char cap.
+// buildTranscript renders the last few messages as "role: text" lines. It
+// surfaces tool activity (calls and their results) alongside prose: a goal like
+// "create a file" is proven by the write tool's result, not by the agent saying
+// it did so — without this the judge sees only promises and never confirms.
+// Trims to the tail when over the char cap.
 func buildTranscript(msgs []types.Message) string {
 	start := 0
 	if len(msgs) > evalRecentMessages {
@@ -102,28 +112,71 @@ func buildTranscript(msgs []types.Message) string {
 	}
 	var b strings.Builder
 	for _, m := range msgs[start:] {
-		var text strings.Builder
-		for _, c := range m.Content {
-			if c.Type == types.BlockText && c.Text != "" {
-				if text.Len() > 0 {
-					text.WriteString(" ")
-				}
-				text.WriteString(c.Text)
-			}
-		}
-		if text.Len() == 0 {
+		line := renderBlocks(m.Content)
+		if line == "" {
 			continue
 		}
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "%s: %s", m.Role, text.String())
+		fmt.Fprintf(&b, "%s: %s", m.Role, line)
 	}
 	out := b.String()
 	if len(out) > evalMaxTranscript {
 		out = out[len(out)-evalMaxTranscript:]
 	}
 	return out
+}
+
+// blockToolInputCap bounds how much of a tool's input/result is shown to the
+// judge — enough to recognize the action, not enough to swamp the transcript.
+const blockToolInputCap = 200
+
+// renderBlocks flattens one message's content into a single line: prose plus
+// compact markers for tool calls and their results, so the judge sees evidence
+// of actions, not just claims about them.
+func renderBlocks(blocks []types.ContentBlock) string {
+	var parts []string
+	for _, c := range blocks {
+		switch c.Type {
+		case types.BlockText:
+			if c.Text != "" {
+				parts = append(parts, c.Text)
+			}
+		case types.BlockToolUse:
+			if c.Use != nil {
+				parts = append(parts, fmt.Sprintf("[called %s %s]",
+					c.Use.Name, truncate(compactInput(c.Use.Input), blockToolInputCap)))
+			}
+		case types.BlockToolResult:
+			if c.Result != nil {
+				status := "ok"
+				if c.Result.IsError {
+					status = "error"
+				}
+				parts = append(parts, fmt.Sprintf("[%s result: %s]",
+					status, truncate(strings.TrimSpace(c.Result.Content), blockToolInputCap)))
+			}
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// compactInput renders a tool input map as "k=v" pairs, sorted for stability.
+func compactInput(in map[string]any) string {
+	if len(in) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(in))
+	for k := range in {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var pairs []string
+	for _, k := range keys {
+		pairs = append(pairs, fmt.Sprintf("%s=%v", k, in[k]))
+	}
+	return strings.Join(pairs, " ")
 }
 
 // parseVerdict extracts the first {...} JSON object and unmarshals it. Tolerant
