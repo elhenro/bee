@@ -71,6 +71,14 @@ func ValidateInput(spec llm.ToolSpec, input map[string]any) error {
 		}
 		if got, ok := jsonTypeMismatch(raw, want); !ok {
 			problems = append(problems, fmt.Sprintf("wrong type for %q: expected %s, got %s", key, want, got))
+			continue
+		}
+		// minLength on strings rejects blank optional args too, not just
+		// required ones. skip keys already flagged empty above.
+		if s, ok := raw.(string); ok && !missingSet[fmt.Sprintf("empty %q", key)] {
+			if min, ok := schemaMinLength(propMap); ok && len(strings.TrimSpace(s)) < min {
+				problems = append(problems, fmt.Sprintf("%q too short: needs at least %d non-blank char(s)", key, min))
+			}
 		}
 	}
 
@@ -99,6 +107,20 @@ func schemaRequired(schema map[string]any) []string {
 		return out
 	}
 	return nil
+}
+
+// schemaMinLength reads minLength off a property map. json.Unmarshal yields
+// float64 for numbers, hand-coded Go schemas use int — accept both.
+func schemaMinLength(propMap map[string]any) (int, bool) {
+	switch n := propMap["minLength"].(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	}
+	return 0, false
 }
 
 // isEmptyValue trips on the most common "model sent the key but value is

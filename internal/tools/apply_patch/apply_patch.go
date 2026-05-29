@@ -53,6 +53,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"patch": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "Unified diff (git-style) describing the changes.",
 				},
 			},

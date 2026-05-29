@@ -93,6 +93,75 @@ func TestValidateInput_NoSchema(t *testing.T) {
 	}
 }
 
+func readSpec() llm.ToolSpec {
+	return llm.ToolSpec{
+		Name: "read",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path":   map[string]any{"type": "string", "minLength": 1},
+				"offset": map[string]any{"type": "integer"},
+			},
+			"required": []string{"path"},
+		},
+	}
+}
+
+func TestValidateInput_EmptyArgCallRejected(t *testing.T) {
+	spec := readSpec()
+	// classic degenerate call: read {} with no path
+	err := ValidateInput(spec, map[string]any{})
+	if err == nil {
+		t.Fatal("expected empty-arg read to be rejected")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `missing required "path"`) {
+		t.Errorf("expected missing-required diagnostic, got %q", msg)
+	}
+	if !strings.Contains(msg, "path:string (required)") {
+		t.Errorf("expected accepted-args listing, got %q", msg)
+	}
+	if !strings.Contains(msg, `<read>{"path":"./path/to/file"}</read>`) {
+		t.Errorf("expected corrective example envelope, got %q", msg)
+	}
+}
+
+func TestValidateInput_BlankPathRejected(t *testing.T) {
+	spec := readSpec()
+	if err := ValidateInput(spec, map[string]any{"path": "   "}); err == nil {
+		t.Fatal("expected blank path to be rejected")
+	}
+}
+
+func TestValidateInput_ValidReadPasses(t *testing.T) {
+	spec := readSpec()
+	if err := ValidateInput(spec, map[string]any{"path": "main.go"}); err != nil {
+		t.Fatalf("expected valid read to pass, got %v", err)
+	}
+}
+
+func TestValidateInput_MinLengthOnOptionalString(t *testing.T) {
+	// minLength rejects a blank value even on a non-required arg.
+	spec := llm.ToolSpec{
+		Name: "grep",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"pattern": map[string]any{"type": "string", "minLength": 1},
+				"glob":    map[string]any{"type": "string", "minLength": 1},
+			},
+			"required": []string{"pattern"},
+		},
+	}
+	err := ValidateInput(spec, map[string]any{"pattern": "foo", "glob": ""})
+	if err == nil {
+		t.Fatal("expected blank optional glob to be rejected by minLength")
+	}
+	if !strings.Contains(err.Error(), `"glob" too short`) {
+		t.Errorf("expected too-short diagnostic for glob, got %q", err.Error())
+	}
+}
+
 func TestRenderExampleEnvelope_PathHeuristic(t *testing.T) {
 	spec := llm.ToolSpec{
 		Name: "read",

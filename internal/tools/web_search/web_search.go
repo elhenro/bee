@@ -51,6 +51,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"query": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "The search query string.",
 				},
 				"count": map[string]any{

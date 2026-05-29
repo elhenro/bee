@@ -82,6 +82,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"op": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "subcommand: search|query|callers|callees|context|impact|trace|affected|files|status",
 				},
 				"target": map[string]any{

@@ -31,7 +31,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"pattern": map[string]any{"type": "string", "description": "glob pattern, e.g. '*.go' or '**/foo*.ts'"},
+				"pattern": map[string]any{"type": "string", "minLength": 1, "description": "glob pattern, e.g. '*.go' or '**/foo*.ts'"},
 				"path":    map[string]any{"type": "string"},
 			},
 			"required": []string{"pattern"},

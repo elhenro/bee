@@ -87,7 +87,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"pattern":    map[string]any{"type": "string"},
+				"pattern":    map[string]any{"type": "string", "minLength": 1},
 				"path":       map[string]any{"type": "string"},
 				"glob":       map[string]any{"type": "string"},
 				"context":    map[string]any{"type": "integer", "description": "Surrounding lines per match (clamped 0..5). Match lines use ':' separator; context lines use '-'."},

@@ -54,6 +54,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"target": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "Package import path or symbol. E.g. `fmt`, `strings.TrimSpace`, `golang.org/x/net/html`.",
 				},
 				"long": map[string]any{

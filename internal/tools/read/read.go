@@ -85,6 +85,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "Absolute or relative path to a file or directory.",
 				},
 				"offset": map[string]any{

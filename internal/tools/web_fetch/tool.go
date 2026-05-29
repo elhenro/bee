@@ -60,6 +60,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"url": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "The URL to fetch content from",
 				},
 			},

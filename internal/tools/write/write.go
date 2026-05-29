@@ -41,7 +41,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":    map[string]any{"type": "string"},
+				"path":    map[string]any{"type": "string", "minLength": 1},
 				"content": map[string]any{"type": "string"},
 			},
 			"required": []string{"path", "content"},

@@ -57,6 +57,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "Path to the file to edit (relative or absolute).",
 				},
 				"edits": map[string]any{

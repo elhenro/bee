@@ -37,14 +37,17 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"name": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "Record name -- slug: a-z, A-Z, 0-9, hyphens, underscores, dots. Becomes the filename.",
 				},
 				"description": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "One-line summary of what this record covers.",
 				},
 				"body": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "Full record content -- the information the agent should recall.",
 				},
 				"tags": map[string]any{

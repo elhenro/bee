@@ -54,8 +54,8 @@ func (t *Tool) Spec() llm.ToolSpec {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":        map[string]any{"type": "string"},
-				"old":         map[string]any{"type": "string"},
+				"path":        map[string]any{"type": "string", "minLength": 1},
+				"old":         map[string]any{"type": "string", "minLength": 1},
 				"new":         map[string]any{"type": "string"},
 				"occurrence":  map[string]any{"type": "integer", "description": "1-based; default 1. Ignored when replace_all=true."},
 				"replace_all": map[string]any{"type": "boolean", "description": "Replace every occurrence."},

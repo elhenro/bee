@@ -77,6 +77,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"properties": map[string]any{
 				"command": map[string]any{
 					"type":        "string",
+					"minLength":   1,
 					"description": "Command line passed to bash -c. Do not prepend `cd <dir> &&` — process cwd is already set.",
 				},
 				"timeout_seconds": map[string]any{
