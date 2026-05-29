@@ -479,6 +479,7 @@ func parseToolArgs(body string) map[string]any {
 		return map[string]any{}
 	}
 	body = stripCodeFence(body)
+	raw := body // pre-markup-strip copy for the param-name-as-tag fallback
 	// F2: hermes-style `<parameter=K>V</parameter>` children inside a real
 	// tool tag. qwen3 mixes shapes — outer tag is the canonical tool name,
 	// inner params follow hermes convention. detect BEFORE StripMarkupBytes
@@ -521,9 +522,85 @@ func parseToolArgs(body string) map[string]any {
 			return v
 		}
 	}
+	// last resort: param-name-as-tag shape (`<path>..</path><old>..</old>..`)
+	// some local models emit instead of JSON. run on the pre-strip body.
+	if args := paramTagFallback(raw); args != nil {
+		return args
+	}
 	return map[string]any{
 		"_parse_error": fmt.Sprintf("invalid JSON args: %s", truncate(body, 200)),
 	}
+}
+
+var (
+	paramOpenRe   = regexp.MustCompile(`(?is)^\s*<([a-z_][a-z0-9_\-]*)>`)
+	leakedCloseRe = regexp.MustCompile(`(?is)^\s*</[a-z_][a-z0-9_\-]*>?\s*$`)
+)
+
+// paramTagFallback parses the param-name-as-tag shape: each tool arg wrapped
+// in its own `<KEY>VALUE</KEY>` block (e.g. an `edit` emitted as
+// `<path>..</path><old>..</old><new>..</new>`). Distinct from the hermes
+// `<parameter=KEY>` form handled above. Fires only when the whole body is
+// nothing but such blocks plus whitespace and an optional leaked tool close
+// tag, so it can't misread a payload whose value legitimately contains markup.
+// Returns nil when the shape doesn't match.
+func paramTagFallback(body string) map[string]any {
+	args := map[string]any{}
+	rest := body
+	for {
+		if strings.TrimSpace(rest) == "" {
+			break
+		}
+		if leakedCloseRe.MatchString(rest) {
+			break // tolerate a trailing leaked tool close tag like `</edit`
+		}
+		m := paramOpenRe.FindStringSubmatchIndex(rest)
+		if m == nil {
+			return nil // non-tag content present — not this shape
+		}
+		key := rest[m[2]:m[3]]
+		after := rest[m[1]:]
+		close := "</" + key + ">"
+		ci := indexFold(after, close)
+		if ci < 0 {
+			return nil // unterminated block — bail rather than guess
+		}
+		args[key] = decodeTagValue(after[:ci])
+		rest = after[ci+len(close):]
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	return args
+}
+
+// indexFold is a case-insensitive strings.Index. Tag names are ASCII so
+// lowercasing preserves byte offsets.
+func indexFold(s, sub string) int {
+	return strings.Index(strings.ToLower(s), strings.ToLower(sub))
+}
+
+// decodeTagValue extracts a param value, stripping only the wrapper newline
+// the model puts right after `>` and before `</` — NOT interior indentation,
+// which is semantic for whitespace-sensitive args like `edit` old/new. Decodes
+// numeric/bool/quoted JSON scalars; everything else stays a literal string.
+func decodeTagValue(v string) any {
+	v = strings.TrimPrefix(v, "\r\n")
+	v = strings.TrimPrefix(v, "\n")
+	v = strings.TrimSuffix(v, "\r\n")
+	v = strings.TrimSuffix(v, "\n")
+	t := strings.TrimSpace(v)
+	if t == "" {
+		return v
+	}
+	switch c := t[0]; {
+	case c == '{' || c == '[' || c == '"' || c == 't' || c == 'f' || c == 'n' || c == '-' || (c >= '0' && c <= '9'):
+		var out any
+		if err := json.Unmarshal([]byte(t), &out); err == nil {
+			return out
+		}
+	}
+	return v
 }
 
 // stripCodeFence trims ```json fences some models add around the args.
