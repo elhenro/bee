@@ -29,6 +29,13 @@ the filesystem, or any commands — judge solely by what the conversation surfac
 Decide whether the CONDITION is demonstrably satisfied by the conversation. Be
 conservative: if the evidence is missing, vague, or merely promised, it is NOT met.
 
+Tool results are the primary evidence. The transcript marks tool calls as
+[called <name> ...] and their outcomes as [ok result: ...] or [error result: ...]:
+a write succeeding, a command's exit code, grep matches, a file's contents.
+Weigh these over the agent's prose. A claim made only in prose, with no matching
+tool result in the transcript, is NOT met. An [error result: ...] is a failure,
+not evidence of success.
+
 The LAST line of your reply MUST be exactly one of:
 VERDICT: MET — <=10 word reason
 VERDICT: UNMET — <=10 word reason

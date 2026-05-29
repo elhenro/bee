@@ -22,6 +22,21 @@ const goalEvalTimeout = 30 * time.Second
 // whole turn cap on a hopeless spiral. Reset by any turn that finishes cleanly.
 const maxConsecutiveWedges = 3
 
+// maxStalledContinuations bounds the not-met retry loop: a clean turn that the
+// judge rules not-met with the SAME reason as last time is no progress. After
+// this many identical not-met reasons in a row, stop instead of spinning to the
+// turn cap. A changed reason counts as progress and resets the streak.
+const maxStalledContinuations = 3
+
+// stalledStep advances the no-progress counter. identical not-met reasons
+// increment it; a changed reason resets to 1. distinct from the wedge streak.
+func stalledStep(streak int, prev, reason string) (int, string) {
+	if reason == prev {
+		return streak + 1, prev
+	}
+	return 1, reason
+}
+
 // isWedgedTurn reports whether err is a "this turn got stuck" signal (repeated
 // failing call, per-tool cap, malformed envelope, output loop) rather than a
 // fatal error. Interactive sessions survive these — the headless goal loop
@@ -60,6 +75,8 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 	st.Set(cond, 0, time.Now())
 	msg := cond
 	wedgeStreak := 0
+	stalledStreak := 0
+	prevReason := ""
 	for {
 		if ctx.Err() != nil {
 			fmt.Fprintln(os.Stderr, "goal: cancelled")
@@ -103,6 +120,11 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 		cancel()
 		if v.Met {
 			fmt.Fprintln(os.Stderr, "✓ goal achieved: "+v.Reason)
+			break
+		}
+		stalledStreak, prevReason = stalledStep(stalledStreak, prevReason, v.Reason)
+		if stalledStreak >= maxStalledContinuations {
+			fmt.Fprintf(os.Stderr, "goal: stopped (no progress after %d continuations: %s)\n", stalledStreak, v.Reason)
 			break
 		}
 		fmt.Fprintln(os.Stderr, "goal not met ("+v.Reason+"), continuing…")
