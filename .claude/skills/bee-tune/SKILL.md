@@ -66,3 +66,13 @@ The bench harness never mutates bee config. You do — one variable at a time.
 
 `metrics` (turns / tool_calls / errored_calls / stopped_clean) is where the
 behavioral signal lives — lean on it to form the hypothesis, not just the score.
+
+## Run ledger
+
+Every `bee bench` run auto-appends one JSON line to `bench/results/ledger.jsonl`
+(time, label, provider, model, profile, suite, tasks, runs, aggregate, per-dim
+means, holdout, results path). This is the durable history of ALL runs, including
+ad-hoc model comparisons. Consult it to compare across runs and models without
+reopening each results JSON, and never delete or rewrite it. The `bench/journal/`
+entries record tuning DECISIONS; the ledger records raw measurements. Disable per
+run only with `--ledger ""`, and only with reason.

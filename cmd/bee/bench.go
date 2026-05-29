@@ -29,6 +29,7 @@ func runBench(args []string) {
 	timeout := fs.Duration("timeout", 5*time.Minute, "per-task wall-clock cap")
 	runs := fs.Int("runs", 1, "repeats per task for variance (reports mean ± spread)")
 	rollouts := fs.String("rollouts", "", "persist blessed (passed + clean) session jsonl here for fine-tune harvest")
+	ledger := fs.String("ledger", "bench/results/ledger.jsonl", "append-only run ledger (one JSON line per run; empty disables)")
 	jsonOnly := fs.Bool("json", false, "print only the results JSON path")
 	_ = fs.Parse(args)
 
@@ -82,6 +83,29 @@ func runBench(args []string) {
 		fmt.Fprintln(os.Stderr, "bench: write results:", err)
 		os.Exit(1)
 	}
+
+	// append a ledger row for every run so the full bench history is auditable
+	// without reopening each results JSON. a ledger failure never fails the run.
+	if err := bench.AppendLedger(*ledger, bench.LedgerRecord{
+		Time:             time.Now().UTC().Format(time.RFC3339),
+		Label:            *label,
+		Provider:         *provider,
+		Model:            *model,
+		Profile:          *profile,
+		Config:           *configFile,
+		Suite:            *suite,
+		Tasks:            len(tasks),
+		Runs:             *runs,
+		Aggregate:        res.Aggregate,
+		Success:          res.DimMeans.Success,
+		Format:           res.DimMeans.Format,
+		Efficiency:       res.DimMeans.Efficiency,
+		HoldoutAggregate: res.HoldoutAggregate,
+		ResultsJSON:      path,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "bench: ledger:", err)
+	}
+
 	if *jsonOnly {
 		fmt.Println(path)
 		return

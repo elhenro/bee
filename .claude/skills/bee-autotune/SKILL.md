@@ -116,3 +116,6 @@ plateaued below target — don't dress up a flat result.
   approves — not part of the loop.
 - **Journal everything**, including reverts and source escalations — it is the audit
   trail and lets a later session resume without re-deriving what was tried.
+- **The run ledger is automatic.** Every `bee bench` appends a row to
+  `bench/results/ledger.jsonl` (raw measurements of every run). Leave it on (don't
+  pass `--ledger ""`); it is the cross-run history the journal's decisions reference.
