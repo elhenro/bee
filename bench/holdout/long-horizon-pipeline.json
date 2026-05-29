@@ -1,0 +1,15 @@
+{
+  "id": "long-horizon-pipeline",
+  "prompt": "this Go module has Inc(n) in mathx.go and Apply(n) in apply.go. Do three things: (1) in mathx.go add an exported function Double(n int) int that returns n*2; (2) rewire Apply in apply.go so it doubles first then increments, i.e. Apply(n) must equal Inc(Double(n)); (3) add a new file apply_test.go with a Go test that verifies Apply(3) == 7. Make `go build ./...` and `go test ./...` both pass. Do not change Inc.",
+  "setup": "cp -r bench/fixtures/pipeline/. $SANDBOX/",
+  "checks": [
+    {"kind": "cmd", "run": "cd $SANDBOX && go build ./...", "expect_exit": 0},
+    {"kind": "cmd", "run": "cd $SANDBOX && go test ./...", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/mathx.go", "pattern": "func Double\\("},
+    {"kind": "grep", "file": "$SANDBOX/mathx.go", "pattern": "func Inc\\("},
+    {"kind": "grep", "file": "$SANDBOX/apply.go", "pattern": "Double\\("},
+    {"kind": "cmd", "run": "cd $SANDBOX && cat > zz_holdout_verify_test.go <<'EOF'\npackage pipeline\nimport \"testing\"\nfunc TestHoldoutApplyGroundTruth(t *testing.T) {\n\tif Apply(3) != 7 { t.Fatalf(\"Apply(3)=%d want 7\", Apply(3)) }\n\tif Double(4) != 8 { t.Fatalf(\"Double(4)=%d want 8\", Double(4)) }\n}\nEOF\ngo test ./... && rm -f zz_holdout_verify_test.go", "expect_exit": 0}
+  ],
+  "judge": "Double added, Apply doubles-then-increments, a real test exists, build and tests pass",
+  "budget": {"max_turns": 18, "max_tokens": 70000}
+}

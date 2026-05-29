@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -118,4 +120,76 @@ func TestBenchRepeatRuns(t *testing.T) {
 	if tr.Spread < 0 {
 		t.Errorf("spread must be ≥0, got %v", tr.Spread)
 	}
+}
+
+// TestBenchHoldoutSegregation runs a held-out slice through the same scripted
+// provider and confirms AttachHoldout reports it under the Holdout* fields,
+// separate from the main suite, never folded into the main aggregate.
+func TestBenchHoldoutSegregation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip e2e under -short")
+	}
+	bin := buildBee(t)
+	home, _ := tmpHomeSessions(t)
+	fixture := absFixture(t, "bench_write_turn.json")
+
+	extraEnv := []string{
+		"BEE_TEST_PROVIDER=scripted",
+		"BEE_TEST_SCRIPT=" + fixture,
+		"HOME=" + home,
+		"BEE_HOME=" + home,
+		"BEE_SKILLS_DIR=" + filepath.Join(home, "skills"),
+		"BEE_BIN_DIR=" + filepath.Join(home, "bin"),
+	}
+	opt := bench.Options{BeeBin: bin, Label: "scripted", Timeout: 30 * time.Second, ExtraEnv: extraEnv}
+
+	main := bench.Task{
+		ID:     "main-marker",
+		Prompt: "write verbose-marker into out.txt",
+		Checks: []bench.Check{{Kind: "grep", File: "$SANDBOX/out.txt", Pattern: "verbose-marker"}},
+		Budget: bench.Budget{MaxTurns: 8},
+	}
+
+	holdoutDir := writeHoldoutDir(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	res, err := bench.RunSuite(ctx, []bench.Task{main}, opt)
+	if err != nil {
+		t.Fatalf("RunSuite: %v", err)
+	}
+	if err := bench.AttachHoldout(ctx, &res, holdoutDir, opt); err != nil {
+		t.Fatalf("AttachHoldout: %v", err)
+	}
+
+	if len(res.Tasks) != 1 || res.Tasks[0].ID != "main-marker" {
+		t.Fatalf("main suite should hold only main-marker, got %+v", res.Tasks)
+	}
+	if len(res.HoldoutTasks) != 1 || res.HoldoutTasks[0].ID != "held-marker" {
+		t.Fatalf("held-out slice should hold only held-marker, got %+v", res.HoldoutTasks)
+	}
+	if res.HoldoutAggregate == 0 {
+		t.Errorf("held-out aggregate should be populated, got 0")
+	}
+}
+
+// writeHoldoutDir drops one held-out task spec into a temp dir for AttachHoldout
+// to load. The scripted provider writes out.txt, so the grep passes.
+func writeHoldoutDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	spec := bench.Task{
+		ID:     "held-marker",
+		Prompt: "write verbose-marker into out.txt",
+		Checks: []bench.Check{{Kind: "grep", File: "$SANDBOX/out.txt", Pattern: "verbose-marker"}},
+		Budget: bench.Budget{MaxTurns: 8},
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "held-marker.json"), raw, 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	return dir
 }

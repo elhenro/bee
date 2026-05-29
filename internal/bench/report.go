@@ -31,20 +31,31 @@ func WriteJSON(res SuiteResult, dir string) (string, error) {
 }
 
 // WriteTable prints a human scoreboard. With repeats it appends the spread
-// (max−min across runs) so a reader can see how noisy each score is.
+// (max−min across runs) so a reader can see how noisy each score is. When a
+// held-out slice ran, it prints below the main suite as a separate section.
 func WriteTable(res SuiteResult, w io.Writer) {
 	runs := res.Runs
 	if runs < 1 {
 		runs = 1
 	}
+	writeSection(w, res.Label, res.Aggregate, res.MeanSpread, res.DimMeans, res.Tasks, runs)
+	if len(res.HoldoutTasks) > 0 {
+		// held-out spread isn't aggregated separately; the slice exists to gate
+		// overfitting, not to report noise, so the per-section mean spread is 0.
+		writeSection(w, res.Label+" [held-out]", res.HoldoutAggregate, 0, res.HoldoutDimMeans, res.HoldoutTasks, runs)
+	}
+}
+
+// writeSection prints one labeled scoreboard block (main or held-out).
+func writeSection(w io.Writer, label string, agg, meanSpread float64, dims Dims, tasks []TaskResult, runs int) {
 	spreadNote := ""
 	if runs > 1 {
-		spreadNote = fmt.Sprintf(" ±%.1f over %d runs", res.MeanSpread, runs)
+		spreadNote = fmt.Sprintf(" ±%.1f over %d runs", meanSpread, runs)
 	}
 	fmt.Fprintf(w, "\nbench %q — aggregate %.1f%s  (success %.2f / format %.2f / eff %.2f)\n",
-		res.Label, res.Aggregate, spreadNote, res.DimMeans.Success, res.DimMeans.Format, res.DimMeans.Efficiency)
+		label, agg, spreadNote, dims.Success, dims.Format, dims.Efficiency)
 	fmt.Fprintf(w, "%-24s %6s %5s  %4s %4s %4s  %-2s  %s\n", "task", "score", "±", "suc", "fmt", "eff", "ok", "notes")
-	for _, t := range res.Tasks {
+	for _, t := range tasks {
 		ok := "✗"
 		if t.Succeeded {
 			ok = "✓"

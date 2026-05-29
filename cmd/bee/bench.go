@@ -18,6 +18,7 @@ import (
 func runBench(args []string) {
 	fs := flag.NewFlagSet("bench", flag.ExitOnError)
 	suite := fs.String("suite", "bench/tasks", "directory of *.json task specs")
+	holdout := fs.String("holdout", "bench/holdout", "directory of never-tuned *.json tasks scored separately (skipped if absent/empty)")
 	out := fs.String("out", "bench/results", "directory for the results JSON")
 	label := fs.String("label", "run", "tag for this result set (config-variant id)")
 	provider := fs.String("provider", "", "override default_provider for the runs")
@@ -62,9 +63,17 @@ func runBench(args []string) {
 		opt.Weights = w
 	}
 
-	res, err := bench.RunSuite(context.Background(), tasks, opt)
+	ctx := context.Background()
+	res, err := bench.RunSuite(ctx, tasks, opt)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "bench:", err)
+		os.Exit(1)
+	}
+
+	// held-out slice runs after the main suite and is reported separately so a
+	// tuning loop never optimizes against it.
+	if err := bench.AttachHoldout(ctx, &res, *holdout, opt); err != nil {
+		fmt.Fprintln(os.Stderr, "bench: holdout:", err)
 		os.Exit(1)
 	}
 

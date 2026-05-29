@@ -1,0 +1,14 @@
+{
+  "id": "tool-discipline-lookup",
+  "prompt": "this directory has several Go files. Find which file defines the function betaStub and write only that file's base name (for example gamma.go) into a new file answer.txt in the current directory. Do not modify any of the existing .go files.",
+  "setup": "cp -r bench/fixtures/bigrepo/. $SANDBOX/",
+  "checks": [
+    {"kind": "grep", "file": "$SANDBOX/answer.txt", "pattern": "^beta\\.go\\s*$"},
+    {"kind": "grep", "file": "$SANDBOX/beta.go", "pattern": "func betaStub\\(\\)"},
+    {"kind": "cmd", "run": "cd $SANDBOX && ! grep -q betaStub alpha.go gamma.go", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/alpha.go", "pattern": "func alphaStub\\(\\)"},
+    {"kind": "grep", "file": "$SANDBOX/gamma.go", "pattern": "func gammaStub\\(\\)"}
+  ],
+  "judge": "answer.txt names beta.go and the source files were read, not edited",
+  "budget": {"max_turns": 8, "max_tokens": 35000}
+}

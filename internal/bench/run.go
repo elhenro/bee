@@ -44,14 +44,19 @@ type TaskResult struct {
 }
 
 // SuiteResult is the full scoreboard. MeanSpread is the average per-task score
-// spread — a single noise figure for the whole run.
+// spread — a single noise figure for the whole run. Holdout* mirror the main
+// fields for the never-tuned slice; they stay zero/empty when no held-out dir
+// is present, keeping output backward compatible.
 type SuiteResult struct {
-	Label      string       `json:"label"`
-	Runs       int          `json:"runs"`
-	Aggregate  float64      `json:"aggregate"`
-	MeanSpread float64      `json:"mean_spread,omitempty"`
-	DimMeans   Dims         `json:"dim_means"`
-	Tasks      []TaskResult `json:"tasks"`
+	Label            string       `json:"label"`
+	Runs             int          `json:"runs"`
+	Aggregate        float64      `json:"aggregate"`
+	MeanSpread       float64      `json:"mean_spread,omitempty"`
+	DimMeans         Dims         `json:"dim_means"`
+	Tasks            []TaskResult `json:"tasks"`
+	HoldoutAggregate float64      `json:"holdout_aggregate,omitempty"`
+	HoldoutDimMeans  Dims         `json:"holdout_dim_means,omitempty"`
+	HoldoutTasks     []TaskResult `json:"holdout_tasks,omitempty"`
 }
 
 // RunSuite runs every task serially and scores it. Serial keeps results
@@ -150,6 +155,10 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx int) TaskResul
 
 	msgs, _ := readTranscript(sessDir)
 	m := MetricsFromMessages(msgs, stoppedClean)
+
+	// surface the final assistant text into the sandbox so abstain/refusal tasks
+	// can assert on it with the same grep machinery as any file check.
+	writeFinalMessage(sandbox, msgs)
 
 	var succeeded bool
 	if len(t.Checks) > 0 {
