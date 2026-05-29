@@ -14,19 +14,27 @@ import (
 
 // Options configures a suite run.
 type Options struct {
-	BeeBin   string        // path to the bee binary under test
-	Provider string        // --provider passthrough (empty = inherit config)
-	Model    string        // --model passthrough (empty = inherit config)
-	Label    string        // tags the result set (config-variant identifier)
-	Weights  Weights       // scoring blend
-	Timeout  time.Duration // per-task wall-clock cap
-	ExtraEnv []string      // extra env (offline tests inject the scripted provider here)
+	BeeBin     string        // path to the bee binary under test
+	Provider   string        // --provider passthrough (empty = inherit config)
+	Model      string        // --model passthrough (empty = inherit config)
+	ConfigFile string        // BEE_CONFIG overlay path (empty = default ~/.bee/config.toml)
+	Profile    string        // BEE_PROFILE override (empty = inherit/auto)
+	Label      string        // tags the result set (config-variant identifier)
+	Weights    Weights       // scoring blend
+	Timeout    time.Duration // per-task wall-clock cap
+	Runs       int           // repeats per task for variance (0/1 = single shot)
+	RolloutDir string        // when set, persist blessed (passed + clean) session jsonl here for fine-tune harvest
+	ExtraEnv   []string      // extra env (offline tests inject the scripted provider here)
 }
 
-// TaskResult is one task's full outcome.
+// TaskResult is one task's full outcome. With Runs>1, Score/Dims are means
+// across repeats, Spread is max−min of the per-run scores, and Samples holds
+// each run's score so a tuner can judge whether a delta clears the noise.
 type TaskResult struct {
 	ID        string        `json:"id"`
 	Score     float64       `json:"score"`
+	Spread    float64       `json:"spread,omitempty"`
+	Samples   []float64     `json:"samples,omitempty"`
 	Dims      Dims          `json:"dims"`
 	Succeeded bool          `json:"succeeded"`
 	Metrics   RunMetrics    `json:"metrics"`
@@ -35,12 +43,15 @@ type TaskResult struct {
 	Err       string        `json:"error,omitempty"`
 }
 
-// SuiteResult is the full scoreboard.
+// SuiteResult is the full scoreboard. MeanSpread is the average per-task score
+// spread — a single noise figure for the whole run.
 type SuiteResult struct {
-	Label     string       `json:"label"`
-	Aggregate float64      `json:"aggregate"`
-	DimMeans  Dims         `json:"dim_means"`
-	Tasks     []TaskResult `json:"tasks"`
+	Label      string       `json:"label"`
+	Runs       int          `json:"runs"`
+	Aggregate  float64      `json:"aggregate"`
+	MeanSpread float64      `json:"mean_spread,omitempty"`
+	DimMeans   Dims         `json:"dim_means"`
+	Tasks      []TaskResult `json:"tasks"`
 }
 
 // RunSuite runs every task serially and scores it. Serial keeps results
@@ -52,15 +63,66 @@ func RunSuite(ctx context.Context, tasks []Task, opt Options) (SuiteResult, erro
 	if (opt.Weights == Weights{}) {
 		opt.Weights = DefaultWeights
 	}
-	res := SuiteResult{Label: opt.Label}
+	if opt.Runs < 1 {
+		opt.Runs = 1
+	}
+	res := SuiteResult{Label: opt.Label, Runs: opt.Runs}
 	for _, t := range tasks {
 		res.Tasks = append(res.Tasks, runTask(ctx, t, opt))
 	}
-	res.Aggregate, res.DimMeans = aggregate(res.Tasks)
+	res.Aggregate, res.MeanSpread, res.DimMeans = aggregate(res.Tasks)
 	return res, nil
 }
 
+// runTask runs a task opt.Runs times and folds the repeats into one result:
+// mean score and dims, score spread (max−min), and the raw samples. The first
+// run is the representative for checks/metrics/reason; small models are
+// latency-bound so repeats stay serial.
 func runTask(ctx context.Context, t Task, opt Options) TaskResult {
+	rep := runTaskOnce(ctx, t, opt, 0)
+	if opt.Runs <= 1 {
+		return rep
+	}
+	sumScore := rep.Score
+	sumSuc, sumFmt, sumEff := rep.Dims.Success, rep.Dims.Format, rep.Dims.Efficiency
+	min, max := rep.Score, rep.Score
+	succ := boolToInt(rep.Succeeded)
+	samples := []float64{rep.Score}
+	for i := 1; i < opt.Runs; i++ {
+		r := runTaskOnce(ctx, t, opt, i)
+		samples = append(samples, r.Score)
+		sumScore += r.Score
+		sumSuc += r.Dims.Success
+		sumFmt += r.Dims.Format
+		sumEff += r.Dims.Efficiency
+		succ += boolToInt(r.Succeeded)
+		if r.Score < min {
+			min = r.Score
+		}
+		if r.Score > max {
+			max = r.Score
+		}
+		if rep.Err == "" && r.Err != "" {
+			rep.Err = r.Err // surface any run's error
+		}
+	}
+	n := float64(opt.Runs)
+	rep.Score = sumScore / n
+	rep.Dims = Dims{Success: sumSuc / n, Format: sumFmt / n, Efficiency: sumEff / n}
+	rep.Spread = max - min
+	rep.Samples = samples
+	rep.Succeeded = 2*succ >= opt.Runs // majority of runs passed
+	return rep
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx int) TaskResult {
 	tr := TaskResult{ID: t.ID}
 
 	sandbox, err := os.MkdirTemp("", "bee-bench-sandbox-")
@@ -103,7 +165,45 @@ func runTask(ctx context.Context, t Task, opt Options) TaskResult {
 	if runErr != nil {
 		tr.Err = runErr.Error()
 	}
+
+	// persist only blessed rollouts — passed checks, no errored tool calls,
+	// stopped cleanly. these are the demonstrations worth cloning. must happen
+	// before the deferred sessDir cleanup.
+	if opt.RolloutDir != "" && succeeded && m.ErroredCalls == 0 && m.StoppedClean {
+		_ = saveRollout(sessDir, opt.RolloutDir, opt.Label, t.ID, runIdx)
+	}
 	return tr
+}
+
+// saveRollout copies the session jsonl out of the doomed sandbox sessions dir
+// into a durable dir, named so the harvester can trace it back to label+task+run.
+func saveRollout(sessDir, destDir, label, taskID string, runIdx int) error {
+	entries, err := os.ReadDir(sessDir)
+	if err != nil {
+		return err
+	}
+	var src string
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".jsonl" {
+			src = filepath.Join(sessDir, e.Name())
+			break
+		}
+	}
+	if src == "" {
+		return fmt.Errorf("no session jsonl to save")
+	}
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if label == "" {
+		label = "run"
+	}
+	name := fmt.Sprintf("%s__%s__r%d.jsonl", label, taskID, runIdx)
+	return os.WriteFile(filepath.Join(destDir, name), data, 0o644)
 }
 
 // runBee spawns the real binary against the task's goal in the sandbox.
@@ -124,6 +224,12 @@ func runBee(ctx context.Context, t Task, opt Options, sandbox, sessDir string) (
 	cmd.Env = append(os.Environ(),
 		"BEE_SESSIONS_DIR="+sessDir,
 	)
+	if opt.ConfigFile != "" {
+		cmd.Env = append(cmd.Env, "BEE_CONFIG="+opt.ConfigFile)
+	}
+	if opt.Profile != "" {
+		cmd.Env = append(cmd.Env, "BEE_PROFILE="+opt.Profile)
+	}
 	cmd.Env = append(cmd.Env, opt.ExtraEnv...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -173,17 +279,18 @@ func firstLine(s string) string {
 	return s
 }
 
-func aggregate(tasks []TaskResult) (float64, Dims) {
+func aggregate(tasks []TaskResult) (float64, float64, Dims) {
 	if len(tasks) == 0 {
-		return 0, Dims{}
+		return 0, 0, Dims{}
 	}
-	var total, su, fo, ef float64
+	var total, spread, su, fo, ef float64
 	for _, t := range tasks {
 		total += t.Score
+		spread += t.Spread
 		su += t.Dims.Success
 		fo += t.Dims.Format
 		ef += t.Dims.Efficiency
 	}
 	n := float64(len(tasks))
-	return total / n, Dims{Success: su / n, Format: fo / n, Efficiency: ef / n}
+	return total / n, spread / n, Dims{Success: su / n, Format: fo / n, Efficiency: ef / n}
 }

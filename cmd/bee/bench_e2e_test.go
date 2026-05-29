@@ -68,3 +68,54 @@ func TestBenchScriptedSuite(t *testing.T) {
 		t.Errorf("success dim = %v, want 1", tr.Dims.Success)
 	}
 }
+
+// TestBenchRepeatRuns drives --runs N: the task runs twice, the result folds to
+// a mean with per-run samples recorded so a tuner can gauge noise.
+func TestBenchRepeatRuns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip e2e under -short")
+	}
+	bin := buildBee(t)
+	home, _ := tmpHomeSessions(t)
+	fixture := absFixture(t, "bench_write_turn.json")
+
+	extraEnv := []string{
+		"BEE_TEST_PROVIDER=scripted",
+		"BEE_TEST_SCRIPT=" + fixture,
+		"HOME=" + home,
+		"BEE_HOME=" + home,
+		"BEE_SKILLS_DIR=" + filepath.Join(home, "skills"),
+		"BEE_BIN_DIR=" + filepath.Join(home, "bin"),
+	}
+	task := bench.Task{
+		ID:     "write-marker",
+		Prompt: "write verbose-marker into out.txt",
+		Checks: []bench.Check{
+			{Kind: "grep", File: "$SANDBOX/out.txt", Pattern: "verbose-marker"},
+		},
+		Budget: bench.Budget{MaxTurns: 8},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	res, err := bench.RunSuite(ctx, []bench.Task{task}, bench.Options{
+		BeeBin:   bin,
+		Label:    "repeat",
+		Timeout:  30 * time.Second,
+		Runs:     2,
+		ExtraEnv: extraEnv,
+	})
+	if err != nil {
+		t.Fatalf("RunSuite: %v", err)
+	}
+	if res.Runs != 2 {
+		t.Errorf("SuiteResult.Runs = %d, want 2", res.Runs)
+	}
+	tr := res.Tasks[0]
+	if len(tr.Samples) != 2 {
+		t.Fatalf("want 2 samples, got %d (%v)", len(tr.Samples), tr.Samples)
+	}
+	if tr.Spread < 0 {
+		t.Errorf("spread must be ≥0, got %v", tr.Spread)
+	}
+}

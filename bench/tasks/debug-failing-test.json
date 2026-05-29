@@ -1,0 +1,11 @@
+{
+  "id": "debug-failing-test",
+  "prompt": "the tests in this Go module fail. fix the bug in the source so `go test ./...` passes. do not edit the test files.",
+  "setup": "cp -r bench/fixtures/buggytest/. $SANDBOX/",
+  "checks": [
+    {"kind": "cmd", "run": "cd $SANDBOX && go test ./...", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/strs_test.go", "pattern": "want 6"}
+  ],
+  "judge": "go test passes and the test file was not gutted to fake it",
+  "budget": {"max_turns": 14, "max_tokens": 50000}
+}

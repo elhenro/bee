@@ -1,0 +1,12 @@
+{
+  "id": "refactor-rename",
+  "prompt": "rename the exported type Cache to Store and the constructor NewCache to NewStore everywhere in this module, including comments. keep behavior. it must still build, and no reference to the old names may remain.",
+  "setup": "cp -r bench/fixtures/store/. $SANDBOX/",
+  "checks": [
+    {"kind": "cmd", "run": "cd $SANDBOX && go build ./...", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/store.go", "pattern": "type Store struct"},
+    {"kind": "cmd", "run": "cd $SANDBOX && ! grep -rIn 'Cache' . >/dev/null 2>&1", "expect_exit": 0}
+  ],
+  "judge": "Cache/NewCache renamed to Store/NewStore everywhere, builds clean, no old name left",
+  "budget": {"max_turns": 16, "max_tokens": 60000}
+}

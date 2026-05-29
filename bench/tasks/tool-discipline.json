@@ -1,0 +1,11 @@
+{
+  "id": "tool-discipline",
+  "prompt": "append a line containing exactly DONE to the file notes.txt in the current directory. it already exists — keep its current contents and change nothing else.",
+  "setup": "cp -r bench/fixtures/bigrepo/. $SANDBOX/",
+  "checks": [
+    {"kind": "grep", "file": "$SANDBOX/notes.txt", "pattern": "(?m)^DONE$"},
+    {"kind": "grep", "file": "$SANDBOX/notes.txt", "pattern": "original note"}
+  ],
+  "judge": "notes.txt keeps its original line and gains a DONE line, nothing else touched",
+  "budget": {"max_turns": 6, "max_tokens": 25000}
+}

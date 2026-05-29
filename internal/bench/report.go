@@ -30,11 +30,20 @@ func WriteJSON(res SuiteResult, dir string) (string, error) {
 	return path, nil
 }
 
-// WriteTable prints a human scoreboard.
+// WriteTable prints a human scoreboard. With repeats it appends the spread
+// (max−min across runs) so a reader can see how noisy each score is.
 func WriteTable(res SuiteResult, w io.Writer) {
-	fmt.Fprintf(w, "\nbench %q — aggregate %.1f  (success %.2f / format %.2f / eff %.2f)\n",
-		res.Label, res.Aggregate, res.DimMeans.Success, res.DimMeans.Format, res.DimMeans.Efficiency)
-	fmt.Fprintf(w, "%-24s %6s  %4s %4s %4s  %-2s  %s\n", "task", "score", "suc", "fmt", "eff", "ok", "notes")
+	runs := res.Runs
+	if runs < 1 {
+		runs = 1
+	}
+	spreadNote := ""
+	if runs > 1 {
+		spreadNote = fmt.Sprintf(" ±%.1f over %d runs", res.MeanSpread, runs)
+	}
+	fmt.Fprintf(w, "\nbench %q — aggregate %.1f%s  (success %.2f / format %.2f / eff %.2f)\n",
+		res.Label, res.Aggregate, spreadNote, res.DimMeans.Success, res.DimMeans.Format, res.DimMeans.Efficiency)
+	fmt.Fprintf(w, "%-24s %6s %5s  %4s %4s %4s  %-2s  %s\n", "task", "score", "±", "suc", "fmt", "eff", "ok", "notes")
 	for _, t := range res.Tasks {
 		ok := "✗"
 		if t.Succeeded {
@@ -44,8 +53,12 @@ func WriteTable(res SuiteResult, w io.Writer) {
 		if t.Err != "" {
 			note = "ERR: " + t.Err
 		}
-		fmt.Fprintf(w, "%-24s %6.1f  %.2f %.2f %.2f  %-2s  %s\n",
-			t.ID, t.Score, t.Dims.Success, t.Dims.Format, t.Dims.Efficiency, ok, truncate(note, 60))
+		spread := ""
+		if runs > 1 {
+			spread = fmt.Sprintf("%.1f", t.Spread)
+		}
+		fmt.Fprintf(w, "%-24s %6.1f %5s  %.2f %.2f %.2f  %-2s  %s\n",
+			t.ID, t.Score, spread, t.Dims.Success, t.Dims.Format, t.Dims.Efficiency, ok, truncate(note, 60))
 	}
 	fmt.Fprintln(w)
 }

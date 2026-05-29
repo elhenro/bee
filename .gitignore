@@ -18,3 +18,9 @@ cmd/bee/bee
 
 # bench: generated scoreboards (numbers captured in bench/journal)
 bench/results/
+# bench: autotune config overlays (winner folded into config by hand)
+bench/sweep/
+# bench: fine-tune data + adapter weights (large, regenerable)
+bench/finetune/data/
+bench/finetune/adapters/
+bench/finetune/.venv/

@@ -1,0 +1,10 @@
+{
+  "id": "noop-guard",
+  "prompt": "ensure a file hello.txt exists in the current directory containing exactly the text: hello bee",
+  "setup": "cp -r bench/fixtures/ready/. $SANDBOX/",
+  "checks": [
+    {"kind": "grep", "file": "$SANDBOX/hello.txt", "pattern": "^hello bee"}
+  ],
+  "judge": "hello.txt already satisfies the condition; agent should confirm and stop fast",
+  "budget": {"max_turns": 5, "max_tokens": 15000}
+}

@@ -38,9 +38,10 @@ func mergeFile(c *Config, path string) error {
 		}
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	// Decode onto the existing struct so unset TOML keys keep their
-	// default values. Map fields (Providers, Profiles) are replaced
-	// wholesale by go-toml if present in the file; otherwise untouched.
+	// Decode onto the existing struct so unset TOML keys keep their default
+	// values. go-toml merges per-key: a partial [profiles.tiny] in the file
+	// overrides only the fields it names, leaving tiny's other fields and the
+	// other profiles intact. This is what lets a bench overlay flip one knob.
 	if err := toml.Unmarshal(data, c); err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}

@@ -1,0 +1,11 @@
+{
+  "id": "multi-file-edit",
+  "prompt": "Greeting() should return \"hi world\" instead of \"hello world\". the leading word comes from prefix() in prefix.go — change it there. make `go test ./...` pass.",
+  "setup": "cp -r bench/fixtures/greeter/. $SANDBOX/",
+  "checks": [
+    {"kind": "cmd", "run": "cd $SANDBOX && go test ./...", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/prefix.go", "pattern": "\"hi\""}
+  ],
+  "judge": "prefix.go returns 'hi' and the greeting test passes",
+  "budget": {"max_turns": 12, "max_tokens": 40000}
+}
