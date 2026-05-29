@@ -35,12 +35,14 @@ func TestTinyProfile_ReadGrepCapsAndSkipApplyPatch(t *testing.T) {
 	}
 }
 
-func TestTinyProfile_ToolFormatXML(t *testing.T) {
+func TestTinyProfile_ToolFormatNative(t *testing.T) {
 	c := Defaults()
 	c.Profile = "tiny"
 	p := ActiveProfile(c)
-	if p.ToolFormat != "xml" {
-		t.Errorf("tiny.ToolFormat = %q, want %q (local/small models need textmode wrapper to parse bare-JSON envelopes)", p.ToolFormat, "xml")
+	// tiny inherits native tool_calls; xml textmode is opt-in for older models
+	// that ignore native function-calling deltas.
+	if p.ToolFormat != "" {
+		t.Errorf("tiny.ToolFormat = %q, want %q (native; xml is now opt-in)", p.ToolFormat, "")
 	}
 }
 

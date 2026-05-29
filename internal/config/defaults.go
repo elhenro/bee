@@ -156,13 +156,12 @@ func Defaults() Config {
 				SkillManifestChars: -1,
 				Caveman:            "ultra",
 				MaxIterations:      50,
-				// xml: route through TextModeProvider so the bare-JSON
-				// envelopes small models emit (`{"name":"bash",...}`,
-				// `[{"name":"x"},{"name":"y"}]`) get parsed via the
-				// JSON fallback. Native tool_calls on local OAI-compat
-				// servers (omlx/lmstudio/ollama) is unreliable for
-				// non-frontier models — wrapping catches both formats.
-				ToolFormat: "xml",
+				// tool format inherits native tool_calls (the global default).
+				// capable local models emit clean native calls via the
+				// oai-compatible server; the xml textmode wrapper handicaps
+				// them and fully breaks models that only speak native FC. opt
+				// into "xml" per-run for older models that ignore native call
+				// deltas (set tool_format = "xml" in config or a profile).
 				// ~1500 tokens (~6k chars) per tool result. one fat read of
 				// a 1.5k-line file would otherwise blow a 4-8k MLX context.
 				ToolOutputTokens: 1500,
