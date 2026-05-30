@@ -12,14 +12,16 @@ import (
 // Mode gates engine behavior per Run.
 //
 //	ModePlan: read-only tools, agent produces plan only, no edits.
-//	ModeEdit: full tool surface (default).
-//	ModeAuto: classifier picks plan|edit per turn.
+//	ModeAuto: classifier picks plan|edit per turn (default).
+//	ModeEdit: full tool surface, dangerous commands still prompt.
+//	ModeYolo: full tool surface, approvable commands auto-approved (no prompt).
 type Mode string
 
 const (
 	ModePlan Mode = "plan"
 	ModeAuto Mode = "auto"
 	ModeEdit Mode = "edit"
+	ModeYolo Mode = "yolo"
 )
 
 // ParseMode normalises a string into a Mode. Unknown → ModeEdit.
@@ -29,6 +31,8 @@ func ParseMode(s string) Mode {
 		return ModePlan
 	case "auto":
 		return ModeAuto
+	case "yolo":
+		return ModeYolo
 	case "edit", "":
 		return ModeEdit
 	default:

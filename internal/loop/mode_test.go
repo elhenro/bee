@@ -50,6 +50,8 @@ func TestParseMode(t *testing.T) {
 		"plan":   ModePlan,
 		"PLAN":   ModePlan,
 		" auto ": ModeAuto,
+		"yolo":   ModeYolo,
+		"YOLO":   ModeYolo,
 		"edit":   ModeEdit,
 		"":       ModeEdit,
 		"junk":   ModeEdit,
@@ -91,6 +93,10 @@ func TestFilterToolSpecsForMode(t *testing.T) {
 	// edit passes through
 	if got := filterToolSpecsForMode(specs, ModeEdit); len(got) != len(specs) {
 		t.Errorf("ModeEdit should pass through %d specs, got %d", len(specs), len(got))
+	}
+	// yolo gets the same full surface as edit
+	if got := filterToolSpecsForMode(specs, ModeYolo); len(got) != len(specs) {
+		t.Errorf("ModeYolo should pass through %d specs, got %d", len(specs), len(got))
 	}
 	// plan drops mutators
 	got := filterToolSpecsForMode(specs, ModePlan)

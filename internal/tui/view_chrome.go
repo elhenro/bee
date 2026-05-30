@@ -64,8 +64,8 @@ func (m Model) renderTopBar() string {
 	if timer := m.renderTurnTimer(); timer != "" {
 		right += timer + "  "
 	}
-	if m.mode == "auto" {
-		right += m.renderModeBadge() + "  "
+	if badge := m.renderModeBadge(); badge != "" {
+		right += badge + "  "
 	}
 	if m.showEffort && m.thinking != "" && m.thinking != "off" {
 		right += m.styles.Dim.Render("t:"+m.thinking) + " "
@@ -171,16 +171,21 @@ func (m Model) renderCostBadge(usd float64) string {
 	return number
 }
 
-// renderModeBadge renders a mode chip. Only shown when mode is auto
-// (classifier picks per turn, colored busy citron). Plan and edit modes
-// hide the badge so chrome stays quiet.
+// renderModeBadge renders a mode chip in the top bar, always visible so
+// shift+tab cycling is legible. plan = honey, auto = citron, yolo = sriracha
+// (auto-approves, pay attention), edit = quiet squid (the resting default).
 func (m Model) renderModeBadge() string {
+	if m.mode == "" {
+		return ""
+	}
 	var fg lipgloss.TerminalColor
 	switch m.mode {
 	case "plan":
 		fg = accentHoney
 	case "auto":
 		fg = accentBusy
+	case "yolo":
+		fg = semError
 	default:
 		fg = fgSquid
 	}

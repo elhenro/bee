@@ -62,6 +62,15 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	// Dangerous-command prompt arrives from the engine goroutine via the
 	// Approver adapter. Surface the modal so the user can pick.
 	if ask, ok := msg.(ApprovalAskMsg); ok {
+		// yolo: auto-approve flagged commands, no modal. reads the live mode so
+		// shift+tab → yolo takes effect mid-session. hardline refusals still
+		// fire upstream in the shell tool — yolo only answers approvable prompts.
+		if m.mode == "yolo" {
+			if m.approver != nil {
+				m.approver.Resolve(ask.UseID, ApprovalAllow)
+			}
+			return m, nil
+		}
 		m.approval.Show(ApprovalRequest{
 			ToolName: "bash",
 			Action:   ask.Cmd,
@@ -136,6 +145,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.palette.SetWidth(msg.Width)
 		m.atpicker.SetWidth(msg.Width)
 		m.history.SetWidth(msg.Width)
+		m.askModel.SetWidth(msg.Width)
 		if m.picker != nil {
 			m.picker.SetSize(msg.Width-4, msg.Height-4)
 		}

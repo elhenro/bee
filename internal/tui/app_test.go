@@ -537,6 +537,32 @@ func TestModel_ApprovalKey_ResolvesApprover(t *testing.T) {
 	}
 }
 
+// yolo mode auto-approves flagged commands: no modal, approver resolved
+// AllowOnce straight from the ApprovalAskMsg handler.
+func TestModel_YoloMode_AutoApproves(t *testing.T) {
+	m := newTestModel(t)
+	m.mode = "yolo"
+	appr := NewApprover()
+	m = m.WithApprover(appr)
+	ch := make(chan approval.Decision, 1)
+	appr.mu.Lock()
+	appr.pending["u-1"] = ch
+	appr.mu.Unlock()
+	m2, _ := m.Update(ApprovalAskMsg{UseID: "u-1", Cmd: "rm -rf /tmp/x", Key: "rm-recursive"})
+	m = m2.(Model)
+	if m.approval.Active {
+		t.Fatal("yolo must not surface the approval modal")
+	}
+	select {
+	case got := <-ch:
+		if got != approval.AllowOnce {
+			t.Fatalf("yolo approver got %v, want AllowOnce", got)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("yolo never resolved the approver — engine would hang")
+	}
+}
+
 // TestModel_CtrlD_FromApprovalQuits verifies the global gate works while
 // the approval modal claims keys.
 func TestModel_CtrlD_FromApprovalQuits(t *testing.T) {
@@ -806,8 +832,8 @@ func TestModel_WithStreamCh_PumpsDelta(t *testing.T) {
 }
 
 func TestCycleMode(t *testing.T) {
-	want := []string{"plan", "auto", "edit", "plan"}
-	m := "edit"
+	want := []string{"auto", "edit", "yolo", "plan", "auto"}
+	m := "plan"
 	for i, w := range want {
 		m = cycleMode(m, "openai")
 		if m != w {
@@ -816,13 +842,16 @@ func TestCycleMode(t *testing.T) {
 	}
 }
 
-// local providers skip the auto stop — cycle is plan → edit → plan.
+// local providers skip the auto stop — cycle is plan → edit → yolo → plan.
 func TestCycleMode_LocalSkipsAuto(t *testing.T) {
 	if got := cycleMode("plan", "ollama"); got != "edit" {
 		t.Fatalf("plan→ollama want edit, got %q", got)
 	}
-	if got := cycleMode("edit", "ollama"); got != "plan" {
-		t.Fatalf("edit→ollama want plan, got %q", got)
+	if got := cycleMode("edit", "ollama"); got != "yolo" {
+		t.Fatalf("edit→ollama want yolo, got %q", got)
+	}
+	if got := cycleMode("yolo", "ollama"); got != "plan" {
+		t.Fatalf("yolo→ollama want plan, got %q", got)
 	}
 	if got := cycleMode("plan", "openai"); got != "auto" {
 		t.Fatalf("plan→openai want auto, got %q", got)

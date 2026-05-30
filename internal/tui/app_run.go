@@ -228,11 +228,11 @@ func cycleThinking(t string) string {
 	}
 }
 
-// cycleMode rotates plan → auto → edit → plan. Local providers skip the
+// cycleMode rotates plan → auto → edit → yolo → plan. Local providers skip the
 // auto stop — the classifier wastes tokens on slow on-host models and the
 // extra round-trip is more painful than the value of intent-guessing.
-// Default landing on edit when input is empty/unknown so shift+tab from a
-// fresh session behaves predictably.
+// Unknown input lands on auto (the default) so shift+tab from a fresh session
+// behaves predictably.
 func cycleMode(mode, provider string) string {
 	local := config.IsLocalProvider(provider)
 	switch loop.ParseMode(mode) {
@@ -244,9 +244,11 @@ func cycleMode(mode, provider string) string {
 	case loop.ModeAuto:
 		return string(loop.ModeEdit)
 	case loop.ModeEdit:
+		return string(loop.ModeYolo)
+	case loop.ModeYolo:
 		return string(loop.ModePlan)
 	default:
-		return string(loop.ModeEdit)
+		return string(loop.ModeAuto)
 	}
 }
 

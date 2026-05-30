@@ -109,7 +109,9 @@ func newShellTool(app approval.Approver, cfg config.Config) tools.Tool {
 //	                from cfg.Sandbox.CommandAllowlist; AllowAlways picks append
 //	                to that list on disk via PersistAllowlistEntry.
 func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
-	if autoYes {
+	// yolo mode (config or --yolo flag) auto-approves every flagged command;
+	// hardline patterns still refuse upstream in the shell tool.
+	if autoYes || cfg.Mode == "yolo" {
 		return approval.Static{Verdict: approval.AllowOnce}
 	}
 	cli := approval.NewCLI(os.Stdin, os.Stderr)
