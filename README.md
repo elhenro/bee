@@ -72,6 +72,46 @@ For sub-8k-context models, switch to the tiny profile. `--profile` is not a CLI 
     default_provider = "omlx"
     default_model = "Qwen3.6-35B-A3B-4bit"
 
+## Browser tools
+
+bee can open, inspect, and interact with pages in a real Chrome/Chromium browser.
+
+Enable in `~/.bee/config.toml`:
+
+    [browser]
+    enabled = true
+    # headless = true   # set for CI; default is headful
+
+Or pass `--browser` to any `bee run` invocation, or use the dedicated subcommand:
+
+    bee browse https://example.com
+
+Chrome/Chromium is auto-detected from standard install paths. Override with:
+
+    [browser]
+    chrome_path = "/usr/bin/chromium-browser"
+
+Available tools the agent can call:
+
+| Tool | What it does |
+|------|-------------|
+| `browser_open` | Navigate to a URL, return the page title and accessibility snapshot |
+| `browser_snapshot` | Re-snapshot the current page (interactive elements with `[ref]` labels) |
+| `browser_console` | Drain buffered console messages (logs, warnings, errors) |
+| `browser_click` | Click an element by its `ref` from a snapshot |
+| `browser_type` | Type text into an element by `ref` |
+| `browser_screenshot` | Capture a screenshot and describe it via a local vision model (opt-in) |
+
+The snapshot assigns a short `[eN]` ref to every interactive element so the agent can click or type by ref without XPath.
+
+### Vision (screenshot-to-text)
+
+`browser_screenshot` is only registered when a vision model is configured. Point it at a local [Ollama](https://ollama.com) server running a vision model such as `llava`:
+
+    [browser.vision]
+    model    = "llava"
+    endpoint = "http://localhost:11434"
+
 ## Caveman mode
 
 Token-compression rules injected into the system prompt. On by default. `caveman = "auto"` resolves per profile: `full` on `tiny` and `normal`, `lite` on `large`.
