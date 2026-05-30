@@ -66,6 +66,27 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 	}
 	m.palette.Bump(parts[0])
 
+	// /stop cancels the in-flight turn — same path as the esc keybinding.
+	// special-cased here because the cancel func lives on the Model, out of
+	// reach of a registry command's Run.
+	if parts[0] == "stop" {
+		msg := "nothing to stop"
+		if m.state == StateStreaming {
+			if m.cancelRun != nil {
+				m.cancelRun()
+				m.cancelRun = nil
+			}
+			m.state = StateIdle
+			msg = "stopped"
+		}
+		m.messages = append(m.messages, types.Message{
+			Role:      types.RoleAssistant,
+			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(" + msg + ")"}},
+			Ephemeral: true,
+		})
+		return m, m.flush()
+	}
+
 	// /goal drives a TUI-special completion loop (set/show/clear/stats);
 	// special-cased before the generic Run fallback like /compact.
 	if parts[0] == "goal" {

@@ -25,6 +25,7 @@ type AskModel struct {
 	typing bool // custom-text input mode
 	input  textinput.Model
 	out    chan<- AskAnswerMsg
+	width  int // terminal width; bounds the modal so it never overflows
 }
 
 // NewAskModel returns a fresh, inactive picker.
@@ -38,6 +39,11 @@ func NewAskModel(styles Styles) AskModel {
 // SetOutput wires the engine-facing channel. Pass nil to detach.
 func (m *AskModel) SetOutput(ch chan<- AskAnswerMsg) {
 	m.out = ch
+}
+
+// SetWidth records the terminal width so View can bound the modal.
+func (m *AskModel) SetWidth(w int) {
+	m.width = w
 }
 
 // Show opens the picker for a question, defaulting focus to the recommended
@@ -152,19 +158,34 @@ func (m AskModel) answer(ans ask.Answer) (AskModel, tea.Cmd) {
 	return m, cmd
 }
 
+// askModalWidth is the content width the modal wraps to. Kept compact and
+// left-aligned regardless of terminal size so the box never spans the screen.
+const askModalWidth = 64
+
 // View renders the picker box. The parent overlays it on the main view.
 func (m AskModel) View() string {
 	if !m.Active {
 		return ""
 	}
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
+	// inner content width: cap at askModalWidth but shrink on narrow terminals.
+	// reserve 6 cols for the modal's border (2) + horizontal padding (4).
+	inner := askModalWidth
+	if m.width > 0 && m.width-6 < inner {
+		inner = m.width - 6
+	}
+	if inner < 24 {
+		inner = 24
+	}
 	lines := []string{}
 
 	title := m.styles.ModalTitle.Render("question")
 	if m.question.Header != "" {
 		title += "  " + m.styles.ToolName.Render(m.question.Header)
 	}
-	lines = append(lines, title, "", m.question.Prompt, "")
+	lines = append(lines, title, "")
+	lines = append(lines, wrapHanging(m.question.Prompt, inner)...)
+	lines = append(lines, "")
 
 	for i, o := range m.question.Options {
 		label := o.Label
@@ -179,7 +200,9 @@ func (m AskModel) View() string {
 		}
 		lines = append(lines, row)
 		if o.Description != "" {
-			lines = append(lines, dim.Render("     "+o.Description))
+			for _, dl := range wrapHanging(o.Description, inner-5) {
+				lines = append(lines, dim.Render("     "+dl))
+			}
 		}
 	}
 
@@ -201,7 +224,9 @@ func (m AskModel) View() string {
 		hint = "enter submit · esc back"
 	}
 	lines = append(lines, "", dim.Render(hint))
-	return m.styles.Modal.Render(strings.Join(lines, "\n"))
+	// Width counts content + horizontal padding (4) but not the border; pass
+	// inner+4 so our pre-wrapped inner-wide lines fit without lipgloss re-wrap.
+	return m.styles.Modal.Width(inner + 4).Render(strings.Join(lines, "\n"))
 }
 
 func pad(n int) string {

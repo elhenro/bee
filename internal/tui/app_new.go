@@ -58,7 +58,7 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		thinking = string(llm.ParseThinking(eng.Cfg.Thinking))
 	}
 
-	mode := string(loop.ModeEdit)
+	mode := string(loop.ModeAuto)
 	if eng != nil && eng.Cfg.Mode != "" {
 		mode = string(loop.ParseMode(eng.Cfg.Mode))
 		// resolve auto: local providers skip the classifier, land in edit.

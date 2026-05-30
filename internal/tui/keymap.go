@@ -88,7 +88,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		ModeCycle: key.NewBinding(
 			key.WithKeys("shift+tab"),
-			key.WithHelp("shift+tab", "cycle mode (plan/auto/edit)"),
+			key.WithHelp("shift+tab", "cycle mode (plan/auto/edit/yolo)"),
 		),
 		ApproveAllow: key.NewBinding(
 			key.WithKeys("a", "y", "enter"),
