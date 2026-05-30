@@ -149,6 +149,21 @@ func TestCSITranslator_KittyEscToLegacyByte(t *testing.T) {
 }
 
 // regression: Ghostty/Kitty/foot with disambiguate (CSI > 1 u) report
+// shift+tab as CSI 9;2u instead of legacy backtab CSI Z. Without translation
+// the mode-cycle keybinding never fires. Map back to CSI Z so bubbletea reads
+// it as shift+tab.
+func TestCSITranslator_KittyShiftTabToBacktab(t *testing.T) {
+	for _, in := range []string{"\x1b[9;2u", "\x1b[9;2;9u"} {
+		f := &fakeStdin{chunks: [][]byte{[]byte(in)}}
+		tr := newCSITranslator(f, 0)
+		got := drain(t, tr)
+		if !bytes.Equal(got, []byte("\x1b[Z")) {
+			t.Errorf("%q: got % x want % x", in, got, []byte("\x1b[Z"))
+		}
+	}
+}
+
+// regression: Ghostty/Kitty/foot with disambiguate (CSI > 1 u) report
 // ctrl+letter as CSI N;5u instead of the legacy 0x01..0x1a byte. Without
 // translation, ctrl+c and ctrl+d never reach the quit gate and the user
 // is trapped in the TUI.

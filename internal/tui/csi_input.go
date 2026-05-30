@@ -120,6 +120,13 @@ func translateModifyOtherKeys(buf []byte) (out, held []byte) {
 	// level enabled by an outer program in the same session doesn't bypass
 	// translation.
 	out = bytes.ReplaceAll(out, []byte("\x1b[13;2;13u"), []byte("\n"))
+	// shift+tab in Kitty disambiguate mode arrives as CSI 9;2u (tab keycode 9,
+	// shift modifier 2) instead of legacy backtab CSI Z. bubbletea v1.3 doesn't
+	// parse CSI u, so without this the mode-cycle keybinding never fires on
+	// Ghostty/Kitty/foot. Map back to CSI Z which bubbletea reads as shift+tab.
+	// The ;9u variant is the associated-text form some terminals emit.
+	out = bytes.ReplaceAll(out, []byte("\x1b[9;2u"), []byte("\x1b[Z"))
+	out = bytes.ReplaceAll(out, []byte("\x1b[9;2;9u"), []byte("\x1b[Z"))
 	// Kitty disambiguate mode reports Esc as CSI 27 u (not 0x1b) so it can't
 	// be confused with the start of a CSI introducer. Map back to legacy ESC
 	// byte so panes that check km.String() == "esc" can see it.
