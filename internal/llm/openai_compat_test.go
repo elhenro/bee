@@ -284,7 +284,8 @@ func TestOpenAICompat_ReasoningEffort(t *testing.T) {
 				body = string(b)
 				fmt.Fprint(w, `{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}`)
 			})
-			ch, err := p.Stream(context.Background(), Request{Model: "m", Thinking: tc.level})
+			// gpt-5 is in the SupportsThinking set, so the field is emitted.
+			ch, err := p.Stream(context.Background(), Request{Model: "gpt-5", Thinking: tc.level})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -299,6 +300,27 @@ func TestOpenAICompat_ReasoningEffort(t *testing.T) {
 				t.Errorf("expected %s in body; got: %s", tc.want, body)
 			}
 		})
+	}
+}
+
+// non-thinking models must never receive reasoning_effort, even when the user
+// leaves effort at a non-off level — the field is ignored noise for them.
+func TestOpenAICompat_ReasoningEffortOmittedForNonThinkingModel(t *testing.T) {
+	for _, model := range []string{"omlx/Qwen3-Coder-Next-4bit", "llama-3.1-8b"} {
+		var body string
+		p, _ := newTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			body = string(b)
+			fmt.Fprint(w, `{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}`)
+		})
+		ch, err := p.Stream(context.Background(), Request{Model: model, Thinking: ThinkingMedium})
+		if err != nil {
+			t.Fatal(err)
+		}
+		drain(t, ch, time.Second)
+		if strings.Contains(body, "reasoning_effort") {
+			t.Errorf("%s: reasoning_effort must be omitted; body: %s", model, body)
+		}
 	}
 }
 

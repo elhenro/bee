@@ -236,9 +236,12 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 	}
 	wr := wire.BuildRequest(req.Model, req.System, req.Messages, tools, req.MaxTokens, req.Temperature, req.TopP, req.Stop, req.Stream)
 	// OpenAI o-series + compatible: pass thinking level as reasoning_effort.
-	// Omit on Off so non-reasoning models don't choke on the unknown field.
+	// Omit on Off, and omit for models that don't honor the field — a non-
+	// reasoning model (qwen3-coder, plain instruct) would otherwise receive an
+	// ignored effort param just because the user left effort at medium. Qwen3
+	// hybrids are excluded too: they take the /think token, not this wire field.
 	// "max" isn't an OpenAI tier — clamp to "high" on the wire.
-	if req.Thinking != "" && req.Thinking != ThinkingOff {
+	if req.Thinking != "" && req.Thinking != ThinkingOff && SupportsThinking(req.Model) {
 		eff := string(req.Thinking)
 		if req.Thinking == ThinkingMax {
 			eff = string(ThinkingHigh)

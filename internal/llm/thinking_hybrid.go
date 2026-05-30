@@ -39,6 +39,15 @@ func IsQwen3HybridThinking(modelID string) bool {
 	return true
 }
 
+// ThinkingApplies reports whether modelID uses a reasoning/thinking mechanism
+// in any form — the reasoning_effort wire field (SupportsThinking families) or
+// the Qwen3 hybrid /think system-prompt token. False means an effort level is a
+// pure no-op for the model (e.g. qwen3-coder, plain instruct models): callers
+// use this to avoid showing or sending effort that the model can't act on.
+func ThinkingApplies(modelID string) bool {
+	return SupportsThinking(modelID) || IsQwen3HybridThinking(modelID)
+}
+
 // Qwen3ThinkingHint maps a resolved Thinking level into the literal toggle
 // token Qwen3 hybrid models consume. ThinkingOff / ThinkingLow → `/no_think`
 // (skip reasoning trace entirely). ThinkingMedium / High / Max → `/think`.

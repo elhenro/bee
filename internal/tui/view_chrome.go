@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/elhenro/bee/internal/llm"
 )
 
 func (m Model) renderTopBar() string {
@@ -67,7 +69,9 @@ func (m Model) renderTopBar() string {
 	if badge := m.renderModeBadge(); badge != "" {
 		right += badge + "  "
 	}
-	if m.showEffort && m.thinking != "" && m.thinking != "off" {
+	// hide the effort chip for models that can't act on it — a non-thinking
+	// model (qwen3-coder, plain instruct) showing "t:medium" is misleading.
+	if m.showEffort && m.thinking != "" && m.thinking != "off" && llm.ThinkingApplies(m.model) {
 		right += m.styles.Dim.Render("t:"+m.thinking) + " "
 	}
 	pad := m.width - lipgloss.Width(left) - lipgloss.Width(right)
