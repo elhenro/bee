@@ -35,6 +35,12 @@ func (t Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error) 
 	return t.run(ctx, t.sess, in), nil
 }
 
+// Run2 drops the always-nil error from Run for terser internal/test callers.
+func (t Tool) Run2(ctx context.Context, in map[string]any) tools.Result {
+	r, _ := t.Run(ctx, in)
+	return r
+}
+
 // New builds the browser tool set sharing one lazy session. screenshot is
 // included only when VisionModel is set.
 func New(opt Options) []tools.Tool {
