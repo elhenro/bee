@@ -86,6 +86,8 @@ Or pass `--browser` to any `bee run` invocation, or use the dedicated subcommand
 
     bee browse https://example.com
 
+Inside a running TUI session you can toggle browser support live with `/browser on` and `/browser off`. This is session-only and is not written to config.
+
 Chrome/Chromium is auto-detected from standard install paths. Override with:
 
     [browser]
