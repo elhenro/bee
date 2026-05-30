@@ -2,6 +2,8 @@ package commands
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -71,6 +73,49 @@ func registerModel(r *Registry) {
 			return "effort: " + s.GetThinking(), nil
 		},
 	})
+	r.Register(Command{
+		Name:           "iterations",
+		Description:    "set per-Run tool-use cap — /iterations <n>, /iterations 0 for unlimited",
+		AllowDuringRun: true,
+		Run:            func(_ context.Context, args []string, s Side) (string, error) { return runIterations(args, s) },
+	})
+	r.Register(Command{
+		Name:           "iter",
+		Description:    "alias for /iterations",
+		AllowDuringRun: true,
+		Run:            func(_ context.Context, args []string, s Side) (string, error) { return runIterations(args, s) },
+	})
+}
+
+// runIterations backs /iterations and its /iter alias: prints the current cap
+// on no args, otherwise sets it. 0 = unlimited; negatives clamp to 0.
+func runIterations(args []string, s Side) (string, error) {
+	if s == nil {
+		return "", nil
+	}
+	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		return "iterations: " + fmtIterCap(s.GetMaxIterations()) +
+			" (usage: /iterations <n>, /iterations 0 for unlimited)", nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(args[0]))
+	if err != nil {
+		return "iterations: want a number (got " + quote(args[0]) + "); /iterations 0 for unlimited", nil
+	}
+	if n < 0 {
+		n = 0
+	}
+	if err := s.SetMaxIterations(n); err != nil {
+		return "", err
+	}
+	return "iterations: " + fmtIterCap(n), nil
+}
+
+// fmtIterCap renders the iteration cap for display: 0 reads as "unlimited".
+func fmtIterCap(n int) string {
+	if n <= 0 {
+		return "unlimited"
+	}
+	return fmt.Sprintf("%d", n)
 }
 
 // splitProviderModel parses "<provider>/<model>" when the prefix matches a

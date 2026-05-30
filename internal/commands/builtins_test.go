@@ -31,6 +31,7 @@ type fakeSide struct {
 	costOpened       bool
 	thinking         string
 	thinkErr         error
+	maxIter          int
 	openResumeCalled bool
 	openResumeErr    error
 	pickerOpened     bool
@@ -94,6 +95,11 @@ func (f *fakeSide) SetThinking(level string) error {
 	return nil
 }
 func (f *fakeSide) GetThinking() string { return f.thinking }
+func (f *fakeSide) SetMaxIterations(n int) error {
+	f.maxIter = n
+	return nil
+}
+func (f *fakeSide) GetMaxIterations() int { return f.maxIter }
 func (f *fakeSide) OpenResume() error {
 	f.openResumeCalled = true
 	return f.openResumeErr
@@ -202,7 +208,7 @@ func (f *fakeSide) OpenToolsPane() error {
 func TestRegisterBuiltins_Names(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
-	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "settings", "tools", "bg", "agent", "attach", "agents", "goal", "remote-control", "stop"}
+	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "iterations", "iter", "settings", "tools", "bg", "agent", "attach", "agents", "goal", "remote-control", "stop"}
 	for _, n := range want {
 		if _, ok := r.Get(n); !ok {
 			t.Errorf("missing builtin %q", n)
@@ -275,6 +281,30 @@ func TestBuiltin_Model_Switch(t *testing.T) {
 	}
 	if side.switchedTo != "gpt-5" {
 		t.Errorf("expected switch to gpt-5, got %q", side.switchedTo)
+	}
+}
+
+func TestBuiltin_Iterations_SetAndUnlimited(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("iterations")
+	side := &fakeSide{}
+	out, err := c.Run(context.Background(), []string{"120"}, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if side.maxIter != 120 || !strings.Contains(out, "120") {
+		t.Errorf("set 120: maxIter=%d out=%q", side.maxIter, out)
+	}
+	// 0 (and negatives, clamped) read back as unlimited.
+	out, _ = c.Run(context.Background(), []string{"-5"}, side)
+	if side.maxIter != 0 || !strings.Contains(out, "unlimited") {
+		t.Errorf("unlimited: maxIter=%d out=%q", side.maxIter, out)
+	}
+	// non-numeric input is rejected without mutating the cap.
+	out, _ = c.Run(context.Background(), []string{"lots"}, side)
+	if !strings.Contains(out, "want a number") {
+		t.Errorf("bad input: out=%q", out)
 	}
 }
 

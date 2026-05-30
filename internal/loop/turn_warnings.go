@@ -21,16 +21,20 @@ func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentI
 			e.warnedContext = true
 		}
 	}
-	// iteration warnings; each fires at most once per Run.
-	if !e.warnedIterHalf && currentIter*2 >= maxIter {
-		w := fmt.Sprintf("[iter %d/%d] half the budget spent. summarize progress; commit edits or stop if stuck.\n\n", currentIter, maxIter)
-		blocks = prependWarningToToolResult(blocks, w)
-		e.warnedIterHalf = true
-	}
-	if !e.warnedIterEighty && currentIter*5 >= maxIter*4 {
-		w := fmt.Sprintf("[iter %d/%d] near iter cap. finish current edit or stop and ask user.\n\n", currentIter, maxIter)
-		blocks = prependWarningToToolResult(blocks, w)
-		e.warnedIterEighty = true
+	// iteration warnings; each fires at most once per Run. Skipped entirely
+	// when the cap is lifted (maxIter <= 0) — there's no ceiling to warn about;
+	// the token-budget and stall guards below carry the load instead.
+	if maxIter > 0 {
+		if !e.warnedIterHalf && currentIter*2 >= maxIter {
+			w := fmt.Sprintf("[iter %d/%d] half the budget spent. summarize progress; commit edits or stop if stuck.\n\n", currentIter, maxIter)
+			blocks = prependWarningToToolResult(blocks, w)
+			e.warnedIterHalf = true
+		}
+		if !e.warnedIterEighty && currentIter*5 >= maxIter*4 {
+			w := fmt.Sprintf("[iter %d/%d] near iter cap. finish current edit or stop and ask user.\n\n", currentIter, maxIter)
+			blocks = prependWarningToToolResult(blocks, w)
+			e.warnedIterEighty = true
+		}
 	}
 	// token-budget warnings mirror the iter-cap warnings so the model hears
 	// about cost pressure separately from iter pressure.

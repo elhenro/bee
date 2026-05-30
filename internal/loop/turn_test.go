@@ -381,6 +381,42 @@ func TestRunMaxIterationsCap(t *testing.T) {
 	}
 }
 
+func TestRunMaxIterationsUnlimited(t *testing.T) {
+	reg := tools.NewRegistry()
+	_ = reg.Register(&stubTool{
+		name: "bash",
+		desc: "x",
+		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+			return tools.Result{Content: "ok"}, nil
+		},
+	})
+	// 60 tool-use rounds (past the old 50 cap) then a final text answer.
+	scripts := make([][]llm.Event, 0, 61)
+	for i := 0; i < 60; i++ {
+		scripts = append(scripts, []llm.Event{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u", Name: "bash", Input: map[string]any{"command": "x"}}},
+			{Type: llm.EventDone, StopReason: "tool_use"},
+		})
+	}
+	scripts = append(scripts, []llm.Event{
+		{Type: llm.EventTextDelta, Delta: "done"},
+		{Type: llm.EventDone, StopReason: "stop"},
+	})
+	p := &stubProvider{scripts: scripts}
+	eng, _ := newEngine(p, reg)
+	eng.Cfg.MaxIterations = 0 // unlimited: no ceiling, run until the model stops
+	res, err := eng.Run(context.Background(), "loop past fifty")
+	if err != nil {
+		t.Fatalf("unlimited run errored: %v", err)
+	}
+	if res.FinalText != "done" {
+		t.Errorf("FinalText = %q want %q", res.FinalText, "done")
+	}
+	if got := p.calls.Load(); got != 61 {
+		t.Errorf("provider calls = %d, want 61 (ran past the 50 cap)", got)
+	}
+}
+
 func TestRunOne_UnknownToolListsAvailable(t *testing.T) {
 	reg := tools.NewRegistry()
 	_ = reg.Register(&stubTool{name: "bash", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {

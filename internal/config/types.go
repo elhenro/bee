@@ -41,8 +41,9 @@ type Config struct {
 	// caret). Default true. Toggle via /settings; persists across launches.
 	ShowLoader bool `toml:"show_loader"`
 
-	// MaxIterations caps tool-use rounds per Run. 0 = use loop default (50).
-	// Raise for tool-heavy agents; lower to fail fast on runaway loops.
+	// MaxIterations caps tool-use rounds per Run. 0 = unlimited (loop until the
+	// token-budget or read-only-stall guard fires). config.Defaults() seeds 50;
+	// raise for tool-heavy agents, set 0 to lift the cap, lower to fail fast.
 	MaxIterations int `toml:"max_iterations"`
 
 	// Verbose unlocks full tool-output rendering in the TUI (compact one-line
@@ -197,7 +198,7 @@ type Profile struct {
 	ToolDescChars            int    `toml:"tool_desc_chars"`
 	SkillManifestChars       int    `toml:"skill_manifest_chars"`
 	Caveman                  string `toml:"caveman"`
-	MaxIterations            int    `toml:"max_iterations"`              // iter cap override; 0 → use cfg.MaxIterations or loop default
+	MaxIterations            int    `toml:"max_iterations"`              // iter cap override; 0 → inherit cfg.MaxIterations; negative → unlimited
 	NoMutationStallThreshold int    `toml:"no_mutation_stall_threshold"` // streak threshold for stall warning; 0 → off (opt-in)
 	// ToolFormat selects how tools are advertised. "" = native tool_calls
 	// channel (default); "xml" = wrap inner provider with TextModeProvider

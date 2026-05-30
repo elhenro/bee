@@ -16,6 +16,17 @@ func TestClassify(t *testing.T) {
 		{"the word DONE appears mid-line", KindNone}, // not anchored
 		// DONE wins over BLOCKED if both present (agent completed but quoted earlier error)
 		{"BLOCKED: prior text\nDONE: actually resolved", KindDone},
+		// weak/quantized models wrap the sentinel in markdown the prompt never
+		// asked for — tolerate the decoration so they can still converge.
+		{"**DONE:** shipped the migration", KindDone},
+		{"**DONE**: colon outside the bold", KindDone},
+		{"- DONE: bullet form", KindDone},
+		{"> BLOCKED: quoted blocker", KindBlocked},
+		{"## NEEDS-INPUT: which auth?", KindNeedsInput},
+		{"`DONE: fenced inline`", KindDone},
+		// decoration must not manufacture a sentinel from prose
+		{"- almost DONE: but not yet", KindNone}, // keyword still mid-line
+		{"summary of work done: see above", KindNone},
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {

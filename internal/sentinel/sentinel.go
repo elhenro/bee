@@ -36,10 +36,24 @@ func (k Kind) String() string {
 	return ""
 }
 
+// Weak / quantized local models rarely emit a bare `DONE:` — they wrap it in
+// markdown the prompt never asked for: `**DONE:**`, `- DONE:`, `> DONE:`,
+// `## DONE:`. A strict `^\s*` anchor misses all of those, so an objective that
+// is actually finished keeps looping to the iteration cap. These patterns stay
+// line-anchored (mid-line `DONE` is still ignored) but skip leading list /
+// quote / heading / emphasis markers and emphasis hugging the keyword.
+const (
+	// leading decoration allowed before the keyword: whitespace, blockquote,
+	// list bullets, headings, and bold/italic/code emphasis.
+	lead = "[\\s>*_`#+-]*"
+	// emphasis allowed between the keyword and its colon: `**DONE**:`.
+	gap = "[\\s*_`]*"
+)
+
 var (
-	doneRe    = regexp.MustCompile(`(?im)^\s*DONE:`)
-	blockedRe = regexp.MustCompile(`(?im)^\s*BLOCKED:`)
-	needsRe   = regexp.MustCompile(`(?im)^\s*NEEDS-INPUT:`)
+	doneRe    = regexp.MustCompile(`(?im)^` + lead + `DONE` + gap + `:`)
+	blockedRe = regexp.MustCompile(`(?im)^` + lead + `BLOCKED` + gap + `:`)
+	needsRe   = regexp.MustCompile(`(?im)^` + lead + `NEEDS-INPUT` + gap + `:`)
 )
 
 // Classify returns the first sentinel kind that appears anchored to the

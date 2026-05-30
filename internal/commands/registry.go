@@ -76,6 +76,12 @@ type Side interface {
 	// OpenEffortPicker asks the TUI to display the effort picker modal.
 	// Returns nil when the modal was scheduled; non-nil signals headless.
 	OpenEffortPicker() error
+	// SetMaxIterations changes the per-Run tool-use iteration cap live and
+	// persists it. 0 = unlimited (loop until a token-budget or stall guard
+	// fires). Negatives are clamped to 0.
+	SetMaxIterations(n int) error
+	// GetMaxIterations returns the current per-Run iteration cap (0 = unlimited).
+	GetMaxIterations() int
 	// SetVerbose mutates the verbose tool-output flag. Persists to config.
 	SetVerbose(v bool) error
 	// GetVerbose returns the current verbose flag.

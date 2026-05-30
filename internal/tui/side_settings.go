@@ -47,6 +47,30 @@ func (s *tuiSide) OpenEffortPicker() error {
 	return nil
 }
 
+// SetMaxIterations changes the per-Run iteration cap live and persists it.
+// 0 = unlimited; negatives clamp to 0. Takes effect on the next Run/continue
+// (the active loop captured its ceiling at Run start).
+func (s *tuiSide) SetMaxIterations(n int) error {
+	if s.m == nil {
+		return errors.New("max_iterations: no tui state")
+	}
+	if n < 0 {
+		n = 0
+	}
+	if s.m.eng != nil {
+		s.m.eng.Cfg.MaxIterations = n
+	}
+	return PersistSetting("", "max_iterations", n)
+}
+
+// GetMaxIterations returns the current per-Run iteration cap (0 = unlimited).
+func (s *tuiSide) GetMaxIterations() int {
+	if s.m == nil || s.m.eng == nil {
+		return 0
+	}
+	return s.m.eng.Cfg.MaxIterations
+}
+
 // SetVerbose mutates the verbose tool-output flag live and persists it to
 // ~/.bee/config.toml so the next launch picks it up.
 func (s *tuiSide) SetVerbose(v bool) error {

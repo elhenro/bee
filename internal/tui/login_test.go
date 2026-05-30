@@ -52,6 +52,8 @@ func (s *loginSideStub) OpenResume() error                              { return
 func (s *loginSideStub) SetThinking(string) error                       { return nil }
 func (s *loginSideStub) GetThinking() string                            { return "off" }
 func (s *loginSideStub) OpenEffortPicker() error                        { return nil }
+func (s *loginSideStub) SetMaxIterations(int) error                     { return nil }
+func (s *loginSideStub) GetMaxIterations() int                          { return 0 }
 func (s *loginSideStub) SetShowThoughts(bool) error                     { return nil }
 func (s *loginSideStub) GetShowThoughts() bool                          { return false }
 func (s *loginSideStub) OpenSettings() error                            { return nil }

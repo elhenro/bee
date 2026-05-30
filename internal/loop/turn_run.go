@@ -202,17 +202,18 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	}
 	res.Messages = append(res.Messages, userMessage)
 
-	maxIter := MaxIterations
-	if e.Cfg.MaxIterations > 0 {
-		maxIter = e.Cfg.MaxIterations
-	}
-	// profile override wins so tiny-profile small models fail-fast at 12
-	// rather than chewing through the 50-default budget.
-	if p := config.ActiveProfile(e.Cfg); p.MaxIterations > 0 {
+	// resolve the per-Run iteration ceiling. 0 (or negative) = unlimited: the
+	// loop runs until a real guard fires (token budget or read-only stall).
+	// config.Defaults() seeds 50, so 0 only appears when the user explicitly
+	// lifted the cap (/iterations 0 or max_iterations = 0). A profile's
+	// MaxIterations overrides the config value when set (0 = inherit).
+	maxIter := e.Cfg.MaxIterations
+	if p := config.ActiveProfile(e.Cfg); p.MaxIterations != 0 {
 		maxIter = p.MaxIterations
 	}
+	unlimited := maxIter <= 0
 	tokenBudget, stallCap := computeBudgetCaps(e.Cfg)
-	for i := 0; i < maxIter; i++ {
+	for i := 0; unlimited || i < maxIter; i++ {
 		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget, stallCap); err != nil {
 			return res, err
 		}
@@ -393,5 +394,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction}
 		}
 	}
-	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume", maxIter)
+	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume, "+
+		"raise it with /iterations <n>, or remove the limit with /iterations 0 "+
+		"(or set max_iterations = 0 in config)", maxIter)
 }
