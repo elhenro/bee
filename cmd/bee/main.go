@@ -53,6 +53,7 @@ var reservedSubcommands = map[string]bool{
 	"remote-control": true,
 	"zzz":            true,
 	"doctor":         true,
+	"browse":         true,
 	"version":        true,
 	"-v":             true,
 	"--version":      true,
@@ -96,6 +97,8 @@ func main() {
 		runDoctor(os.Args[2:])
 	case "bench":
 		runBench(os.Args[2:])
+	case "browse":
+		browse(os.Args[2:])
 	case "version", "-v", "--version":
 		if commit != "" && commit != "dev" {
 			fmt.Printf("bee %s (%s)\n", version, commit)

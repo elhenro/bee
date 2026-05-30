@@ -16,6 +16,7 @@ import (
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/apply_patch"
 	"github.com/elhenro/bee/internal/tools/ask_user"
+	"github.com/elhenro/bee/internal/tools/browser"
 	"github.com/elhenro/bee/internal/tools/codegraph"
 	"github.com/elhenro/bee/internal/tools/edit_diff"
 	"github.com/elhenro/bee/internal/tools/escalate"
@@ -178,6 +179,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	}
 	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
+	all = appendBrowserTools(all, cfg)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue
@@ -220,6 +222,26 @@ func appendUserTools(all []tools.Tool, ut []config.UserTool) []tools.Tool {
 		all = append(all, t)
 	}
 	return all
+}
+
+// appendBrowserTools registers the native browser tools when [browser] is
+// enabled and a Chrome/Chromium binary is found. Silent no-op otherwise so
+// sessions without the opt-in see no extra surface. screenshot is added only
+// when [browser.vision] model is set (handled inside browser.New).
+func appendBrowserTools(all []tools.Tool, cfg config.Config) []tools.Tool {
+	if !cfg.Browser.Enabled {
+		return all
+	}
+	path, err := browser.DetectChrome(cfg.Browser.ChromePath)
+	if err != nil {
+		return all
+	}
+	return append(all, browser.New(browser.Options{
+		ChromePath:     path,
+		Headless:       cfg.Browser.Headless,
+		VisionModel:    cfg.Browser.Vision.Model,
+		VisionEndpoint: cfg.Browser.Vision.Endpoint,
+	})...)
 }
 
 // isDisabledTool reports whether name appears in the disabled set.
@@ -266,6 +288,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	}
 	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
+	all = appendBrowserTools(all, cfg)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue

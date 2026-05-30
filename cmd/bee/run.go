@@ -54,6 +54,7 @@ func runHeadlessReal(args []string) {
 	bgLoop := fs.Bool("bg-loop", false, "persist after first turn: write status sidecar, poll inbox for follow-ups")
 	yes := fs.Bool("yes", false, "auto-approve any dangerous shell command without prompting (still blocks hardline-refused commands)")
 	yolo := fs.Bool("yolo", false, "alias for --yes: auto-approve dangerous commands")
+	browserOn := fs.Bool("browser", false, "enable native browser tools (open/snapshot/click/type/console) for this run")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
@@ -141,6 +142,9 @@ func runHeadlessReal(args []string) {
 				cfg.ExtraTools = append(cfg.ExtraTools, p)
 			}
 		}
+	}
+	if *browserOn {
+		cfg.Browser.Enabled = true
 	}
 
 	prov, err := buildProvider(cfg)
