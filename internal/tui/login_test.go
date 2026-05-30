@@ -97,6 +97,7 @@ func (s *loginSideStub) SetToolDisabled(string, bool) error             { return
 func (s *loginSideStub) AddUserTool(string, string, string) error       { return nil }
 func (s *loginSideStub) RemoveUserTool(string) error                    { return nil }
 func (s *loginSideStub) OpenToolsPane() error                           { return nil }
+func (s *loginSideStub) SetBrowserEnabled(bool) (string, error)         { return "", nil }
 
 func TestLoginPane_OpensAndRendersProviders(t *testing.T) {
 	side := &loginSideStub{statuses: []commands.ProviderAuth{
