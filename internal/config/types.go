@@ -118,6 +118,9 @@ type Config struct {
 	// and persisted to ~/.bee/config.toml.
 	UserTools []UserTool `toml:"user_tools"`
 
+	// Browser gates the native chromedp-backed browser tools.
+	Browser BrowserConfig `toml:"browser"`
+
 	// UpdateCheck gates the hourly upstream-update probe.
 	//   "ask"  — probe and surface a modal when main has new commits (default)
 	//   "auto" — probe and apply silently (notice surfaces via warn line)
