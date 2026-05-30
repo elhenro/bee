@@ -49,6 +49,9 @@ func (m Model) View() string {
 	if m.approval.Active {
 		return overlayCenter(frame, m.approval.View(), m.width)
 	}
+	if m.askModel.Active {
+		return overlayCenter(frame, m.askModel.View(), m.width)
+	}
 	if m.updatePrompt.Active {
 		return overlayCenter(frame, m.updatePrompt.View(), m.width)
 	}

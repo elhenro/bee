@@ -19,6 +19,14 @@ import (
 // staging multimodal input (e.g. images via Ctrl+I) so the user message can
 // carry text + image blocks together.
 func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBlock) (RunResult, error) {
+	return e.RunWithContentDisplay(ctx, content, "")
+}
+
+// RunWithContentDisplay is RunWithContent with a render-only display label for
+// the user turn. When display is non-empty the stored user message shows it in
+// the TUI instead of Content (slash skills: typed command shown, expanded body
+// sent). Empty display behaves exactly like RunWithContent.
+func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.ContentBlock, display string) (RunResult, error) {
 	if e.Stdout == nil {
 		e.Stdout = os.Stdout
 	}
@@ -36,6 +44,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	e.nudgedEditNoVerify = make(map[string]bool)
 	e.cumInputTokens = 0
 	e.cumOutputTokens = 0
+	e.budgetRecoveries = 0
 	e.nudgedReasoningOnly = false
 	e.formatNudgeCount = 0
 	e.formatSlipStreak = 0
@@ -125,6 +134,10 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg)
 	// then narrow by mode: plan mode drops mutators entirely.
 	specs = filterToolSpecsForMode(specs, mode)
+	// re-add any plan-only tool a prompt skill granted for this turn (e.g.
+	// /plan granting ask_user so it can prompt the user from edit/auto mode).
+	specs = applySkillToolGrants(specs, e.Tools, e.OnceAllowTools)
+	e.OnceAllowTools = nil
 	skillManifest := ""
 	if e.Skills != nil {
 		skillManifest = e.Skills.Manifest()
@@ -182,6 +195,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		Role:     types.RoleUser,
 		Content:  content,
 		Time:     time.Now().UTC(),
+		Display:  display,
 	}
 	if err := e.appendMessage(ctx, userMessage); err != nil {
 		return res, err
@@ -199,7 +213,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 	}
 	tokenBudget, stallCap := computeBudgetCaps(e.Cfg)
 	for i := 0; i < maxIter; i++ {
-		if err := checkEarlyStop(e, i, tokenBudget, stallCap); err != nil {
+		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget, stallCap); err != nil {
 			return res, err
 		}
 		// mid-turn steering: drain pending user input into a synthetic
@@ -246,7 +260,7 @@ func (e *Engine) RunWithContent(ctx context.Context, content []types.ContentBloc
 		prof := config.ActiveProfile(e.Cfg)
 		resolvedThinking := llm.ResolveThinking(llm.ParseThinking(e.Cfg.Thinking), e.Cfg.DefaultModel)
 		reqSys := sys
-		// Qwen3 hybrid family (a3b, coder, 235b) consumes `/think` / `/no_think`
+		// Qwen3 hybrid family (a3b, 235b) consumes `/think` / `/no_think`
 		// via a literal system-prompt token instead of a reasoning_effort wire
 		// field. Plan mode → /think (explicit reasoning); everything else →
 		// /no_think (skip the reasoning trace — saves 200-2000 tokens per turn

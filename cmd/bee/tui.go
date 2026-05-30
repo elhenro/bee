@@ -155,10 +155,11 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
 	tuiApprover := tui.NewApprover()
+	tuiAsker := tui.NewAsker()
 	app := approval.NewCacheWithRequire(tuiApprover, cfg.Sandbox.CommandAllowlist,
 		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
 	defer app.Flush()
-	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
+	reg, err := buildToolsAsker(cwd, cfg, prov, storeDir, app, tuiAsker)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tools: %v\n", err)
 		os.Exit(1)
@@ -267,7 +268,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	}
 	km := tui.LoadKeyMap(beeHome)
 
-	if err := tui.RunSeeded(context.Background(), eng, cmdReg, km, tuiApprover, seedPrompt); err != nil {
+	if err := tui.RunSeededAsker(context.Background(), eng, cmdReg, km, tuiApprover, tuiAsker, seedPrompt); err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tui: %v\n", err)
 		os.Exit(1)
 	}

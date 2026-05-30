@@ -68,6 +68,11 @@ type Message struct {
 	// queued/steer notices). Shown in the TUI but never replayed to the LLM,
 	// so the model can't mistake "(/new done)" for a finish signal and parrot it.
 	Ephemeral bool `json:"ephemeral,omitempty"`
+	// Display is a render-only override for the user bubble. When set, the TUI
+	// shows this instead of the concatenated Content text — used so a slash
+	// skill renders as the typed command ("/plan build X") while Content still
+	// carries the expanded skill body sent to the model. Never goes to the wire.
+	Display string `json:"display,omitempty"`
 }
 
 // Session is a tree of messages. Each Message has a ParentID; the root has

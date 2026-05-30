@@ -76,9 +76,26 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	// outside the Active gate so the engine unblocks. Without this, the
 	// approver Request() never resolves and the tool call hangs forever.
 	if dec, ok := msg.(ApprovalDecisionMsg); ok {
-		m.state = StateIdle
+		// turn is still in flight: the engine runs the approved tool and keeps
+		// streaming. Leave m.state as-is (StateStreaming) so the loader tick
+		// keeps re-arming and the input stays locked until turnDoneMsg.
 		if m.approver != nil {
 			m.approver.Resolve(dec.UseID, dec.Decision)
+		}
+		return m, nil
+	}
+	// ask_user question arrives from the engine goroutine via the Asker
+	// adapter. Surface the picker.
+	if a, ok := msg.(AskShowMsg); ok {
+		m.askModel.Show(a.UseID, a.Question)
+		return m, nil
+	}
+	// Answer arrives async from the cmd produced by AskModel.answer; the picker
+	// has already deactivated itself. Resolve outside the Active gate so the
+	// blocked tool unblocks.
+	if a, ok := msg.(AskAnswerMsg); ok {
+		if m.asker != nil {
+			m.asker.Resolve(a.UseID, a.Answer)
 		}
 		return m, nil
 	}
@@ -86,6 +103,11 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	if m.approval.Active {
 		newApp, cmd := m.approval.Update(msg)
 		m.approval = newApp
+		return m, cmd
+	}
+	if m.askModel.Active {
+		newAsk, cmd := m.askModel.Update(msg)
+		m.askModel = newAsk
 		return m, cmd
 	}
 	if m.updatePrompt.Active {

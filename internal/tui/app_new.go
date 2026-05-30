@@ -85,6 +85,7 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		mode:     mode,
 		eng:      eng,
 		approval:     NewApprovalModel(styles, keys),
+		askModel:     NewAskModel(styles),
 		updatePrompt: NewUpdatePrompt(styles),
 		stream:   NewStreamRenderer(styles, 80),
 		cmds:     reg,

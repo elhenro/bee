@@ -19,10 +19,10 @@ import (
 // one turn. Mutators (shell, apply_patch, edit_diff, hashline_edit, write)
 // stay serial to preserve happens-before and avoid sandbox contention.
 var safeParallelTools = map[string]bool{
-	"read":          true,
-	"search":        true,
-	"glob":          true,
-	"ls":            true,
+	"read":             true,
+	"search":           true,
+	"glob":             true,
+	"ls":               true,
 	"knowledge_search": true,
 }
 
@@ -83,9 +83,16 @@ func (e *Engine) runOneTrapped(ctx context.Context, u types.ToolUse) types.ToolR
 			// stash so dispatchTools can return ErrEscalate post-flush; also
 			// surface a synthetic tool_result so the transcript records why.
 			e.escalateErr = esc
+			// `[escalate]` tag already labels the block; esc.Error() self-
+			// prefixes "escalate:" too, so build the body bare to avoid the
+			// doubled word in transcript + display.
+			msg := "[escalate] " + esc.Reason
+			if esc.NextAction != "" {
+				msg += " — next: " + esc.NextAction
+			}
 			return types.ToolResult{
 				UseID:   u.ID,
-				Content: "[escalate] " + esc.Error(),
+				Content: msg,
 				IsError: true,
 			}
 		}

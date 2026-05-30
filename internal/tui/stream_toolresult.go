@@ -32,6 +32,11 @@ func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
 			}
 		}
 	}
+	// escalate renders its full card in renderToolUse (badge + reason + next
+	// action); the textual result just repeats the reason, so drop it.
+	if use, ok := r.toolUses[res.UseID]; ok && use.Name == "escalate" {
+		return ""
+	}
 	clean := ansi.Strip(res.Content)
 	totalBytes := len(clean)
 	lines := compactLines(clean)

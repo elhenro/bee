@@ -5,15 +5,19 @@ import "strings"
 // IsQwen3HybridThinking reports whether modelID names a Qwen3 model that
 // supports the `/think` `/no_think` system-prompt toggle. Unlike the
 // reasoning_effort wire path (covered by SupportsThinking), Qwen3 hybrid
-// inference servers (omlx/lmstudio/ollama running qwen3-*-a3b, qwen3-coder,
-// qwen3-235b, etc.) consume the toggle as a literal token in the prompt.
+// inference servers (omlx/lmstudio/ollama running qwen3-*-a3b, qwen3-235b,
+// etc.) consume the toggle as a literal token in the prompt.
 //
 // Excludes already-explicit thinking variants (qwq, qwen3-thinking,
 // qwen3-reasoner): those models think unconditionally, no toggle needed.
 //
+// Also excludes the coder family (qwen3-coder-*): those ship with reasoning
+// disabled, emit no trace, and treat the toggle as a no-op. Injecting it just
+// adds prompt noise and misreports the model as a thinker.
+//
 // Heuristic: substring "qwen3" or "qwen-3" present AND no explicit thinking
-// suffix. Matches sparse-MoE (a3b, a7b), dense coder (qwen3-coder-30b), and
-// flagship (qwen3-235b) families.
+// suffix AND not a coder variant. Matches sparse-MoE (a3b, a7b) and flagship
+// (qwen3-235b) families.
 func IsQwen3HybridThinking(modelID string) bool {
 	if modelID == "" {
 		return false
@@ -26,8 +30,8 @@ func IsQwen3HybridThinking(modelID string) bool {
 	if !hasFamily {
 		return false
 	}
-	// already-explicit thinking variant — no toggle needed.
-	for _, exclude := range []string{"qwq", "thinking", "reasoner"} {
+	// non-thinking or already-explicit-thinking variant — no toggle needed.
+	for _, exclude := range []string{"qwq", "thinking", "reasoner", "coder"} {
 		if strings.Contains(id, exclude) {
 			return false
 		}

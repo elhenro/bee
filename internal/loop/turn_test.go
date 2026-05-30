@@ -720,6 +720,39 @@ func TestRun_TokenBudgetCap(t *testing.T) {
 	}
 }
 
+// TestRun_TokenBudgetAutoRecovery asserts the token cap compacts and continues
+// up to maxBudgetRecoveries times before hard-stopping, instead of stopping on
+// the first hit. The hard-stop error names the recovery count.
+func TestRun_TokenBudgetAutoRecovery(t *testing.T) {
+	reg := tools.NewRegistry()
+	_ = reg.Register(&stubTool{
+		name: "bash", desc: "x",
+		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+			return tools.Result{Content: "ok"}, nil
+		},
+	})
+	p := &stubProvider{scripts: [][]llm.Event{
+		{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u", Name: "bash", Input: map[string]any{"command": "x"}}},
+			{Type: llm.EventDone, StopReason: "tool_use", Usage: &llm.Usage{InputTokens: 200000, OutputTokens: 50000}},
+		},
+	}}
+	eng, _ := newEngine(p, reg)
+	eng.Cfg.DefaultModel = "deepseek-reasoner" // 650k budget, 250k/call
+	_, err := eng.Run(context.Background(), "loop me")
+	if err == nil || !strings.Contains(err.Error(), "auto-compactions") {
+		t.Fatalf("expected hard stop naming auto-compactions, got %v", err)
+	}
+	// recovery means it didn't stop at the first trip (~3 iters); each recovery
+	// re-arms for another ~3, so total calls exceed a single segment.
+	if got := p.calls.Load(); got <= 3 {
+		t.Errorf("expected recovery to continue past first trip; got %d calls", got)
+	}
+	if eng.budgetRecoveries != maxBudgetRecoveries {
+		t.Errorf("budgetRecoveries = %d, want %d", eng.budgetRecoveries, maxBudgetRecoveries)
+	}
+}
+
 // TestRun_StallCap drives the read-only stall cap: provider keeps calling
 // `read` (non-mutator) so noMutationStreak grows. Loop must bail before
 // the iter cap.

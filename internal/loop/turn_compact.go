@@ -46,18 +46,21 @@ func contextBudget(cfg config.Config) int {
 	return 0
 }
 
-// scaledCompactThreshold widens the user-configured compaction threshold for
-// large context windows. The fixed 0.75 default fires far too early on
-// 128k-class models (sparse MoE: Qwen3.6-35B-A3B-4bit etc.) — at 96k tokens
-// the agent still has 32k of breathing room, no reason to compact yet.
+// scaledCompactThreshold widens the default compaction threshold for large
+// context windows. The fixed 0.75 default fires far too early on 128k-class
+// models (sparse MoE: Qwen3.6-35B-A3B-4bit etc.) — at 96k tokens the agent
+// still has 32k of breathing room, no reason to compact yet.
+//
+// Only the default (>=0.75) is widened. An explicit low threshold means the
+// user deliberately wants early compaction, so it's honored verbatim — never
+// overridden upward. Widening below default would silently ignore the setting.
 //
 // Formula: derived = max(0.5, 1 - 8000/budget). Keeps at least 8000 tokens of
-// headroom for the next turn's output regardless of window size. Only widens;
-// never tightens the user's setting (so explicit low thresholds stay honored).
+// headroom for the next turn's output regardless of window size.
 //
 // budget<=0 or base<=0 returns base unchanged.
 func scaledCompactThreshold(base float64, budget int) float64 {
-	if budget <= 0 || base <= 0 {
+	if budget <= 0 || base <= 0 || base < compactDefaultThreshold {
 		return base
 	}
 	derived := 1.0 - 8000.0/float64(budget)
@@ -69,3 +72,7 @@ func scaledCompactThreshold(base float64, budget int) float64 {
 	}
 	return base
 }
+
+// compactDefaultThreshold mirrors config defaults; values below it are treated
+// as deliberate early-compaction requests and never widened.
+const compactDefaultThreshold = 0.75

@@ -24,6 +24,14 @@ func (m Model) WithApprover(a *Approver) Model {
 	return m
 }
 
+// WithAsker attaches the channel adapter that routes ask_user questions
+// through the TUI picker. The ask_user tool holds the same handle and blocks
+// on Ask until Resolve fires.
+func (m Model) WithAsker(a *Asker) Model {
+	m.asker = a
+	return m
+}
+
 // WithIntro enables the non-blocking startup animation. Frames are built
 // lazily on the first tick once width is known. BEE_NO_INTRO=1 disables.
 func (m Model) WithIntro(style IntroStyle) Model {

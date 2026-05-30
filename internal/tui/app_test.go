@@ -120,6 +120,28 @@ func TestModel_CtrlPEmitsProviderSentinel(t *testing.T) {
 	}
 }
 
+// Regression: approving a mid-turn tool prompt must not drop the model out of
+// StateStreaming. The turn is still in flight (engine runs the approved tool
+// and keeps streaming), so flipping to StateIdle both freezes the loader
+// animation — its tick only re-arms while StateStreaming — and wrongly unlocks
+// the input for a new submit mid-turn.
+func TestModel_ApprovalDecision_StaysStreaming(t *testing.T) {
+	m := newTestModel(t)
+	m.state = StateStreaming
+
+	m2, _ := m.Update(ApprovalDecisionMsg{UseID: "u1", Decision: ApprovalAllow})
+	m = m2.(Model)
+	if m.state != StateStreaming {
+		t.Fatalf("after approval decision: want StateStreaming, got %v", m.state)
+	}
+
+	// a loader tick must still re-arm so the generating animation keeps moving.
+	_, cmd := m.Update(loaderTickMsg{})
+	if cmd == nil {
+		t.Fatal("loader tick should re-arm while turn in flight, got nil cmd")
+	}
+}
+
 func TestModel_EscCancelsStreaming(t *testing.T) {
 	m := newTestModel(t)
 	m.state = StateStreaming

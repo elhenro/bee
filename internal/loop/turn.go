@@ -86,6 +86,13 @@ type Engine struct {
 	// construction. nil = no live switching (headless, hive workers).
 	Rebuild func(*Engine) error
 
+	// OnceAllowTools force-allows plan-only tools (e.g. ask_user) for the next
+	// Run, regardless of the active mode. A prompt skill sets it from its
+	// frontmatter `tools` list so /plan can ask the user even in edit/auto.
+	// Only plan-only tools are honoured — it can't re-enable write/bash that
+	// plan mode legitimately strips. Cleared at the top of each Run.
+	OnceAllowTools []string
+
 	// lastInputTokens is the most recent provider-reported input-token count
 	// from the latest EventDone usage. Used to drive the context-window
 	// warning injection. Reset at the top of each Run.
@@ -113,6 +120,10 @@ type Engine struct {
 	// warnedTokenHalf / Eighty: token-budget warnings dedupe per Run.
 	warnedTokenHalf   bool
 	warnedTokenEighty bool
+	// budgetRecoveries counts how many times the token-budget cap was hit and
+	// auto-recovered (compact + re-arm) this Run, instead of hard-stopping.
+	// bounds total spend at ~(maxBudgetRecoveries+1)×budget. reset per Run.
+	budgetRecoveries int
 	// nudgedReasoningOnly flips true after one synthetic continuation nudge
 	// is injected in response to a thinking-only assistant turn. dedupes per
 	// Run so a wedged provider can't burn the whole iter budget.

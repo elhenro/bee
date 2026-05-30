@@ -45,6 +45,12 @@ func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *c
 // auto-submits one turn on startup (skill dispatch into the TUI). Pass "" for
 // no auto-submit.
 func RunSeeded(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver, seed string) error {
+	return RunSeededAsker(ctx, eng, reg, km, app, nil, seed)
+}
+
+// RunSeededAsker is RunSeeded plus the ask_user picker adapter. Pass nil to
+// leave ask_user auto-resolving to the recommended option.
+func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver, asker *Asker, seed string) error {
 	cwd := ""
 	modelName := ""
 	scope := ""
@@ -57,6 +63,9 @@ func RunSeeded(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km
 	m := NewModel(eng, cwd, modelName, scope, lvl)
 	if app != nil {
 		m = m.WithApprover(app)
+	}
+	if asker != nil {
+		m = m.WithAsker(asker)
 	}
 	if reg != nil {
 		m = m.WithCommands(reg)
@@ -168,6 +177,9 @@ func RunSeeded(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(input))
 	if m.approver != nil {
 		m.approver.SetProgram(p)
+	}
+	if m.asker != nil {
+		m.asker.SetProgram(p)
 	}
 	// hourly background probe of the bee repo's main branch. Off when:
 	//   - the build wasn't tagged with a real commit (Commit == "" or "dev")

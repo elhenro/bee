@@ -95,6 +95,11 @@ type Model struct {
 	// the dangerous-command prompt flow (legacy behavior).
 	approver *Approver
 
+	// ask_user picker modal + the adapter the ask_user tool blocks on. nil
+	// asker means the tool auto-resolves to the recommended option.
+	askModel AskModel
+	asker    *Asker
+
 	// slash command registry + palette
 	cmds          *commands.Registry
 	skills        SkillsLister

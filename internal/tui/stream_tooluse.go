@@ -2,9 +2,47 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/elhenro/bee/internal/types"
 )
+
+// renderEscalate draws the escalate card: a mustard "escalate" pill + a quiet
+// "needs you" tag, then the model's reason wrapped under a warn rail and the
+// suggested next action on a `→` line. The escalate tool isn't a crash — it's
+// the model handing control back — so it gets the warn palette, not red error
+// styling, and the textual tool_result is suppressed (renderToolResult) so the
+// word "escalate" shows exactly once.
+func (r *StreamRenderer) renderEscalate(u types.ToolUse) string {
+	reason, _ := u.Input["reason"].(string)
+	next, _ := u.Input["suggested_next_action"].(string)
+	head := r.styles.WarnBadge.Render("escalate") + " " + r.styles.Dim.Render("needs you")
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return head + "\n"
+	}
+	rail := r.styles.WarnRail.Render("▎")
+	width := r.width - 2
+	if width < 20 {
+		width = 20
+	}
+	out := []string{head}
+	for _, ln := range wrapHanging(reason, width) {
+		out = append(out, rail+" "+r.styles.Warn.Render(ln))
+	}
+	if next = strings.TrimSpace(next); next != "" {
+		first := true
+		for _, ln := range wrapHanging(next, width-2) {
+			arrow := "  "
+			if first {
+				arrow = r.styles.Dim.Render("→ ")
+				first = false
+			}
+			out = append(out, rail+" "+arrow+r.styles.Dim.Render(ln))
+		}
+	}
+	return strings.Join(out, "\n") + "\n"
+}
 
 // renderToolUse renders the compact card: name  args-summary. Lilac
 // name so tool activity reads as a distinct lane vs honey-AI prose and
@@ -15,6 +53,9 @@ import (
 // the json summary and instead drop a colored diff card under the header
 // so the reader sees the change itself, not `{"new":"...","old":"..."}`.
 func (r *StreamRenderer) renderToolUse(u types.ToolUse) string {
+	if u.Name == "escalate" {
+		return r.renderEscalate(u)
+	}
 	name := r.styles.ToolName.Render(u.Name)
 	if header, body, ok := r.renderEditPreview(u); ok {
 		head := fmt.Sprintf("%s  %s", name, header)

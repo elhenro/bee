@@ -103,6 +103,8 @@ type Styles struct {
 	ErrorCmd   lipgloss.Style // failed-bash command rendered on red bg highlight
 	Warn       lipgloss.Style // refused/denied body text (permission blocked, not broken)
 	WarnCmd    lipgloss.Style // refused command rendered on yellow bg highlight
+	WarnBadge  lipgloss.Style // pill badge for the escalate card title
+	WarnRail   lipgloss.Style // mustard left rail beside escalate body lines
 	Dim        lipgloss.Style
 	Body       lipgloss.Style // base prose
 	UserBubble lipgloss.Style // (legacy) full-width warm tint — retained for callers
@@ -158,10 +160,12 @@ func DefaultStyles() Styles {
 		ErrorCmd: lipgloss.NewStyle().Foreground(fgAsh).Background(bgErrorHl).Bold(true),
 		// refusal/denial body — mustard fg, bold. Sits next to ErrorCmd as
 		// "blocked, not broken": permission denied, safety reject, user n.
-		Warn:    lipgloss.NewStyle().Foreground(semWarning).Bold(true),
-		WarnCmd: lipgloss.NewStyle().Foreground(fgAsh).Background(bgWarnHl).Bold(true),
-		Dim:     lipgloss.NewStyle().Foreground(fgOyster),
-		Body:  lipgloss.NewStyle().Foreground(fgAsh),
+		Warn:      lipgloss.NewStyle().Foreground(semWarning).Bold(true),
+		WarnCmd:   lipgloss.NewStyle().Foreground(fgAsh).Background(bgWarnHl).Bold(true),
+		WarnBadge: lipgloss.NewStyle().Foreground(fgButter).Background(accentHoney).Bold(true).Padding(0, 1),
+		WarnRail:  lipgloss.NewStyle().Foreground(semWarning),
+		Dim:       lipgloss.NewStyle().Foreground(fgOyster),
+		Body:      lipgloss.NewStyle().Foreground(fgAsh),
 
 		// legacy user-bubble — kept so callers that referenced it still compile.
 		// renderer no longer applies it; user turns now use a left-rail layout.

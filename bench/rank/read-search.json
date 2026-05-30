@@ -1,0 +1,10 @@
+{
+  "id": "read-search",
+  "prompt": "find the function that computes a checksum in this codebase. write ONLY the filename that defines it (for example b.go) into a new file named answer.txt in the current directory.",
+  "setup": "cp -r bench/fixtures/lookup/. $SANDBOX/",
+  "checks": [
+    {"kind": "grep", "file": "$SANDBOX/answer.txt", "pattern": "b\\.go"}
+  ],
+  "judge": "answer.txt names b.go as the file defining the checksum function",
+  "budget": {"max_turns": 10}
+}

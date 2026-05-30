@@ -73,6 +73,13 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 
 	bodyStr := collapseBlankRuns(strings.Trim(strings.Join(parts, "\n"), "\n"))
 
+	// render-only override: a slash skill stores the expanded body in Content
+	// (so the model gets it) but sets Display to the typed command so the
+	// bubble reads "/plan build X", not the whole prompt template.
+	if m.Role == types.RoleUser && m.Display != "" {
+		bodyStr = m.Display
+	}
+
 	var rendered string
 	if m.Role == types.RoleUser {
 		rail := r.styles.UserRail.Render("┃")

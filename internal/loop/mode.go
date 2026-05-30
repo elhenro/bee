@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -44,14 +45,30 @@ var planSafeTools = map[string]bool{
 	"glob":             true,
 	"ls":               true,
 	"knowledge_search": true,
+	// ask_user lets the agent resolve ambiguity with the user before writing
+	// a plan instead of guessing defaults.
+	"ask_user": true,
 }
 
-// filterToolSpecsForMode drops tools that wouldn't be safe in plan mode.
-// edit/auto pass through unchanged — auto resolves to plan|edit *before*
-// this function is called, so this only narrows when mode == ModePlan.
+// planOnlyTools are dropped outside plan mode. ask_user only makes sense while
+// the agent is gathering decisions for a plan; in edit/auto the agent just
+// acts, so it shouldn't surface a question picker mid-edit.
+var planOnlyTools = map[string]bool{
+	"ask_user": true,
+}
+
+// filterToolSpecsForMode narrows the tool surface per mode. Plan mode keeps
+// only the read-only whitelist; edit/auto keep everything except plan-only
+// tools. auto resolves to plan|edit *before* this runs, so mode is concrete.
 func filterToolSpecsForMode(specs []llm.ToolSpec, mode Mode) []llm.ToolSpec {
 	if mode != ModePlan {
-		return specs
+		out := make([]llm.ToolSpec, 0, len(specs))
+		for _, s := range specs {
+			if !planOnlyTools[s.Name] {
+				out = append(out, s)
+			}
+		}
+		return out
 	}
 	out := make([]llm.ToolSpec, 0, len(specs))
 	for _, s := range specs {
@@ -60,6 +77,30 @@ func filterToolSpecsForMode(specs []llm.ToolSpec, mode Mode) []llm.ToolSpec {
 		}
 	}
 	return out
+}
+
+// applySkillToolGrants re-adds plan-only tools named in grants that the mode
+// filter dropped. Only plan-only tools qualify — a skill can grant ask_user
+// but can't force write/bash back into plan mode. Specs already present are
+// left untouched; granted names absent from the registry are ignored.
+func applySkillToolGrants(specs []llm.ToolSpec, reg *tools.Registry, grants []string) []llm.ToolSpec {
+	if reg == nil || len(grants) == 0 {
+		return specs
+	}
+	present := make(map[string]bool, len(specs))
+	for _, s := range specs {
+		present[s.Name] = true
+	}
+	for _, name := range grants {
+		if !planOnlyTools[name] || present[name] {
+			continue
+		}
+		if t, ok := reg.Get(name); ok {
+			specs = append(specs, t.Spec())
+			present[name] = true
+		}
+	}
+	return specs
 }
 
 // modePromptPrefix is prepended to the assembled system prompt when the
@@ -72,9 +113,11 @@ func modePromptPrefix(mode Mode) string {
 	return "## PLAN MODE\n" +
 		"You are in plan mode. Do NOT modify files, run shell commands, or " +
 		"call any mutator tools (none are available this turn). Read, search, " +
-		"and think. Reply with a concrete, ordered plan the user can approve " +
-		"before any edits run. End your reply with a one-line summary the user " +
-		"can act on.\n"
+		"and think. When a decision is the user's to make and you can't infer " +
+		"it, call ask_user with concrete options (mark your suggested pick " +
+		"recommended) instead of guessing. Reply with a concrete, ordered plan " +
+		"the user can approve before any edits run. End your reply with a " +
+		"one-line summary the user can act on.\n"
 }
 
 // ClassifyMode runs a cheap side-LLM call against userText to pick plan|edit.

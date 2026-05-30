@@ -50,7 +50,14 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.palette.Bump(parts[0])
-				return m.submit(userMsg)
+				// grant the skill's declared plan-only tools (e.g. /plan's
+				// ask_user) for this turn so they survive the mode filter even
+				// in edit/auto. Non-plan-only names are ignored downstream.
+				if m.eng != nil && len(sk.Tools) > 0 {
+					m.eng.OnceAllowTools = sk.Tools
+				}
+				// render the typed command in scrollback, not the expanded body.
+				return m.submitWithDisplay(userMsg, "/"+strings.Join(parts, " "))
 			}
 		}
 		m.lastErr = "unknown command /" + parts[0]

@@ -214,6 +214,13 @@ func nonEphemeral(msgs []types.Message) []types.Message {
 // submit records the user message locally and kicks off engine.Run in a goroutine.
 // The result comes back via turnDoneMsg.
 func (m Model) submit(text string) (tea.Model, tea.Cmd) {
+	return m.submitWithDisplay(text, "")
+}
+
+// submitWithDisplay submits text to the engine but renders the user bubble as
+// display when non-empty. Used by slash skills so "/plan build X" shows in
+// scrollback while the expanded skill body (text) goes to the model.
+func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	m.state = StateStreaming
 	// fresh stream — drop any lingering flush state from a previous turn so
 	// the next progressive flush starts clean.
@@ -244,6 +251,7 @@ func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 	m.messages = append(m.messages, types.Message{
 		Role:    types.RoleUser,
 		Content: content,
+		Display: display,
 	})
 	userFlush := m.flush()
 
@@ -280,7 +288,7 @@ func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		userFlush,
 		func() tea.Msg {
-			res, err := eng.RunWithContent(ctx, content)
+			res, err := eng.RunWithContentDisplay(ctx, content, display)
 			return turnDoneMsg{result: res, err: err}
 		},
 		loaderTickCmd(),

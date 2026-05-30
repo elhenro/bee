@@ -10,10 +10,12 @@ import (
 	"strings"
 
 	"github.com/elhenro/bee/internal/approval"
+	"github.com/elhenro/bee/internal/ask"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/apply_patch"
+	"github.com/elhenro/bee/internal/tools/ask_user"
 	"github.com/elhenro/bee/internal/tools/codegraph"
 	"github.com/elhenro/bee/internal/tools/edit_diff"
 	"github.com/elhenro/bee/internal/tools/escalate"
@@ -65,6 +67,21 @@ func buildTools(cwd string, cfg config.Config, prov llm.Provider, storeDir strin
 	return buildToolsWithApprover(cwd, cfg, prov, storeDir, nil)
 }
 
+// buildToolsAsker is buildToolsWithApprover plus the ask_user picker adapter.
+// Used by the TUI; other surfaces leave asker nil (auto-pick recommended).
+func buildToolsAsker(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver, asker ask.Asker) (*tools.Registry, error) {
+	r, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
+	if err != nil {
+		return nil, err
+	}
+	if !isDisabledTool(cfg.DisabledTools, "ask_user") {
+		if err := r.Register(ask_user.New(asker)); err != nil {
+			return nil, err
+		}
+	}
+	return r, nil
+}
+
 // newShellTool returns a shell tool with optional approval gating and the
 // shell-environment options from cfg. nil app = no gating (matches
 // pre-approval behavior).
@@ -109,21 +126,21 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver) (*tools.Registry, error) {
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
-	
+
 	// Initialize web_fetch tool
 	webFetch, err := web_fetch.New(web_fetch.DefaultConfig())
 	if err != nil {
 		// Silently skip if disabled
 		webFetch = nil
 	}
-	
+
 	// Initialize web_search tool
 	webSearch, err := web_search.New(web_search.DefaultConfig())
 	if err != nil {
 		// Silently skip if disabled
 		webSearch = nil
 	}
-	
+
 	all := []tools.Tool{
 		newShellTool(app, cfg),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),

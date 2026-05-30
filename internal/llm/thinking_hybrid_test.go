@@ -8,14 +8,16 @@ func TestIsQwen3HybridThinking(t *testing.T) {
 		want bool
 	}{
 		{"Qwen3.6-35B-A3B-4bit", true},
-		{"qwen3-coder-30b", true},
 		{"qwen3-235b-a22b", true},
-		{"qwen-3-coder-7b", true},
-		{"mlx-community/Qwen3-Coder-30B-A3B", true},
 		// explicit thinking variants — toggle is redundant.
 		{"qwq-32b-preview", false},
 		{"qwen3-thinking-30b", false},
 		{"qwen3-reasoner", false},
+		// coder family ships non-thinking — toggle is a no-op.
+		{"qwen3-coder-30b", false},
+		{"qwen-3-coder-7b", false},
+		{"mlx-community/Qwen3-Coder-30B-A3B", false},
+		{"mlx/Qwen3-Coder-Next-4bit", false},
 		// non-qwen3.
 		{"qwen2.5-coder-7b", false},
 		{"llama-3.1-8b", false},
