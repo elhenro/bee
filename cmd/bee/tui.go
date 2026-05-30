@@ -238,14 +238,21 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	// rebuild closure: invoked by the TUI after /model or the picker switches
 	// provider/model so the next turn uses a freshly-constructed client (and
 	// memory adapter pointed at the new selector model) instead of the one
-	// captured here at start-up.
+	// captured here at start-up. also rebuilds the tool registry so mid-session
+	// config changes (e.g. /browser enabling browser tools) take effect without
+	// a restart. builds into a fresh registry first; only swaps on success.
 	eng.Rebuild = func(e *loop.Engine) error {
 		newProv, err := buildProvider(e.Cfg)
 		if err != nil {
 			return err
 		}
+		newReg, err := buildToolsAsker(cwd, e.Cfg, newProv, storeDir, app, tuiAsker)
+		if err != nil {
+			return err
+		}
 		e.Provider = newProv
 		e.Memory = newKnowledgeAdapter(newProv, e.Cfg)
+		e.Tools = newReg
 		return nil
 	}
 
