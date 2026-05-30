@@ -1,0 +1,20 @@
+{
+  "id": "ts-merge-intervals",
+  "prompt": "Implement the mergeIntervals function in src/intervals.ts. It currently throws \"not implemented\". The full contract is in the JSDoc above the function - read it carefully and satisfy every clause: unsorted input, overlapping AND touching intervals merge, fully contained intervals are absorbed, output sorted ascending by start, empty input returns [], and the input must not be mutated. Keep the exported signature unchanged.\n\nVerify your work by running:  sh run-tests.sh\nThat runs the test suite. Do not look for tsc, ts-node, tsx, or a build step. When the tests pass, you are done: state what you implemented and stop.\n\nThis project runs under Node's type-stripping, so no enums or TypeScript parameter properties.",
+  "setup": "cp -r bench/fixtures/intervals/. $SANDBOX/",
+  "budget": {
+    "max_turns": 10
+  },
+  "checks": [
+    {
+      "kind": "cmd",
+      "run": "mkdir -p \"$SANDBOX/test\"\ncat > \"$SANDBOX/test/_grader.test.ts\" <<'GRADER'\nimport { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { mergeIntervals } from \"../src/intervals.ts\";\n\ntest(\"empty input\", () => {\n  assert.deepEqual(mergeIntervals([]), []);\n});\n\ntest(\"single interval\", () => {\n  assert.deepEqual(mergeIntervals([[1, 3]]), [[1, 3]]);\n});\n\ntest(\"classic overlap, already sorted\", () => {\n  assert.deepEqual(\n    mergeIntervals([[1, 3], [2, 6], [8, 10], [15, 18]]),\n    [[1, 6], [8, 10], [15, 18]],\n  );\n});\n\ntest(\"unsorted input is sorted before merging\", () => {\n  assert.deepEqual(mergeIntervals([[8, 10], [1, 3], [2, 6]]), [[1, 6], [8, 10]]);\n});\n\ntest(\"touching intervals merge\", () => {\n  assert.deepEqual(mergeIntervals([[1, 2], [2, 3]]), [[1, 3]]);\n});\n\ntest(\"fully contained intervals are absorbed\", () => {\n  assert.deepEqual(mergeIntervals([[1, 10], [2, 3], [4, 5]]), [[1, 10]]);\n});\n\ntest(\"chained touching intervals collapse to one\", () => {\n  assert.deepEqual(mergeIntervals([[1, 4], [4, 5], [5, 6]]), [[1, 6]]);\n});\n\ntest(\"disjoint intervals stay separate\", () => {\n  assert.deepEqual(mergeIntervals([[1, 2], [4, 5]]), [[1, 2], [4, 5]]);\n});\n\ntest(\"does not mutate the input\", () => {\n  const input = [[3, 4], [1, 2]];\n  const snapshot = JSON.parse(JSON.stringify(input));\n  mergeIntervals(input);\n  assert.deepEqual(input, snapshot);\n});\nGRADER\ncd \"$SANDBOX\" && node --experimental-strip-types --test \"test/_grader.test.ts\"",
+      "expect_exit": 0
+    },
+    {
+      "kind": "grep",
+      "file": "$SANDBOX/src/intervals.ts",
+      "pattern": "export function mergeIntervals"
+    }
+  ]
+}

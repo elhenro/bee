@@ -10,5 +10,5 @@
     {"kind": "grep", "file": "$SANDBOX/gamma.go", "pattern": "func gammaStub\\(\\)"}
   ],
   "judge": "answer.txt names beta.go and the source files were read, not edited",
-  "budget": {"max_turns": 8, "max_tokens": 35000}
+  "budget": {"max_turns": 8}
 }

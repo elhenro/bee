@@ -7,5 +7,5 @@
     {"kind": "grep", "file": "$SANDBOX/notes.txt", "pattern": "original note"}
   ],
   "judge": "notes.txt keeps its original line and gains a DONE line, nothing else touched",
-  "budget": {"max_turns": 6, "max_tokens": 25000}
+  "budget": {"max_turns": 6}
 }

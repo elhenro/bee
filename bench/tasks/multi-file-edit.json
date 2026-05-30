@@ -7,5 +7,5 @@
     {"kind": "grep", "file": "$SANDBOX/prefix.go", "pattern": "\"hi\""}
   ],
   "judge": "prefix.go returns 'hi' and the greeting test passes",
-  "budget": {"max_turns": 12, "max_tokens": 40000}
+  "budget": {"max_turns": 12}
 }

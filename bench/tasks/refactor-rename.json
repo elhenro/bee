@@ -8,5 +8,5 @@
     {"kind": "cmd", "run": "cd $SANDBOX && ! grep -rIn 'Cache' . >/dev/null 2>&1", "expect_exit": 0}
   ],
   "judge": "Cache/NewCache renamed to Store/NewStore everywhere, builds clean, no old name left",
-  "budget": {"max_turns": 16, "max_tokens": 60000}
+  "budget": {"max_turns": 16}
 }

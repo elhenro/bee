@@ -94,11 +94,11 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 				st.Tick()
 				wedgeStreak++
 				if wedgeStreak >= maxConsecutiveWedges {
-					fmt.Fprintf(os.Stderr, "goal: stopped (model wedged %d turns in a row: %v)\n", wedgeStreak, err)
+					fmt.Fprintf(os.Stderr, goal.StoppedPrefix+"model wedged %d turns in a row: %v)\n", wedgeStreak, err)
 					break
 				}
 				if exceeded, reason := st.CapsExceeded(cumTokens(eng)); exceeded {
-					fmt.Fprintln(os.Stderr, "goal: stopped ("+reason+")")
+					fmt.Fprintln(os.Stderr, goal.StoppedPrefix+reason+")")
 					break
 				}
 				fmt.Fprintf(os.Stderr, "goal: turn wedged (%v), recovering…\n", err)
@@ -112,19 +112,19 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 		wedgeStreak = 0
 		st.Tick()
 		if exceeded, reason := st.CapsExceeded(cumTokens(eng)); exceeded {
-			fmt.Fprintln(os.Stderr, "goal: stopped ("+reason+")")
+			fmt.Fprintln(os.Stderr, goal.StoppedPrefix+reason+")")
 			break
 		}
 		evalCtx, cancel := context.WithTimeout(ctx, goalEvalTimeout)
 		v, _ := goal.Evaluate(evalCtx, eng.Provider, config.FastModelOf(cfg), cond, res.Messages)
 		cancel()
 		if v.Met {
-			fmt.Fprintln(os.Stderr, "✓ goal achieved: "+v.Reason)
+			fmt.Fprintln(os.Stderr, goal.AchievedPrefix+v.Reason)
 			break
 		}
 		stalledStreak, prevReason = stalledStep(stalledStreak, prevReason, v.Reason)
 		if stalledStreak >= maxStalledContinuations {
-			fmt.Fprintf(os.Stderr, "goal: stopped (no progress after %d continuations: %s)\n", stalledStreak, v.Reason)
+			fmt.Fprintf(os.Stderr, goal.StoppedPrefix+"no progress after %d continuations: %s)\n", stalledStreak, v.Reason)
 			break
 		}
 		fmt.Fprintln(os.Stderr, "goal not met ("+v.Reason+"), continuing…")

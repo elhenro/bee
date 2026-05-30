@@ -1,0 +1,30 @@
+{
+  "id": "ts-docflow-archive",
+  "prompt": "Implement an archive/restore feature for the document workflow in src/. Read the existing code first and follow its patterns and invariants exactly.\n\nRequirements:\n1. Add an 'archived' document status to the workflow.\n2. DocService.archive(id: string): Doc - archives a document. Only documents currently 'published' or in 'review' may be archived. Set an archivedAt timestamp on the doc. Archiving any other status must throw the same illegal transition error the existing operations use. A missing id must throw the existing not-found error.\n3. DocService.restore(id: string): Doc - restores an archived document back to 'draft'. Only an 'archived' document may be restored; otherwise throw the illegal transition error. Clear archivedAt on restore.\n4. Every state change must emit an event through the existing event bus, consistent with how the current operations emit (the event is named after the resulting status).\n5. repo.listByStatus must work for 'archived' documents.\n6. The existing tests must still pass.\n\nVerify your work by running:  sh run-tests.sh\nThat runs the test suite. Do not look for tsc, ts-node, tsx, or a build step. When the tests pass, you are done: state what you completed and stop.\n\nDo not weaken or edit the existing tests. Match the codebase's existing style (no TypeScript parameter properties, no enums - this project runs under Node's type-stripping).",
+  "setup": "cp -r bench/fixtures/docflow/. $SANDBOX/",
+  "budget": {
+    "max_turns": 30
+  },
+  "checks": [
+    {
+      "kind": "cmd",
+      "run": "mkdir -p \"$SANDBOX/test\"\ncat > \"$SANDBOX/test/_grader.test.ts\" <<'GRADER'\nimport { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { createService } from \"../src/index.ts\";\nimport { IllegalTransitionError, NotFoundError } from \"../src/errors.ts\";\n\nfunction published(s) {\n  const d = s.createDraft(\"t\", \"b\");\n  s.submitForReview(d.id);\n  s.publish(d.id);\n  return d.id;\n}\n\ntest(\"archive a published doc: status, timestamp, event\", () => {\n  const { service, bus } = createService();\n  const events = [];\n  bus.on((e) => events.push(e.type));\n  const id = published(service);\n  const d = service.archive(id);\n  assert.equal(d.status, \"archived\");\n  assert.ok(d.archivedAt && d.archivedAt > 0);\n  assert.equal(events.at(-1), \"archived\");\n});\n\ntest(\"archive a doc still in review\", () => {\n  const { service } = createService();\n  const d = service.createDraft(\"t\", \"b\");\n  service.submitForReview(d.id);\n  assert.equal(service.archive(d.id).status, \"archived\");\n});\n\ntest(\"cannot archive a draft\", () => {\n  const { service } = createService();\n  const d = service.createDraft(\"t\", \"b\");\n  assert.throws(() => service.archive(d.id), IllegalTransitionError);\n});\n\ntest(\"archive unknown id throws NotFoundError\", () => {\n  const { service } = createService();\n  assert.throws(() => service.archive(\"nope\"), NotFoundError);\n});\n\ntest(\"restore an archived doc back to draft, clearing archivedAt and emitting\", () => {\n  const { service, bus } = createService();\n  const id = published(service);\n  service.archive(id);\n  const events = [];\n  bus.on((e) => events.push(e.type));\n  const d = service.restore(id);\n  assert.equal(d.status, \"draft\");\n  assert.equal(d.archivedAt, undefined);\n  assert.equal(events.at(-1), \"draft\");\n});\n\ntest(\"cannot restore a doc that is not archived\", () => {\n  const { service } = createService();\n  const id = published(service);\n  assert.throws(() => service.restore(id), IllegalTransitionError);\n});\n\ntest(\"listByStatus surfaces archived docs\", () => {\n  const { service, repo } = createService();\n  const id = published(service);\n  service.archive(id);\n  assert.deepEqual(repo.listByStatus(\"archived\").map((d) => d.id), [id]);\n});\nGRADER\ncd \"$SANDBOX\" && node --experimental-strip-types --test \"test/existing.test.ts\" \"test/_grader.test.ts\"",
+      "expect_exit": 0
+    },
+    {
+      "kind": "grep",
+      "file": "$SANDBOX/src/service.ts",
+      "pattern": "archive\\s*\\("
+    },
+    {
+      "kind": "grep",
+      "file": "$SANDBOX/src/service.ts",
+      "pattern": "restore\\s*\\("
+    },
+    {
+      "kind": "grep",
+      "file": "$SANDBOX/src/types.ts",
+      "pattern": "\\\"archived\\\"|'archived'"
+    }
+  ]
+}

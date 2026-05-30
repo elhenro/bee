@@ -59,9 +59,17 @@ func runBench(args []string) {
 		Timeout:    *timeout,
 		Runs:       *runs,
 		RolloutDir: *rollouts,
+		Progress:   os.Stderr,
 	}
-	if w, ok := parseWeights(*weightsCSV); ok {
-		opt.Weights = w
+	if strings.TrimSpace(*weightsCSV) != "" {
+		if w, ok := parseWeights(*weightsCSV); ok {
+			opt.Weights = w
+		} else {
+			// a typo'd weights string would otherwise silently score against the
+			// default blend — fatal so a tuning loop can't misattribute the delta.
+			fmt.Fprintf(os.Stderr, "bench: bad -weights %q (want success,format,efficiency e.g. 0.6,0.25,0.15)\n", *weightsCSV)
+			os.Exit(1)
+		}
 	}
 
 	ctx := context.Background()

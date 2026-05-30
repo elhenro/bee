@@ -10,7 +10,7 @@ func approx(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 func TestScore_CleanSuccess(t *testing.T) {
 	b := Budget{MaxTurns: 10}
 	m := RunMetrics{Turns: 5, ToolCalls: 4, ErroredCalls: 0, StoppedClean: true}
-	d, total := Score(b, m, true, 0, DefaultWeights)
+	d, total := Score(b, m, true, DefaultWeights)
 
 	if !approx(d.Success, 1) {
 		t.Errorf("success = %v, want 1", d.Success)
@@ -30,7 +30,7 @@ func TestScore_CleanSuccess(t *testing.T) {
 func TestScore_FailedNoCleanStop(t *testing.T) {
 	b := Budget{MaxTurns: 10}
 	m := RunMetrics{Turns: 10, ToolCalls: 4, ErroredCalls: 2, StoppedClean: false}
-	d, total := Score(b, m, false, 0, DefaultWeights)
+	d, total := Score(b, m, false, DefaultWeights)
 
 	if d.Success != 0 {
 		t.Errorf("success = %v, want 0", d.Success)
@@ -57,15 +57,14 @@ func TestFormatScore_FloorsAtZero(t *testing.T) {
 }
 
 func TestEfficiency_NoBudgetIsFull(t *testing.T) {
-	if got := efficiencyScore(Budget{}, RunMetrics{Turns: 99}, 0); got != 1 {
+	if got := efficiencyScore(Budget{}, RunMetrics{Turns: 99}); got != 1 {
 		t.Errorf("no-budget efficiency = %v, want 1", got)
 	}
 }
 
-func TestEfficiency_AveragesTurnsAndTokens(t *testing.T) {
-	b := Budget{MaxTurns: 10, MaxTokens: 1000}
-	// turns headroom 1-2/10=0.8, tokens headroom 1-500/1000=0.5, mean=0.65
-	if got := efficiencyScore(b, RunMetrics{Turns: 2}, 500); !approx(got, 0.65) {
-		t.Errorf("efficiency = %v, want 0.65", got)
+func TestEfficiency_TurnHeadroom(t *testing.T) {
+	// turns headroom 1-2/10 = 0.8
+	if got := efficiencyScore(Budget{MaxTurns: 10}, RunMetrics{Turns: 2}); !approx(got, 0.8) {
+		t.Errorf("efficiency = %v, want 0.8", got)
 	}
 }

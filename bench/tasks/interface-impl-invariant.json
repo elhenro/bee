@@ -10,5 +10,5 @@
     {"kind": "cmd", "run": "cd $SANDBOX && cat > zz_gt_test.go <<'EOF'\npackage shapes\nimport (\"math\"; \"testing\")\nfunc TestGTPerimeter(t *testing.T) {\n\tif math.Abs(Rectangle{W:2,H:3}.Perimeter()-10) > 1e-9 { t.Fatalf(\"rect=%v\", Rectangle{W:2,H:3}.Perimeter()) }\n\tif math.Abs(Circle{R:1}.Perimeter()-2*pi) > 1e-9 { t.Fatalf(\"circle=%v\", Circle{R:1}.Perimeter()) }\n\tif math.Abs(Triangle{A:3,B:4,C:5}.Perimeter()-12) > 1e-9 { t.Fatalf(\"tri=%v\", Triangle{A:3,B:4,C:5}.Perimeter()) }\n\tif math.Abs(Square{Side:5}.Perimeter()-20) > 1e-9 { t.Fatalf(\"sq=%v\", Square{Side:5}.Perimeter()) }\n\tif math.Abs(NewRegistry().TotalPerimeter()-(10+2*pi+12+20)) > 1e-9 { t.Fatalf(\"total=%v\", NewRegistry().TotalPerimeter()) }\n}\nEOF\ngo test ./... && rm -f zz_gt_test.go", "expect_exit": 0}
   ],
   "judge": "Perimeter added to the interface and all four types with correct formulas, Registry gains TotalPerimeter, Area untouched, build and tests pass",
-  "budget": {"max_turns": 22, "max_tokens": 80000}
+  "budget": {"max_turns": 22}
 }

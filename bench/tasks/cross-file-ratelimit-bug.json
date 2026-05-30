@@ -9,5 +9,5 @@
     {"kind": "cmd", "run": "cd $SANDBOX && cat > zz_gt_test.go <<'EOF'\npackage ratelimit\nimport \"testing\"\nfunc TestGTLimiter(t *testing.T) {\n\tl := NewLimiter()\n\tfor i := 0; i < 3; i++ { if !l.Take(\"a\") { t.Fatalf(\"a take %d\", i) } }\n\tif l.Take(\"a\") { t.Fatalf(\"a should be throttled\") }\n\t// separate key must be unaffected\n\tif !l.Take(\"b\") { t.Fatalf(\"b should start fresh\") }\n\t// refill restores a\n\tl.Replenish(1)\n\tif !l.Take(\"a\") { t.Fatalf(\"a should be allowed after replenish\") }\n\tif l.Take(\"a\") { t.Fatalf(\"a should be throttled again\") }\n}\nEOF\ngo test ./... && rm -f zz_gt_test.go", "expect_exit": 0}
   ],
   "judge": "Take persists a per-key bucket, keys are isolated, Replenish refills them, Bucket logic untouched, tests not edited, all pass",
-  "budget": {"max_turns": 20, "max_tokens": 70000}
+  "budget": {"max_turns": 20}
 }

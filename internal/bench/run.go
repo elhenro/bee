@@ -3,12 +3,14 @@ package bench
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/goal"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -25,6 +27,17 @@ type Options struct {
 	Runs       int           // repeats per task for variance (0/1 = single shot)
 	RolloutDir string        // when set, persist blessed (passed + clean) session jsonl here for fine-tune harvest
 	ExtraEnv   []string      // extra env (offline tests inject the scripted provider here)
+	Progress   io.Writer     // when set, stream timestamped per-task/per-run progress here (nil = silent)
+}
+
+// logf writes a timestamped progress line when a progress sink is set. it is
+// the only window into a long run: bench buffers everything else until the end.
+func (o Options) logf(format string, args ...any) {
+	if o.Progress == nil {
+		return
+	}
+	ts := time.Now().Format("15:04:05")
+	fmt.Fprintf(o.Progress, "[bench %s] "+format+"\n", append([]any{ts}, args...)...)
 }
 
 // TaskResult is one task's full outcome. With Runs>1, Score/Dims are means
@@ -72,10 +85,15 @@ func RunSuite(ctx context.Context, tasks []Task, opt Options) (SuiteResult, erro
 		opt.Runs = 1
 	}
 	res := SuiteResult{Label: opt.Label, Runs: opt.Runs}
-	for _, t := range tasks {
-		res.Tasks = append(res.Tasks, runTask(ctx, t, opt))
+	opt.logf("suite start: %d tasks x %d run(s), timeout %s/task", len(tasks), opt.Runs, opt.Timeout)
+	suiteStart := time.Now()
+	for i, t := range tasks {
+		opt.logf("(%d/%d) %s: start", i+1, len(tasks), t.ID)
+		tr := runTask(ctx, t, opt, i+1, len(tasks))
+		res.Tasks = append(res.Tasks, tr)
 	}
 	res.Aggregate, res.MeanSpread, res.DimMeans = aggregate(res.Tasks)
+	opt.logf("suite done: aggregate %.1f in %s", res.Aggregate, time.Since(suiteStart).Round(time.Second))
 	return res, nil
 }
 
@@ -83,8 +101,8 @@ func RunSuite(ctx context.Context, tasks []Task, opt Options) (SuiteResult, erro
 // mean score and dims, score spread (max−min), and the raw samples. The first
 // run is the representative for checks/metrics/reason; small models are
 // latency-bound so repeats stay serial.
-func runTask(ctx context.Context, t Task, opt Options) TaskResult {
-	rep := runTaskOnce(ctx, t, opt, 0)
+func runTask(ctx context.Context, t Task, opt Options, taskNum, taskTotal int) TaskResult {
+	rep := runTaskOnce(ctx, t, opt, 0, taskNum, taskTotal)
 	if opt.Runs <= 1 {
 		return rep
 	}
@@ -94,7 +112,7 @@ func runTask(ctx context.Context, t Task, opt Options) TaskResult {
 	succ := boolToInt(rep.Succeeded)
 	samples := []float64{rep.Score}
 	for i := 1; i < opt.Runs; i++ {
-		r := runTaskOnce(ctx, t, opt, i)
+		r := runTaskOnce(ctx, t, opt, i, taskNum, taskTotal)
 		samples = append(samples, r.Score)
 		sumScore += r.Score
 		sumSuc += r.Dims.Success
@@ -116,7 +134,7 @@ func runTask(ctx context.Context, t Task, opt Options) TaskResult {
 	rep.Dims = Dims{Success: sumSuc / n, Format: sumFmt / n, Efficiency: sumEff / n}
 	rep.Spread = max - min
 	rep.Samples = samples
-	rep.Succeeded = 2*succ >= opt.Runs // majority of runs passed
+	rep.Succeeded = 2*succ >= opt.Runs // at least half the runs passed (ties count as success)
 	return rep
 }
 
@@ -127,8 +145,9 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx int) TaskResult {
+func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx, taskNum, taskTotal int) TaskResult {
 	tr := TaskResult{ID: t.ID}
+	runStart := time.Now()
 
 	sandbox, err := os.MkdirTemp("", "bee-bench-sandbox-")
 	if err != nil {
@@ -144,14 +163,14 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx int) TaskResul
 	defer os.RemoveAll(sessDir)
 
 	if t.Setup != "" {
-		if out, err := runShell(ctx, t.Setup, sandbox); err != nil {
+		if out, err := runShell(ctx, t.Setup, sandbox, opt.Timeout); err != nil {
 			tr.Err = fmt.Sprintf("setup failed: %v: %s", err, truncate(out, 200))
 			return tr
 		}
 	}
 
 	stdout, runErr := runBee(ctx, t, opt, sandbox, sessDir)
-	stoppedClean := strings.Contains(stdout, "✓ goal achieved")
+	stoppedClean := strings.Contains(stdout, goal.AchievedPrefix)
 
 	msgs, _ := readTranscript(sessDir)
 	m := MetricsFromMessages(msgs, stoppedClean)
@@ -162,12 +181,12 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx int) TaskResul
 
 	var succeeded bool
 	if len(t.Checks) > 0 {
-		tr.Checks, succeeded = RunChecks(t.Checks, sandbox)
+		tr.Checks, succeeded = RunChecks(t.Checks, sandbox, opt.Timeout)
 	} else {
 		succeeded = stoppedClean // judge verdict surfaced by the goal loop
 	}
 
-	tr.Dims, tr.Score = Score(t.Budget, m, succeeded, 0, opt.Weights)
+	tr.Dims, tr.Score = Score(t.Budget, m, succeeded, opt.Weights)
 	tr.Succeeded = succeeded
 	tr.Metrics = m
 	tr.Reason = verdictReason(stdout, succeeded)
@@ -181,6 +200,16 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx int) TaskResul
 	if opt.RolloutDir != "" && succeeded && m.ErroredCalls == 0 && m.StoppedClean {
 		_ = saveRollout(sessDir, opt.RolloutDir, opt.Label, t.ID, runIdx)
 	}
+
+	dur := time.Since(runStart).Round(time.Second)
+	note := ""
+	if ctx.Err() == nil && runErr != nil && dur >= opt.Timeout {
+		note = " TIMEOUT"
+	}
+	opt.logf("(%d/%d) %s: run %d done score %.1f (suc=%.0f fmt=%.0f eff=%.0f) turns=%d tools=%d err=%d clean=%t in %s%s",
+		taskNum, taskTotal, t.ID, runIdx+1, tr.Score,
+		tr.Dims.Success, tr.Dims.Format, tr.Dims.Efficiency,
+		m.Turns, m.ToolCalls, m.ErroredCalls, m.StoppedClean, dur, note)
 	return tr
 }
 
@@ -246,8 +275,14 @@ func runBee(ctx context.Context, t Task, opt Options, sandbox, sessDir string) (
 
 // runShell runs a task's setup line. It runs from the invocation cwd (not the
 // empty sandbox) so relative fixture paths like "cp -r bench/fixtures/x $SANDBOX"
-// resolve against the suite. trusted task-suite shell — see checks.go.
-func runShell(ctx context.Context, line, sandbox string) (string, error) {
+// resolve against the suite. trusted task-suite shell — see checks.go. timeout
+// caps it so a hung setup can't stall the suite (0 = no cap).
+func runShell(ctx context.Context, line, sandbox string, timeout time.Duration) (string, error) {
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	cmd := exec.CommandContext(ctx, "sh", "-c", strings.ReplaceAll(line, "$SANDBOX", sandbox))
 	cmd.Env = append(os.Environ(), "SANDBOX="+sandbox)
 	out, err := cmd.CombinedOutput()
@@ -269,10 +304,10 @@ func readTranscript(sessDir string) ([]types.Message, error) {
 }
 
 func verdictReason(stdout string, succeeded bool) string {
-	if i := strings.Index(stdout, "✓ goal achieved: "); i >= 0 {
-		return strings.TrimSpace(firstLine(stdout[i+len("✓ goal achieved: "):]))
+	if i := strings.Index(stdout, goal.AchievedPrefix); i >= 0 {
+		return strings.TrimSpace(firstLine(stdout[i+len(goal.AchievedPrefix):]))
 	}
-	if i := strings.Index(stdout, "goal: stopped ("); i >= 0 {
+	if i := strings.Index(stdout, goal.StoppedPrefix); i >= 0 {
 		return strings.TrimSpace(firstLine(stdout[i:]))
 	}
 	if succeeded {

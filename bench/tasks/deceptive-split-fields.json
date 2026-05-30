@@ -8,5 +8,5 @@
     {"kind": "cmd", "run": "cd $SANDBOX && cat > zz_gt_test.go <<'EOF'\npackage parser\nimport (\"reflect\"; \"testing\")\nfunc TestGTSplit(t *testing.T) {\n\tif got := SplitFields(\"a, b, c\"); !reflect.DeepEqual(got, []string{\"a\",\"b\",\"c\"}) { t.Fatalf(\"basic=%#v\", got) }\n\tif got := SplitFields(\"a,,b,\"); !reflect.DeepEqual(got, []string{\"a\",\"b\"}) { t.Fatalf(\"holes=%#v\", got) }\n\tif got := SplitFields(\"  x  ,  y  \"); !reflect.DeepEqual(got, []string{\"x\",\"y\"}) { t.Fatalf(\"trim=%#v\", got) }\n\tif got := SplitFields(\"\"); got == nil || len(got) != 0 { t.Fatalf(\"empty must be non-nil len0, got %#v\", got) }\n\tif got := SplitFields(\"   \"); got == nil || len(got) != 0 { t.Fatalf(\"ws must be non-nil len0, got %#v\", got) }\n\tif got := SplitFields(\",,,\"); got == nil || len(got) != 0 { t.Fatalf(\"commas-only must be non-nil len0, got %#v\", got) }\n}\nEOF\ngo test ./... && rm -f zz_gt_test.go", "expect_exit": 0}
   ],
   "judge": "SplitFields trims, drops empties, and returns a non-nil empty slice for blank input; tests not edited; all tests pass",
-  "budget": {"max_turns": 18, "max_tokens": 60000}
+  "budget": {"max_turns": 18}
 }

@@ -126,7 +126,7 @@ func (m Model) maybeStartGoalEval() (Model, tea.Cmd) {
 		m.goalGen++
 		m.messages = append(m.messages, types.Message{
 			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "goal: stopped (" + reason + ")"}},
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: goal.StoppedPrefix + reason + ")"}},
 		})
 		return m, m.flush()
 	}
@@ -154,7 +154,7 @@ func (m Model) onGoalEvalDone(msg goalEvalDoneMsg) (tea.Model, tea.Cmd) {
 		m.goalGen++
 		m.messages = append(m.messages, types.Message{
 			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "✓ goal achieved: " + msg.v.Reason}},
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: goal.AchievedPrefix + msg.v.Reason}},
 		})
 		return m, m.flush()
 	}

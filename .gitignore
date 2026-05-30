@@ -24,3 +24,6 @@ bench/sweep/
 bench/finetune/data/
 bench/finetune/adapters/
 bench/finetune/.venv/
+
+# local-only research, plans, scratch
+private/

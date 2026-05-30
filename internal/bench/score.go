@@ -24,8 +24,8 @@ type Dims struct {
 //	success    — 1.0 if the task demonstrably worked, else 0.0 (binary).
 //	format     — fraction of tool calls that did not error, with a clean-stop
 //	             penalty when the loop hit a cap instead of finishing.
-//	efficiency — how far under budget the run stayed (turns + tokens averaged).
-func Score(b Budget, m RunMetrics, succeeded bool, tokens int, w Weights) (Dims, float64) {
+//	efficiency — how far under the turn budget the run stayed.
+func Score(b Budget, m RunMetrics, succeeded bool, w Weights) (Dims, float64) {
 	var d Dims
 
 	if succeeded {
@@ -33,7 +33,7 @@ func Score(b Budget, m RunMetrics, succeeded bool, tokens int, w Weights) (Dims,
 	}
 
 	d.Format = formatScore(m)
-	d.Efficiency = efficiencyScore(b, m, tokens)
+	d.Efficiency = efficiencyScore(b, m)
 
 	total := 100 * (w.Success*d.Success + w.Format*d.Format + w.Efficiency*d.Efficiency)
 	return d, total
@@ -52,24 +52,15 @@ func formatScore(m RunMetrics) float64 {
 	return clamp01(s)
 }
 
-// efficiencyScore averages the headroom left on each budget dimension. A run
-// that used half its turn budget scores 0.5 on turns. Dimensions with a
-// zero/absent budget are skipped so they don't distort the average.
-func efficiencyScore(b Budget, m RunMetrics, tokens int) float64 {
-	var sum float64
-	var n int
-	if b.MaxTurns > 0 {
-		sum += clamp01(1 - float64(m.Turns)/float64(b.MaxTurns))
-		n++
-	}
-	if b.MaxTokens > 0 && tokens > 0 {
-		sum += clamp01(1 - float64(tokens)/float64(b.MaxTokens))
-		n++
-	}
-	if n == 0 {
+// efficiencyScore is the headroom left on the turn budget: a run that used half
+// its turn budget scores 0.5. With no turn budget set it returns 1 (nothing to
+// measure against). Token usage isn't in the session transcript, so it can't be
+// scored here — turns are the only budget dimension.
+func efficiencyScore(b Budget, m RunMetrics) float64 {
+	if b.MaxTurns <= 0 {
 		return 1
 	}
-	return sum / float64(n)
+	return clamp01(1 - float64(m.Turns)/float64(b.MaxTurns))
 }
 
 func clamp01(f float64) float64 {

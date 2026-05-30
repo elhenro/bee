@@ -14,6 +14,15 @@ const (
 	DefaultMaxTokens = 2_000_000
 )
 
+// Verdict markers the headless goal loop and TUI print when a goal run ends.
+// The bench harness classifies a run by matching these prefixes in captured
+// output, so the exact strings are a contract: change them here and every
+// emit/parse site follows from the same const.
+const (
+	AchievedPrefix = "✓ goal achieved: "
+	StoppedPrefix  = "goal: stopped ("
+)
+
 // Caps bounds an auto-loop. Zero fields fall back to the package defaults.
 type Caps struct {
 	MaxTurns  int

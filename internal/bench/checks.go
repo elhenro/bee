@@ -1,11 +1,13 @@
 package bench
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // CheckResult records one assertion's outcome.
@@ -17,11 +19,12 @@ type CheckResult struct {
 
 // RunChecks evaluates every check against sandbox. $SANDBOX in cmd/file fields
 // is expanded to the sandbox path. allPassed is true only when every check
-// passes (binary success — partial credit invites gaming).
-func RunChecks(checks []Check, sandbox string) (results []CheckResult, allPassed bool) {
+// passes (binary success — partial credit invites gaming). timeout caps each
+// cmd check so a hung assertion (e.g. a test that loops) can't stall the suite.
+func RunChecks(checks []Check, sandbox string, timeout time.Duration) (results []CheckResult, allPassed bool) {
 	allPassed = true
 	for _, c := range checks {
-		r := runCheck(c, sandbox)
+		r := runCheck(c, sandbox, timeout)
 		if !r.Passed {
 			allPassed = false
 		}
@@ -30,10 +33,10 @@ func RunChecks(checks []Check, sandbox string) (results []CheckResult, allPassed
 	return results, allPassed
 }
 
-func runCheck(c Check, sandbox string) CheckResult {
+func runCheck(c Check, sandbox string, timeout time.Duration) CheckResult {
 	switch c.Kind {
 	case "cmd":
-		return runCmdCheck(c, sandbox)
+		return runCmdCheck(c, sandbox, timeout)
 	case "grep":
 		return runGrepCheck(c, sandbox)
 	default:
@@ -41,14 +44,23 @@ func runCheck(c Check, sandbox string) CheckResult {
 	}
 }
 
-func runCmdCheck(c Check, sandbox string) CheckResult {
+func runCmdCheck(c Check, sandbox string, timeout time.Duration) CheckResult {
 	// cmd checks are author-written shell lines from the trusted task suite —
 	// shell interpretation is the point, not an injection surface.
 	line := strings.ReplaceAll(c.Run, "$SANDBOX", sandbox)
-	cmd := exec.Command("sh", "-c", line)
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(ctx, "sh", "-c", line)
 	cmd.Env = append(os.Environ(), "SANDBOX="+sandbox)
 	cmd.Dir = sandbox
 	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return CheckResult{Kind: "cmd", Passed: false, Detail: "timed out after " + timeout.String()}
+	}
 	exit := 0
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
