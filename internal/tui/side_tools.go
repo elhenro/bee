@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/loop"
+	"github.com/elhenro/bee/internal/tools/browser"
 )
 
 // ListTools returns every tool with disabled flag + user-defined source.
@@ -164,4 +167,52 @@ func (s *tuiSide) OpenToolsPane() error {
 	}
 	s.m.toolsRequested = true
 	return nil
+}
+
+// SetBrowserEnabled flips browser-tool support for this session only (no
+// persist) and rebuilds the registry so the tools are dispatchable now.
+// Turning on requires a detectable Chrome/Chromium. Returns a status line.
+func (s *tuiSide) SetBrowserEnabled(on bool) (string, error) {
+	if s.m == nil || s.m.eng == nil {
+		return "", errors.New("no tui state")
+	}
+	cfg := &s.m.eng.Cfg
+	if on {
+		if _, err := browser.DetectChrome(cfg.Browser.ChromePath); err != nil {
+			return "", fmt.Errorf("browser: %w (install Chrome/Chromium or set [browser] chrome_path)", err)
+		}
+	}
+	prev := cfg.Browser.Enabled
+	if prev == on {
+		if on {
+			return "browser tools already enabled", nil
+		}
+		return "browser tools already disabled", nil
+	}
+	cfg.Browser.Enabled = on
+	if s.m.eng.Rebuild != nil {
+		if err := s.m.eng.Rebuild(s.m.eng); err != nil {
+			cfg.Browser.Enabled = prev // revert on failure
+			return "", fmt.Errorf("browser: rebuild: %w", err)
+		}
+	}
+	if on {
+		n := browserToolCount(s.m.eng)
+		return fmt.Sprintf("browser tools enabled (%d tools). use /tools to fine-tune.", n), nil
+	}
+	return "browser tools disabled", nil
+}
+
+// browserToolCount counts registered tools whose name starts with "browser_".
+func browserToolCount(e *loop.Engine) int {
+	if e == nil || e.Tools == nil {
+		return 0
+	}
+	n := 0
+	for _, name := range e.Tools.Names() {
+		if strings.HasPrefix(name, "browser_") {
+			n++
+		}
+	}
+	return n
 }

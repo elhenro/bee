@@ -166,6 +166,11 @@ type Side interface {
 	// OpenToolsPane asks the TUI to display the tools toggle pane. Returns
 	// an error in headless contexts.
 	OpenToolsPane() error
+	// SetBrowserEnabled turns the native browser tools on or off for the
+	// current session only (no config persist) and rebuilds the tool
+	// registry so the change takes effect immediately. Returns a status
+	// string for the user. Errors when turning on with no Chrome found.
+	SetBrowserEnabled(on bool) (string, error)
 }
 
 // ToolInfo summarizes one tool entry for /tools UI.
