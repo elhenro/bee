@@ -99,6 +99,19 @@ func (m Model) View() string {
 func (m Model) renderLive(maxRows int) string {
 	var parts []string
 	if m.state == StateStreaming {
+		// feed the default token-stream loader the live turn figures. input
+		// tokens come from the cost tracker's last real event (context sent);
+		// output is the live char count this turn.
+		in := 0
+		if m.costs != nil {
+			in = m.costs.LastInput()
+		}
+		m.stream.SetLoaderStats(LoaderStats{
+			InTokens: in,
+			OutChars: m.turnOutChars,
+			Rate:     m.loaderRate,
+			Seed:     m.loaderSeed,
+		})
 		// reasoning streams above the answer in a dim/italic block. Same
 		// styling as the finalized BlockThinking block so the live view
 		// matches the persisted scrollback. Empty while thoughts hidden
@@ -112,11 +125,26 @@ func (m Model) renderLive(maxRows int) string {
 		if n := len(m.streamFlushed); n > 0 && n <= len(m.partial) {
 			visible = m.partial[n:]
 		}
+		// the persistent token strip occupies one row below the text; reserve
+		// it from the clip budget so the live region height stays stable and
+		// the input bar doesn't drift. Pre-token (empty visible) the strip is
+		// the loader head already, so it's only appended once text flows.
+		var strip string
+		if visible != "" {
+			strip = m.stream.RenderTokenStrip(m.loaderFrame)
+		}
+		clip := maxRows
+		if strip != "" && clip > 1 {
+			clip--
+		}
 		out := m.stream.RenderStreaming(visible, m.loaderFrame)
-		if maxRows > 0 && visible != "" {
-			out = m.stream.ClipStreamingTail(out, maxRows)
+		if clip > 0 && visible != "" {
+			out = m.stream.ClipStreamingTail(out, clip)
 		}
 		parts = append(parts, out)
+		if strip != "" {
+			parts = append(parts, strip)
+		}
 	}
 	if m.compacting {
 		parts = append(parts, m.stream.RenderCompacting(m.loaderFrame))

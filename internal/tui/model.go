@@ -197,6 +197,20 @@ type Model struct {
 	// loaderTickMsg while state == StateStreaming and partial is empty.
 	loaderFrame int
 
+	// turnOutChars is the cumulative chars (text + reasoning) generated this
+	// turn — the live "output" figure for the token-stream loader. Reset on
+	// submit, bumped per delta. Chars not tokens: the real output-token tally
+	// lands at turn end via the cost flash, so the strip shows honest live
+	// throughput without fabricating token math.
+	turnOutChars int
+	// loaderSeed varies the procedural particle layout per turn. Rolled on
+	// submit so each generation looks distinct.
+	loaderSeed int64
+	// loaderRate is chars produced since the previous loaderTick — drives
+	// particle density. loaderSampleChars holds the prior sample point.
+	loaderRate        int
+	loaderSampleChars int
+
 	// turnStartedAt is wall-clock when the current turn left submit(). Zero
 	// when no turn in flight. Top-bar timer reads time.Since on every tick
 	// so the elapsed string updates live without per-second state.

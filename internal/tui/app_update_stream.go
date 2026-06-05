@@ -19,6 +19,7 @@ import (
 // message, the partial is just for the in-flight view).
 func (m Model) onThinkDelta(msg thinkDeltaMsg) (tea.Model, tea.Cmd) {
 	m.thinkPartial += msg.Delta
+	m.turnOutChars += len(msg.Delta)
 	return m, m.waitThink()
 }
 
@@ -26,6 +27,7 @@ func (m Model) onStreamDelta(msg streamDeltaMsg) (tea.Model, tea.Cmd) {
 	// append to live partial. View() picks it up next render. The pump
 	// re-arms itself so subsequent deltas keep draining.
 	m.partial += msg.Delta
+	m.turnOutChars += len(msg.Delta)
 	// newline-gated head flush: only check the budget when this delta
 	// completed a line. Tiny per-character deltas skip the work; line
 	// terminators trigger the overflow check + possible scrollback push.
@@ -89,6 +91,14 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.loaderFrame++
+	// sample output throughput once per tick — drives particle density. Clamp
+	// to 0 so a partial reset on a tool boundary never yields a negative rate.
+	if d := m.turnOutChars - m.loaderSampleChars; d > 0 {
+		m.loaderRate = d
+	} else {
+		m.loaderRate = 0
+	}
+	m.loaderSampleChars = m.turnOutChars
 	return m, loaderTickCmd()
 }
 

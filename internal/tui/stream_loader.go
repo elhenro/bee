@@ -164,18 +164,89 @@ func (r *StreamRenderer) loaderCells() int {
 	return cells
 }
 
-// renderLoader draws the streaming-wait animation. Every style is a
-// braille painter; the default style is a phased painter that escalates
-// over time. Output is always single-row, ~r.width chars wide.
+// renderLoader draws the streaming-wait animation. The default style is the
+// token-stream strip (particle stream + live in/out readout); named styles
+// are braille painters. Output is always single-row, ~r.width chars wide.
 func (r *StreamRenderer) renderLoader(frame int) string {
 	nf := frame
 	if nf < 0 {
 		nf = -nf
 	}
+	if r.isDefaultLoader() {
+		return r.tokenStripInner(nf)
+	}
 	cells := r.loaderCells()
 	painter := r.painterFor(nf)
 	art := painter(nf, cells)
 	return r.pulseStyle(nf).Render(art)
+}
+
+// isDefaultLoader reports whether the active style is the token-stream
+// default (vs a pinned named BEE_LOADER painter).
+func (r *StreamRenderer) isDefaultLoader() bool {
+	return r.loaderStyle == LoaderStyleDefault
+}
+
+// tokenStripInner composes the default loader row: the seeded particle
+// stream on the left and the live in/out readout right-aligned. The readout
+// claims a width budget first; the stream fills whatever cells remain. On a
+// dim terminal the stream alternates accent/dim via pulseStyle; the readout
+// stays quietly dimmed so the numbers don't strobe.
+func (r *StreamRenderer) tokenStripInner(nf int) string {
+	cells := r.loaderCells()
+	// reserve up to ~half the row for figures, capped so the stream always
+	// keeps a visible run on narrow terminals.
+	readoutBudget := cells / 2
+	readout := formatLoaderReadout(r.loaderStats, readoutBudget)
+	rlen := lipgloss.Width(readout)
+
+	streamCells := cells
+	if rlen > 0 {
+		streamCells = cells - rlen - 2 // 2-space gutter before figures
+	}
+	if streamCells < brailleLoaderMinCells {
+		// no room for both — drop the stream, show figures alone.
+		if readout != "" {
+			return r.styles.Dim.Render(readout)
+		}
+		streamCells = brailleLoaderMinCells
+	}
+
+	stats := r.loaderStats
+	if !r.showLoader {
+		// motion suppressed — static marker + figures, numbers still live.
+		marker := r.styles.RoleBee.Render("⬢")
+		if readout == "" {
+			return marker
+		}
+		return marker + "  " + r.styles.Dim.Render(readout)
+	}
+
+	art := renderTokenStream(stats, nf, streamCells)
+	body := r.pulseStyle(nf).Render(art)
+	if readout == "" {
+		return body
+	}
+	return body + "  " + r.styles.Dim.Render(readout)
+}
+
+// RenderTokenStrip returns the persistent default-loader strip for the
+// active turn, gutter-applied, ready to append below the streaming text.
+// Empty for pinned named styles (they animate only pre-token) — the caller
+// then renders nothing extra.
+func (r *StreamRenderer) RenderTokenStrip(frame int) string {
+	if !r.isDefaultLoader() {
+		return ""
+	}
+	nf := frame
+	if nf < 0 {
+		nf = -nf
+	}
+	inner := r.tokenStripInner(nf)
+	if r.compact {
+		return inner
+	}
+	return outerGutter + inner
 }
 
 // painterFor resolves the active loader style to a braille painter. The

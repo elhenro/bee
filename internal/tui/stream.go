@@ -80,6 +80,10 @@ type StreamRenderer struct {
 	// compactingVariant selects one of the three /compact swarm animations.
 	// Picked at frame 0 of each compacting run, sticks for the duration.
 	compactingVariant int
+	// loaderStats feeds the default token-stream loader the live turn figures
+	// (input tokens, output chars, throughput, seed). Set by the view each
+	// render before the loader/strip is painted.
+	loaderStats LoaderStats
 
 	// streaming render cache. View() is called on every key/tick/window event
 	// — often multiple times per frame for the same partial+frame. Cache the
@@ -101,6 +105,10 @@ func (r *StreamRenderer) SetLoaderStyle(s LoaderStyle) {
 	r.loaderStyle = s
 	r.invalidateStreamCache()
 }
+
+// SetLoaderStats feeds the default token-stream loader the live turn
+// figures. No-op for pinned named styles, which ignore the stats.
+func (r *StreamRenderer) SetLoaderStats(s LoaderStats) { r.loaderStats = s }
 
 // SetVerbose toggles full tool-output rendering. Compact (default) keeps
 // the preview at one line; verbose lets the whole output through.

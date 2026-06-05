@@ -229,6 +229,12 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	m.pendingFlushedPrefix = ""
 	m.partial = ""
 	m.loaderFrame = 0
+	// fresh token-stream loader: zero the live output counters and roll a new
+	// procedural seed so this generation's particle layout is distinct.
+	m.turnOutChars = 0
+	m.loaderRate = 0
+	m.loaderSampleChars = 0
+	m.loaderSeed = time.Now().UnixNano()
 	// stamp turn start; clear last duration so the timer chip switches from
 	// "final" to "live" mode immediately, no stale final reading lingering.
 	m.turnStartedAt = time.Now()
