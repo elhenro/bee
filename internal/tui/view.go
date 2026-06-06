@@ -127,25 +127,32 @@ func (m Model) renderLive(maxRows int) string {
 		if n := len(m.streamFlushed); n > 0 && n <= len(m.partial) {
 			visible = m.partial[n:]
 		}
-		// the persistent token strip occupies one row below the text; reserve
-		// it from the clip budget so the live region height stays stable and
-		// the input bar doesn't drift. Pre-token (empty visible) the strip is
-		// the loader head already, so it's only appended once text flows.
-		var strip string
-		if visible != "" {
-			strip = m.stream.RenderTokenStrip(m.loaderFrame)
-		}
-		clip := maxRows
-		if strip != "" && clip > 1 {
-			clip--
-		}
-		out := m.stream.RenderStreaming(visible, m.loaderFrame)
-		if clip > 0 && visible != "" {
-			out = m.stream.ClipStreamingTail(out, clip)
-		}
-		parts = append(parts, out)
-		if strip != "" {
-			parts = append(parts, strip)
+		if len(m.pendingTools) > 0 && visible == "" {
+			// tools dispatching: show one swarm per in-flight call instead of
+			// the generic full-width loader, so a batch reads as N bees.
+			parts = append(parts, m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame))
+		} else {
+			// the persistent token strip occupies one row below the text;
+			// reserve it from the clip budget so the live region height stays
+			// stable and the input bar doesn't drift. Pre-token (empty
+			// visible) the strip is the loader head already, so it's only
+			// appended once text flows.
+			var strip string
+			if visible != "" {
+				strip = m.stream.RenderTokenStrip(m.loaderFrame)
+			}
+			clip := maxRows
+			if strip != "" && clip > 1 {
+				clip--
+			}
+			out := m.stream.RenderStreaming(visible, m.loaderFrame)
+			if clip > 0 && visible != "" {
+				out = m.stream.ClipStreamingTail(out, clip)
+			}
+			parts = append(parts, out)
+			if strip != "" {
+				parts = append(parts, strip)
+			}
 		}
 	}
 	if m.compacting {

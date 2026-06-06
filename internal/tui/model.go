@@ -39,6 +39,13 @@ type Model struct {
 	partial  string // live-streaming buffer
 	lastErr  string
 
+	// pendingTools holds the tool_use blocks of the in-flight turn: set when
+	// the assistant message lands (before dispatch), cleared when the tool
+	// result message arrives. The live region renders each as a per-tool
+	// swarm so a batch of calls shows as N buzzing bees while they run,
+	// instead of one generic loader.
+	pendingTools []types.ToolUse
+
 	// streamFlushed holds the prefix of m.partial that has already been
 	// pushed into terminal scrollback via tea.Println by the progressive
 	// flush path. View() renders only m.partial[len(streamFlushed):]; flush()

@@ -9,6 +9,27 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
+// pairedToolResult renders the originating tool_use card immediately above
+// its result so call + output read as one unit. This is what lets a turn
+// with several batched calls show `call → output → call → output` instead
+// of all calls stacked over all outputs. The use is looked up by UseID in
+// r.toolUses (populated by RenderMessage's pre-pass on the assistant turn,
+// which renders before the tool message). Falls back to the bare result
+// when no matching use is indexed (defensive — replay always has it).
+func (r *StreamRenderer) pairedToolResult(res types.ToolResult) string {
+	body := r.renderToolResult(res)
+	use, ok := r.toolUses[res.UseID]
+	if !ok {
+		return body
+	}
+	// escalate renders its full card from the use side (assistant turn)
+	// already; don't repeat the header here.
+	if use.Name == "escalate" {
+		return body
+	}
+	return r.renderToolUse(use) + body
+}
+
 // renderToolResult renders a tight preview of the output. Lilac left rail
 // (▎) prefixes each preview line so the block visually groups under the
 // tool call card. Errors get colored. Tool stdout is ANSI-stripped before

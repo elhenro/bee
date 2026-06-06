@@ -56,12 +56,18 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 		case types.BlockThinking:
 			rendered = r.renderThinking(b.Text)
 		case types.BlockToolUse:
-			if b.Use != nil {
+			// tool_use cards render paired with their result in the tool
+			// message (see BlockToolResult) so call + output read as one
+			// unit even when the model batches several calls in one turn.
+			// Suppress the bare call line here to avoid showing it twice.
+			// escalate is the exception: its result is suppressed, so its
+			// card must render from the use side.
+			if b.Use != nil && b.Use.Name == "escalate" {
 				rendered = r.renderToolUse(*b.Use)
 			}
 		case types.BlockToolResult:
 			if b.Result != nil {
-				rendered = r.renderToolResult(*b.Result)
+				rendered = r.pairedToolResult(*b.Result)
 			}
 		}
 		rendered = strings.TrimRight(rendered, "\n")

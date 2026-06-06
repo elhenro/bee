@@ -58,6 +58,15 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.messages = append(m.messages, msg.Msg)
+	// track in-flight tools for the live-region swarm: an assistant turn
+	// carrying tool_use blocks is about to dispatch; the following tool
+	// message means that batch finished, so clear.
+	switch msg.Msg.Role {
+	case types.RoleAssistant:
+		m.pendingTools = pendingToolUses(msg.Msg)
+	case types.RoleTool:
+		m.pendingTools = nil
+	}
 	m.commitFlushed()
 	m.partial = ""
 	// reasoning block now lives in m.messages; clear the live partial so
@@ -65,6 +74,19 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	m.thinkPartial = ""
 	flushCmd := m.flush()
 	return m, tea.Batch(flushCmd, m.waitLiveMsg())
+}
+
+// pendingToolUses extracts the tool_use blocks from an assistant message so
+// the live region can render them as in-flight swarms. Returns nil when the
+// turn carried no calls (pure text/reasoning) — the generic loader shows.
+func pendingToolUses(m types.Message) []types.ToolUse {
+	var out []types.ToolUse
+	for _, b := range m.Content {
+		if b.Type == types.BlockToolUse && b.Use != nil {
+			out = append(out, *b.Use)
+		}
+	}
+	return out
 }
 
 func (m Model) onWarning(msg warningMsg) (tea.Model, tea.Cmd) {
@@ -232,6 +254,8 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		m.thinkPartial = ""
 		m.state = StateIdle
 	}
+	// turn finished/cancelled/errored — no tools left in flight.
+	m.pendingTools = nil
 	flushCmd := m.flush()
 	// kick off the top-bar cost flash when a fresh event landed. Diff
 	// the call-count against the previous turn so multi-iteration loops

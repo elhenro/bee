@@ -192,22 +192,58 @@ func TestRenderMessage_AssistantWithToolUse(t *testing.T) {
 			{Type: types.BlockToolUse, Use: &types.ToolUse{
 				ID:    "u1",
 				Name:  "bash",
-				Input: map[string]any{"cmd": "go test ./..."},
+				Input: map[string]any{"command": "go test ./..."},
 			}},
 		},
 	}
 	out := stripANSI(r.RenderMessage(m))
-	for _, want := range []string{"running bash", "bash", "cmd"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("missing %q in %q", want, out)
-		}
+	// assistant turn shows its prose; the tool_use card is suppressed here
+	// and rendered paired with its result in the following tool message.
+	if !strings.Contains(out, "running bash") {
+		t.Fatalf("missing prose in %q", out)
 	}
-	// neither assistant prose nor the tool block should carry a glyph
-	// prefix anymore.
+	if strings.Contains(out, "go test") {
+		t.Fatalf("tool_use card should be suppressed on the assistant turn: %q", out)
+	}
+	// neither assistant prose nor the tool block should carry a glyph prefix.
 	for _, glyph := range []string{"⬢", "◇"} {
 		if strings.Contains(out, glyph) {
 			t.Fatalf("unexpected glyph %q on assistant turn in %q", glyph, out)
 		}
+	}
+}
+
+// TestRenderMessage_PairedCallAndOutput covers the interleave fix: a tool
+// result message renders its originating call card directly above the output
+// so batched calls read as call→output pairs, not all-calls-then-all-outputs.
+func TestRenderMessage_PairedCallAndOutput(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	// assistant turn first — populates the use index renderToolResult reads.
+	r.RenderMessage(types.Message{
+		Role: types.RoleAssistant,
+		Content: []types.ContentBlock{
+			{Type: types.BlockToolUse, Use: &types.ToolUse{ID: "u1", Name: "bash", Input: map[string]any{"command": "go version"}}},
+			{Type: types.BlockToolUse, Use: &types.ToolUse{ID: "u2", Name: "bash", Input: map[string]any{"command": "ls cmd/"}}},
+		},
+	})
+	toolMsg := types.Message{
+		Role: types.RoleTool,
+		Content: []types.ContentBlock{
+			{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: "u1", Content: "go1.26.4"}},
+			{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: "u2", Content: "bee"}},
+		},
+	}
+	out := stripANSI(r.RenderMessage(toolMsg))
+	// each call's command must appear above its own output, interleaved.
+	iCall1 := strings.Index(out, "go version")
+	iOut1 := strings.Index(out, "go1.26.4")
+	iCall2 := strings.Index(out, "ls cmd/")
+	iOut2 := strings.Index(out, "bee")
+	if iCall1 < 0 || iOut1 < 0 || iCall2 < 0 || iOut2 < 0 {
+		t.Fatalf("missing a call/output token in %q", out)
+	}
+	if !(iCall1 < iOut1 && iOut1 < iCall2 && iCall2 < iOut2) {
+		t.Fatalf("expected interleaved call→output→call→output, got order %d/%d/%d/%d in %q", iCall1, iOut1, iCall2, iOut2, out)
 	}
 }
 
@@ -238,34 +274,33 @@ func TestRenderMessage_ToolResultTruncates(t *testing.T) {
 	}
 }
 
-func TestRenderMessage_TextAndToolUseSeparated(t *testing.T) {
-	// regression: text block + tool_use must NOT share a row. Prior bug
-	// rendered `<text>write` because renderText omitted a trailing \n.
+func TestRenderMessage_CallCardAndOutputSeparated(t *testing.T) {
+	// regression: a call card and its output rail must NOT share a row. Prior
+	// bug rendered `<text>write` because renderToolUse/renderText omitted a
+	// trailing \n. The card now renders paired in the tool message, so the
+	// row-separation guard lives here.
 	r := NewStreamRenderer(DefaultStyles(), 80)
-	m := types.Message{
+	r.RenderMessage(types.Message{
 		Role: types.RoleAssistant,
 		Content: []types.ContentBlock{
-			{Type: types.BlockText, Text: "Now creating the tool."},
-			{Type: types.BlockToolUse, Use: &types.ToolUse{
-				ID:    "u1",
-				Name:  "write",
-				Input: map[string]any{"path": "/tmp/x"},
-			}},
+			{Type: types.BlockText, Text: "Now reading the file."},
+			{Type: types.BlockToolUse, Use: &types.ToolUse{ID: "u1", Name: "read", Input: map[string]any{"path": "/tmp/x"}}},
 		},
-	}
-	out := stripANSI(r.RenderMessage(m))
-	// RenderMessage prepends a Spacer(1) "\n"; skip it before row indexing.
+	})
+	out := stripANSI(r.RenderMessage(types.Message{
+		Role:    types.RoleTool,
+		Content: []types.ContentBlock{{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: "u1", Content: "file body"}}},
+	}))
 	body := strings.TrimLeft(out, "\n")
 	lines := strings.Split(body, "\n")
 	if len(lines) < 2 {
-		t.Fatalf("expected text and tool_use on separate rows, got: %q", body)
+		t.Fatalf("expected call card and output on separate rows, got: %q", body)
 	}
-	// row 0 holds the assistant glyph + text; row 1 holds the tool card.
-	if !strings.Contains(lines[0], "Now creating the tool.") {
-		t.Fatalf("row 0 should hold text body: %q", lines[0])
+	if !strings.Contains(lines[0], "read") {
+		t.Fatalf("row 0 should hold the call card: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "write") {
-		t.Fatalf("row 1 should hold tool card: %q", lines[1])
+	if !strings.Contains(lines[1], "file body") {
+		t.Fatalf("row 1 should hold the output: %q", lines[1])
 	}
 }
 
@@ -631,7 +666,7 @@ func TestRenderToolUse_EditShowsDiffNotJSON(t *testing.T) {
 			},
 		}}},
 	}
-	out := stripANSI(r.RenderMessage(m))
+	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
 	for _, want := range []string{"edit", "README.md", "- alpha", "+ beta"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
@@ -652,7 +687,7 @@ func TestRenderToolUse_ApplyPatchColorsHunkLines(t *testing.T) {
 			ID: "u1", Name: "apply_patch", Input: map[string]any{"patch": patch},
 		}}},
 	}
-	out := stripANSI(r.RenderMessage(m))
+	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
 	for _, want := range []string{"apply_patch", "x.go", "-old", "+new", "@@"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
@@ -671,7 +706,7 @@ func TestRenderToolUse_WriteListsContentLines(t *testing.T) {
 			},
 		}}},
 	}
-	out := stripANSI(r.RenderMessage(m))
+	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
 	for _, want := range []string{"write", "out.txt", "+ one", "+ two", "2 lines"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
@@ -701,7 +736,7 @@ func TestRenderToolUse_EditCollapsesUnchangedToHunks(t *testing.T) {
 			},
 		}}},
 	}
-	out := stripANSI(r.RenderMessage(m))
+	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
 	for _, want := range []string{"- shared 15", "+ MUTATED 15", "unchanged", "+1", "−1"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
@@ -734,7 +769,7 @@ func TestRenderToolUse_EditCapBalancesAddsAndDels(t *testing.T) {
 			},
 		}}},
 	}
-	out := stripANSI(r.RenderMessage(m))
+	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
 	if !strings.Contains(out, "- old ") {
 		t.Fatalf("missing del lines:\n%s", out)
 	}
@@ -755,7 +790,7 @@ func TestRenderToolUse_EditExpandsTabs(t *testing.T) {
 			},
 		}}},
 	}
-	out := stripANSI(r.RenderMessage(m))
+	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
 	if strings.Contains(out, "\t") {
 		t.Fatalf("raw tab leaked into rendered diff:\n%q", out)
 	}
@@ -775,7 +810,7 @@ func TestRenderToolUse_EditCompactCapsLongDiff(t *testing.T) {
 			},
 		}}},
 	}
-	out := stripANSI(r.RenderMessage(m))
+	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
 	if !strings.Contains(out, "more") {
 		t.Fatalf("compact diff should signal overflow: %q", out)
 	}
