@@ -15,5 +15,9 @@ func killProcessGroup(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if err == syscall.ESRCH || err == syscall.EPERM {
+		return nil
+	}
+	return err
 }

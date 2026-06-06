@@ -6,8 +6,60 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/elhenro/bee/internal/types"
 )
+
+func TestHandlePaste_StagesImageAndShowsLabel(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "Screenshot 2026-06-06 at 19.37.34.png")
+	if err := os.WriteFile(p, []byte("PNGDATA"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(t)
+	m.input.SetValue("what is this? ")
+	m.input.CursorEnd()
+	// drag-and-drop: terminal sends one bracketed paste with escaped spaces.
+	escaped := strings.ReplaceAll(p, " ", `\ `)
+	m2, _ := m.handlePaste(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune(escaped)})
+	m = m2.(Model)
+
+	if len(m.pendingImages) != 1 {
+		t.Fatalf("want 1 staged image, got %d", len(m.pendingImages))
+	}
+	if string(m.pendingImages[0].Data) != "PNGDATA" {
+		t.Errorf("staged data = %q", m.pendingImages[0].Data)
+	}
+	val := m.input.Value()
+	if strings.Contains(val, dir) || strings.Contains(val, ".png") {
+		t.Errorf("input must not show raw path: %q", val)
+	}
+	if !strings.Contains(val, "[Image: ") {
+		t.Errorf("input should show image label: %q", val)
+	}
+}
+
+func TestHandlePaste_PlainTextFallsThrough(t *testing.T) {
+	m := newTestModel(t)
+	m2, _ := m.handlePaste(tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune("just some text")})
+	m = m2.(Model)
+	if len(m.pendingImages) != 0 {
+		t.Errorf("plain text must not stage images")
+	}
+	if !strings.Contains(m.input.Value(), "just some text") {
+		t.Errorf("plain paste should land in input: %q", m.input.Value())
+	}
+}
+
+func TestUnescape(t *testing.T) {
+	if got := unescape(`a\ b\ c`); got != "a b c" {
+		t.Errorf("unescape = %q", got)
+	}
+	if got := unescape("nobackslash"); got != "nobackslash" {
+		t.Errorf("unescape passthrough = %q", got)
+	}
+}
 
 func TestExtractImagePaths_DragEscapedPath(t *testing.T) {
 	dir := t.TempDir()

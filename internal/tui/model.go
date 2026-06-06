@@ -166,6 +166,10 @@ type Model struct {
 	// pendingImage holds raw image bytes staged via Ctrl+I; attached to the
 	// next user message on submit and cleared after.
 	pendingImage []byte
+	// pendingImages holds image blocks staged from dragged/pasted file paths
+	// (the path is replaced by an "[Image: name]" label in the input as it's
+	// pasted). Drained alongside pendingImage on submit.
+	pendingImages []types.ContentBlock
 
 	// streamCh receives text deltas from the engine via Engine.StreamCh.
 	// nil in tests; lifetime owned by the caller of WithStreamCh.

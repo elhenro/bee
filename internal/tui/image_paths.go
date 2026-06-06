@@ -18,6 +18,25 @@ var imageExts = map[string]string{
 	".webp": "image/webp",
 }
 
+// loadImage loads p as an image block when it points at an existing local image
+// file. p should already be backslash-unescaped; loadImage strips surrounding
+// quotes and expands ~. Returns the block, its basename, and ok=false otherwise.
+func loadImage(p string) (types.ContentBlock, string, bool) {
+	p = expandHome(unquote(strings.TrimSpace(p)))
+	mt, ok := imageExts[strings.ToLower(filepath.Ext(p))]
+	if !ok {
+		return types.ContentBlock{}, "", false
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return types.ContentBlock{}, "", false
+	}
+	return types.ContentBlock{Type: types.BlockImage, MediaType: mt, Data: data}, filepath.Base(p), true
+}
+
+// imageLabel is the compact scrollback/input token for a loaded image.
+func imageLabel(base string) string { return "[Image: " + truncLabel(base) + "]" }
+
 // extractImagePaths scans text for local image-file path tokens — including the
 // shell-escaped paths a terminal inserts on drag-and-drop — loads each as an
 // image block, and returns the text with every matched path replaced by a
@@ -28,21 +47,32 @@ func extractImagePaths(text string) (string, []types.ContentBlock) {
 		out  []string
 	)
 	for _, tk := range splitShellLike(text) {
-		p := expandHome(unquote(tk.unescaped))
-		mt, ok := imageExts[strings.ToLower(filepath.Ext(p))]
+		blk, base, ok := loadImage(tk.unescaped)
 		if !ok {
 			out = append(out, tk.raw)
 			continue
 		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			out = append(out, tk.raw)
-			continue
-		}
-		imgs = append(imgs, types.ContentBlock{Type: types.BlockImage, MediaType: mt, Data: data})
-		out = append(out, "[Image: "+truncLabel(filepath.Base(p))+"]")
+		imgs = append(imgs, blk)
+		out = append(out, imageLabel(base))
 	}
 	return strings.Join(out, " "), imgs
+}
+
+// unescape drops a backslash before any following rune — the inverse of the
+// shell-style escaping a terminal applies to a dragged path's spaces.
+func unescape(s string) string {
+	if !strings.ContainsRune(s, '\\') {
+		return s
+	}
+	var b strings.Builder
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		if rs[i] == '\\' && i+1 < len(rs) {
+			i++
+		}
+		b.WriteRune(rs[i])
+	}
+	return b.String()
 }
 
 type shellToken struct{ raw, unescaped string }

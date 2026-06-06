@@ -37,6 +37,30 @@ func (m Model) handleImagePaste() (tea.Model, tea.Cmd) {
 	return m, m.flush()
 }
 
+// handlePaste intercepts a bracketed paste. When the pasted text is (or
+// contains) a local image file path, it stages the image(s) and inserts a
+// compact "[Image: name]" label into the input instead of the raw path.
+// Ordinary text pastes fall through to the textarea unchanged.
+func (m Model) handlePaste(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pasted := string(msg.Runes)
+	// common case: the whole paste is one dragged file (handles unescaped
+	// spaces a single token-scan would split).
+	if blk, base, ok := loadImage(unescape(pasted)); ok {
+		m.pendingImages = append(m.pendingImages, blk)
+		m.input.InsertString(imageLabel(base))
+		return m, nil
+	}
+	// else: scan for image path tokens embedded in surrounding text.
+	if clean, imgs := extractImagePaths(pasted); len(imgs) > 0 {
+		m.pendingImages = append(m.pendingImages, imgs...)
+		m.input.InsertString(clean)
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
 // handleFollowUp pushes the current input onto the follow-up queue. Fires
 // regardless of state — queued runs kick off as the current turn finishes.
 func (m Model) handleFollowUp() (tea.Model, tea.Cmd) {
@@ -247,12 +271,18 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	// swapped for a compact "[Image: name]" label in both the model text and
 	// the scrollback display.
 	content := []types.ContentBlock{{Type: types.BlockText, Text: text}}
+	// fallback for terminals without bracketed paste: a raw image path typed
+	// into the buffer is still resolved at submit (handlePaste covers the
+	// common drag case and leaves a label that won't re-match here).
 	if clean, imgs := extractImagePaths(text); len(imgs) > 0 {
 		content = append([]types.ContentBlock{{Type: types.BlockText, Text: clean}}, imgs...)
 		if display == "" {
 			display = clean
 		}
 	}
+	// images staged from dragged paths (handlePaste) and Ctrl+I clipboard.
+	content = append(content, m.pendingImages...)
+	m.pendingImages = nil
 	if len(m.pendingImage) > 0 {
 		content = append(content, types.ContentBlock{
 			Type:      types.BlockImage,

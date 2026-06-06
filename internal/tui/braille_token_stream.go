@@ -67,25 +67,17 @@ func renderTokenStream(stats LoaderStats, frame, cells int) string {
 }
 
 // formatLoaderReadout builds the inline figures. budget is the rune width
-// available; the readout sheds detail as budget shrinks: full labels →
-// unlabeled in/out → out only → empty. InTokens 0 renders an em-dash so a
-// not-yet-known input never shows a fake number.
+// available; the readout sheds detail as budget shrinks: ↑in ↓out →
+	// ↓out only → bare out → empty.
 func formatLoaderReadout(stats LoaderStats, budget int) string {
-	in := "—"
-	if stats.InTokens > 0 {
-		in = fmtTokens(stats.InTokens)
-	}
+	in := fmtTokens(stats.InTokens)
 	out := fmtTokens(stats.OutChars)
 
-	full := fmt.Sprintf("in %s tok · out %s ch", in, out)
+	full := fmt.Sprintf("↑ %s ↓ %s", in, out)
 	if utf8.RuneCountInString(full) <= budget {
 		return full
 	}
-	mid := fmt.Sprintf("in %s · out %s", in, out)
-	if utf8.RuneCountInString(mid) <= budget {
-		return mid
-	}
-	short := "out " + out
+	short := "↓ " + out
 	if utf8.RuneCountInString(short) <= budget {
 		return short
 	}

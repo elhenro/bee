@@ -214,6 +214,7 @@ func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([
 			ID            string `json:"id"`
 			Name          string `json:"name"`
 			ContextLength int    `json:"context_length"`
+			MaxModelLen   int    `json:"max_model_len"`
 			Pricing       any    `json:"pricing"`
 		} `json:"data"`
 	}
@@ -227,10 +228,17 @@ func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([
 		if name == "" {
 			name = m.ID
 		}
+		// omlx advertises the window as max_model_len on the stock /v1/models
+		// shape (no context_length field). Fall back to it so detection works
+		// without the secondary /models/status probe.
+		ctxLen := m.ContextLength
+		if ctxLen == 0 {
+			ctxLen = m.MaxModelLen
+		}
 		models = append(models, Model{
 			ID:            m.ID,
 			Name:          name,
-			ContextLength: m.ContextLength,
+			ContextLength: ctxLen,
 			Pricing:       formatPricing(m.Pricing),
 		})
 	}

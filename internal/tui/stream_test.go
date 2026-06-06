@@ -895,6 +895,32 @@ func TestClipStreamingTail_WrapsLongLines(t *testing.T) {
 	}
 }
 
+// Long thought lines wrap to the terminal width instead of overflowing —
+// bubbletea's inline renderer hard-truncates rows wider than the terminal,
+// so an unwrapped line would show only its head in the live region.
+func TestRenderThinkingPartial_WrapsLongLines(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 40)
+	r.SetShowThoughts(true)
+	long := strings.Repeat("word ", 30) // ~150 chars on one logical line
+	got := stripANSI(r.RenderThinkingPartial(long))
+	for _, ln := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
+		if len(ln) > 40 {
+			t.Fatalf("thought row exceeds width 40: %d cols %q", len(ln), ln)
+		}
+	}
+	// only the first visual row carries the `·` glyph.
+	rows := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	if len(rows) < 2 {
+		t.Fatalf("expected wrapped thought to span multiple rows, got %d", len(rows))
+	}
+	if !strings.Contains(rows[0], "·") {
+		t.Fatalf("first row should carry the · glyph: %q", rows[0])
+	}
+	if strings.Contains(rows[1], "·") {
+		t.Fatalf("continuation row should not repeat the · glyph: %q", rows[1])
+	}
+}
+
 // RenderStreamingChunk drops caret + leading blank but keeps gutter, so a
 // settled head chunk emitted via tea.Println slots cleanly above the still-
 // streaming tail. Trailing newlines get trimmed (tea.Println adds its own).

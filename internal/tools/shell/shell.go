@@ -147,7 +147,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		cwd = v
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	shellBin, finalCmd := t.buildInvocation(cmdStr)
@@ -163,7 +163,22 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	cmd.Cancel = func() error { return killProcessGroup(cmd) }
 	cmd.WaitDelay = 2 * time.Second
 
-	err := cmd.Run()
+	err := cmd.Start()
+	if err != nil {
+		return tools.Result{
+			Content: fmt.Sprintf("exec error: %v", err),
+			IsError: true,
+		}, nil
+	}
+	go func() {
+		select {
+		case <-time.After(timeout):
+			cancel()
+		case <-runCtx.Done():
+		}
+	}()
+
+	err = cmd.Wait()
 	output := truncate(buf.Bytes())
 
 	switch {
@@ -176,6 +191,14 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		// parent cancellation: propagate up
 		return tools.Result{Content: ctx.Err().Error(), IsError: true}, ctx.Err()
 	case err != nil:
+		// cmd.Wait() may return EPERM when the process group is already dead
+		// (cancel → killProcessGroup → cmd.Wait() tries another kill).
+		if strings.Contains(err.Error(), "operation not permitted") {
+			return tools.Result{
+				Content: fmt.Sprintf("timeout after %s\n%s", timeout, output),
+				IsError: true,
+			}, nil
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return tools.Result{

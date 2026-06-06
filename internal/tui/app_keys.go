@@ -17,6 +17,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// in Update (double-press to quit) so it never reaches handleKey.
 	inputEmpty := m.input.Value() == ""
 	keyStr := msg.String()
+	// bracketed paste: a dragged image file path arrives as one atomic paste.
+	// stage it as an image and insert a clean label instead of the raw path.
+	if msg.Paste && (m.state == StateIdle || m.state == StateError) {
+		return m.handlePaste(msg)
+	}
 	// agent view: open with Left on empty input, close with Right/esc.
 	// claim all keys while open so cursor moves never leak to the
 	// textarea behind the overlay; delegate everything to AgentView.Update.

@@ -70,6 +70,17 @@ func (m *Model) flush() tea.Cmd {
 		if rendered == "" {
 			continue
 		}
+		// hardwrap to the terminal width before Println. Left raw, a line
+		// wider than the viewport gets soft-wrapped by the terminal but
+		// counted as one row by bubbletea's inline renderer; the miscount
+		// tears the wrapped tail on the next repaint, dropping its SGR so
+		// the last word renders in the default fg (white). Pre-wrapping keeps
+		// physical rows == logical rows. Mirrors the streaming-flush path.
+		w := m.width
+		if w < 4 {
+			w = 80
+		}
+		rendered = ansi.Hardwrap(rendered, w, true)
 		// RenderMessage already emits one leading "\n" in non-compact mode
 		// so each turn has a single blank-line gap; stacking another here
 		// produced double-blanks between every message in scrollback.

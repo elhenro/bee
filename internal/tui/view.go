@@ -250,8 +250,12 @@ func (m Model) renderBottomBar() string {
 		quitHint = lipgloss.NewStyle().Foreground(accentHoney).Render("press ctrl+d again to quit") + "\n"
 	}
 	var staged string
+	n := len(m.pendingImages)
 	if len(m.pendingImage) > 0 {
-		staged = m.styles.Dim.Render("📎 image staged ("+bytesHuman(len(m.pendingImage))+") — submit to attach") + "\n"
+		n++
+	}
+	if n > 0 {
+		staged = m.styles.Dim.Render(fmt.Sprintf("📎 %d image(s) staged — submit to attach", n)) + "\n"
 	}
 	var palette string
 	if m.palette.Active {

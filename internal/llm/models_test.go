@@ -170,6 +170,36 @@ func TestListModels_OmlxStatusEnrichesContextLength(t *testing.T) {
 	}
 }
 
+// omlx advertises the window as max_model_len on the stock /v1/models shape.
+// Verify parseModels picks it up so detection works without the secondary
+// /models/status probe (which is never even hit here).
+func TestListModels_OmlxMaxModelLen(t *testing.T) {
+	ClearModelCache()
+	ResetLiveContextLengths()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models/status" {
+			t.Errorf("status probe should not fire when max_model_len present")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[
+			{"id":"Qwen3.6-35B-A3B-8bit","object":"model","owned_by":"omlx","max_model_len":262144}
+		]}`)
+	}))
+	defer srv.Close()
+
+	cfg := config.ProviderConfig{BaseURL: srv.URL, WireAPI: "chat"}
+	got, err := ListModels(context.Background(), "omlx", cfg)
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(got) != 1 || got[0].ContextLength != 262144 {
+		t.Fatalf("got = %+v, want ContextLength 262144", got)
+	}
+	if c := ContextWindow("Qwen3.6-35B-A3B-8bit"); c != 262144 {
+		t.Errorf("ContextWindow live cache = %d, want 262144", c)
+	}
+}
+
 // status endpoint missing (404): we still return the plain /models list,
 // just without ContextLength enrichment.
 func TestListModels_OmlxStatusMissingIsBenign(t *testing.T) {

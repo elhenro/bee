@@ -50,26 +50,22 @@ func TestRenderTokenStreamSeedVaries(t *testing.T) {
 func TestFormatLoaderReadout(t *testing.T) {
 	stats := LoaderStats{InTokens: 12300, OutChars: 1847}
 	full := formatLoaderReadout(stats, 40)
-	if !strings.Contains(full, "tok") || !strings.Contains(full, "ch") {
-		t.Errorf("wide budget should keep labels: %q", full)
-	}
-	mid := formatLoaderReadout(stats, 18)
-	if strings.Contains(mid, "tok") || !strings.Contains(mid, "·") {
-		t.Errorf("medium budget should drop units, keep both: %q", mid)
+	if !strings.Contains(full, "↑") || !strings.Contains(full, "↓") {
+		t.Errorf("wide budget should keep both arrows: %q", full)
 	}
 	short := formatLoaderReadout(stats, 9)
-	if strings.Contains(short, "·") || !strings.HasPrefix(short, "out ") {
-		t.Errorf("small budget should be out-only: %q", short)
+	if strings.Contains(short, "↑") || !strings.HasPrefix(short, "↓ ") {
+		t.Errorf("small budget should be down-only: %q", short)
 	}
 	if got := formatLoaderReadout(stats, 2); got != "" {
 		t.Errorf("tiny budget should be empty: %q", got)
 	}
 }
 
-func TestFormatLoaderReadoutUnknownInput(t *testing.T) {
-	// zero input (first turn, not yet reported) shows em-dash, no fake number.
+func TestFormatLoaderReadoutZeroInput(t *testing.T) {
+	// zero input (first turn) renders 0, not an em-dash.
 	got := formatLoaderReadout(LoaderStats{InTokens: 0, OutChars: 5}, 40)
-	if !strings.Contains(got, "—") {
-		t.Errorf("zero input should render em-dash: %q", got)
+	if got != "↑ 0 ↓ 5" {
+		t.Errorf("zero input should render 0: %q", got)
 	}
 }

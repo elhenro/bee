@@ -38,6 +38,12 @@ func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
 		return ""
 	}
 	clean := ansi.Strip(res.Content)
+	// loop-injected guard nudges ([repeat]/[stall]/[verify]/…) ride in the
+	// same Content the model reads. Strip them from the human view unless
+	// show_nudges is on — same toggle that gates synthetic [nudge] turns.
+	if !r.showNudges {
+		clean = stripGuardPrefixes(clean)
+	}
 	totalBytes := len(clean)
 	lines := compactLines(clean)
 	if len(lines) == 0 {
@@ -155,12 +161,29 @@ func (r *StreamRenderer) renderThinking(s string) string {
 	}
 	lines := strings.Split(clean, "\n")
 	out := make([]string, 0, len(lines))
+	// wrap budget: terminal width minus the outer gutter (1) and the
+	// "· " prefix (2). bubbletea's inline renderer hard-truncates rows
+	// wider than the terminal, so an unwrapped long thought line shows
+	// only its head — wrap here instead. <=0 width: pre-size, leave raw.
+	budget := r.width - 3
 	for _, ln := range lines {
 		ln = sanitizeControl(ln)
 		if strings.TrimSpace(ln) == "" {
 			continue
 		}
-		out = append(out, r.styles.Dim.Render("·")+" "+r.styles.Thought.Render(ln))
+		segs := []string{ln}
+		if budget > 0 {
+			segs = wrapHanging(ln, budget)
+		}
+		for i, seg := range segs {
+			// first row carries the `·` glyph; continuation rows indent
+			// 2 cols so their text aligns under the first row's text.
+			head := r.styles.Dim.Render("·") + " "
+			if i > 0 {
+				head = "  "
+			}
+			out = append(out, head+r.styles.Thought.Render(seg))
+		}
 	}
 	if len(out) == 0 {
 		return ""
