@@ -169,6 +169,8 @@ func devCacheDirs() []string {
 		// whole macOS per-user cache tree: covers go-build, golangci-lint,
 		// pip, Homebrew, etc. without playing whack-a-mole on every tool.
 		filepath.Join(home, "Library", "Caches"),
+		// some CLIs (wrangler) write logs/state under Preferences, not Caches.
+		filepath.Join(home, "Library", "Preferences"),
 		filepath.Join(home, "go", "pkg", "mod"),
 		filepath.Join(home, ".cache"),
 		filepath.Join(home, ".npm"),

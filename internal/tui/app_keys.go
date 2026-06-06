@@ -63,11 +63,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFollowUp()
 	case key.Matches(msg, m.keys.ImagePaste):
 		return m.handleImagePaste()
-	case key.Matches(msg, m.keys.OpenEditor):
+	case key.Matches(msg, m.keys.ExpandOutput):
+		// parked external job (Ctrl-Z'd /edit etc.) takes priority — resume
+		// it where it left off. otherwise toggle last tool output detail.
 		if m.suspendedJob != nil {
 			return m, m.resumeJob()
 		}
-		return m, m.openEditorCmd("")
+		return m.toggleLastToolOutput()
 	case key.Matches(msg, m.keys.Submit):
 		// state-dependent: idle = submit, streaming = steer. Slash commands
 		// always route to handleSubmit so AllowDuringRun ones (/settings,

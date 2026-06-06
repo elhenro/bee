@@ -272,6 +272,11 @@ type Model struct {
 	// transcript compact; toggle with ctrl+v or pass --verbose.
 	verbose bool
 
+	// toolOutputExpanded tracks the ctrl+o toggle state. Scrollback is
+	// immutable (printed once via tea.Println), so each press re-prints the
+	// last tool result at the flipped detail level rather than editing in place.
+	toolOutputExpanded bool
+
 	// showThoughts gates BlockThinking rendering in scrollback. Default true.
 	// Toggle via /settings; persists to ~/.bee/config.toml.
 	showThoughts bool

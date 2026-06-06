@@ -231,6 +231,17 @@ func (r *StreamRenderer) previewLines() int {
 	return previewLinesCompact
 }
 
+// RenderMessageDetail renders m with the tool-output cap forced full (no cap)
+// or collapsed (compact preview), independent of the persistent verbose flag.
+// Used by the ctrl+o re-print toggle. Restores verbose afterward.
+func (r *StreamRenderer) RenderMessageDetail(m types.Message, full bool) string {
+	prev := r.verbose
+	r.verbose = full
+	out := r.RenderMessage(m)
+	r.verbose = prev
+	return out
+}
+
 // NewStreamRenderer builds a renderer. width is the wrap target; pass 0 for
 // glamour's default (80). Loader style is taken from BEE_LOADER (swarm /
 // comb / dance / drip); unset / "random" → random pick at construction.

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -99,6 +100,17 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 	// special-cased before the generic Run fallback like /compact.
 	if parts[0] == "goal" {
 		return m.handleGoal(parts[1:])
+	}
+
+	// /init submits a project-scan prompt as a user turn so the model uses its
+	// own file/shell tools to inspect the repo and write AGENTS.md. Extra args
+	// are appended as additional instructions.
+	if parts[0] == "init" {
+		body := commands.InitPrompt
+		if len(parts) > 1 {
+			body += "\n\nAdditional instructions: " + strings.Join(parts[1:], " ")
+		}
+		return m.submitWithDisplay(body, "/"+strings.Join(parts, " "))
 	}
 
 	// /remote-control is informational in the TUI: starting a server bound to

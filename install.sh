@@ -98,6 +98,21 @@ install_binary() {
     fi
     $sudo_cmd mv "$src" "$target"
     $sudo_cmd chmod 0755 "$target"
+    macos_fixup "$target" "$sudo_cmd"
+}
+
+# macos_fixup re-signs and de-quarantines the installed binary. macOS kills a
+# binary with SIGKILL "Code Signature Invalid" when its cdhash doesn't match
+# the AMFI-cached one (happens after an in-place overwrite) or when a freshly
+# downloaded binary carries a quarantine xattr. ad-hoc re-sign (`-s -`) clears
+# both. no-op on non-darwin or when codesign is absent.
+macos_fixup() {
+    target=$1
+    sudo_cmd=$2
+    [ "$(detect_os)" = darwin ] || return 0
+    has_cmd codesign || return 0
+    $sudo_cmd xattr -d com.apple.quarantine "$target" 2>/dev/null || true
+    $sudo_cmd codesign -f -s - "$target" >/dev/null 2>&1 || true
 }
 
 main() {

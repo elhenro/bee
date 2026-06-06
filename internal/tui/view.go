@@ -303,7 +303,7 @@ func (m Model) renderBottomBar() string {
 	if !m.showHelp {
 		return quitHint + staged + palette + picker + atp + history + m.input.View()
 	}
-	hint := fmt.Sprintf("mode:%s · caveman:%s · think:%s · ^P model · ^R history · ^W ws · ← agents · ^H hive · ^/ caveman · ^I image · shift+↵/^J newline · shift+tab mode · alt+t think · ? hide · esc cancel · ^V verbose", m.mode, string(m.caveLvl), m.thinking)
+	hint := fmt.Sprintf("mode:%s · caveman:%s · think:%s · ^P model · ^R history · ^W ws · ← agents · ^H hive · ^/ caveman · ^I image · shift+↵/^J newline · shift+tab mode · alt+t think · ^O expand output · ? hide · esc cancel · ^V verbose", m.mode, string(m.caveLvl), m.thinking)
 	return quitHint + staged + palette + picker + atp + history + m.input.View() + "\n" + m.styles.BottomBar.Render(hint)
 }
 
