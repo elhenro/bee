@@ -26,41 +26,28 @@ go install github.com/elhenro/bee/cmd/bee@latest
 go build -o ~/.local/bin/bee ./cmd/bee
 
 # use
-export OPENROUTER_API_KEY=<your-key>
+export OPENROUTER_API_KEY=<REDACTED>
 bee
 ```
 
 ## Why?
 
-So far, I've used claude code, codex, hermes, opencode, openclaw and pi. Each one nails something. None of them felt configurable, minimal, or flexible enough for the way I actually work, and a few gaps kept biting me. bee is the harness that just does it.
+I've used claude code, codex, hermes, opencode, openclaw and pi. Each nails something. None felt configurable, minimal, or flexible enough for how I work. bee is the harness that just does it.
 
-Three gaps bee closes:
+**Three gaps bee closes:**
 
-1. **Tiny-context friendly, tiny footprint.** Caveman-compressed system prompt, three tools, top-k memory. Same harness scales from a 4k-context local Ollama up through small fine-tunes to million-token frontier models. Native [omlx](https://github.com/jundot/omlx) (Apple Silicon MLX server) and OpenRouter support out of the box. Shrinks itself when context gets tight.
-2. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. No REPL incantations. `bee criticize plan.md` just works, from any directory, in any shell.
-3. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint — all four are equally callable tools the model can invoke mid-task. Plug a personal-life agent in as a sub-agent (bundled `hermes.md` is a template — edit the `exec:` line). No IPC dance.
+1. **Tiny-context friendly.** Caveman-compressed system prompt, three tools, top-k memory. Scales from a 4k-context local Ollama up through small fine-tunes to million-token frontier models. Native [omlx](https://github.com/jundot/omlx) (Apple Silicon MLX server) and OpenRouter support out of the box. Shrinks itself when context gets tight.
+2. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. `bee criticize plan.md` just works, from any directory, in any shell.
+3. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint — all four are equally callable tools the model can invoke mid-task. Plug a personal-life agent in as a sub-agent (bundled `hermes.md` is a template). No IPC dance.
 
-## Quick demos
-
-```sh
-$ bee criticize plan.md             # one binary, every skill a subcommand
-$ bee run "lint cmd/"               # headless, pipeable
-$ bee swarm "migrate auth to jwt"   # queen + workers
-$ bee fan "audit internal/ for cleanup"  # parallel fan-out
-```
-
-`~/.bee/skills/*.md` is your library. Add one, it shows up. First run seeds defaults. Edit one, it lives.
-
-## Config
-
-`~/.bee/config.toml`, sane defaults, set an API key, change models.
+**It just works.** bee nudges models toward useful output, detects and breaks loops before they waste tokens, and handles the boring plumbing so you don't have to.
 
 ## Local models
 
 bee runs against any OpenAI-compatible local server. Confirmed working:
 
-- [omlx](https://github.com/jundot/omlx) (Apple Silicon MLX server, `localhost:8000/v1`) with MLX-quantized coder models — strong tool-calling, low RAM footprint.
-- **Ollama** (`localhost:11434/v1`) with `llama3.1:8b`, `qwen2.5-coder:7b`.
+- **[omlx](https://github.com/jundot/omlx)** (Apple Silicon MLX server, `localhost:8000/v1`) — MLX-quantized coder models, strong tool-calling, low RAM.
+- **Ollama** (`localhost:11434/v1`) — `llama3.1:8b`, `qwen2.5-coder:7b`, `qwen3.6:35b`, `gemma4:12b`.
 - **LM Studio** (`localhost:1234/v1`).
 
 For sub-8k-context models, switch to the tiny profile. `--profile` is not a CLI flag — set it via env or `~/.bee/config.toml`:
@@ -72,26 +59,38 @@ For sub-8k-context models, switch to the tiny profile. `--profile` is not a CLI 
     default_provider = "omlx"
     default_model = "Qwen3.6-35B-A3B-4bit"
 
-## Browser tools
+## Subcommands
 
-bee can open, inspect, and interact with pages in a real Chrome/Chromium browser.
+`bee run` for headless, `bee` for TUI. Other subcommands:
+
+```sh
+$ bee criticize plan.md             # one binary, every skill a subcommand
+$ bee run "lint cmd/"               # headless, pipeable
+$ bee swarm "migrate auth to jwt"   # queen + workers
+$ bee fan "audit internal/ for cleanup"  # parallel fan-out
+$ bee zzz "tighten error messages"  # overnight autonomous loop
+$ bee agents                        # parallel detached agents
+$ bee remote-control                # LAN web relay for remote control
+```
+
+`~/.bee/skills/*.md` is your library. Add one, it shows up. First run seeds defaults. Edit one, it lives.
+
+## Config
+
+`~/.bee/config.toml`, sane defaults, set an API key, change models.
+
+## Browser tools
 
 Enable in `~/.bee/config.toml`:
 
     [browser]
     enabled = true
-    # headless = true   # set for CI; default is headful
 
 Or pass `--browser` to any `bee run` invocation, or use the dedicated subcommand:
 
     bee browse https://example.com
 
-Inside a running TUI session you can toggle browser support live with `/browser on` and `/browser off`. This is session-only and is not written to config.
-
-Chrome/Chromium is auto-detected from standard install paths. Override with:
-
-    [browser]
-    chrome_path = "/usr/bin/chromium-browser"
+Inside a running TUI session you can toggle browser support live with `/browser on` and `/browser off`. Chrome/Chromium is auto-detected from standard install paths.
 
 Available tools the agent can call:
 
@@ -99,7 +98,7 @@ Available tools the agent can call:
 |------|-------------|
 | `browser_open` | Navigate to a URL, return the page title and accessibility snapshot |
 | `browser_snapshot` | Re-snapshot the current page (interactive elements with `[ref]` labels) |
-| `browser_console` | Drain buffered console messages (logs, warnings, errors) |
+| `browser_console` | Drain buffered console messages |
 | `browser_click` | Click an element by its `ref` from a snapshot |
 | `browser_type` | Type text into an element by `ref` |
 | `browser_screenshot` | Capture a screenshot and describe it via a local vision model (opt-in) |
@@ -120,8 +119,8 @@ Token-compression rules injected into the system prompt. On by default. `caveman
 
 Force a level regardless of profile:
 
-    bee --caveman full                        # global, any subcommand
-    bee run --caveman full -- "..."           # one-off
+    bee --caveman full
+    bee run --caveman full -- "..."
     # or set caveman = "full" in ~/.bee/config.toml
 
 Disable:
