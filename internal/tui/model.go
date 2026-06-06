@@ -71,6 +71,10 @@ type Model struct {
 	// from Init via autoSubmitMsg; piped/non-tty dispatch stays headless.
 	seedPrompt string
 
+	// suspendedJob tracks a Ctrl-Z'd external command (vim, etc.) so ctrl+o
+	// resumes it instead of opening a new one. nil when none is parked.
+	suspendedJob *suspendedJob
+
 	// status bar metadata
 	cwd      string
 	model    string

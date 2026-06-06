@@ -64,6 +64,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.ImagePaste):
 		return m.handleImagePaste()
 	case key.Matches(msg, m.keys.OpenEditor):
+		if m.suspendedJob != nil {
+			return m, m.resumeJob()
+		}
 		return m, m.openEditorCmd("")
 	case key.Matches(msg, m.keys.Submit):
 		// state-dependent: idle = submit, streaming = steer. Slash commands
