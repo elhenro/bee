@@ -69,6 +69,11 @@ func OpenWindow(o Opts) error {
 func ExecCmd(cmdline, dir string) *exec.Cmd {
 	c := exec.Command("sh", "-c", cmdline)
 	c.Dir = dir
+	// Wire the real terminal directly so the child (vim, etc.) bypasses any
+	// custom stdin wrapper the host installed and gets a usable TTY.
+	c.Stdin = os.Stdin
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
 	return c
 }
 

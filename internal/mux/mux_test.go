@@ -53,6 +53,16 @@ func TestEditorCommand(t *testing.T) {
 	}
 }
 
+func TestExecCmd(t *testing.T) {
+	c := ExecCmd("echo hi", "/tmp")
+	if c.Dir != "/tmp" {
+		t.Fatalf("Dir=%q want /tmp", c.Dir)
+	}
+	if c.Stdin == nil || c.Stdout == nil || c.Stderr == nil {
+		t.Fatal("ExecCmd must wire stdin/stdout/stderr to the real terminal")
+	}
+}
+
 func TestWindowArgsNew(t *testing.T) {
 	got := windowArgs("vim", "/work", "vim main.go", []string{"bee", "shell"})
 	want := []string{"new-window", "-n", "vim", "-c", "/work", "vim main.go"}

@@ -5,12 +5,33 @@
 package tui
 
 import (
+	"io"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/elhenro/bee/internal/mux"
 )
+
+// ttyExec is a tea.ExecCommand that hands the child the real terminal and
+// toggles off bee's xterm/Kitty keyboard-protocol modes for the duration so
+// the child (vim, etc.) sees plain key bytes instead of CSI-u sequences it
+// cannot parse. SetStd* are no-ops: ExecCmd already wired os.Std* and we do
+// not want bubbletea swapping in its translated input stream.
+type ttyExec struct{ cmd *exec.Cmd }
+
+func (t ttyExec) Run() error {
+	io.WriteString(os.Stdout, modifyOtherKeysDisable)
+	err := t.cmd.Run()
+	io.WriteString(os.Stdout, modifyOtherKeysEnable)
+	return err
+}
+
+func (ttyExec) SetStdin(io.Reader)  {}
+func (ttyExec) SetStdout(io.Writer) {}
+func (ttyExec) SetStderr(io.Writer) {}
 
 // externalDoneMsg reports the outcome of a launched external command.
 type externalDoneMsg struct {
@@ -73,7 +94,7 @@ func (m Model) runExternal(name, cmdline string) tea.Cmd {
 			return externalDoneMsg{what: name, err: err}
 		}
 	}
-	return tea.ExecProcess(mux.ExecCmd(cmdline, dir), func(err error) tea.Msg {
+	return tea.Exec(ttyExec{mux.ExecCmd(cmdline, dir)}, func(err error) tea.Msg {
 		return externalDoneMsg{what: name, err: err}
 	})
 }
