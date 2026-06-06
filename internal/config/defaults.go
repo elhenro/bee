@@ -1,7 +1,7 @@
 package config
 
 // Defaults returns the canonical out-of-the-box configuration: OpenRouter +
-// deepseek-v4-flash, three profiles, caveman-full, workspace-write +
+// deepseek-v4-flash, three profiles, caveman-full, workspace-write-net +
 // on-request sandbox, memory enabled with top_k=3.
 //
 // Zero-config startup: set OPENROUTER_API_KEY and bee runs.
@@ -26,7 +26,13 @@ func Defaults() Config {
 		// (flash/mini/8b…) otherwise reflex into shell calls.
 		Mode: "auto",
 		Sandbox: SandboxConfig{
-			Scope:    "workspace-write",
+			// workspace-write-net: outbound network allowed (npm/pip/go installs
+			// work out of the box) but writes stay confined to cwd+tmp. plain
+			// workspace-write blocks all network, which silently breaks installs
+			// and reads as "no network" to the model. tighten to
+			// `--sandbox workspace-write` (no net) or `read-only` for untrusted
+			// work; `--sandbox danger-full-access` drops confinement entirely.
+			Scope:    "workspace-write-net",
 			Approval: "on-request",
 		},
 		Memory: MemoryConfig{

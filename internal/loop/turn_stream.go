@@ -87,7 +87,10 @@ func (e *Engine) streamAttempt(
 	gotContent := false
 	sinceScan := 0 // bytes appended since the last repetition check
 	looped := false
+	truncated := false // stream dropped mid-output on a transient error
 	loopPeriodText, loopPeriodThink := 0, 0
+	loopTrimText, loopTrimThink := -1, -1
+events:
 	for ev := range ch {
 		if ctx.Err() != nil {
 			return types.Message{}, "", nil, false, false, ctx.Err()
@@ -137,8 +140,17 @@ func (e *Engine) streamAttempt(
 				// drain remaining events so the provider goroutine exits cleanly
 				for range ch {
 				}
-				if !gotContent && isTransientStreamErr(ev.Err) {
-					return types.Message{}, "", nil, false, true, ev.Err
+				if isTransientStreamErr(ev.Err) {
+					if !gotContent {
+						// pre-content hiccup: safe to replay the whole request.
+						return types.Message{}, "", nil, false, true, ev.Err
+					}
+					// mid-content drop: replaying would duplicate the tokens
+					// already streamed, so salvage the partial turn and let
+					// turn_run nudge the model to continue from here.
+					e.warnf("stream dropped mid-output (%v) — keeping partial turn, continuing", ev.Err)
+					truncated = true
+					break events
 				}
 				if e.JSONEmitter != nil {
 					e.JSONEmitter.Emit(jsonmode.Event{Type: "error", Message: ev.Err.Error()})
@@ -186,6 +198,10 @@ func (e *Engine) streamAttempt(
 				loopPeriodText, looped = p, true
 			} else if p := degenerateTailPeriod(thinkBuf.String()); p > 0 {
 				loopPeriodThink, looped = p, true
+			} else if off := degenerateLowVocabTail(textBuf.String()); off >= 0 {
+				loopTrimText, looped = off, true
+			} else if off := degenerateLowVocabTail(thinkBuf.String()); off >= 0 {
+				loopTrimThink, looped = off, true
 			}
 			if looped {
 				e.warnf("output stuck repeating — cut the stream")
@@ -208,9 +224,21 @@ func (e *Engine) streamAttempt(
 	if looped {
 		// collapse the repeated tail so it doesn't bloat the transcript, and
 		// flag the turn so turn_run nudges/bails instead of finishing on garbage.
-		thinkStr = trimLoopedTail(thinkStr, loopPeriodThink)
-		textStr = trimLoopedTail(textStr, loopPeriodText)
+		// exact-period loops trim by period; low-vocab loops trim by offset.
+		if loopPeriodThink > 0 {
+			thinkStr = trimLoopedTail(thinkStr, loopPeriodThink)
+		} else if loopTrimThink >= 0 {
+			thinkStr = trimLoopedTailAt(thinkStr, loopTrimThink)
+		}
+		if loopPeriodText > 0 {
+			textStr = trimLoopedTail(textStr, loopPeriodText)
+		} else if loopTrimText >= 0 {
+			textStr = trimLoopedTailAt(textStr, loopTrimText)
+		}
 		e.lastTurnLooped = true
+	}
+	if truncated {
+		e.lastTurnTruncated = true
 	}
 	// thinking block first so the rendered transcript reads in causal order
 	if thinkStr != "" {

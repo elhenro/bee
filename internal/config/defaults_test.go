@@ -71,7 +71,7 @@ func TestDefaults_AnthropicAPIKey(t *testing.T) {
 
 func TestDefaults_SandboxAndMemory(t *testing.T) {
 	c := Defaults()
-	if c.Sandbox.Scope != "workspace-write" {
+	if c.Sandbox.Scope != "workspace-write-net" {
 		t.Errorf("sandbox scope = %q", c.Sandbox.Scope)
 	}
 	if c.Sandbox.Approval != "on-request" {

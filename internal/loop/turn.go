@@ -153,6 +153,13 @@ type Engine struct {
 	// loopCutStreak counts consecutive turns cut for degenerate repetition.
 	// drives RepeatStreamError at loopCutBailAt; reset by any clean stream.
 	loopCutStreak int
+	// lastTurnTruncated flags that the just-finished stream dropped mid-output
+	// on a transient error after content streamed. the turn loop keeps the
+	// partial turn and nudges to continue instead of failing the Run.
+	lastTurnTruncated bool
+	// truncCutStreak counts consecutive turns that dropped mid-output with no
+	// progress. drives TruncatedStreamError at truncCutBailAt; reset by progress.
+	truncCutStreak int
 	// dupWrites tracks (path, content-hash) of writes within one Run so the
 	// engine can warn on duplicate identical writes. opt-in per profile.
 	dupWrites *duplicateWriteTracker

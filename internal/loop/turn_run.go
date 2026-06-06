@@ -320,6 +320,36 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		}
 		e.loopCutStreak = 0
 
+		// stream dropped mid-output on a transient error. when no tool call
+		// survived the drop, the turn made no progress — nudge the model to
+		// continue (it sees its own partial output) and re-stream, bailing only
+		// after truncCutBailAt consecutive no-progress drops (dead connection).
+		// when a tool call DID survive, fall through: dispatching it is progress
+		// and its result carries the loop forward on its own.
+		if e.lastTurnTruncated {
+			e.lastTurnTruncated = false
+			if len(toolUses) == 0 && !detectDoneSignal(finalText) {
+				e.truncCutStreak++
+				if e.truncCutStreak >= truncCutBailAt {
+					return res, &TruncatedStreamError{Streak: e.truncCutStreak}
+				}
+				nudge := types.Message{
+					ID:       newID(),
+					ParentID: assistantMsg.ID,
+					Role:     types.RoleUser,
+					Content: []types.ContentBlock{{Type: types.BlockText, Text: "[nudge] the connection dropped before you finished your last turn. " +
+						"continue from where you left off — call a tool to make progress or give a short final answer."}},
+					Time: time.Now().UTC(),
+				}
+				if err := e.appendMessage(ctx, nudge); err != nil {
+					return res, err
+				}
+				res.Messages = append(res.Messages, nudge)
+				continue
+			}
+		}
+		e.truncCutStreak = 0
+
 		if len(toolUses) == 0 || detectDoneSignal(finalText) {
 			// format-slip streak: a turn with zero tool_uses but text that
 			// looks like an attempted call counts toward the strike budget.

@@ -123,6 +123,62 @@ func TestWrap_MacOS_WorkspaceWrite_RequiresCwd(t *testing.T) {
 	}
 }
 
+func TestWrap_MacOS_WorkspaceWriteNet_AllowsNetConfinesWrites(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin-only")
+	}
+	withLookPath(t, func(string) (string, error) { return "/usr/bin/sandbox-exec", nil })
+	got, err := Wrap(Policy{Scope: WorkspaceWriteNet, Cwd: "/tmp/work"}, []string{"npm", "install"})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	profile := got[2]
+	// network is open...
+	if !strings.Contains(profile, "(allow network*)") {
+		t.Errorf("net scope should allow network: %q", profile)
+	}
+	if strings.Contains(profile, "(deny network*)") {
+		t.Errorf("net scope must not deny network: %q", profile)
+	}
+	// ...but writes are still confined: default deny + cwd carve-out only.
+	if !strings.Contains(profile, "(deny file-write*)") {
+		t.Errorf("net scope must still deny writes by default: %q", profile)
+	}
+	if !strings.Contains(profile, `"/tmp/work"`) {
+		t.Errorf("net scope missing cwd write carve-out: %q", profile)
+	}
+}
+
+func TestWrap_MacOS_WorkspaceWriteNet_RequiresCwd(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin-only")
+	}
+	withLookPath(t, func(string) (string, error) { return "/usr/bin/sandbox-exec", nil })
+	if _, err := Wrap(Policy{Scope: WorkspaceWriteNet}, []string{"ls"}); err == nil {
+		t.Error("expected error for missing Cwd")
+	}
+}
+
+func TestWrap_Linux_WorkspaceWriteNet_KeepsNet(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only")
+	}
+	withLookPath(t, func(string) (string, error) { return "/usr/bin/bwrap", nil })
+	got, err := Wrap(Policy{Scope: WorkspaceWriteNet, Cwd: "/work"}, []string{"npm", "install"})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	joined := strings.Join(got, " ")
+	// net namespace NOT unshared (outbound allowed)...
+	if strings.Contains(joined, "--unshare-net") {
+		t.Errorf("net scope must not unshare net: %s", joined)
+	}
+	// ...but cwd still bound writable.
+	if !strings.Contains(joined, "--bind /work /work") {
+		t.Errorf("net scope missing writable bind: %s", joined)
+	}
+}
+
 func TestWrap_Linux_ReadOnly(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux-only")

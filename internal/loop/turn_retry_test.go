@@ -87,9 +87,12 @@ func TestStreamOnce_RetriesPreContentError(t *testing.T) {
 	}
 }
 
-// TestStreamOnce_NoRetryAfterContent: once a delta is emitted, mid-stream
-// errors must surface as-is (replaying would duplicate tokens on screen).
-func TestStreamOnce_NoRetryAfterContent(t *testing.T) {
+// TestStreamOnce_NoReplayAfterContent: once a delta is emitted, a mid-stream
+// transient error must NOT replay the same request (that would duplicate the
+// streamed tokens). Instead it salvages the partial turn and continues. A
+// provider that drops on every call therefore bails with TruncatedStreamError
+// after truncCutBailAt no-progress drops rather than looping forever.
+func TestStreamOnce_NoReplayAfterContent(t *testing.T) {
 	prev := preContentRetryDelay
 	preContentRetryDelay = 5 * time.Millisecond
 	defer func() { preContentRetryDelay = prev }()
@@ -109,11 +112,47 @@ func TestStreamOnce_NoRetryAfterContent(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if _, err := eng.Run(ctx, "ping"); err == nil {
-		t.Fatalf("expected error after mid-stream failure")
+	_, err := eng.Run(ctx, "ping")
+	if !errors.Is(err, ErrTruncatedStream) {
+		t.Fatalf("expected ErrTruncatedStream after persistent mid-stream drops, got %v", err)
 	}
-	if got := atomic.LoadInt32(&prov.calls); got != 1 {
-		t.Fatalf("provider must NOT retry once content emitted, got calls=%d", got)
+	if got := atomic.LoadInt32(&prov.calls); got != truncCutBailAt {
+		t.Fatalf("expected %d re-streams before bail, got calls=%d", truncCutBailAt, got)
+	}
+}
+
+// TestStreamOnce_RecoversAfterMidStreamDrop: a transient drop after content is
+// recovered — bee keeps the partial turn, nudges, and the next stream completes
+// the answer. This is the recover-and-continue behavior the user asked for.
+func TestStreamOnce_RecoversAfterMidStreamDrop(t *testing.T) {
+	prev := preContentRetryDelay
+	preContentRetryDelay = 5 * time.Millisecond
+	defer func() { preContentRetryDelay = prev }()
+
+	prov := &dropThenSucceedProvider{}
+	cfg := config.Defaults()
+	cfg.Mode = "edit"
+	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
+	cfg.Compaction = config.CompactionConfig{Enabled: false}
+	eng := &Engine{
+		Provider: prov,
+		Tools:    tools.NewRegistry(),
+		Memory:   stubMemStore{},
+		Stdout:   io.Discard,
+		Cfg:      cfg,
+		Cwd:      ".",
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	res, err := eng.Run(ctx, "ping")
+	if err != nil {
+		t.Fatalf("Run should recover from a single mid-stream drop, got %v", err)
+	}
+	if !strings.Contains(res.FinalText, "the answer") {
+		t.Fatalf("expected the post-recovery answer, got %q", res.FinalText)
+	}
+	if got := atomic.LoadInt32(&prov.calls); got != 2 {
+		t.Fatalf("expected drop then success (2 calls), got %d", got)
 	}
 }
 
@@ -126,7 +165,28 @@ func (p *midStreamErrProvider) Stream(_ context.Context, _ llm.Request) (<-chan 
 	go func() {
 		defer close(ch)
 		ch <- llm.Event{Type: llm.EventTextDelta, Delta: "partial"}
-		ch <- llm.Event{Type: llm.EventError, Err: fmt.Errorf("sse scan: %w", errors.New("EOF"))}
+		ch <- llm.Event{Type: llm.EventError, Err: fmt.Errorf("sse scan: %w", errors.New("use of closed network connection"))}
+	}()
+	return ch, nil
+}
+
+// dropThenSucceedProvider drops mid-output on the first call, then completes
+// cleanly — models a flaky local server that recovers on reconnect.
+type dropThenSucceedProvider struct{ calls int32 }
+
+func (p *dropThenSucceedProvider) Name() string { return "drop-then-ok" }
+func (p *dropThenSucceedProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
+	n := atomic.AddInt32(&p.calls, 1)
+	ch := make(chan llm.Event, 3)
+	go func() {
+		defer close(ch)
+		if n == 1 {
+			ch <- llm.Event{Type: llm.EventTextDelta, Delta: "I'll start, "}
+			ch <- llm.Event{Type: llm.EventError, Err: fmt.Errorf("sse scan: %w", errors.New("connection reset"))}
+			return
+		}
+		ch <- llm.Event{Type: llm.EventTextDelta, Delta: "the answer is 42."}
+		ch <- llm.Event{Type: llm.EventDone}
 	}()
 	return ch, nil
 }

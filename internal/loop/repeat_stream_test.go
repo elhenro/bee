@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -122,5 +123,71 @@ func TestTrimLoopedTail_NoopOnZeroPeriod(t *testing.T) {
 	s := "no loop here"
 	if got := trimLoopedTail(s, 0); got != s {
 		t.Fatalf("expected unchanged, got %q", got)
+	}
+}
+
+func TestDegenerateLowVocabTail_DetectsNoisyPhraseLoop(t *testing.T) {
+	// the real symptom degenerateTailPeriod misses: two phrases shuffled in
+	// irregular order, so the tail isn't byte-periodic but the vocabulary is
+	// tiny. (from a real wedged-model log.)
+	phrases := []string{"Writing the game file... ", "Building the game file... "}
+	var b strings.Builder
+	b.WriteString("Here is my detailed plan for building the terrain system with chunked noise sampling and object placement before anything else.\n")
+	for i := 0; i < 80; i++ {
+		// thue-morse parity: aperiodic order, so the tail is never byte-periodic.
+		parity := 0
+		for v := i; v > 0; v >>= 1 {
+			parity ^= v & 1
+		}
+		b.WriteString(phrases[parity])
+	}
+	s := b.String()
+	if degenerateTailPeriod(s) != 0 {
+		t.Fatal("setup: exact-period detector should NOT catch this noisy loop")
+	}
+	off := degenerateLowVocabTail(s)
+	if off < 0 {
+		t.Fatal("expected low-vocab loop detection")
+	}
+	// the loop must be cut, but the meaningful preamble (which has rich, varied
+	// vocab the loop words can't extend through) must survive.
+	if off == 0 || !strings.Contains(s[:off], "Here is my detailed plan") {
+		t.Fatalf("trim offset %d ate the real prefix", off)
+	}
+}
+
+func TestDegenerateLowVocabTail_IgnoresVariedProse(t *testing.T) {
+	cases := []string{
+		"",
+		"a short answer with no repetition at all.",
+		// long but genuinely varied prose: many distinct words.
+		strings.Repeat("the quick brown fox jumps over a lazy dog near the river bank today ", 8),
+		// a real numbered list — distinct tokens per line.
+		func() string {
+			var b strings.Builder
+			for i := 0; i < 90; i++ {
+				fmt.Fprintf(&b, "item number %d here\n", i)
+			}
+			return b.String()
+		}(),
+	}
+	for _, c := range cases {
+		if off := degenerateLowVocabTail(c); off != -1 {
+			t.Fatalf("false positive offset=%d on %q", off, c[:min(40, len(c))])
+		}
+	}
+}
+
+func TestTrimLoopedTailAt_Collapses(t *testing.T) {
+	s := "intro\n" + strings.Repeat("loop ", 100)
+	got := trimLoopedTailAt(s, len("intro\n"))
+	if !strings.Contains(got, "intro") || !strings.Contains(got, "truncated") {
+		t.Fatalf("trim should keep prefix + marker, got %q", got)
+	}
+	if len(got) >= len(s) {
+		t.Fatal("expected trim to shrink output")
+	}
+	if got := trimLoopedTailAt("x", -1); got != "x" {
+		t.Fatalf("negative offset must be a noop, got %q", got)
 	}
 }

@@ -10,9 +10,9 @@ import (
 //   - /proc and /dev synthesized
 //   - tmpfs on /tmp
 //   - cwd bound writable for WorkspaceWrite
-//   - --unshare-net for ReadOnly (no network)
-//   - --unshare-all minus net for WorkspaceWrite (network still off —
-//     agents should not exfiltrate during writes)
+//   - --unshare-net for ReadOnly + WorkspaceWrite (no network)
+//   - WorkspaceWriteNet keeps the host net namespace (outbound allowed for
+//     package installs); writes stay confined to the bound cwd
 //
 // If bwrap is not on PATH the original cmd is returned with ErrHelperMissing.
 func wrapLinux(p Policy, cmd []string) ([]string, error) {
@@ -45,13 +45,17 @@ func bwrapArgs(p Policy) ([]string, error) {
 	case ReadOnly:
 		base = append(base, "--unshare-net")
 		return base, nil
-	case WorkspaceWrite:
+	case WorkspaceWrite, WorkspaceWriteNet:
 		cwd := strings.TrimSpace(p.Cwd)
 		if cwd == "" {
-			return nil, fmt.Errorf("sandbox: workspace-write requires Policy.Cwd")
+			return nil, fmt.Errorf("sandbox: %s requires Policy.Cwd", p.Scope)
+		}
+		// workspace-write-net keeps the host net namespace (outbound network
+		// allowed for installs); plain workspace-write unshares it.
+		if p.Scope == WorkspaceWrite {
+			base = append(base, "--unshare-net")
 		}
 		base = append(base,
-			"--unshare-net",
 			"--bind", cwd, cwd,
 			"--chdir", cwd,
 		)

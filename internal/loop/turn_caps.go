@@ -22,12 +22,12 @@ const maxBudgetRecoveries = 3
 // (tokens) or real stall (read-only streak) rather than running out the
 // arbitrary iter count.
 //   tokenBudget: 10× the model's context window.
-//   stallCap:    3× profile NoMutationStallThreshold, default 8.
+//   stallCap:    9× profile NoMutationStallThreshold, default 24.
 func computeBudgetCaps(cfg config.Config) (tokenBudget, stallCap int) {
 	tokenBudget = 10 * contextBudget(cfg)
-	stallCap = 8
+	stallCap = 24
 	if t := config.ActiveProfile(cfg).NoMutationStallThreshold; t > 0 {
-		stallCap = t * 3
+		stallCap = t * 9
 	}
 	return
 }

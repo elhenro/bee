@@ -55,8 +55,10 @@ Override `$HOME` via `BEE_HOME=/tmp/iso` for hermetic install tests.
 | `hive` | Long-running multi-bee pool view (same runtime as `swarm`/`fan`). |
 | `bg` | Re-exec headless with a pinned session id, detached via `Setsid`. |
 | `agents` | TUI overview of parallel detached agents — each chat submit spawns one in its own worktree. |
+| `remote-control` | Serves a local web relay (URL + QR) to drive bee from another device over the LAN. |
 | `zzz` | Overnight autonomous-commit loop. Same engine, sentinel-driven stop. |
 | `doctor` | Read-only preflight: provider keys, sandbox tools, ollama probe, models cache. |
+| `bench` | Small-model benchmark harness — scored task suite with ledger + holdout split. |
 | `version` / `-v` / `--version` | Build version. |
 | `help` / `-h` / `--help` | Usage. |
 | *anything else* | `dispatchSkill(arg[1], rest...)` → headless run with `--skill <name>`. |
@@ -73,8 +75,8 @@ Clean **types → provider → tools → loop → ui** stack. Internal packages 
 
 - **`internal/llm/`** — `Provider` interface + adapters. Built-ins:
   - `openai_compat.go` — OpenRouter / OpenAI / DeepSeek / Groq / Ollama / LM Studio via `base_url + wire_api=chat`. Streaming in `openai_compat_stream.go`; stall-watchdog in `openai_compat_stall_test.go`.
-  - `claude.go` — native Anthropic Messages API (`wire_api=anthropic-messages`), streaming in `claude_stream.go`, thinking-block aware.
-  - `chatgpt.go` — OAuth-backed ChatGPT account via `internal/auth` (`wire_api=responses`); request/stream split across `chatgpt_request.go`/`chatgpt_stream.go`.
+  - `claude.go`/`anthropic.go` — native Anthropic Messages API (`wire_api=anthropic-messages`), streaming in `claude_stream.go`, thinking-block aware.
+  - `chatgpt.go` — OAuth-backed ChatGPT account via `internal/auth` (`wire_api=responses`); request/stream split across `chatgpt_request.go`/`chatgpt_stream.go`, with `chatgpt_auth.go`/`chatgpt_models.go` for token + model handling.
   - `gemini.go` — native Google Gemini (`wire_api=gemini`).
   - `textmode.go` — wraps another `Provider`, injects an XML-style tool advert into the system prompt and parses `<tool>{...}</tool>` envelopes out of the assistant content stream. Opt-in per profile via `ToolFormat="xml"` for tiny/local models that ignore `tool_calls`. Parser in `textmode_parse.go`.
   - `thinking_hybrid.go` — handles providers that emit reasoning in a side channel vs. inline `<thinking>` tags.
@@ -83,11 +85,12 @@ Clean **types → provider → tools → loop → ui** stack. Internal packages 
   - `mockprov/` — fixture-driven `Provider` for scripted e2e tests.
 
 - **`internal/tools/`** — current surface (Spec name in `tools/<dir>/<dir>.go`):
-  - **Read-side**: `read`, `search` (regex grep, code in `internal/tools/grep/`), `glob` (filename match, code in `internal/tools/find/`), `ls`.
+  - **Read-side**: `read`, `search` (regex grep, code in `internal/tools/grep/`), `glob` (filename match, code in `internal/tools/find/`), `ls`, `godoc` (`go doc -short` for a package/symbol), `codegraph` (symbol-relationship queries over the project's CodeGraph index).
+  - **Web**: `web_search` (Brave Search API, top-5 results), `web_fetch` (fetch + extract a URL).
   - **Write-side**: `apply_patch` (unified-diff multi-edit; tiny profile skips it), `write`, `edit` (search-and-replace, code in `internal/tools/edit_diff/`), `hashline_edit` (line-number based, robust on tiny models).
   - **Shell**: `bash` (code in `internal/tools/shell/`, wrapped by sandbox policy + `internal/approval` for dangerous-command gating).
   - **Knowledge**: `knowledge_search`, `knowledge_write` — frontend to `internal/knowledge`. Disabled when `[memory] enabled=false`.
-  - **Meta**: `tool_lookup` — model-callable "what tools do I have, and how do I use them?" Reads back from the registry so it always sees the live filtered surface, including user-defined tools.
+  - **Meta**: `tool_lookup` — model-callable "what tools do I have, and how do I use them?" Reads back from the registry so it always sees the live filtered surface, including user-defined tools. `ask_user` — pose a multiple-choice question and block on the user's pick (auto-resolves headless via `internal/ask`). `escalate` — signal "stuck, same approach failed repeatedly" for unattended-loop handling.
   - **Config-defined**: `usertool` wraps `[[user_tools]]` entries from `~/.bee/config.toml` as model-callable subprocess tools.
   - **Common**: `truncate.go` caps tool-result payload at the profile's `ToolOutputTokens`; `relpath.go` keeps paths repo-relative; `argparse.go` normalizes mixed-shape inputs from different providers.
 
@@ -107,7 +110,7 @@ Clean **types → provider → tools → loop → ui** stack. Internal packages 
 
 - **`internal/jsonmode/`** — NDJSON event emitter for `bee run --json`. Decoupled from `llm.Usage` to avoid an import cycle.
 
-- **`internal/skills/`** — parser (`parse.go`), in-memory registry (`registry.go`). Skills are surfaced via the `bee <name>` dispatcher in `cmd/bee/main.go` — there are no shell shims or PATH mutations. `bundled/` ships defaults (`calc.md`, `caveman-commit.md`, `caveman-review.md`, `criticize.md`, `efficient-search.md`, `hermes.md`, `ultraplan.md`, ...) as `embed.FS`; `WriteDefaults` is called on first run and preserves user edits.
+- **`internal/skills/`** — parser (`parse.go`), in-memory registry (`registry.go`). Skills are surfaced via the `bee <name>` dispatcher in `cmd/bee/main.go` — there are no shell shims or PATH mutations. `bundled/` ships defaults (`about.md`, `calc.md`, `caveman-commit.md`, `caveman-review.md`, `check-tests.md`, `criticize.md`, `efficient-search.md`, `explore.md`, `hermes.md`, `plan.md`, `research.md`, `session.md`, `ultraplan.md`) as `embed.FS`; `WriteDefaults` is called on first run and preserves user edits.
 
 - **`internal/knowledge/`** — per-project on-disk knowledge store. Frontmatter MD records with freeform tags + explicit priority + optional expiry. Parallel `scan.go` reads headers only (mtime-sorted, capped); `query.go` calls a side-channel LLM to extract 1–3 keyword hints and ranks entries by tag overlap + priority + recency. `age.go` produces freshness annotations; >1d-old records get a "verify before asserting" warning when injected.
 
@@ -122,6 +125,16 @@ Clean **types → provider → tools → loop → ui** stack. Internal packages 
 - **`internal/hive/`** — multi-bee swarm runtime. `Pool` (fan-out, semaphore-bounded, ctx-cancellable) and `Queen` (planner decomposes a task into ≤8 sub-tasks → workers execute → planner synthesizes). The runtime concept (`hive.Worker`) is intentionally separate from the UI concept (`tui.Bee`).
 
 - **`internal/agents/`** — per-agent worktree + lockfile lifecycle for `bee agents`. `spawn.go` detaches a headless engine into its own git worktree with a pinned session id; `lock.go` claims the worktree so a second spawn can't collide; `detach_unix.go`/`detach_other.go` are the platform branches; `merger.go` handles bringing changes back; `clear.go` cleans up finished agents.
+
+- **`internal/worktree/`** — low-level ephemeral `git worktree` checkout helper so concurrent workers each mutate files without racing on one shared tree. Used by `agents`/`hive`/`zzz`; distinct from the higher-level lifecycle in `internal/agents`.
+
+- **`internal/remote/`** — the `bee remote-control` web relay: `server.go` serves a small control UI, `sse.go` streams turn events, `lan.go` resolves the LAN address, `qr.go` renders the connect URL as a terminal QR code.
+
+- **`internal/ask/`** — backs the `ask_user` tool: poses a multiple-choice question and blocks until the user picks. Mirrors the approval gate — TUI surfaces an interactive picker, headless runs auto-resolve so nothing hangs.
+
+- **`internal/goal/`** — powers the `/goal` completion-condition loop: keep running turns until a fast model judges a user-specified condition met. Pure state + bookkeeping, no `llm` import.
+
+- **`internal/bench/`** — the `bee bench` small-model benchmark: `task.go`/`checks.go` define scored tasks, `score.go`/`metrics.go` grade runs, `ledger.go` persists results, `holdout.go` keeps a held-out split, `report.go` renders the summary.
 
 - **`internal/bgreg/`** — per-session status sidecar for background bees. The bg engine writes one JSON file per session at `<beeHome>/sessions/bg/<id>.status.json` (temp+rename for atomic replacement); the agent-view TUI reads it. `gc.go` evicts stale entries; `inbox.go` is the cross-agent message hand-off.
 

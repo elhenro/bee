@@ -109,3 +109,22 @@ func (e *RepeatStreamError) Error() string {
 
 func (e *RepeatStreamError) Is(target error) bool { return target == ErrRepeatStream }
 func (e *RepeatStreamError) Unwrap() error        { return ErrRepeatStream }
+
+// ErrTruncatedStream indicates the provider stream dropped mid-output (a
+// transient network error AFTER content already streamed) N turns in a row.
+// The first such drops are recovered — bee keeps the partial turn and nudges
+// the model to continue — but a persistent drop means the connection is dead,
+// so bail rather than reconnect forever.
+var ErrTruncatedStream = errors.New("loop: stream dropped mid-output repeatedly")
+
+// TruncatedStreamError wraps a mid-stream-drop bail with the streak length.
+type TruncatedStreamError struct {
+	Streak int
+}
+
+func (e *TruncatedStreamError) Error() string {
+	return fmt.Sprintf("%s: streak=%d", ErrTruncatedStream.Error(), e.Streak)
+}
+
+func (e *TruncatedStreamError) Is(target error) bool { return target == ErrTruncatedStream }
+func (e *TruncatedStreamError) Unwrap() error        { return ErrTruncatedStream }

@@ -52,12 +52,13 @@ const seatbeltReadOnly = `(version 1)
 (deny file-write*)
 ` + seatbeltLoopback + seatbeltDevNodes
 
-// seatbeltWorkspaceWriteHead/Tail wrap a dynamic block of (subpath ...) rules.
-// The middle is built per-call so dev-tool caches under $HOME (go-build, go
-// mod cache, npm, cargo, pip, etc.) can be written without dropping out of
-// the sandbox. Without these, `go build` inside the wrapped shell tool fails
-// with "open …/Library/Caches/go-build/…" because seatbelt blocks the write.
-const seatbeltWorkspaceWriteHead = `(version 1)
+// seatbeltWriteCommon is the shared preamble for the write-capable profiles.
+// The network rule (deny for workspace-write, allow for workspace-write-net)
+// and the dynamic (subpath ...) write block are appended per-call: dev-tool
+// caches under $HOME (go-build, go mod cache, npm, cargo, pip, etc.) must be
+// writable or `go build` inside the wrapped shell tool fails with
+// "open …/Library/Caches/go-build/…" because seatbelt blocks the write.
+const seatbeltWriteCommon = `(version 1)
 (deny default)
 (allow process-exec)
 (allow process-fork)
@@ -65,13 +66,15 @@ const seatbeltWorkspaceWriteHead = `(version 1)
 (allow file-read*)
 (allow sysctl-read)
 (allow mach-lookup)
-(deny network*)
 (deny file-write*)
-` + seatbeltLoopback + seatbeltDevNodes + `(allow file-write*
+`
+
+// seatbeltWriteOpenHead/Tail wrap the dynamic (subpath ...) write rules.
+const seatbeltWriteOpenHead = `(allow file-write*
     (subpath "/private/tmp")
     (subpath "/private/var/folders")
     (subpath "/tmp")`
-const seatbeltWorkspaceWriteTail = `)
+const seatbeltWriteOpenTail = `)
 `
 
 // wrapMacOS prepends a `sandbox-exec -p <profile>` invocation. On macOS
@@ -94,13 +97,23 @@ func macosProfile(p Policy) (string, error) {
 	switch p.Scope {
 	case ReadOnly:
 		return seatbeltReadOnly, nil
-	case WorkspaceWrite:
+	case WorkspaceWrite, WorkspaceWriteNet:
 		cwd := strings.TrimSpace(p.Cwd)
 		if cwd == "" {
-			return "", fmt.Errorf("sandbox: workspace-write requires Policy.Cwd")
+			return "", fmt.Errorf("sandbox: %s requires Policy.Cwd", p.Scope)
 		}
 		var b strings.Builder
-		b.WriteString(seatbeltWorkspaceWriteHead)
+		b.WriteString(seatbeltWriteCommon)
+		if p.Scope == WorkspaceWriteNet {
+			// outbound network allowed so package installs work; writes stay
+			// confined by the subpath block below.
+			b.WriteString("(allow network*)\n")
+		} else {
+			b.WriteString("(deny network*)\n")
+		}
+		b.WriteString(seatbeltLoopback)
+		b.WriteString(seatbeltDevNodes)
+		b.WriteString(seatbeltWriteOpenHead)
 		for _, path := range cwdAliases(cwd) {
 			b.WriteString("\n    ")
 			b.WriteString(fmt.Sprintf("(subpath %q)", path))
@@ -109,7 +122,7 @@ func macosProfile(p Policy) (string, error) {
 			b.WriteString("\n    ")
 			b.WriteString(fmt.Sprintf("(subpath %q)", d))
 		}
-		b.WriteString(seatbeltWorkspaceWriteTail)
+		b.WriteString(seatbeltWriteOpenTail)
 		return b.String(), nil
 	default:
 		return "", fmt.Errorf("sandbox: unsupported scope %q", p.Scope)

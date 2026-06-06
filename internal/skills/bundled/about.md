@@ -53,7 +53,7 @@ level, iter cap, output token cap, sampling.
 
 ## Sandbox (two axes)
 
-- **scope**: `read-only` | `workspace-write` | `danger-full-access`
+- **scope**: `read-only` | `workspace-write` | `workspace-write-net` (default — net allowed, writes confined) | `danger-full-access`
 - **approval**: `untrusted` | `on-request` | `on-failure` | `never`
 
 macOS uses `sandbox-exec`, Linux uses `bwrap`. Missing tool = warn +

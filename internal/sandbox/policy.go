@@ -17,6 +17,11 @@ const (
 	ReadOnly Scope = "read-only"
 	// WorkspaceWrite: writes confined to cwd (and tmp), network blocked.
 	WorkspaceWrite Scope = "workspace-write"
+	// WorkspaceWriteNet: like WorkspaceWrite but outbound network is allowed, so
+	// package installs (npm/pip/go/cargo) work while writes stay confined to
+	// cwd+tmp. The default — network isn't the security boundary (the approval
+	// modal is), filesystem confinement is what this preserves.
+	WorkspaceWriteNet Scope = "workspace-write-net"
 	// DangerFullAccess: no sandbox applied.
 	DangerFullAccess Scope = "danger-full-access"
 )

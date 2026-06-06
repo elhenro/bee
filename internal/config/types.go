@@ -275,7 +275,7 @@ func boolPtr(b bool) *bool { return &b }
 
 // SandboxConfig is a two-axis sandbox policy.
 //
-// Scope: read-only | workspace-write | danger-full-access.
+// Scope: read-only | workspace-write | workspace-write-net | danger-full-access.
 // Approval: untrusted | on-request | on-failure | never.
 //
 // CommandAllowlist holds safety.DangerousPattern keys the user has granted

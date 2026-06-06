@@ -38,8 +38,8 @@ func New() *Tool { return &Tool{} }
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name:          toolName,
-		Description:   "Call when you can't make progress: same approach failed multiple times, you need a decision only the user can make, or the task is outside your competence. Args: reason (required, why you're stuck), suggested_next_action (optional, what the user should try). Calling this stops the loop and surfaces the reason to the user.",
-		PromptSnippet: "Stop and ask the user",
+		Description:   "Last resort. Call ONLY when no tool action remains: the same approach failed several times in a row, or you need a decision only the user can make (credentials, ambiguous intent, irreversible choice). Do NOT escalate just because a task is large, multi-step, or unverified — if you can still read files, edit code, run commands, or search, keep working and finish what you can first. Args: reason (required, why you're stuck), suggested_next_action (optional). Calling this stops the loop.",
+		PromptSnippet: "Stop and ask the user — only when no tool action remains",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

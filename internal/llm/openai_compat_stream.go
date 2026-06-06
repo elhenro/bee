@@ -132,8 +132,10 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 		if chunk.Usage != nil {
 			usage = chunk.Usage
 		}
-		// Bump watchdog only when real output arrives (content/tool-calls/finish).
-		// Thinking-only deltas (reasoning_content / reasoning) do NOT reset the timer.
+		// Bump watchdog on any live delta. reasoning_content / reasoning count
+		// as liveness (see below) so a long thinking phase before content does
+		// not trip the stall timeout; hasRealOutput still tracks content/tool-
+		// calls/finish for the post-loop bump.
 		hasRealOutput := false
 		for _, ch := range chunk.Choices {
 			// reasoning_content / reasoning arrive on the delta for DeepSeek-
@@ -141,9 +143,11 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 			// separate event so the renderer can show thoughts grayed
 			// without mixing them into assistant content.
 			if ch.Delta.ReasoningContent != "" {
+				bumpActivity() // reasoning is liveness — keep the socket alive
 				out <- Event{Type: EventThinkingDelta, Delta: ch.Delta.ReasoningContent}
 			}
 			if ch.Delta.Reasoning != "" {
+				bumpActivity()
 				out <- Event{Type: EventThinkingDelta, Delta: ch.Delta.Reasoning}
 			}
 			if ch.Delta.Content != "" {

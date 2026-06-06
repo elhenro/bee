@@ -40,7 +40,7 @@ func runHeadlessReal(args []string) {
 	headless := fs.Bool("headless", true, "run without TUI (default true)")
 	model := fs.String("model", "", "override config default_model")
 	providerName := fs.String("provider", "", "override config default_provider")
-	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|danger-full-access)")
+	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|workspace-write-net|danger-full-access)")
 	skillName := fs.String("skill", "", "run a skill as the user message (prompt-kind only in Wave 2)")
 	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high|max (default: from config)")
 	effort := fs.String("effort", "", "alias for --thinking: auto|off|low|medium|high|max")
