@@ -94,14 +94,14 @@ Inside a running TUI session you can toggle browser support live with `/browser 
 
 Available tools the agent can call:
 
-| Tool | What it does |
-|------|-------------|
-| `browser_open` | Navigate to a URL, return the page title and accessibility snapshot |
-| `browser_snapshot` | Re-snapshot the current page (interactive elements with `[ref]` labels) |
-| `browser_console` | Drain buffered console messages |
-| `browser_click` | Click an element by its `ref` from a snapshot |
-| `browser_type` | Type text into an element by `ref` |
-| `browser_screenshot` | Capture a screenshot and describe it via a local vision model (opt-in) |
+| Tool                 | What it does                                                            |
+| -------------------- | ----------------------------------------------------------------------- |
+| `browser_open`       | Navigate to a URL, return the page title and accessibility snapshot     |
+| `browser_snapshot`   | Re-snapshot the current page (interactive elements with `[ref]` labels) |
+| `browser_console`    | Drain buffered console messages                                         |
+| `browser_click`      | Click an element by its `ref` from a snapshot                           |
+| `browser_type`       | Type text into an element by `ref`                                      |
+| `browser_screenshot` | Capture a screenshot and describe it via a local vision model (opt-in)  |
 
 The snapshot assigns a short `[eN]` ref to every interactive element so the agent can click or type by ref without XPath.
 
@@ -167,11 +167,7 @@ Runs fast, handles small tasks reliably, doesn't choke on context. Good enough f
 ## Platform support
 
 - **macOS / Linux** — first-class. Static binaries published for `darwin/{amd64,arm64}` and `linux/{amd64,arm64}`.
-- **Windows** — best-effort. The native build runs; the sandbox layer is a stub that re-dispatches through WSL2. Run under WSL2 for production use.
-
-## ChatGPT-account provider (opt-in, use at own risk)
-
-The `chatgpt` provider lets you drive bee with a ChatGPT Plus/Pro/Team subscription via the `chatgpt.com` Codex backend instead of paying per-token API billing. **This reuses a public client_id that targets a first-party OpenAI surface. OpenAI's terms restrict that surface to their own clients — usage may be rate-limited per plan tier and the path can be revoked at any time.** Treat this provider as experimental. Use `OPENROUTER_API_KEY` (or any other provider) for anything you don't want to lose access to. Run `/login chatgpt` to drive the PKCE flow; the command surfaces this same warning.
+- **Windows** — untested
 
 ## Credits
 
