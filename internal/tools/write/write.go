@@ -71,18 +71,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}, nil
 	}
 
-	abs := path
-	if !filepath.IsAbs(abs) {
-		abs = filepath.Join(t.root, path)
-	}
-	abs = filepath.Clean(abs)
-
-	rootAbs, err := filepath.Abs(t.root)
-	if err != nil {
-		return tools.Result{Content: err.Error(), IsError: true}, nil
-	}
-	rel, err := filepath.Rel(rootAbs, abs)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	abs, rel, rootAbs, ok := tools.ResolveInRoot(t.root, path)
+	if !ok {
 		return tools.Result{
 			Content: fmt.Sprintf("path %q escapes workspace root %q (resolved %q). use a path relative to workspace root, or under %s.",
 				path, rootAbs, abs, rootAbs),
