@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -43,8 +44,15 @@ type ApprovalModel struct {
 	Request ApprovalRequest
 	// focus is the highlighted button index: 0=allow 1=session 2=always 3=deny.
 	focus int
+	// width is the terminal width, so View can bound the modal.
+	width int
 	// out is the channel the parent passes for Engine wakeup.
 	out chan<- ApprovalDecisionMsg
+}
+
+// SetWidth records the terminal width so View can bound the modal.
+func (m *ApprovalModel) SetWidth(w int) {
+	m.width = w
 }
 
 // NewApprovalModel returns a fresh, inactive modal.
@@ -134,14 +142,28 @@ func (m ApprovalModel) decide(d ApprovalDecision) (ApprovalModel, tea.Cmd) {
 	return m, cmd
 }
 
+// approvalActionLines caps how many lines of the action (command) the modal
+// shows; the rest collapse into a `… +N more` note so a long script can't
+// blow the box up to full-screen.
+const approvalActionLines = 8
+
 // View renders the modal box. The parent overlays it on the main view.
 func (m ApprovalModel) View() string {
 	if !m.Active {
 		return ""
 	}
-	title := m.styles.ModalTitle.Render("permission request")
-	tool := m.styles.ToolName.Render(m.Request.ToolName)
-	action := m.Request.Action
+	dim := lipgloss.NewStyle().Foreground(fgOyster)
+	// inner content width: same bound as the question modal, shrunk on narrow
+	// terminals. reserve 6 cols for border (2) + horizontal padding (4).
+	inner := askModalWidth
+	if m.width > 0 && m.width-6 < inner {
+		inner = m.width - 6
+	}
+	if inner < 24 {
+		inner = 24
+	}
+
+	action := strings.TrimRight(m.Request.Action, "\n")
 	if action == "" {
 		action = "(no detail)"
 	}
@@ -149,6 +171,18 @@ func (m ApprovalModel) View() string {
 	if reason == "" {
 		reason = "(unspecified)"
 	}
+
+	lines := []string{
+		m.styles.ModalTitle.Render("permission request") + "  " + m.styles.ToolName.Render(m.Request.ToolName),
+		"",
+	}
+	lines = append(lines, dim.Render("reason"))
+	for _, rl := range wrapHanging(reason, inner) {
+		lines = append(lines, "  "+rl)
+	}
+	lines = append(lines, "", dim.Render("command"))
+	lines = append(lines, clipActionLines(action, inner)...)
+	lines = append(lines, "")
 
 	labels := []string{"[a]llow once", "[s]ession", "[f]orever", "[d]eny"}
 	btns := make([]string, 4)
@@ -159,16 +193,26 @@ func (m ApprovalModel) View() string {
 			btns[i] = m.styles.Button.Render(lbl)
 		}
 	}
-	row := lipgloss.JoinHorizontal(lipgloss.Top, btns[0], "  ", btns[1], "  ", btns[2], "  ", btns[3])
+	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, btns[0], " ", btns[1], " ", btns[2], " ", btns[3]))
 
-	body := strings.Join([]string{
-		title,
-		"",
-		"tool:   " + tool,
-		"reason: " + reason,
-		"action: " + action,
-		"",
-		row,
-	}, "\n")
-	return m.styles.Modal.Render(body)
+	return m.styles.Modal.Width(inner + 4).Render(strings.Join(lines, "\n"))
+}
+
+// clipActionLines truncates each command line to the inner width and caps the
+// total at approvalActionLines, appending a `… +N more` note when over.
+func clipActionLines(action string, inner int) []string {
+	raw := strings.Split(action, "\n")
+	var out []string
+	for _, l := range raw {
+		if len(l) > inner {
+			l = l[:inner-1] + "…"
+		}
+		out = append(out, "  "+l)
+		if len(out) >= approvalActionLines && len(raw) > approvalActionLines {
+			dim := lipgloss.NewStyle().Foreground(fgOyster)
+			out = append(out, dim.Render(fmt.Sprintf("  … +%d more", len(raw)-approvalActionLines)))
+			break
+		}
+	}
+	return out
 }

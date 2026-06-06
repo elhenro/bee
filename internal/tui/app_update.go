@@ -146,6 +146,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.atpicker.SetWidth(msg.Width)
 		m.history.SetWidth(msg.Width)
 		m.askModel.SetWidth(msg.Width)
+		m.approval.SetWidth(msg.Width)
 		if m.picker != nil {
 			m.picker.SetSize(msg.Width-4, msg.Height-4)
 		}
