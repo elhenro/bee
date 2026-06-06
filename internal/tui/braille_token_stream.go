@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"time"
 	"unicode/utf8"
 )
 
@@ -20,6 +21,7 @@ type LoaderStats struct {
 	OutChars int
 	Rate     int
 	Seed     int64
+	Duration time.Duration
 }
 
 // tokenStreamSpeed is the per-frame horizontal step (in px) of a particle.
@@ -74,10 +76,16 @@ func formatLoaderReadout(stats LoaderStats, budget int) string {
 	out := fmtTokens(stats.OutChars)
 
 	full := fmt.Sprintf("↑ %s ↓ %s", in, out)
+	if stats.Duration > 0 {
+		full = full + " " + formatElapsed(stats.Duration)
+	}
 	if utf8.RuneCountInString(full) <= budget {
 		return full
 	}
 	short := "↓ " + out
+	if stats.Duration > 0 {
+		short = short + " " + formatElapsed(stats.Duration)
+	}
 	if utf8.RuneCountInString(short) <= budget {
 		return short
 	}

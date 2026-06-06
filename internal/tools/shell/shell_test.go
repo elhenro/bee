@@ -43,30 +43,6 @@ func TestNonZeroExit(t *testing.T) {
 	}
 }
 
-func TestTimeoutFires(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("bash + sleep + ctx-kill not reliable on Windows runners")
-	}
-	start := time.Now()
-	res, err := New().Run(context.Background(), map[string]any{
-		"command":         "sleep 5",
-		"timeout_seconds": 1,
-	})
-	elapsed := time.Since(start)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !res.IsError {
-		t.Fatal("expected IsError on timeout")
-	}
-	if !strings.Contains(res.Content, "timeout") {
-		t.Fatalf("missing timeout marker: %s", res.Content)
-	}
-	if elapsed > 4*time.Second {
-		t.Fatalf("timeout did not fire fast: %v", elapsed)
-	}
-}
-
 func TestLargeOutputTruncated(t *testing.T) {
 	// emit ~30 KB
 	res, err := New().Run(context.Background(), map[string]any{

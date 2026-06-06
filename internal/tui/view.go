@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -111,6 +112,7 @@ func (m Model) renderLive(maxRows int) string {
 			OutChars: m.turnOutChars,
 			Rate:     m.loaderRate,
 			Seed:     m.loaderSeed,
+			Duration: m.turnElapsed(),
 		})
 		// reasoning streams above the answer in a dim/italic block. Same
 		// styling as the finalized BlockThinking block so the live view
@@ -312,4 +314,13 @@ func overlayCenter(base, modal string, w int) string {
 		return base
 	}
 	return base + "\n\n" + lipgloss.NewStyle().Width(w).Align(lipgloss.Center).Render(modal)
+}
+
+// turnElapsed returns the elapsed time of the current turn. Returns zero if
+// the turn hasn't started yet.
+func (m Model) turnElapsed() time.Duration {
+	if m.turnStartedAt.IsZero() {
+		return 0
+	}
+	return time.Since(m.turnStartedAt)
 }
