@@ -64,10 +64,15 @@ func (e *Engine) appendMessage(ctx context.Context, m types.Message) error {
 }
 
 func lastID(ms []types.Message) string {
-	if len(ms) == 0 {
-		return ""
+	// skip trailing ephemeral notices (e.g. auto-compact cards) so persisted
+	// messages chain ParentID to the last real message, not a UI-only echo.
+	for i := len(ms) - 1; i >= 0; i-- {
+		if ms[i].Ephemeral {
+			continue
+		}
+		return ms[i].ID
 	}
-	return ms[len(ms)-1].ID
+	return ""
 }
 
 func newID() string { return uuid.NewString() }

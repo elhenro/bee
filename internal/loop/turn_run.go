@@ -179,8 +179,8 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	if e.Cfg.Compaction.Enabled {
 		budget := contextBudget(e.Cfg)
 		if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) {
-			if compacted, _, cerr := e.compact(ctx, res.Messages); cerr == nil {
-				res.Messages = compacted
+			if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
+				res.Messages = e.emitCompactNotice(compacted, stats)
 				e.lastInputTokens = 0
 			} else {
 				fmt.Fprintf(os.Stderr, "loop: auto-compact failed: %v\n", cerr)
@@ -247,8 +247,8 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		if e.Cfg.Compaction.Enabled {
 			budget := contextBudget(e.Cfg)
 			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) {
-				if compacted, _, cerr := e.compact(ctx, res.Messages); cerr == nil {
-					res.Messages = compacted
+				if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
+					res.Messages = e.emitCompactNotice(compacted, stats)
 					// post-compact: reset lastInputTokens so the next
 					// iteration re-evaluates against the smaller history.
 					e.lastInputTokens = 0
@@ -278,7 +278,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		req := llm.Request{
 			Model:       e.Cfg.DefaultModel,
 			System:      reqSys,
-			Messages:    e.applyVisionFallback(ctx, res.Messages),
+			Messages:    e.applyVisionFallback(ctx, dropEphemeral(res.Messages)),
 			Tools:       specs,
 			Stream:      true,
 			Temperature: prof.Temperature,
