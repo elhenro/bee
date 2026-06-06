@@ -421,7 +421,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		if e.escalateErr != nil {
 			esc := e.escalateErr
 			e.escalateErr = nil
-			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction}
+			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction, Options: esc.Options}
 		}
 	}
 	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume, "+

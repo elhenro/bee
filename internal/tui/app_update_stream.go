@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -173,6 +174,11 @@ func (m Model) onRecapReady(msg recapReadyMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Println(line)
 }
 
+// isEscalate reports whether err is the loop's escalate sentinel (the model
+// chose to stop and hand control back), so onTurnDone can skip the red error
+// block and open the option picker instead.
+func isEscalate(err error) bool { return err != nil && errors.Is(err, loop.ErrEscalate) }
+
 func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	m.cancelRun = nil
 	// freeze elapsed at turn end. Guard zero turnStartedAt — late msgs
@@ -194,6 +200,22 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		m.partial = ""
 		m.thinkPartial = ""
 		m.state = StateIdle
+	case isEscalate(msg.err):
+		// escalate isn't a crash — the model handed control back. The yellow
+		// escalate card already sits in scrollback (rendered live), so don't
+		// repeat it as a red error block. Stay idle; open the option picker
+		// when the model supplied discrete choices.
+		m.streamFlushed = ""
+		m.streamFenceOpen = false
+		m.pendingFlushedPrefix = ""
+		m.thinkPartial = ""
+		m.partial = ""
+		m.commitFlushed()
+		m.state = StateIdle
+		var esc *loop.EscalateError
+		if errors.As(msg.err, &esc) {
+			m.escalate.Show(esc.Options)
+		}
 	case msg.err != nil:
 		// drop any progressively-flushed prefix on error — there's no
 		// final assistant message to dedupe against, just clear state.

@@ -18,6 +18,10 @@ const toolName = "escalate"
 type Error struct {
 	Reason     string
 	NextAction string
+	// Options are discrete choices for the user to pick from. When set, the
+	// TUI renders an interactive picker (arrow/number select) instead of
+	// free-text next-action prose.
+	Options []string
 }
 
 func (e *Error) Error() string {
@@ -38,13 +42,18 @@ func New() *Tool { return &Tool{} }
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name:          toolName,
-		Description:   "Last resort. Call ONLY when no tool action remains: the same approach failed several times in a row, or you need a decision only the user can make (credentials, ambiguous intent, irreversible choice). Do NOT escalate just because a task is large, multi-step, or unverified — if you can still read files, edit code, run commands, or search, keep working and finish what you can first. Args: reason (required, why you're stuck), suggested_next_action (optional). Calling this stops the loop.",
+		Description:   "Last resort. Call ONLY when no tool action remains: the same approach failed several times in a row, or you need a decision only the user can make (credentials, ambiguous intent, irreversible choice). Do NOT escalate just because a task is large, multi-step, or unverified — if you can still read files, edit code, run commands, or search, keep working and finish what you can first. Args: reason (required, why you're stuck), options (preferred — a short list of distinct choices the user can pick from; the UI shows them as a selectable menu), suggested_next_action (optional free text, use only when there are no discrete options). When you have options, put them in the options array — do NOT also restate them in suggested_next_action. Calling this stops the loop.",
 		PromptSnippet: "Stop and ask the user — only when no tool action remains",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"reason":                map[string]any{"type": "string", "minLength": 1},
 				"suggested_next_action": map[string]any{"type": "string"},
+				"options": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "discrete choices for the user to pick from",
+				},
 			},
 			"required": []any{"reason"},
 		},
@@ -59,5 +68,21 @@ func (t *Tool) Run(_ context.Context, in map[string]any) (tools.Result, error) {
 		reason = "(no reason provided)"
 	}
 	next, _ := in["suggested_next_action"].(string)
-	return tools.Result{}, &Error{Reason: reason, NextAction: next}
+	return tools.Result{}, &Error{Reason: reason, NextAction: next, Options: parseOptions(in["options"])}
+}
+
+// parseOptions coerces the schema's string array into []string, tolerating the
+// json-decoded []any shape and dropping blank entries.
+func parseOptions(v any) []string {
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, e := range raw {
+		if s, ok := e.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

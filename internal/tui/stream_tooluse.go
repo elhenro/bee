@@ -16,6 +16,11 @@ import (
 func (r *StreamRenderer) renderEscalate(u types.ToolUse) string {
 	reason, _ := u.Input["reason"].(string)
 	next, _ := u.Input["suggested_next_action"].(string)
+	// when the model supplied discrete options, the interactive picker renders
+	// them below — keep them out of the static card so they don't show twice.
+	if opts, ok := u.Input["options"].([]any); ok && len(opts) > 0 {
+		next = ""
+	}
 	head := r.styles.WarnBadge.Render("escalate") + " " + r.styles.Dim.Render("needs you")
 	reason = strings.TrimSpace(reason)
 	if reason == "" {

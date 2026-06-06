@@ -100,6 +100,11 @@ type Model struct {
 	askModel AskModel
 	asker    *Asker
 
+	// escalate picker — shown after the escalate tool bails with options.
+	// Renders inline under the live region; picking submits the chosen
+	// option as the next user turn.
+	escalate EscalateModel
+
 	// slash command registry + palette
 	cmds          *commands.Registry
 	skills        SkillsLister

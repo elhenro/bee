@@ -152,6 +152,9 @@ func (m Model) renderLive(maxRows int) string {
 	if m.state == StateError && m.lastErr != "" {
 		parts = append(parts, m.renderErrorBlock(m.lastErr))
 	}
+	if m.escalate.Active {
+		parts = append(parts, m.escalate.View())
+	}
 	return strings.Join(parts, "\n")
 }
 

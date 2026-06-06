@@ -49,3 +49,24 @@ func TestEscalate_SpecAdvertisesRequiredReason(t *testing.T) {
 		t.Errorf("schema missing reason property")
 	}
 }
+
+func TestEscalate_ParsesOptions(t *testing.T) {
+	tool := New()
+	_, err := tool.Run(context.Background(), map[string]any{
+		"reason":  "need a decision",
+		"options": []any{"adjust tolerance", "run as root", "", 42},
+	})
+	var e *Error
+	if !errors.As(err, &e) {
+		t.Fatalf("expected *Error, got %T", err)
+	}
+	want := []string{"adjust tolerance", "run as root"}
+	if len(e.Options) != len(want) {
+		t.Fatalf("got %d options, want %d: %#v", len(e.Options), len(want), e.Options)
+	}
+	for i, w := range want {
+		if e.Options[i] != w {
+			t.Errorf("option %d = %q, want %q", i, e.Options[i], w)
+		}
+	}
+}

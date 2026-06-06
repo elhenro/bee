@@ -34,6 +34,7 @@ var ErrEscalate = errors.New("loop: model escalated to user")
 type EscalateError struct {
 	Reason     string
 	NextAction string
+	Options    []string
 }
 
 func (e *EscalateError) Error() string {
