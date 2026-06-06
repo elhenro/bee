@@ -68,8 +68,12 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 			e.nudgedTwoStrike = true
 			emitRepeatEvent(e, u, "two_strike_nudge", obs)
 		}
-		if !e.nudgedRepeat && obs.RepeatCount >= repeatNudgeAt {
-			w := fmt.Sprintf("[repeat] same call to %s fired %dx — try a different approach, ask the user, or call escalate.\n\n",
+		// only nudge when the repeated call is currently failing. an identical
+		// call that succeeds is legit re-verification (e.g. re-running tests
+		// after an edit) — nudging "try a different approach" there is wrong
+		// advice and pushes small models to escalate over normal work.
+		if !e.nudgedRepeat && obs.RepeatCount >= repeatNudgeAt && r.IsError {
+			w := fmt.Sprintf("[repeat] same call to %s failed %dx — try a different approach, ask the user, or call escalate.\n\n",
 				u.Name, obs.RepeatCount)
 			blocks = prependWarningToToolResult(blocks, w)
 			e.nudgedRepeat = true
