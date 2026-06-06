@@ -12,17 +12,20 @@ import (
 // recapSystem asks the model for a single short line summarising what
 // just happened in this turn and a suggested next step. Kept terse so it
 // fits any provider context, and to bound the side-call cost.
-const recapSystem = `You write a one-sentence recap of an assistant's last turn.
+const recapSystem = `Write a one-sentence recap of the assistant's last turn.
 
-Format: "<what was done in past tense>. Next: <suggested next step>."
+Format: "<what was done>. Next: <suggested next step>."
+
+Example:
+  Fix: snap second-story midFloor to wall base (h + 0.1). Next: test the floors connect correctly.
 
 Rules:
-- Single sentence. Max 200 characters.
-- Past tense for what was done. Concrete, no vague verbs.
-- "Next:" suggests one specific follow-up the user could take.
+- Single sentence, max 200 characters.
+- Past tense, concrete verbs (fixed, added, removed, changed, etc.).
+- "Next:" suggests one specific follow-up.
+- No meta-commentary. No "I need to", "The user wants me", etc.
 - No prefix labels, no markdown, no quotes. Plain text only.
-- If the turn was a greeting, question, or no work, reply with the
-  single word: skip`
+- If the turn was a greeting, question, or no work, reply "skip".`
 
 // recapMaxInput caps how much of the assistant's text we feed back into
 // the side call. Long turns get truncated; the tail usually has the

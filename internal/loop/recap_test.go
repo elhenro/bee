@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/elhenro/bee/internal/types"
@@ -32,6 +33,43 @@ func TestParseRecapOutput(t *testing.T) {
 				t.Fatalf("parseRecapOutput(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestRecapPrompt(t *testing.T) {
+	// Ensure the system prompt has the directives that prevent meta-commentary.
+	// Regression: without these, models echo back instructions instead of
+	// executing them ("I need to craft a one-sentence recap…").
+	const prompt = recapSystem
+	for _, directive := range []string{
+		"Write a one-sentence recap",
+		"Example:",
+		"Past tense",
+		"No meta-commentary",
+		`"I need to"`,
+		`"The user wants me"`,
+		"Plain text only",
+	} {
+		if !strings.Contains(prompt, directive) {
+			t.Errorf("prompt missing directive %q", directive)
+		}
+	}
+	// Example should contain both what-was-done and next.
+	if !strings.Contains(prompt, "Next:") {
+		t.Error("example should show Next: format")
+	}
+}
+
+func TestRecapPromptNoMetaCommentary(t *testing.T) {
+	const prompt = recapSystem
+	// Verify the prompt has the negative directives (quoted in the prompt).
+	for _, directive := range []string{
+		`"I need to"`,
+		`"The user wants me"`,
+	} {
+		if !strings.Contains(prompt, directive) {
+			t.Errorf("prompt missing %q", directive)
+		}
 	}
 }
 
