@@ -69,5 +69,13 @@ func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentI
 			e.warnedStallEscalate = true
 		}
 	}
+	// cross-turn reasoning loop: the model rehashed near-identical reasoning for
+	// reasoningDupBailAt turns running. independent of mutation state — fires
+	// even while it makes token tool calls each turn. one-shot per crossing.
+	if !e.warnedReasoningDup && e.reasoningDupStreak >= reasoningDupBailAt {
+		w := fmt.Sprintf("[loop] your last %d turns repeated near-identical reasoning without progress. stop re-deriving the same analysis — take a concrete action, or call `escalate` with a reason to exit cleanly.\n\n", e.reasoningDupStreak+1)
+		blocks = prependWarningToToolResult(blocks, w)
+		e.warnedReasoningDup = true
+	}
 	return blocks
 }

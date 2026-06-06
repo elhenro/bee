@@ -153,6 +153,14 @@ type Engine struct {
 	// loopCutStreak counts consecutive turns cut for degenerate repetition.
 	// drives RepeatStreamError at loopCutBailAt; reset by any clean stream.
 	loopCutStreak int
+	// lastReasoningSig fingerprints the prior turn's reasoning/text. when N
+	// consecutive turns rehash near-identical reasoning the model is spinning
+	// across turn boundaries (each turn under the in-stream cut threshold), so
+	// reasoningDupStreak drives a hard escalate nudge. reset by a turn whose
+	// reasoning diverges enough.
+	lastReasoningSig   map[string]struct{}
+	reasoningDupStreak int
+	warnedReasoningDup bool
 	// lastTurnTruncated flags that the just-finished stream dropped mid-output
 	// on a transient error after content streamed. the turn loop keeps the
 	// partial turn and nudges to continue instead of failing the Run.

@@ -1,5 +1,7 @@
 package loop
 
+import "strings"
+
 // streaming degenerate-repetition detection. Small / local models sometimes
 // fall into a token loop, emitting the same phrase or cycle of lines over and
 // over until they hit max_tokens. The provider never closes the stream, so the
@@ -36,6 +38,13 @@ const (
 	loopVocabMinTokens = 80 // tail must have at least this many whitespace tokens
 	loopVocabCap       = 10 // ...drawn from at most this many distinct tokens
 	loopVocabMinReuse  = 6  // ...each token reused this many times on average
+	// block-repeat loop detection. catches a wedged model cycling a whole
+	// multi-paragraph block verbatim: the repeating unit exceeds loopMaxPeriod
+	// (so the byte-period scan never reaches it) and the vocabulary is rich (so
+	// the low-vocab scan passes). a single substantial line recurring many
+	// times in the tail is the tell.
+	blockMinLineLen = 24 // a line must be at least this long to count — skips "}", "ok", blanks
+	blockMinReps    = 5  // ...and recur at least this many times to be a loop
 )
 
 // degenerateTailPeriod returns the period of a repeated unit at the tail of s,
@@ -130,6 +139,75 @@ func degenerateLowVocabTail(s string) int {
 		return -1
 	}
 	return base + runStart
+}
+
+// degenerateBlockTail detects a coarse loop the other two scans miss: a whole
+// multi-paragraph block repeated (near-)verbatim, whose byte period exceeds
+// loopMaxPeriod and whose vocabulary is too rich for the low-vocab check. It
+// tallies normalized substantial lines in the tail window; if any one line
+// recurs at least blockMinReps times, the model is cycling. Returns the byte
+// offset (into s) where that line first appears — so the genuine preamble
+// before the loop survives — or -1 when the tail reads like varied text.
+func degenerateBlockTail(s string) int {
+	base := 0
+	if len(s) > loopScanWindow {
+		base = len(s) - loopScanWindow
+		s = s[base:]
+	}
+	type stat struct{ count, firstAt int }
+	seen := map[string]*stat{}
+	var bestKey string
+	bestCount := 0
+	off := 0
+	for off < len(s) {
+		end := len(s)
+		if nl := strings.IndexByte(s[off:], '\n'); nl >= 0 {
+			end = off + nl
+		}
+		if norm := normalizeBlockLine(s[off:end]); len(norm) >= blockMinLineLen {
+			st := seen[norm]
+			if st == nil {
+				st = &stat{firstAt: off}
+				seen[norm] = st
+			}
+			st.count++
+			if st.count > bestCount {
+				bestCount, bestKey = st.count, norm
+			}
+		}
+		if end >= len(s) {
+			break
+		}
+		off = end + 1
+	}
+	if bestCount < blockMinReps {
+		return -1
+	}
+	return base + seen[bestKey].firstAt
+}
+
+// normalizeBlockLine lowercases, trims, and collapses internal whitespace so
+// two lines that differ only in indentation or spacing hash the same.
+func normalizeBlockLine(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	space := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == ' ' || c == '\t' || c == '\r' {
+			space = true
+			continue
+		}
+		if space && b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		space = false
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // addToken records tok in seen unless tok is new and the vocabulary is already

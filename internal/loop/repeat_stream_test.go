@@ -191,3 +191,62 @@ func TestTrimLoopedTailAt_Collapses(t *testing.T) {
 		t.Fatalf("negative offset must be a noop, got %q", got)
 	}
 }
+
+func TestDegenerateBlockTail_DetectsRepeatedParagraph(t *testing.T) {
+	// the real symptom both other detectors miss: a multi-paragraph block
+	// repeated verbatim. its byte period exceeds loopMaxPeriod (so the exact
+	// scan never reaches it) and its vocabulary is rich (so the low-vocab scan
+	// passes). from a real wedged-model log reasoning about collider geometry.
+	block := "But wait, the blocked function checks the player's position against ALL colliders.\n" +
+		"So if there is a collider that is not a wall, like a floor or a prop or a roof piece, it could be blocking the player from entering the building.\n" +
+		"Let me check what colliders are in the world. Looking at the makeHouse function carefully one more time:\n" +
+		"The floor has no collider, the walls have colliders for each segment, the interior partition has a collider.\n" +
+		"The roof has no collider, the debris has no collider, the loot crates have no collider either.\n" +
+		"So the only colliders are the wall segments and the interior partition piece in the layout.\n" +
+		"So the door gap should work correctly given the radius and the clearance math we computed above.\n" +
+		"But the buildStory function creates walls for each side, and those other walls might be blocking the door.\n" +
+		"The door gap is one point six units wide and the player radius is zero point four, so clearance is plenty.\n" +
+		"Actually I think I have been overcomplicating this whole thing, let me look at the actual issue once more.\n"
+	if len(block) <= loopMaxPeriod {
+		t.Fatalf("setup: block must exceed loopMaxPeriod to defeat the byte scan, got %d", len(block))
+	}
+	s := "The player cannot walk through the door. Let me trace the geometry.\n" + strings.Repeat(block, 12)
+	if degenerateTailPeriod(s) != 0 {
+		t.Fatal("setup: byte-period detector should miss a >maxPeriod block")
+	}
+	off := degenerateBlockTail(s)
+	if off < 0 {
+		t.Fatal("expected block-repeat detection")
+	}
+	if off == 0 || !strings.Contains(s[:off], "cannot walk through the door") {
+		t.Fatalf("trim offset %d ate the real prefix", off)
+	}
+}
+
+func TestDegenerateBlockTail_IgnoresLegitText(t *testing.T) {
+	cases := []string{
+		"",
+		"a short varied answer with no repetition whatsoever to speak of.",
+		// distinct paragraphs, no line recurs.
+		strings.Repeat("x", 0) + "first point about the parser.\nsecond point about the lexer.\nthird point about codegen.\n",
+		// a long line repeated only a few times — under the rep gate.
+		strings.Repeat("this exact sentence appears a handful of times only.\n", blockMinReps-1),
+		// genuinely varied prose.
+		"the quick brown fox jumps over the lazy dog while the cat watches from the fence post nearby.",
+	}
+	for _, c := range cases {
+		if off := degenerateBlockTail(c); off != -1 {
+			t.Fatalf("false positive offset=%d on %q", off, c[:min(40, len(c))])
+		}
+	}
+}
+
+func TestDegenerateBlockTail_IgnoresShortRepeatedLines(t *testing.T) {
+	// short lines (under blockMinLineLen) recurring many times must NOT trip —
+	// that's the byte-period / low-vocab detectors' job, and code legitimately
+	// repeats short lines (closing braces, blank separators).
+	s := strings.Repeat("}\n", 40) + strings.Repeat("done\n", 40)
+	if off := degenerateBlockTail(s); off != -1 {
+		t.Fatalf("short lines should not trip block detector, got offset=%d", off)
+	}
+}

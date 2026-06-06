@@ -54,6 +54,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	e.nudgedTwoStrike = false
 	e.lastTurnLooped = false
 	e.loopCutStreak = 0
+	e.lastReasoningSig = nil
+	e.reasoningDupStreak = 0
+	e.warnedReasoningDup = false
 	e.dupWrites = newDuplicateWriteTracker()
 	e.escalateErr = nil
 	res := RunResult{}
@@ -295,6 +298,11 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		}
 		res.Messages = append(res.Messages, assistantMsg)
 		res.FinalText = finalText
+
+		// cross-turn reasoning loop: fold this turn's reasoning into the
+		// duplicate streak so injectIterAndTokenWarnings can fire a hard nudge
+		// when the model rehashes the same thinking turn after turn.
+		observeReasoningDup(e, assistantMsg.Content)
 
 		// stream was cut mid-repetition: nudge the model back on track, or bail
 		// after loopCutBailAt consecutive cuts (wedged in a token loop).

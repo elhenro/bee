@@ -202,6 +202,10 @@ events:
 				loopTrimText, looped = off, true
 			} else if off := degenerateLowVocabTail(thinkBuf.String()); off >= 0 {
 				loopTrimThink, looped = off, true
+			} else if off := degenerateBlockTail(textBuf.String()); off >= 0 {
+				loopTrimText, looped = off, true
+			} else if off := degenerateBlockTail(thinkBuf.String()); off >= 0 {
+				loopTrimThink, looped = off, true
 			}
 			if looped {
 				e.warnf("output stuck repeating — cut the stream")
