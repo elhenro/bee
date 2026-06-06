@@ -17,10 +17,9 @@ func Defaults() Config {
 		// (flash/mini/nano/haiku/8b…) get the 4-tool tiny surface — a
 		// minimal budget tuned for that class.
 		Profile: "auto",
-		// "auto" = medium when model supports reasoning_effort/thinking-budget
-		// (o-series, gpt-5, claude-4.x, gemini-2.5, deepseek reasoner, qwq …),
-		// off otherwise. Override per-run with `--thinking off|low|medium|high`.
-		Thinking: "auto",
+		// "off" = no reasoning tokens. Override per-run with `--thinking off|low|medium|high`
+		// (or "auto" to re-enable — medium when model supports reasoning_effort/thinking-budget).
+		Thinking: "off",
 		// "auto" runs an 8-token classifier per turn to pick plan|edit. Cheap
 		// and avoids mutator spam on greetings/questions where small models
 		// (flash/mini/8b…) otherwise reflex into shell calls.
