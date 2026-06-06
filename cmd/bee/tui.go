@@ -194,7 +194,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 
 	var prior []types.Message
 	if resumeID != "" {
-		ms, rerr := session.Read(resumeID)
+		ms, rerr := session.ReadResume(resumeID)
 		if rerr != nil {
 			fmt.Fprintf(os.Stderr, "bee: read session %s: %v\n", resumeID, rerr)
 			os.Exit(1)
@@ -274,6 +274,19 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		}
 	}
 	km := tui.LoadKeyMap(beeHome)
+
+	// resume: if the seeded history is still over the compaction threshold,
+	// summarize it once up front (cheap model, visible notice) so the first turn
+	// isn't a multi-minute prompt-processing stall on a slow local model.
+	if resumeID != "" && len(eng.InitialMessages) > 0 {
+		fmt.Fprintf(os.Stderr, "bee: resuming %s — checking history size…\n", resumeID)
+		if stats, ran, perr := eng.PrepareResume(context.Background()); perr != nil {
+			fmt.Fprintf(os.Stderr, "bee: resume compaction failed (continuing with full history): %v\n", perr)
+		} else if ran {
+			fmt.Fprintf(os.Stderr, "bee: compacted resumed history ~%dk→~%dk tokens\n",
+				stats.BeforeTokens/1000, stats.AfterTokens/1000)
+		}
+	}
 
 	if err := tui.RunSeededAsker(context.Background(), eng, cmdReg, km, tuiApprover, tuiAsker, seedPrompt); err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tui: %v\n", err)

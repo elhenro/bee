@@ -59,6 +59,34 @@ level, iter cap, output token cap, sampling.
 macOS uses `sandbox-exec`, Linux uses `bwrap`. Missing tool = warn +
 run unwrapped (best-effort, not a security boundary).
 
+## Vision fallback
+
+When the main model can't see images (and a dragged-in image path or
+pasted image is present), bee routes image blocks to a separate
+multimodal model, gets text back, and injects it (cached per image).
+
+Reuse an existing provider's endpoint (simplest):
+
+```toml
+[vision]
+provider = "omlx"        # inherits base_url + env_key
+model = "qwen3-vl-it"
+```
+
+Or point it anywhere openai-compatible / ollama:
+
+```toml
+[vision]
+model = "qwen3-vl-it"
+endpoint = "http://localhost:8080/v1"   # omlx/LM Studio/vLLM
+api = "openai"                          # or "ollama"
+env_key = "VISION_API_KEY"              # optional (local servers skip auth)
+```
+
+Or set it live for the session: `/vision <model> [endpoint] [api]`.
+Vision-capable main models (Claude/GPT-4o+/Gemini/qwen-VL) skip the
+fallback and see images directly.
+
 ## `~/.bee/` layout
 
 ```

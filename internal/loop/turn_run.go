@@ -179,7 +179,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	if e.Cfg.Compaction.Enabled {
 		budget := contextBudget(e.Cfg)
 		if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) {
-			if compacted, _, cerr := Compact(ctx, e.Provider, e.Cfg.DefaultModel, res.Messages); cerr == nil {
+			if compacted, _, cerr := e.compact(ctx, res.Messages); cerr == nil {
 				res.Messages = compacted
 				e.lastInputTokens = 0
 			} else {
@@ -247,7 +247,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		if e.Cfg.Compaction.Enabled {
 			budget := contextBudget(e.Cfg)
 			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) {
-				if compacted, _, cerr := Compact(ctx, e.Provider, e.Cfg.DefaultModel, res.Messages); cerr == nil {
+				if compacted, _, cerr := e.compact(ctx, res.Messages); cerr == nil {
 					res.Messages = compacted
 					// post-compact: reset lastInputTokens so the next
 					// iteration re-evaluates against the smaller history.
@@ -278,7 +278,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		req := llm.Request{
 			Model:       e.Cfg.DefaultModel,
 			System:      reqSys,
-			Messages:    res.Messages,
+			Messages:    e.applyVisionFallback(ctx, res.Messages),
 			Tools:       specs,
 			Stream:      true,
 			Temperature: prof.Temperature,

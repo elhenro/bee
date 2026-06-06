@@ -13,6 +13,7 @@ func RegisterBuiltins(r *Registry) {
 	registerSettings(r)
 	registerTools(r)
 	registerBrowser(r)
+	registerVision(r)
 	registerBackground(r)
 	registerGoal(r)
 	registerRemoteControl(r)
@@ -22,7 +23,7 @@ func RegisterBuiltins(r *Registry) {
 		Description:    "list slash commands",
 		AllowDuringRun: true,
 		Run: func(_ context.Context, _ []string, _ Side) (string, error) {
-			return "/compact, /model, /effort, /settings, /tools, /browser, /resume, /new, /clear, /copy, /tree, /fork, /clone, /login, /logout, /bg, /agent, /attach, /goal, /remote-control, /stop, /quit, /exit, /help", nil
+			return "/compact, /model, /effort, /settings, /tools, /browser, /vision, /resume, /new, /clear, /copy, /tree, /fork, /clone, /login, /logout, /bg, /agent, /attach, /goal, /remote-control, /stop, /quit, /exit, /help", nil
 		},
 	})
 }

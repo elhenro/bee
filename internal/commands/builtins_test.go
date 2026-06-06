@@ -204,12 +204,13 @@ func (f *fakeSide) OpenToolsPane() error {
 	f.openToolsCalled = true
 	return f.openToolsErr
 }
-func (f *fakeSide) SetBrowserEnabled(bool) (string, error) { return "", nil }
+func (f *fakeSide) SetBrowserEnabled(bool) (string, error)        { return "", nil }
+func (f *fakeSide) VisionFallback(_, _, _ string) (string, error) { return "", nil }
 
 func TestRegisterBuiltins_Names(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
-	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "iterations", "iter", "settings", "tools", "browser", "bg", "agent", "attach", "agents", "goal", "remote-control", "stop"}
+	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "iterations", "iter", "settings", "tools", "browser", "vision", "bg", "agent", "attach", "agents", "goal", "remote-control", "stop"}
 	for _, n := range want {
 		if _, ok := r.Get(n); !ok {
 			t.Errorf("missing builtin %q", n)

@@ -128,6 +128,56 @@ func readFile(path string) ([]types.Message, error) {
 	return out, nil
 }
 
+// ReadResume decodes a session like Read but collapses it at the last
+// compaction checkpoint: the checkpoint's summary stands in for everything
+// before PreserveFrom, so a resumed session sees the same shortened history the
+// live session had instead of the full raw log. Falls back to the raw read when
+// no checkpoint exists or PreserveFrom can't be located.
+func ReadResume(id string) ([]types.Message, error) {
+	msgs, err := Read(id)
+	if err != nil || len(msgs) == 0 {
+		return msgs, err
+	}
+	return collapseAtCheckpoint(msgs), nil
+}
+
+func collapseAtCheckpoint(msgs []types.Message) []types.Message {
+	last := -1
+	for i := range msgs {
+		if msgs[i].Checkpoint != nil {
+			last = i
+		}
+	}
+	if last < 0 {
+		return msgs
+	}
+	cp := msgs[last]
+	from := -1
+	for i := range msgs {
+		if msgs[i].ID == cp.Checkpoint.PreserveFrom {
+			from = i
+			break
+		}
+	}
+	if from < 0 {
+		// boundary lost; replay full rather than silently drop context.
+		return msgs
+	}
+	// summary first (marker stripped so it never re-folds), then the preserved
+	// tail plus everything appended after the checkpoint, minus any markers.
+	out := make([]types.Message, 0, len(msgs)-from)
+	summary := cp
+	summary.Checkpoint = nil
+	out = append(out, summary)
+	for i := from; i < len(msgs); i++ {
+		if msgs[i].Checkpoint != nil {
+			continue
+		}
+		out = append(out, msgs[i])
+	}
+	return out
+}
+
 // readFirstMessage reads only the first JSON line. Cheap for List().
 func readFirstMessage(path string) (types.Message, error) {
 	var m types.Message

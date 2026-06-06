@@ -121,6 +121,11 @@ type Config struct {
 	// Browser gates the native chromedp-backed browser tools.
 	Browser BrowserConfig `toml:"browser"`
 
+	// Vision configures a fallback multimodal model. When the main model lacks
+	// vision, the loop routes image blocks to this model, gets text back, and
+	// injects it so blind models can still work with screenshots/pasted images.
+	Vision VisionConfig `toml:"vision"`
+
 	// UpdateCheck gates the hourly upstream-update probe.
 	//   "ask"  — probe and surface a modal when main has new commits (default)
 	//   "auto" — probe and apply silently (notice surfaces via warn line)

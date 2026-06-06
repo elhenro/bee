@@ -171,6 +171,10 @@ type Side interface {
 	// registry so the change takes effect immediately. Returns a status
 	// string for the user. Errors when turning on with no Chrome found.
 	SetBrowserEnabled(on bool) (string, error)
+	// VisionFallback configures the session's fallback vision model used when
+	// the main model can't see images (no config persist). Empty model reports
+	// current status instead of changing anything. Returns a status string.
+	VisionFallback(model, endpoint, api string) (string, error)
 }
 
 // ToolInfo summarizes one tool entry for /tools UI.

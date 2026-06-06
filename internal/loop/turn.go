@@ -178,6 +178,11 @@ type Engine struct {
 	// for a given (model, ctx) pair, and we re-scale on model switch via the
 	// model-id check.
 	profileScaledFor string
+	// visionCache memoizes image-description text by content hash so a
+	// non-vision main model doesn't re-describe the same image every turn.
+	// visionWarned dedupes the "no fallback configured" notice per Run.
+	visionCache  map[string]string
+	visionWarned bool
 }
 
 // mutatorTools are names that count as state-changing for stall detection.

@@ -2,6 +2,9 @@ package loop
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"time"
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
@@ -12,8 +15,9 @@ import (
 // Compact summarizes the session's older messages and returns the compacted
 // slice plus stats. Caller is responsible for replacing the in-memory message
 // list (e.g. TUI scrollback / InitialMessages) so the next turn sees the
-// shorter history. Session file on disk is not rewritten — replayed sessions
-// still contain the full history.
+// shorter history. The raw on-disk log stays append-only, but a checkpoint
+// marker is appended so resume (session.ReadResume) reconstructs this shortened
+// view instead of replaying the full history.
 func (e *Engine) Compact(ctx context.Context) ([]types.Message, CompactStats, error) {
 	if e.Sessions == nil {
 		return nil, CompactStats{}, nil
@@ -22,11 +26,80 @@ func (e *Engine) Compact(ctx context.Context) ([]types.Message, CompactStats, er
 	if err != nil {
 		return nil, CompactStats{}, err
 	}
-	out, stats, err := Compact(ctx, e.Provider, e.Cfg.DefaultModel, msgs)
-	if err != nil {
-		return nil, stats, err
+	return e.compact(ctx, msgs)
+}
+
+// compactionModel picks the model used for summarization. FastModel (a cheap
+// side-eval model) is preferred so resuming or recovering a huge history
+// doesn't pay full prompt-processing on the primary model — critical for slow
+// local models where summarizing 190k tokens on the main model can take many
+// minutes. Empty FastModel falls back to the default.
+func compactionModel(cfg config.Config) string {
+	if cfg.FastModel != "" {
+		return cfg.FastModel
 	}
+	return cfg.DefaultModel
+}
+
+// compact summarizes msgs with the compaction model and, on success, persists a
+// checkpoint to the rollout so a later `bee back` reconstructs the shortened
+// history instead of replaying the full raw log. Returns the in-memory result
+// for the caller to swap into the live message list.
+func (e *Engine) compact(ctx context.Context, msgs []types.Message) ([]types.Message, CompactStats, error) {
+	out, stats, err := Compact(ctx, e.Provider, compactionModel(e.Cfg), msgs)
+	if err != nil {
+		return out, stats, err
+	}
+	e.persistCheckpoint(ctx, out, stats)
 	return out, stats, nil
+}
+
+// persistCheckpoint appends a checkpoint marker carrying the summary text and
+// the id of the first preserved message. No-op when nothing was compacted or
+// the boundary message lacks an id (can't be relocated on resume).
+func (e *Engine) persistCheckpoint(ctx context.Context, out []types.Message, stats CompactStats) {
+	if e.Sessions == nil || stats.AfterMsgs >= stats.BeforeMsgs || len(out) < 2 {
+		return
+	}
+	preserveFrom := out[1].ID
+	if preserveFrom == "" {
+		return
+	}
+	marker := types.Message{
+		ID:         newID(),
+		Role:       types.RoleUser,
+		Content:    out[0].Content,
+		Time:       time.Now().UTC(),
+		Checkpoint: &types.Checkpoint{PreserveFrom: preserveFrom},
+	}
+	if err := e.Sessions.Append(ctx, marker); err != nil {
+		fmt.Fprintf(os.Stderr, "loop: persist compaction checkpoint: %v\n", err)
+	}
+}
+
+// PrepareResume compacts a resumed session's seeded history when it already
+// exceeds the compaction threshold, BEFORE the first turn runs. Without this,
+// the first post-resume turn ships the whole history to the model in one shot —
+// on a slow local model that is many minutes of prompt processing that reads as
+// a hang. Returns the stats and whether compaction actually ran; on success
+// e.InitialMessages is replaced with the shortened history.
+func (e *Engine) PrepareResume(ctx context.Context) (CompactStats, bool, error) {
+	if !e.Cfg.Compaction.Enabled || len(e.InitialMessages) == 0 {
+		return CompactStats{}, false, nil
+	}
+	budget := contextBudget(e.Cfg)
+	threshold := scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)
+	// system prompt isn't assembled yet; estimate over history alone.
+	if !ShouldAutoCompact("", e.InitialMessages, budget, threshold) {
+		return CompactStats{}, false, nil
+	}
+	out, stats, err := e.compact(ctx, e.InitialMessages)
+	if err != nil {
+		return stats, false, err
+	}
+	e.InitialMessages = out
+	e.lastInputTokens = 0
+	return stats, true, nil
 }
 
 // contextBudget returns the active model's real token window. Cache wins

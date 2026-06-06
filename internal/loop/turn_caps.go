@@ -61,7 +61,7 @@ func (e *Engine) handleBudgetCaps(ctx context.Context, msgs *[]types.Message, cu
 	// shrinks per-turn cost going forward; resetting the cumulative counter
 	// re-arms the guard for another budget's worth of work.
 	e.budgetRecoveries++
-	if compacted, _, cerr := Compact(ctx, e.Provider, e.Cfg.DefaultModel, *msgs); cerr == nil {
+	if compacted, _, cerr := e.compact(ctx, *msgs); cerr == nil {
 		*msgs = compacted
 	} else {
 		fmt.Fprintf(os.Stderr, "loop: budget-recovery compact failed: %v\n", cerr)

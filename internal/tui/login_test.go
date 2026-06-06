@@ -24,80 +24,81 @@ type loginSideStub struct {
 	saveKeyErr      error
 }
 
-func (s *loginSideStub) Compact(context.Context) error                  { return nil }
-func (s *loginSideStub) SwitchModel(string) error                       { return nil }
-func (s *loginSideStub) SwitchProviderModel(string, string) error       { return nil }
-func (s *loginSideStub) OpenPicker() error                              { return nil }
-func (s *loginSideStub) ListSessions() ([]string, error)                { return nil, nil }
-func (s *loginSideStub) OpenSession(string) error                       { return nil }
-func (s *loginSideStub) NewSession() error                              { return nil }
-func (s *loginSideStub) CopyLast() error                                { return nil }
-func (s *loginSideStub) Quit()                                          {}
-func (s *loginSideStub) OpenTree() error                                { return nil }
-func (s *loginSideStub) OpenCost() error                                { return nil }
-func (s *loginSideStub) ForkSession(string) error                       { return nil }
-func (s *loginSideStub) CloneSession() error                            { return nil }
+func (s *loginSideStub) Compact(context.Context) error            { return nil }
+func (s *loginSideStub) SwitchModel(string) error                 { return nil }
+func (s *loginSideStub) SwitchProviderModel(string, string) error { return nil }
+func (s *loginSideStub) OpenPicker() error                        { return nil }
+func (s *loginSideStub) ListSessions() ([]string, error)          { return nil, nil }
+func (s *loginSideStub) OpenSession(string) error                 { return nil }
+func (s *loginSideStub) NewSession() error                        { return nil }
+func (s *loginSideStub) CopyLast() error                          { return nil }
+func (s *loginSideStub) Quit()                                    {}
+func (s *loginSideStub) OpenTree() error                          { return nil }
+func (s *loginSideStub) OpenCost() error                          { return nil }
+func (s *loginSideStub) ForkSession(string) error                 { return nil }
+func (s *loginSideStub) CloneSession() error                      { return nil }
 func (s *loginSideStub) Login(_ context.Context, p string) error {
 	s.loginCalled = p
 	return s.loginErr
 }
-func (s *loginSideStub) Logout(p string) error                          { s.logoutCalled = p; return nil }
+func (s *loginSideStub) Logout(p string) error { s.logoutCalled = p; return nil }
 func (s *loginSideStub) SaveAPIKey(p, k string) error {
 	s.saveKeyProvider, s.saveKeyValue = p, k
 	return s.saveKeyErr
 }
-func (s *loginSideStub) LoginStatus() []commands.ProviderAuth           { return s.statuses }
-func (s *loginSideStub) OpenLogin() error                               { return nil }
-func (s *loginSideStub) OpenResume() error                              { return nil }
-func (s *loginSideStub) SetThinking(string) error                       { return nil }
-func (s *loginSideStub) GetThinking() string                            { return "off" }
-func (s *loginSideStub) OpenEffortPicker() error                        { return nil }
-func (s *loginSideStub) SetMaxIterations(int) error                     { return nil }
-func (s *loginSideStub) GetMaxIterations() int                          { return 0 }
-func (s *loginSideStub) SetShowThoughts(bool) error                     { return nil }
-func (s *loginSideStub) GetShowThoughts() bool                          { return false }
-func (s *loginSideStub) OpenSettings() error                            { return nil }
-func (s *loginSideStub) SetVerbose(bool) error                          { return nil }
-func (s *loginSideStub) GetVerbose() bool                               { return false }
-func (s *loginSideStub) SetCompact(bool) error                          { return nil }
-func (s *loginSideStub) GetCompact() bool                               { return false }
-func (s *loginSideStub) SetShowNudges(bool) error                       { return nil }
-func (s *loginSideStub) GetShowNudges() bool                            { return false }
-func (s *loginSideStub) SetShowRecap(bool) error                        { return nil }
-func (s *loginSideStub) GetShowRecap() bool                             { return false }
-func (s *loginSideStub) OpenAgentView() error                           { return nil }
-func (s *loginSideStub) SetShowContextBar(bool) error                   { return nil }
-func (s *loginSideStub) GetShowContextBar() bool                        { return false }
-func (s *loginSideStub) SetHighlight(bool) error                        { return nil }
-func (s *loginSideStub) GetHighlight() bool                             { return true }
-func (s *loginSideStub) SetShellBangSilent(bool) error                  { return nil }
-func (s *loginSideStub) GetShellBangSilent() bool                       { return true }
-func (s *loginSideStub) SetShowBee(bool) error                          { return nil }
-func (s *loginSideStub) GetShowBee() bool                               { return true }
-func (s *loginSideStub) SetShowContextPct(bool) error                   { return nil }
-func (s *loginSideStub) GetShowContextPct() bool                        { return true }
-func (s *loginSideStub) SetShowModel(bool) error                        { return nil }
-func (s *loginSideStub) GetShowModel() bool                             { return true }
-func (s *loginSideStub) SetShowCwd(bool) error                          { return nil }
-func (s *loginSideStub) GetShowCwd() bool                               { return true }
-func (s *loginSideStub) SetShowEffort(bool) error                       { return nil }
-func (s *loginSideStub) GetShowEffort() bool                            { return true }
-func (s *loginSideStub) SetShowTurnTimer(bool) error                    { return nil }
-func (s *loginSideStub) GetShowTurnTimer() bool                         { return true }
-func (s *loginSideStub) SetShowGitBranch(bool) error                    { return nil }
-func (s *loginSideStub) GetShowGitBranch() bool                         { return false }
-func (s *loginSideStub) SetShowTotalTokens(bool) error                  { return nil }
-func (s *loginSideStub) GetShowTotalTokens() bool                       { return false }
-func (s *loginSideStub) SetShowBanner(bool) error                       { return nil }
-func (s *loginSideStub) GetShowBanner() bool                            { return true }
-func (s *loginSideStub) SetShowLoader(bool) error                       { return nil }
-func (s *loginSideStub) GetShowLoader() bool                            { return true }
-func (s *loginSideStub) ListTools() []commands.ToolInfo                 { return nil }
-func (s *loginSideStub) SetToolDisabled(string, bool) error             { return nil }
-func (s *loginSideStub) AddUserTool(string, string, string) error       { return nil }
-func (s *loginSideStub) RemoveUserTool(string) error                    { return nil }
-func (s *loginSideStub) OpenToolsPane() error                           { return nil }
-func (s *loginSideStub) SetBrowserEnabled(bool) (string, error)         { return "", nil }
+func (s *loginSideStub) LoginStatus() []commands.ProviderAuth          { return s.statuses }
+func (s *loginSideStub) OpenLogin() error                              { return nil }
+func (s *loginSideStub) OpenResume() error                             { return nil }
+func (s *loginSideStub) SetThinking(string) error                      { return nil }
+func (s *loginSideStub) GetThinking() string                           { return "off" }
+func (s *loginSideStub) OpenEffortPicker() error                       { return nil }
+func (s *loginSideStub) SetMaxIterations(int) error                    { return nil }
+func (s *loginSideStub) GetMaxIterations() int                         { return 0 }
+func (s *loginSideStub) SetShowThoughts(bool) error                    { return nil }
+func (s *loginSideStub) GetShowThoughts() bool                         { return false }
+func (s *loginSideStub) OpenSettings() error                           { return nil }
+func (s *loginSideStub) SetVerbose(bool) error                         { return nil }
+func (s *loginSideStub) GetVerbose() bool                              { return false }
+func (s *loginSideStub) SetCompact(bool) error                         { return nil }
+func (s *loginSideStub) GetCompact() bool                              { return false }
+func (s *loginSideStub) SetShowNudges(bool) error                      { return nil }
+func (s *loginSideStub) GetShowNudges() bool                           { return false }
+func (s *loginSideStub) SetShowRecap(bool) error                       { return nil }
+func (s *loginSideStub) GetShowRecap() bool                            { return false }
+func (s *loginSideStub) OpenAgentView() error                          { return nil }
+func (s *loginSideStub) SetShowContextBar(bool) error                  { return nil }
+func (s *loginSideStub) GetShowContextBar() bool                       { return false }
+func (s *loginSideStub) SetHighlight(bool) error                       { return nil }
+func (s *loginSideStub) GetHighlight() bool                            { return true }
+func (s *loginSideStub) SetShellBangSilent(bool) error                 { return nil }
+func (s *loginSideStub) GetShellBangSilent() bool                      { return true }
+func (s *loginSideStub) SetShowBee(bool) error                         { return nil }
+func (s *loginSideStub) GetShowBee() bool                              { return true }
+func (s *loginSideStub) SetShowContextPct(bool) error                  { return nil }
+func (s *loginSideStub) GetShowContextPct() bool                       { return true }
+func (s *loginSideStub) SetShowModel(bool) error                       { return nil }
+func (s *loginSideStub) GetShowModel() bool                            { return true }
+func (s *loginSideStub) SetShowCwd(bool) error                         { return nil }
+func (s *loginSideStub) GetShowCwd() bool                              { return true }
+func (s *loginSideStub) SetShowEffort(bool) error                      { return nil }
+func (s *loginSideStub) GetShowEffort() bool                           { return true }
+func (s *loginSideStub) SetShowTurnTimer(bool) error                   { return nil }
+func (s *loginSideStub) GetShowTurnTimer() bool                        { return true }
+func (s *loginSideStub) SetShowGitBranch(bool) error                   { return nil }
+func (s *loginSideStub) GetShowGitBranch() bool                        { return false }
+func (s *loginSideStub) SetShowTotalTokens(bool) error                 { return nil }
+func (s *loginSideStub) GetShowTotalTokens() bool                      { return false }
+func (s *loginSideStub) SetShowBanner(bool) error                      { return nil }
+func (s *loginSideStub) GetShowBanner() bool                           { return true }
+func (s *loginSideStub) SetShowLoader(bool) error                      { return nil }
+func (s *loginSideStub) GetShowLoader() bool                           { return true }
+func (s *loginSideStub) ListTools() []commands.ToolInfo                { return nil }
+func (s *loginSideStub) SetToolDisabled(string, bool) error            { return nil }
+func (s *loginSideStub) AddUserTool(string, string, string) error      { return nil }
+func (s *loginSideStub) RemoveUserTool(string) error                   { return nil }
+func (s *loginSideStub) OpenToolsPane() error                          { return nil }
+func (s *loginSideStub) SetBrowserEnabled(bool) (string, error)        { return "", nil }
+func (s *loginSideStub) VisionFallback(_, _, _ string) (string, error) { return "", nil }
 
 func TestLoginPane_OpensAndRendersProviders(t *testing.T) {
 	side := &loginSideStub{statuses: []commands.ProviderAuth{

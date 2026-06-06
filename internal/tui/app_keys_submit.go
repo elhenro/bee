@@ -243,7 +243,16 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	m.recapGen++
 
 	// build content blocks: text first, then a pending image if staged.
+	// dragged/typed image file paths load as image blocks; the path token is
+	// swapped for a compact "[Image: name]" label in both the model text and
+	// the scrollback display.
 	content := []types.ContentBlock{{Type: types.BlockText, Text: text}}
+	if clean, imgs := extractImagePaths(text); len(imgs) > 0 {
+		content = append([]types.ContentBlock{{Type: types.BlockText, Text: clean}}, imgs...)
+		if display == "" {
+			display = clean
+		}
+	}
 	if len(m.pendingImage) > 0 {
 		content = append(content, types.ContentBlock{
 			Type:      types.BlockImage,

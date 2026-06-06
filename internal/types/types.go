@@ -73,6 +73,20 @@ type Message struct {
 	// skill renders as the typed command ("/plan build X") while Content still
 	// carries the expanded skill body sent to the model. Never goes to the wire.
 	Display string `json:"display,omitempty"`
+	// Checkpoint, when non-nil, marks this message as a compaction boundary.
+	// Its Content holds the summary that replaces every message from
+	// PreserveFrom (inclusive) backwards. The disk log stays append-only and
+	// keeps the raw history; resume reads collapse it at the last checkpoint so
+	// `bee back` sees the same shortened history the live session had instead
+	// of replaying everything.
+	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
+}
+
+// Checkpoint records where a compaction summary supersedes prior messages.
+type Checkpoint struct {
+	// PreserveFrom is the id of the first message kept verbatim after the
+	// summary. Everything before it is folded into the summary text.
+	PreserveFrom string `json:"preserve_from"`
 }
 
 // Session is a tree of messages. Each Message has a ParentID; the root has
