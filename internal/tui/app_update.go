@@ -180,6 +180,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onLoaderTick(msg)
 	case compactDoneMsg:
 		return m.onCompactDone(msg)
+	case externalDoneMsg:
+		return m.onExternalDone(msg)
 	case turnDoneMsg:
 		return m.onTurnDone(msg)
 	case goalEvalDoneMsg:

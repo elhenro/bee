@@ -32,6 +32,9 @@ type KeyMap struct {
 	// next submit. bubbletea's raw-paste support is unreliable in many
 	// terminals, hence the explicit chord.
 	ImagePaste key.Binding
+	// OpenEditor: ctrl+o opens the editor on cwd in a tmux window (or
+	// suspends bee to run it inline when not in tmux).
+	OpenEditor key.Binding
 }
 
 // DefaultKeyMap returns the default keyboard chord set.
@@ -117,6 +120,10 @@ func DefaultKeyMap() KeyMap {
 		ImagePaste: key.NewBinding(
 			key.WithKeys("ctrl+i"),
 			key.WithHelp("ctrl+i", "paste image from clipboard"),
+		),
+		OpenEditor: key.NewBinding(
+			key.WithKeys("ctrl+o"),
+			key.WithHelp("ctrl+o", "open editor on cwd"),
 		),
 	}
 }

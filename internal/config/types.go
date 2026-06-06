@@ -90,6 +90,10 @@ type Config struct {
 	// opposite mode (escape hatch). Toggle via /settings.
 	ShellBangSilent bool `toml:"shell_bang_silent"`
 
+	// Editor is the command launched by ctrl+o and /edit. Empty resolves at
+	// runtime: $VISUAL, then $EDITOR, then vim.
+	Editor string `toml:"editor"`
+
 	// Top-bar chrome toggles. Default true for each preserves the original
 	// status-line look; flipping all five off collapses the entire top row.
 	// Toggle via /settings; persists across launches.

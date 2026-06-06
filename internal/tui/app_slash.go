@@ -17,6 +17,14 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 	if len(parts) == 0 {
 		return m, nil
 	}
+	// /edit and /term launch external commands (editor, shell, any program)
+	// in a tmux window — TUI-only, intercepted before the command registry.
+	switch parts[0] {
+	case "edit":
+		return m, m.openEditorCmd(strings.Join(parts[1:], " "))
+	case "term":
+		return m, m.openTermCmd(strings.Join(parts[1:], " "))
+	}
 	if m.cmds == nil {
 		m.lastErr = "no command registry"
 		m.state = StateError
