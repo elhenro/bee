@@ -51,7 +51,7 @@ func registerModel(r *Registry) {
 	})
 	r.Register(Command{
 		Name:           "effort",
-		Description:    "set reasoning effort — /effort [off|low|medium|high]",
+		Description:    "set reasoning effort / thinking — /effort [off|low|medium|high] (off & low disable thinking)",
 		AllowDuringRun: true,
 		Run: func(_ context.Context, args []string, s Side) (string, error) {
 			if s == nil {
@@ -65,7 +65,7 @@ func registerModel(r *Registry) {
 				if cur == "" {
 					cur = "off"
 				}
-				return "effort: " + cur + " (usage: /effort <off|low|medium|high>)", nil
+				return "effort: " + cur + " (usage: /effort <off|low|medium|high>; off & low disable thinking)", nil
 			}
 			if err := s.SetThinking(args[0]); err != nil {
 				return "", err

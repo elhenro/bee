@@ -16,8 +16,8 @@ type effortLevel struct {
 
 var effortLevels = []effortLevel{
 	{value: "auto", label: "auto", desc: "medium for reasoning models, off otherwise — default"},
-	{value: "off", label: "off", desc: "no reasoning tokens — fastest responses"},
-	{value: "low", label: "low", desc: "minimal reasoning — balanced speed/quality"},
+	{value: "off", label: "off", desc: "no thinking — fastest responses"},
+	{value: "low", label: "low", desc: "minimal reasoning; disables thinking on local models"},
 	{value: "medium", label: "medium", desc: "moderate reasoning"},
 	{value: "high", label: "high", desc: "deep reasoning — best quality, slowest"},
 	{value: "max", label: "max", desc: "maximum budget — slowest, top quality"},
