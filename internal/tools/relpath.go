@@ -13,7 +13,11 @@ func RelTo(base, p string) string {
 		return p
 	}
 	rel, err := filepath.Rel(base, p)
-	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
+	if err != nil {
+		return p
+	}
+	rel = filepath.Clean(rel)
+	if rel == "." || strings.HasPrefix(rel, "..") {
 		return p
 	}
 	return rel
@@ -64,6 +68,7 @@ func pathIsInside(absPath, rootPath string) bool {
 	if err != nil {
 		return false
 	}
+	rel = filepath.Clean(rel)
 	return rel == "." || !strings.HasPrefix(rel, "..")
 }
 
