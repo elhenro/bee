@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -193,9 +194,16 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 		}
 		return types.ToolResult{UseID: u.ID, Content: msg, IsError: true}, nil
 	}
+	// gate against the surface advertised this turn. a tool stripped by the
+	// role/posture filter (e.g. write on a read-only scout turn) must be
+	// rejected even if a local model calls it unprompted — otherwise read-only
+	// is advisory, not enforced. nil set = no gate (legacy/test engines).
+	if e.allowedTools != nil && !e.allowedTools[u.Name] {
+		return types.ToolResult{UseID: u.ID, Content: unknownToolMsg(u.Name, e.allowedNames()), IsError: true}, nil
+	}
 	t, ok := e.Tools.Get(u.Name)
 	if !ok {
-		return types.ToolResult{UseID: u.ID, Content: unknownToolMsg(u.Name, e.Tools.Names()), IsError: true}, nil
+		return types.ToolResult{UseID: u.ID, Content: unknownToolMsg(u.Name, e.allowedNames()), IsError: true}, nil
 	}
 	// schema validation BEFORE Run: catches `{"cmd":"x"}` vs `{"command":"x"}`
 	// with a corrected example envelope, instead of the tool's own "missing
@@ -256,6 +264,24 @@ func stringifyArgs(in map[string]any) map[string]string {
 		}
 	}
 	return out
+}
+
+// allowedNames returns the tool names advertised this turn, sorted, for the
+// unknown-tool diagnostic. Falls back to the full registry when no per-turn
+// surface was recorded (legacy/test engines that never ran filterToolSpecs).
+func (e *Engine) allowedNames() []string {
+	if len(e.allowedTools) == 0 {
+		if e.Tools != nil {
+			return e.Tools.Names()
+		}
+		return nil
+	}
+	names := make([]string, 0, len(e.allowedTools))
+	for n := range e.allowedTools {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // unknownToolMsg builds a diagnostic the model can act on. It surfaces a

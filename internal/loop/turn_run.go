@@ -146,6 +146,14 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// /plan granting ask_user so it can prompt the user from edit/auto mode).
 	specs = applySkillToolGrants(specs, e.Tools, e.OnceAllowTools)
 	e.OnceAllowTools = nil
+	// record the advertised surface so the executor can reject any tool the
+	// model calls that wasn't offered this turn — read-only enforcement must
+	// hold at execution time, not just at advertise time (a local model can
+	// call write even when it's stripped from the wire).
+	e.allowedTools = make(map[string]bool, len(specs))
+	for _, s := range specs {
+		e.allowedTools[s.Name] = true
+	}
 	skillManifest := ""
 	if e.Skills != nil {
 		skillManifest = e.Skills.Manifest()

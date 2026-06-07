@@ -463,6 +463,57 @@ func TestRunOne_UnknownToolListsAvailable(t *testing.T) {
 	}
 }
 
+// scout strips mutators from the wire, but a local model can call write anyway.
+// the executor must reject it at run time rather than mutate the tree, and the
+// diagnostic must list only the read-only surface — not the full registry.
+func TestRunOne_ScoutRejectsUnadvertisedMutator(t *testing.T) {
+	reg := tools.NewRegistry()
+	wrote := false
+	_ = reg.Register(&stubTool{name: "read", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+		return tools.Result{Content: ""}, nil
+	}})
+	_ = reg.Register(&stubTool{name: "write", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+		wrote = true
+		return tools.Result{Content: "written"}, nil
+	}})
+	p := &stubProvider{scripts: [][]llm.Event{
+		{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u1", Name: "write", Input: map[string]any{"path": "x", "content": "y"}}},
+			{Type: llm.EventDone, StopReason: "tool_use"},
+		},
+		{
+			{Type: llm.EventTextDelta, Delta: "ok"},
+			{Type: llm.EventDone, StopReason: "stop"},
+		},
+	}}
+	eng, _ := newEngine(p, reg)
+	eng.Cfg.Role = "scout" // read-only: write is stripped from the advertised specs
+	res, err := eng.Run(context.Background(), "make a deploy script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wrote {
+		t.Fatal("write ran on a read-only scout turn — execution gate missing")
+	}
+	var content string
+	for _, m := range res.Messages {
+		if m.Role != types.RoleTool {
+			continue
+		}
+		for _, c := range m.Content {
+			if c.Type == types.BlockToolResult && c.Result != nil {
+				content = c.Result.Content
+			}
+		}
+	}
+	if !strings.Contains(content, `unknown tool "write"`) {
+		t.Fatalf("expected write rejected as unavailable, got: %q", content)
+	}
+	if idx := strings.Index(content, "available: "); idx >= 0 && strings.Contains(content[idx:], "write") {
+		t.Errorf("diagnostic must not list write as available on a read-only turn, got: %q", content)
+	}
+}
+
 func TestRunOne_ParseErrorSurfacesDiagnostic(t *testing.T) {
 	reg := tools.NewRegistry()
 	called := false

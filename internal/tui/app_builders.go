@@ -124,6 +124,15 @@ func (m Model) WithShowLoader(v bool) Model {
 	return m
 }
 
+// WithShowLoaderIn seeds the loader ↑ input-tokens figure visibility.
+func (m Model) WithShowLoaderIn(v bool) Model { m.showLoaderIn = v; return m }
+
+// WithShowLoaderOut seeds the loader ↓ output-tokens figure visibility.
+func (m Model) WithShowLoaderOut(v bool) Model { m.showLoaderOut = v; return m }
+
+// WithShowLoaderRate seeds the loader tok/s throughput figure visibility.
+func (m Model) WithShowLoaderRate(v bool) Model { m.showLoaderRate = v; return m }
+
 // WithShowBee seeds top-bar bee-glyph visibility. Config-driven path.
 func (m Model) WithShowBee(v bool) Model { m.showBee = v; return m }
 

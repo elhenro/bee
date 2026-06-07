@@ -48,7 +48,7 @@ func TestRenderTokenStreamSeedVaries(t *testing.T) {
 }
 
 func TestFormatLoaderReadout(t *testing.T) {
-	stats := LoaderStats{InTokens: 12300, OutChars: 1847}
+	stats := LoaderStats{InTokens: 12300, OutChars: 1847, ShowIn: true, ShowOut: true}
 	full := formatLoaderReadout(stats, 40)
 	if !strings.Contains(full, "↑") || !strings.Contains(full, "↓") {
 		t.Errorf("wide budget should keep both arrows: %q", full)
@@ -64,7 +64,7 @@ func TestFormatLoaderReadout(t *testing.T) {
 
 func TestFormatLoaderReadoutZeroInput(t *testing.T) {
 	// zero input (first turn) renders 0, not an em-dash.
-	got := formatLoaderReadout(LoaderStats{InTokens: 0, OutChars: 5}, 40)
+	got := formatLoaderReadout(LoaderStats{InTokens: 0, OutChars: 5, ShowIn: true, ShowOut: true}, 40)
 	if got != "↑ 0 ↓ 5" {
 		t.Errorf("zero input should render 0: %q", got)
 	}

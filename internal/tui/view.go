@@ -132,6 +132,9 @@ func (m Model) renderLive(maxRows int) string {
 			Rate:     m.loaderRate,
 			Seed:     m.loaderSeed,
 			Duration: m.turnElapsed(),
+			ShowIn:   m.showLoaderIn,
+			ShowOut:  m.showLoaderOut,
+			ShowRate: m.showLoaderRate,
 		})
 		// reasoning streams above the answer in a dim/italic block. Same
 		// styling as the finalized BlockThinking block so the live view

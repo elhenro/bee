@@ -148,3 +148,57 @@ func (s *tuiSide) GetShowTotalTokens() bool {
 	}
 	return s.m.showTotalTokens
 }
+
+func (s *tuiSide) SetShowLoaderIn(v bool) error {
+	if s.m == nil {
+		return errors.New("show_loader_in: no tui state")
+	}
+	s.m.showLoaderIn = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowLoaderIn = v
+	}
+	return PersistSetting("", "show_loader_in", v)
+}
+
+func (s *tuiSide) GetShowLoaderIn() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showLoaderIn
+}
+
+func (s *tuiSide) SetShowLoaderOut(v bool) error {
+	if s.m == nil {
+		return errors.New("show_loader_out: no tui state")
+	}
+	s.m.showLoaderOut = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowLoaderOut = v
+	}
+	return PersistSetting("", "show_loader_out", v)
+}
+
+func (s *tuiSide) GetShowLoaderOut() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showLoaderOut
+}
+
+func (s *tuiSide) SetShowLoaderRate(v bool) error {
+	if s.m == nil {
+		return errors.New("show_loader_rate: no tui state")
+	}
+	s.m.showLoaderRate = v
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowLoaderRate = v
+	}
+	return PersistSetting("", "show_loader_rate", v)
+}
+
+func (s *tuiSide) GetShowLoaderRate() bool {
+	if s.m == nil {
+		return true
+	}
+	return s.m.showLoaderRate
+}

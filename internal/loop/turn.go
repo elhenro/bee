@@ -118,6 +118,13 @@ type Engine struct {
 	// "always act" worker behavior.
 	SkipPostureClassifier bool
 
+	// allowedTools is the set of tool names the current Run actually advertised
+	// after role/posture filtering. The executor gates on it so a model that
+	// calls an unadvertised tool (e.g. a local model emitting write on a
+	// read-only scout turn) is rejected instead of silently mutating. Rebuilt
+	// each Run from the filtered specs; nil = no gate (allow all registered).
+	allowedTools map[string]bool
+
 	// lastInputTokens is the most recent provider-reported input-token count
 	// from the latest EventDone usage. Used to drive the context-window
 	// warning injection. Reset at the top of each Run.

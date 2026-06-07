@@ -192,6 +192,12 @@ func (f *fakeSide) SetShowGitBranch(bool) error   { return nil }
 func (f *fakeSide) GetShowGitBranch() bool        { return false }
 func (f *fakeSide) SetShowTotalTokens(bool) error { return nil }
 func (f *fakeSide) GetShowTotalTokens() bool      { return false }
+func (f *fakeSide) SetShowLoaderIn(bool) error    { return nil }
+func (f *fakeSide) GetShowLoaderIn() bool         { return true }
+func (f *fakeSide) SetShowLoaderOut(bool) error   { return nil }
+func (f *fakeSide) GetShowLoaderOut() bool        { return true }
+func (f *fakeSide) SetShowLoaderRate(bool) error  { return nil }
+func (f *fakeSide) GetShowLoaderRate() bool       { return true }
 func (f *fakeSide) SetShowBanner(bool) error      { return nil }
 func (f *fakeSide) GetShowBanner() bool           { return true }
 func (f *fakeSide) SetShowLoader(bool) error      { return nil }

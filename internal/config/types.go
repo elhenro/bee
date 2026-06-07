@@ -69,6 +69,12 @@ type Config struct {
 	// caret). Default true. Toggle via /settings; persists across launches.
 	ShowLoader bool `toml:"show_loader"`
 
+	// Loader readout figures shown in the generating strip. Default true for
+	// each; flipping all three off leaves only the particle stream.
+	ShowLoaderIn   bool `toml:"show_loader_in"`   // ↑ input tokens
+	ShowLoaderOut  bool `toml:"show_loader_out"`  // ↓ output tokens
+	ShowLoaderRate bool `toml:"show_loader_rate"` // avg tok/s throughput
+
 	// TutorialDone records that the user has finished or dismissed the
 	// first-run interactive walkthrough. false (default) shows the welcome
 	// gate on the next TUI start; set true to suppress it. Replay anytime

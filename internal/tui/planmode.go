@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -155,6 +156,18 @@ func freshContinuePrompt(plan string) string {
 	return "Here is the plan to implement:\n\n" + plan + "\n\nImplement it."
 }
 
+// freshDisplay is the scrollback bubble for a fresh-session handoff. The full
+// plan goes to the model but is hidden from scrollback; surface a marker with
+// the carried length so a wedge can't be misread as a dropped plan.
+func freshDisplay(plan string) string {
+	plan = strings.TrimSpace(plan)
+	if plan == "" {
+		return continuePrompt
+	}
+	return continuePrompt + " (fresh session · plan carried: " +
+		strconv.Itoa(len(plan)) + " chars)"
+}
+
 // lastAssistantText returns the text of the last assistant message — the plan
 // the model just wrote. Empty when there's no assistant turn.
 func lastAssistantText(msgs []types.Message) string {
@@ -234,8 +247,9 @@ func (m Model) onPlanProceed(c PlanProceedMsg) (tea.Model, tea.Cmd) {
 			m.lastErr = err.Error()
 			return m.submit(continuePrompt)
 		}
-		// long prompt to the model, short bubble in scrollback.
-		return nm.submitWithDisplay(freshContinuePrompt(plan), continuePrompt)
+		// long prompt to the model, short bubble in scrollback (with a marker
+		// that the plan was carried, so a wedge isn't misread as a lost plan).
+		return nm.submitWithDisplay(freshContinuePrompt(plan), freshDisplay(plan))
 	}
 	return m.submit(continuePrompt)
 }

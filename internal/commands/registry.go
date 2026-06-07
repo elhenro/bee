@@ -169,6 +169,13 @@ type Side interface {
 	GetShowGitBranch() bool
 	SetShowTotalTokens(v bool) error
 	GetShowTotalTokens() bool
+	// loader readout figure toggles: ↑ input, ↓ output, avg tok/s. Persist.
+	SetShowLoaderIn(v bool) error
+	GetShowLoaderIn() bool
+	SetShowLoaderOut(v bool) error
+	GetShowLoaderOut() bool
+	SetShowLoaderRate(v bool) error
+	GetShowLoaderRate() bool
 	// SetShowBanner toggles the startup intro animation + bee logo. Persists.
 	// Takes effect on next launch (intro is one-shot).
 	SetShowBanner(v bool) error

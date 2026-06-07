@@ -446,6 +446,12 @@ type Model struct {
 	// via /settings; persists across launches.
 	showLoader bool
 
+	// loader readout figure toggles: ↑ input, ↓ output, avg tok/s. Default
+	// true; persisted via /settings. Fed into LoaderStats each frame.
+	showLoaderIn   bool
+	showLoaderOut  bool
+	showLoaderRate bool
+
 	// updatePrompt is the four-button modal surfaced when the hourly checker
 	// finds that main has new commits. Inactive until updateAvailableMsg fires.
 	updatePrompt UpdatePrompt

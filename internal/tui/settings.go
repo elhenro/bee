@@ -38,6 +38,9 @@ var settingsRows = []settingsRow{
 	{key: "show_turn_timer", label: "top-bar: turn timer", desc: "⏱ live elapsed while working + final time after"},
 	{key: "show_git_branch", label: "top-bar: git branch", desc: "⎇ current git branch (when cwd is in a repo)"},
 	{key: "show_total_tokens", label: "top-bar: total tokens", desc: "Σ session tokens (input+output) next to cost"},
+	{key: "show_loader_in", label: "loader: input tokens", desc: "↑ input-token figure in the generating strip"},
+	{key: "show_loader_out", label: "loader: output tokens", desc: "↓ output-token figure in the generating strip"},
+	{key: "show_loader_rate", label: "loader: tok/s", desc: "average generation throughput in the generating strip"},
 }
 
 func init() {
@@ -73,6 +76,9 @@ type SettingsPane struct {
 	totTokens  bool
 	banner     bool
 	loader     bool
+	loaderIn   bool
+	loaderOut  bool
+	loaderRate bool
 }
 
 // NewSettingsPane returns a closed settings pane.
@@ -94,6 +100,9 @@ func NewSettingsPane() *SettingsPane {
 		turnTimer:  true,
 		banner:     true,
 		loader:     true,
+		loaderIn:   true,
+		loaderOut:  true,
+		loaderRate: true,
 	}
 	p.recomputeMatches()
 	return p
@@ -123,6 +132,9 @@ type SettingsSnapshot struct {
 	ShowTotalTokens bool
 	ShowBanner      bool
 	ShowLoader      bool
+	ShowLoaderIn    bool
+	ShowLoaderOut   bool
+	ShowLoaderRate  bool
 }
 
 // Show opens the pane seeded with the live values.
@@ -152,6 +164,9 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 	p.totTokens = s.ShowTotalTokens
 	p.banner = s.ShowBanner
 	p.loader = s.ShowLoader
+	p.loaderIn = s.ShowLoaderIn
+	p.loaderOut = s.ShowLoaderOut
+	p.loaderRate = s.ShowLoaderRate
 	p.recomputeMatches()
 }
 
@@ -279,6 +294,12 @@ func (p *SettingsPane) rowState(key string) bool {
 		return p.banner
 	case "show_loader":
 		return p.loader
+	case "show_loader_in":
+		return p.loaderIn
+	case "show_loader_out":
+		return p.loaderOut
+	case "show_loader_rate":
+		return p.loaderRate
 	}
 	return false
 }
@@ -322,6 +343,12 @@ func (p *SettingsPane) setRowState(key string, v bool) {
 		p.banner = v
 	case "show_loader":
 		p.loader = v
+	case "show_loader_in":
+		p.loaderIn = v
+	case "show_loader_out":
+		p.loaderOut = v
+	case "show_loader_rate":
+		p.loaderRate = v
 	}
 }
 

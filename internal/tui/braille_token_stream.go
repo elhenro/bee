@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -22,6 +23,11 @@ type LoaderStats struct {
 	Rate     int
 	Seed     int64
 	Duration time.Duration
+	// figure visibility toggles (/settings). Default true; when all three
+	// are off the readout collapses to empty and only the stream shows.
+	ShowIn   bool
+	ShowOut  bool
+	ShowRate bool
 }
 
 // tokenStreamSpeed is the per-frame horizontal step (in px) of a particle.
@@ -68,31 +74,44 @@ func renderTokenStream(stats LoaderStats, frame, cells int) string {
 	return c.ToBraille()
 }
 
-// formatLoaderReadout builds the inline figures. budget is the rune width
-// available; the readout sheds detail as budget shrinks: ↑in ↓out →
-	// ↓out only → bare out → empty.
+// formatLoaderReadout builds the inline figures, honoring the per-figure
+// visibility toggles (ShowIn/ShowOut/ShowRate). budget is the rune width
+// available; when the enabled figures don't fit it sheds from the left
+// (↑in first, then ↓out) keeping the rightmost figure as long as possible.
 func formatLoaderReadout(stats LoaderStats, budget int) string {
-	in := fmtTokens(stats.InTokens)
-	out := fmtTokens(stats.OutChars)
-
-	full := fmt.Sprintf("↑ %s ↓ %s", in, out)
-	if stats.Duration > 0 {
-		full = full + " " + formatElapsed(stats.Duration)
+	// parts in display order; each entry self-contained so dropping the
+	// leftmost yields a still-valid string.
+	var parts []string
+	if stats.ShowIn {
+		parts = append(parts, "↑ "+fmtTokens(stats.InTokens))
 	}
-	if utf8.RuneCountInString(full) <= budget {
-		return full
+	if stats.ShowOut {
+		parts = append(parts, "↓ "+fmtTokens(stats.OutChars))
 	}
-	short := "↓ " + out
-	if stats.Duration > 0 {
-		short = short + " " + formatElapsed(stats.Duration)
+	if stats.ShowRate {
+		if rate := formatTokRate(stats.OutChars, stats.Duration); rate != "" {
+			parts = append(parts, rate)
+		}
 	}
-	if utf8.RuneCountInString(short) <= budget {
-		return short
-	}
-	if utf8.RuneCountInString(out) <= budget {
-		return out
+	// widest joined run that fits, shedding leftmost figures first.
+	for i := 0; i < len(parts); i++ {
+		s := strings.Join(parts[i:], " ")
+		if utf8.RuneCountInString(s) <= budget {
+			return s
+		}
 	}
 	return ""
+}
+
+// formatTokRate returns average generation throughput as "<n>tok/s" over the
+// turn. Empty when there's no elapsed time yet (avoids div-by-zero and a
+// meaningless spike on the first frame). out is the cumulative output count.
+func formatTokRate(out int, d time.Duration) string {
+	if d <= 0 || out <= 0 {
+		return ""
+	}
+	rate := float64(out) / d.Seconds()
+	return fmt.Sprintf("%stok/s", fmtTokens(int(rate)))
 }
 
 // lcg is a tiny deterministic generator so seeded layouts reproduce exactly

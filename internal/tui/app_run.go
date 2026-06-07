@@ -81,9 +81,13 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 		m = m.WithIntro(ParseIntroStyle(os.Getenv("BEE_BANNER")))
 	}
 	if eng != nil {
-		m = m.WithShowBanner(eng.Cfg.ShowBanner).WithShowLoader(eng.Cfg.ShowLoader)
+		m = m.WithShowBanner(eng.Cfg.ShowBanner).WithShowLoader(eng.Cfg.ShowLoader).
+			WithShowLoaderIn(eng.Cfg.ShowLoaderIn).
+			WithShowLoaderOut(eng.Cfg.ShowLoaderOut).
+			WithShowLoaderRate(eng.Cfg.ShowLoaderRate)
 	} else {
-		m = m.WithShowBanner(true).WithShowLoader(true)
+		m = m.WithShowBanner(true).WithShowLoader(true).
+			WithShowLoaderIn(true).WithShowLoaderOut(true).WithShowLoaderRate(true)
 	}
 	// verbose: env wins over cfg (CLI/env path); cfg persists across launches.
 	verbose := os.Getenv("BEE_VERBOSE") != ""

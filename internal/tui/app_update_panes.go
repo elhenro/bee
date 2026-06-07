@@ -85,6 +85,9 @@ func (m Model) onOpenSettings(_ openSettingsMsg) (tea.Model, tea.Cmd) {
 		ShowTotalTokens: m.showTotalTokens,
 		ShowBanner:      m.showBanner,
 		ShowLoader:      m.showLoader,
+		ShowLoaderIn:    m.showLoaderIn,
+		ShowLoaderOut:   m.showLoaderOut,
+		ShowLoaderRate:  m.showLoaderRate,
 	})
 	return m, nil
 }
@@ -129,6 +132,12 @@ func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
 		err = m.side().SetShowBanner(msg.value)
 	case "show_loader":
 		err = m.side().SetShowLoader(msg.value)
+	case "show_loader_in":
+		err = m.side().SetShowLoaderIn(msg.value)
+	case "show_loader_out":
+		err = m.side().SetShowLoaderOut(msg.value)
+	case "show_loader_rate":
+		err = m.side().SetShowLoaderRate(msg.value)
 	}
 	if err != nil && m.state != StateStreaming {
 		// don't kill an in-flight turn over a persist hiccup; surface the

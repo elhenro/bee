@@ -99,6 +99,12 @@ func (s *loginSideStub) SetShowGitBranch(bool) error                   { return 
 func (s *loginSideStub) GetShowGitBranch() bool                        { return false }
 func (s *loginSideStub) SetShowTotalTokens(bool) error                 { return nil }
 func (s *loginSideStub) GetShowTotalTokens() bool                      { return false }
+func (s *loginSideStub) SetShowLoaderIn(bool) error                    { return nil }
+func (s *loginSideStub) GetShowLoaderIn() bool                         { return true }
+func (s *loginSideStub) SetShowLoaderOut(bool) error                   { return nil }
+func (s *loginSideStub) GetShowLoaderOut() bool                        { return true }
+func (s *loginSideStub) SetShowLoaderRate(bool) error                  { return nil }
+func (s *loginSideStub) GetShowLoaderRate() bool                       { return true }
 func (s *loginSideStub) SetShowBanner(bool) error                      { return nil }
 func (s *loginSideStub) GetShowBanner() bool                           { return true }
 func (s *loginSideStub) SetShowLoader(bool) error                      { return nil }
