@@ -31,12 +31,13 @@ type frontmatter struct {
 	Yield       int      `yaml:"yield"`
 }
 
-// Render builds the waggle exec-skill markdown for a candidate. It returns
-// ok=false when any step has no deterministic shell translation, so an
-// un-crystallizable route is never written. Timestamps are left to the ledger.
-func Render(name string, c Candidate, scope Scope) (string, bool) {
+// scriptOf renders a candidate's steps into a single bash script (steps joined
+// by "; ") and the ordered parameter names. ok=false means a step has no safe
+// shell translation. The script is stable for a given route, so callers can hash
+// it for deterministic naming and dedup.
+func scriptOf(c Candidate) (script string, params []string, ok bool) {
 	if len(c.Steps) == 0 {
-		return "", false
+		return "", nil, false
 	}
 	paramPos, paramNames := assignParams(c.Params)
 	paramTok := func(step int, key string) string {
@@ -51,9 +52,20 @@ func Render(name string, c Candidate, scope Scope) (string, bool) {
 	for s, call := range c.Steps {
 		cmd, ok := shellCommand(s, call, paramTok)
 		if !ok {
-			return "", false
+			return "", nil, false
 		}
 		cmds = append(cmds, cmd)
+	}
+	return strings.Join(cmds, "; "), paramNames, true
+}
+
+// Render builds the waggle exec-skill markdown for a candidate. It returns
+// ok=false when any step has no deterministic shell translation, so an
+// un-crystallizable route is never written. Timestamps are left to the ledger.
+func Render(name string, c Candidate, scope Scope) (string, bool) {
+	script, paramNames, ok := scriptOf(c)
+	if !ok {
+		return "", false
 	}
 	fm := frontmatter{
 		Name:        name,
@@ -63,7 +75,7 @@ func Render(name string, c Candidate, scope Scope) (string, bool) {
 		Origin:      "waggle",
 		Scope:       string(scope),
 		Params:      paramNames,
-		Exec:        []string{"bash", "-c", strings.Join(cmds, "; ")},
+		Exec:        []string{"bash", "-c", script},
 	}
 	y, err := yaml.Marshal(fm)
 	if err != nil {

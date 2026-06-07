@@ -53,7 +53,7 @@ func Mine(calls []Call, cfg MineConfig) []Candidate {
 		var order []string
 		for i := 0; i+l <= n; i++ {
 			win := calls[i : i+l]
-			if windowHasMutator(win) {
+			if windowHasMutator(win) || !isPrimitive(win) {
 				continue
 			}
 			sig := shapeSig(win)
@@ -96,17 +96,47 @@ func windowHasMutator(win []Call) bool {
 	return false
 }
 
-// shapeSig keys a window by tool + sorted arg keys (not values), so calls that
-// differ only in argument values share a shape and form a parameterizable family.
+// callShape is the value-independent identity of a call: tool + sorted arg keys.
+func callShape(c Call) string {
+	return c.Tool + "(" + strings.Join(sortedKeys(c.Args), ",") + ")"
+}
+
+// shapeSig keys a window by its sequence of call shapes, so calls that differ
+// only in argument values share a shape and form a parameterizable family.
 func shapeSig(win []Call) string {
 	var b strings.Builder
 	for _, c := range win {
-		b.WriteString(c.Tool)
-		b.WriteByte('(')
-		b.WriteString(strings.Join(sortedKeys(c.Args), ","))
-		b.WriteString(");")
+		b.WriteString(callShape(c))
+		b.WriteByte(';')
 	}
 	return b.String()
+}
+
+// isPrimitive reports whether a window's shape sequence is not a whole-number
+// repetition of a shorter sub-route. Non-primitive windows (e.g. ls,read,ls,read)
+// are skipped so only the primitive route (ls,read) is crystallized.
+func isPrimitive(win []Call) bool {
+	l := len(win)
+	toks := make([]string, l)
+	for i, c := range win {
+		toks[i] = callShape(c)
+	}
+	for p := 1; p < l; p++ {
+		if l%p != 0 {
+			continue
+		}
+		periodic := true
+		for i := p; i < l; i++ {
+			if toks[i] != toks[i-p] {
+				periodic = false
+				break
+			}
+		}
+		if periodic {
+			return false
+		}
+	}
+	return true
 }
 
 // nonOverlapCount counts how many occurrences fit without overlapping, so a

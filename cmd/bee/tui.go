@@ -223,6 +223,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		Provider: prov,
 		Tools:    reg,
 		Skills:   skillReg,
+		Waggle:   newWaggleManager(cwd),
 		Memory:   newKnowledgeAdapter(prov, cfg),
 		Sessions: roll,
 		Cfg:      cfg,

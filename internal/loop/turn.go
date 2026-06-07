@@ -16,6 +16,7 @@ import (
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/elhenro/bee/internal/waggle"
 )
 
 // MaxIterations is the default safety cap: if the model keeps emitting
@@ -36,9 +37,12 @@ type Engine struct {
 	Skills   *skills.Registry
 	Memory   KnowledgeStore
 	Sessions *session.Rollout
-	Cfg      config.Config
-	Cwd      string
-	Stdout   io.Writer
+	// Waggle, when non-nil, observes read-only tool calls so repeated routes can
+	// be crystallized into reusable exec-skills (procedure memory). nil disables.
+	Waggle *waggle.Manager
+	Cfg    config.Config
+	Cwd    string
+	Stdout io.Writer
 	// SteerCh, when non-nil, is drained at the top of each iteration to
 	// inject mid-turn user steering between LLM rounds.
 	SteerCh chan string

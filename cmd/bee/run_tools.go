@@ -34,7 +34,19 @@ import (
 	"github.com/elhenro/bee/internal/tools/web_fetch"
 	"github.com/elhenro/bee/internal/tools/web_search"
 	"github.com/elhenro/bee/internal/tools/write"
+	"github.com/elhenro/bee/internal/waggle"
 )
+
+// newWaggleManager builds the project-scoped procedure-memory manager for cwd.
+// It observes read-only tool routes and crystallizes repeated ones into waggles
+// under ~/.bee/waggle/proj/<hash>. Returns nil on store error (feature off).
+func newWaggleManager(cwd string) *waggle.Manager {
+	store, err := waggle.ProjectStore(cwd)
+	if err != nil {
+		return nil
+	}
+	return waggle.NewManager(store, waggle.ManagerConfig{Scope: waggle.ScopeProject})
+}
 
 // filterTools narrows reg to the comma-separated list of tool names.
 // Unknown names are an error so typos fail loudly. Empty list returns reg

@@ -13,6 +13,7 @@ import (
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/elhenro/bee/internal/waggle"
 )
 
 // safeParallelTools lists read-only tools that can run concurrently within
@@ -148,7 +149,39 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if truncated && e.JSONEmitter != nil {
 		e.JSONEmitter.Emit(jsonmode.Event{Type: "tool_truncated", Name: u.Name, UseID: u.ID})
 	}
+	// feed the forage log so repeated read-only routes can crystallize into
+	// waggles. only successful calls; bash is marked mutating (ambiguous) and so
+	// never crystallizes. best-effort, never affects the turn.
+	if e.Waggle != nil && !out.IsError {
+		e.Waggle.Observe(waggle.Call{
+			Tool:      u.Name,
+			Args:      stringifyArgs(u.Input),
+			Mutates:   !safeParallelTools[u.Name],
+			EstTokens: len(content) / 4,
+		})
+	}
 	return types.ToolResult{UseID: u.ID, Content: content, IsError: out.IsError}, nil
+}
+
+// stringifyArgs flattens a tool's input to string values for the forage log,
+// dropping the loop's internal underscore-prefixed keys (parse diagnostics,
+// sandbox-wrapped command originals).
+func stringifyArgs(in map[string]any) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		if strings.HasPrefix(k, "_") {
+			continue
+		}
+		if s, ok := v.(string); ok {
+			out[k] = s
+		} else {
+			out[k] = fmt.Sprintf("%v", v)
+		}
+	}
+	return out
 }
 
 // unknownToolMsg builds a diagnostic the model can act on. It surfaces a

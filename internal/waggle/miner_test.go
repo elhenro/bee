@@ -7,7 +7,7 @@ func g(pattern, path string) Call {
 	if path != "" {
 		a["path"] = path
 	}
-	return Call{Tool: "grep", Args: a}
+	return Call{Tool: "search", Args: a} // bee's grep tool is named "search"
 }
 
 func rd(path string) Call { return Call{Tool: "read", Args: map[string]string{"path": path}} }
@@ -19,7 +19,7 @@ func TestMine_FindsExactRepeatedRoute(t *testing.T) {
 		t.Fatal("expected a candidate")
 	}
 	c := cands[0]
-	if len(c.Steps) != 2 || c.Steps[0].Tool != "grep" || c.Steps[1].Tool != "read" {
+	if len(c.Steps) != 2 || c.Steps[0].Tool != "search" || c.Steps[1].Tool != "read" {
 		t.Fatalf("unexpected steps: %+v", c.Steps)
 	}
 	if c.Count != 2 {

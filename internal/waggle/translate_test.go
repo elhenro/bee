@@ -6,7 +6,7 @@ import "testing"
 func noParams(int, string) string { return "" }
 
 func TestShellCommand_GrepLiteral(t *testing.T) {
-	c := Call{Tool: "grep", Args: map[string]string{"pattern": "foo", "path": "src"}}
+	c := Call{Tool: "search", Args: map[string]string{"pattern": "foo", "path": "src"}}
 	got, ok := shellCommand(0, c, noParams)
 	if !ok || got != "grep -rn 'foo' 'src'" {
 		t.Fatalf("got %q ok=%v", got, ok)
@@ -14,7 +14,7 @@ func TestShellCommand_GrepLiteral(t *testing.T) {
 }
 
 func TestShellCommand_GrepParam(t *testing.T) {
-	c := Call{Tool: "grep", Args: map[string]string{"pattern": "foo"}}
+	c := Call{Tool: "search", Args: map[string]string{"pattern": "foo"}}
 	tok := func(step int, key string) string {
 		if key == "pattern" {
 			return "$1"
@@ -42,7 +42,7 @@ func TestShellCommand_LsDefaultDot(t *testing.T) {
 }
 
 func TestShellCommand_Find(t *testing.T) {
-	c := Call{Tool: "find", Args: map[string]string{"pattern": "*.go", "path": "src"}}
+	c := Call{Tool: "glob", Args: map[string]string{"pattern": "*.go", "path": "src"}}
 	got, ok := shellCommand(0, c, noParams)
 	if !ok || got != "find 'src' -name '*.go'" {
 		t.Fatalf("got %q ok=%v", got, ok)

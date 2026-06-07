@@ -34,7 +34,7 @@ func shellCommand(step int, c Call, paramTok func(step int, key string) string) 
 			return "", false
 		}
 		return cmd, true
-	case "grep":
+	case "search": // bee's grep tool is registered as "search"
 		if _, ok := c.Args["pattern"]; !ok {
 			return "", false
 		}
@@ -46,7 +46,7 @@ func shellCommand(step int, c Call, paramTok func(step int, key string) string) 
 		return "cat " + tokenFor("path"), true
 	case "ls":
 		return "ls " + pathArg(), true
-	case "find":
+	case "glob": // bee's find tool is registered as "glob"
 		if _, ok := c.Args["pattern"]; !ok {
 			return "", false
 		}
