@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/config"
@@ -23,6 +24,18 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 	// every worker is isolated in its own worktree so N agents never race the
 	// same git index. forced on regardless of the operator's flags.
 	zCfg.Worktree = true
+
+	// capture the base before any worktree branch is cut. workers fork from
+	// this SHA, so it's the merge-base for judging each branch's full diff and
+	// the point the consolidated review branch is compared against later.
+	cwd, _ := os.Getwd()
+	mainRoot, rootErr := zzz.RepoRoot(cwd)
+	if rootErr != nil {
+		fatalf("zzz: queen: not inside a git repo: %v", rootErr)
+	}
+	baseBranch, _ := zzz.CurrentBranch(mainRoot)
+	baseSHA, _ := zzz.HeadSHA(mainRoot)
+	queenID := zzz.NewID()
 
 	runs := make([]*zzz.Run, 0, n)
 	cleanups := make([]func(), 0, n)
@@ -90,10 +103,66 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 	wg.Wait()
 
 	// altscreen restored — print a compact per-bee summary to stderr.
-	status := zzz.NewStatus(os.Stderr)
 	for i, r := range runs {
 		fmt.Fprintf(os.Stderr, "[queen] bee %d %s — %s (%d commits)\n", i+1, r.Status, r.StopCause, len(r.Commits))
-		_ = status
 	}
+
+	pickWinnerAndConsolidate(cfg, prov, zCfg.Objective, runs, mainRoot, baseBranch, baseSHA, queenID)
 	fmt.Fprintf(os.Stderr, "\n→ inspect runs under ~/.bee/zzz/runs/\n")
+}
+
+// pickWinnerAndConsolidate diffs every worker branch that produced commits,
+// asks a fast model to judge the best, and points one consolidated review
+// branch (zzz/queen-<id>) at it. The operator's base branch is never touched —
+// they diff/merge the review branch against base manually later.
+func pickWinnerAndConsolidate(cfg config.Config, prov llm.Provider, objective string, runs []*zzz.Run, mainRoot, baseBranch, baseSHA, queenID string) {
+	ref := baseSHA
+	if ref == "" {
+		ref = baseBranch
+	}
+	var cands []queen.Candidate
+	for i, r := range runs {
+		if len(r.Commits) == 0 {
+			continue
+		}
+		diff, err := zzz.DiffAgainst(r.RepoRoot, ref, 6000)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[queen] bee %d diff failed: %v\n", i+1, err)
+			continue
+		}
+		cands = append(cands, queen.Candidate{Idx: i, Label: r.Branch, Diff: diff})
+	}
+	if len(cands) == 0 {
+		fmt.Fprintf(os.Stderr, "[queen] no bee produced commits — nothing to consolidate.\n")
+		return
+	}
+
+	// fresh ctx: the run ctx may already be canceled (operator force-quit) but
+	// judging finished work is still worth one cheap call.
+	jctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	v, err := queen.Judge(jctx, prov, config.FastModelOf(cfg), objective, cands)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[queen] judge note: %v (using fallback pick)\n", err)
+	}
+	if v.WinnerIdx < 0 {
+		fmt.Fprintf(os.Stderr, "[queen] judge returned no winner.\n")
+		return
+	}
+	winner := runs[v.WinnerIdx]
+	fmt.Fprintf(os.Stderr, "[queen] winner: bee %d (%s) — %s\n", v.WinnerIdx+1, winner.Branch, v.Reason)
+
+	reviewBranch := "zzz/queen-" + queenID
+	if err := zzz.CreateBranchAt(mainRoot, reviewBranch, winner.Branch); err != nil {
+		fmt.Fprintf(os.Stderr, "[queen] review branch create failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[queen] winning branch is %s — merge it manually.\n", winner.Branch)
+		return
+	}
+	cmp := baseBranch
+	if cmp == "" || cmp == "HEAD" {
+		cmp = baseSHA
+	}
+	fmt.Fprintf(os.Stderr, "[queen] review branch ready: %s\n", reviewBranch)
+	fmt.Fprintf(os.Stderr, "         git diff %s..%s    # review against base\n", cmp, reviewBranch)
+	fmt.Fprintf(os.Stderr, "         git switch %s && git merge %s    # accept\n", cmp, reviewBranch)
 }

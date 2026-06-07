@@ -202,6 +202,30 @@ func MergeFF(dir, base, branch string) error {
 	return err
 }
 
+// DiffAgainst returns the full diff of dir's working tree (clean = HEAD)
+// against ref. Used to judge one worker branch's whole contribution: with a
+// committed tree this equals ref..HEAD. Bounded by maxBytes (0 = unbounded);
+// over the cap the tail is dropped and a truncation marker appended so a huge
+// branch can't blow the judge's token budget.
+func DiffAgainst(dir, ref string, maxBytes int) (string, error) {
+	out, err := gitRun(dir, "diff", ref)
+	if err != nil {
+		return "", err
+	}
+	if maxBytes > 0 && len(out) > maxBytes {
+		out = out[:maxBytes] + "\n…[diff truncated]"
+	}
+	return out, nil
+}
+
+// CreateBranchAt creates name pointing at start without checking it out.
+// -f overwrites an existing ref so a re-run of queen can refresh the
+// consolidated review branch.
+func CreateBranchAt(dir, name, start string) error {
+	_, err := gitRun(dir, "branch", "-f", name, start)
+	return err
+}
+
 // DiffStat returns the one-line `--shortstat` summary for HEAD~1..HEAD.
 // Returns empty string when the commit didn't actually change anything.
 func DiffStat(dir, ref string) (string, error) {
