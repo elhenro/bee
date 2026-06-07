@@ -138,6 +138,7 @@ usage:
   bee agents                        parallel-agents overview (worktree-per-agent)
   bee remote-control [--port N] [--yes]  serve a local web relay (URL + QR) to drive bee from another device
   bee zzz [flags] <objective>        overnight loop: clean→prompt→commit-or-reset
+  bee zzz --agents N --yes <obj>     queen mode: N parallel worker bees, one dashboard
   bee zzz --list                     list overnight runs
   bee zzz --resume <id>              resume an aborted run
   bee zzz --gc [--gc-max-age <d>] [--gc-keep <n>]  prune terminal runs + bg sessions

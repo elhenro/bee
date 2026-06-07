@@ -63,6 +63,7 @@ func runZzz(args []string) {
 	maxFails := fs.Int("max-consecutive-fails", 0, "end run after N consecutive failed iters (0=default 3)")
 	retries := fs.Int("hard-error-retries", 0, "engine.Run retries per iter on transient errors (0=default 3)")
 	notesTail := fs.Int("notes-tail", 0, "include only last N prior-iter sections in prompts (0=default 5, <0=unlimited)")
+	agents := fs.Int("agents", 1, "queen mode: run N headless worker bees in parallel worktrees on the same objective")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
@@ -128,6 +129,17 @@ func runZzz(args []string) {
 	}
 	if resolvedMaxTok == 0 {
 		fmt.Fprintln(os.Stderr, "[zzz] WARNING: no token cap (--max-tokens 0) — an unproductive model can burn unbounded tokens overnight.")
+	}
+
+	if *agents > 1 {
+		if isResume {
+			fatalf("zzz: --agents and --resume can't be combined")
+		}
+		if !(*yes || *yolo) {
+			fatalf("zzz: --agents needs --yes (headless workers can't answer approval prompts)")
+		}
+		runZzzQueen(ctx, cancelCtx, *agents, cfg, prov, app, skillReg, zCfg)
+		return
 	}
 
 	var run *zzz.Run
