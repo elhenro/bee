@@ -34,8 +34,8 @@ import (
 
 func runZzz(args []string) {
 	fs := flag.NewFlagSet("zzz", flag.ContinueOnError)
-	maxIter := fs.Int("max-iterations", loop.MaxIterations, "stop after N iterations (default 100)")
-	maxTok := fs.Int("max-tokens", 0, "stop after N total tokens (0 = unlimited)")
+	maxIter := fs.Int("max-iterations", 0, "stop after N iterations (0 = auto: 100, or 40 for small/local models)")
+	maxTok := fs.Int("max-tokens", -1, "stop after N total tokens (-1 = auto per profile, 0 = unlimited)")
 	stopWhen := fs.String("stop-when", "", "stop when assistant text contains this substring")
 	wantWorktree := fs.Bool("worktree", false, "run in isolated git worktree under ~/.bee/zzz/worktrees/")
 	currentBranch := fs.Bool("current-branch", false, "commit to the current branch instead of zzz/<id>")
@@ -104,10 +104,14 @@ func runZzz(args []string) {
 	stopCh := make(chan struct{})
 	go installShutdownHandler(stopCh, cancelCtx)
 
+	// resolve auto budgets by profile: small/local models get tighter caps so a
+	// confused model can't spin a whole night burning tokens. explicit flags win.
+	resolvedMaxIter, resolvedMaxTok := resolveZzzBudgets(cfg, *maxIter, *maxTok)
+
 	zCfg := zzz.Config{
 		Objective:           objective,
-		MaxIterations:       *maxIter,
-		MaxTokens:           *maxTok,
+		MaxIterations:       resolvedMaxIter,
+		MaxTokens:           resolvedMaxTok,
 		StopWhen:            *stopWhen,
 		Worktree:            *wantWorktree,
 		CurrentBranch:       *currentBranch,
@@ -120,7 +124,10 @@ func runZzz(args []string) {
 	}
 
 	if (*yes || *yolo) && !*wantWorktree && !isResume {
-		fmt.Fprintln(os.Stderr, "[zzz] WARNING: --yes/--yolo without --worktree allows the agent to run dangerous shell commands directly on your working branch.")
+		fmt.Fprintln(os.Stderr, "[zzz] WARNING: --yes/--yolo without --worktree lets the agent run dangerous shell commands (rm -rf ., git reset --hard, …) directly on your working branch.")
+	}
+	if resolvedMaxTok == 0 {
+		fmt.Fprintln(os.Stderr, "[zzz] WARNING: no token cap (--max-tokens 0) — an unproductive model can burn unbounded tokens overnight.")
 	}
 
 	var run *zzz.Run
@@ -132,6 +139,30 @@ func runZzz(args []string) {
 	if err != nil {
 		fatalf("zzz: %v", err)
 	}
+
+	// resume carries its objective in meta.json (prompt.txt as fallback); the
+	// flag-derived zCfg.Objective is empty on resume, so restore it here or the
+	// resumed agent runs goal-less.
+	if isResume {
+		zCfg.Objective = run.Objective
+		if strings.TrimSpace(zCfg.Objective) == "" {
+			if p, perr := zzz.LoadPrompt(run.ID); perr == nil {
+				zCfg.Objective = strings.TrimSpace(p)
+			}
+		}
+		if strings.TrimSpace(zCfg.Objective) == "" {
+			fatalf("zzz: resume %s has no saved objective; re-run with the objective text", run.ID)
+		}
+	}
+
+	// one loop per working tree: prevents two runs racing the same git index
+	// and a double-resume of the same run. worktree runs lock their own clone,
+	// so independent worktree runs never contend.
+	unlock, lerr := zzz.AcquireLock(run.RepoRoot, run.ID)
+	if lerr != nil {
+		fatalf("zzz: %v", lerr)
+	}
+	defer unlock()
 
 	useTUI := !*plain && term.IsTerminal(int(os.Stdout.Fd()))
 	var engineOut io.Writer = os.Stdout
@@ -340,6 +371,18 @@ func resumeRun(id string) (*zzz.Run, error) {
 	if _, gerr := zzz.RepoRoot(r.RepoRoot); gerr != nil {
 		return nil, fmt.Errorf("%q is not a git working tree anymore: %w", r.RepoRoot, gerr)
 	}
+	// current-branch runs commit to whatever branch is checked out; if the user
+	// switched branches between stop and resume, resuming here would land the
+	// run's commits on the wrong branch. refuse instead.
+	if r.Mode == zzz.ModeCurrent && r.Branch != "" {
+		cur, cerr := zzz.CurrentBranch(r.RepoRoot)
+		if cerr != nil {
+			return nil, cerr
+		}
+		if cur != r.Branch {
+			return nil, fmt.Errorf("run %s committed to %q but %q is checked out — `git switch %s` before resuming", r.ID, r.Branch, cur, r.Branch)
+		}
+	}
 	r.Status = zzz.StatusRunning
 	if err := zzz.SaveMeta(r); err != nil {
 		return nil, fmt.Errorf("persist resume status: %w", err)
@@ -461,11 +504,51 @@ func buildZzzDeps(model, provider, sandboxScope, thinking, effort, cavemanLvl st
 	if err != nil {
 		return cfg, nil, nil, nil, fmt.Errorf("provider: %w", err)
 	}
-	app := buildHeadlessApprover(cfg, yes)
+	app := buildZzzApprover(yes)
 	ensureFirstRun()
 	skillReg := skills.NewRegistry()
 	_ = skillReg.Load(skills.BaseDir())
 	return cfg, prov, app, skillReg, nil
+}
+
+// buildZzzApprover returns the approval policy for an unattended overnight run.
+// Unlike the interactive headless approver, it NEVER reads stdin — a prompt with
+// no one to answer would wedge the loop forever (and in TUI mode contends with
+// bubbletea for the tty). With --yes flagged-dangerous commands run; otherwise
+// they are denied so the model picks another approach instead of blocking.
+// Non-dangerous commands never reach the approver either way.
+func buildZzzApprover(autoYes bool) approval.Approver {
+	if autoYes {
+		return approval.Static{Verdict: approval.AllowOnce}
+	}
+	return approval.Static{Verdict: approval.Deny}
+}
+
+// resolveZzzBudgets turns the auto sentinels into concrete caps. Small/local
+// ("tiny") models get tighter defaults because they spin more; explicit flag
+// values (iter>0, tok>=0) always win. Returns (maxIterations, maxTokens) where
+// maxTokens 0 means unlimited.
+func resolveZzzBudgets(cfg config.Config, maxIter, maxTok int) (int, int) {
+	prof := cfg.Profile
+	if prof == "" || prof == "auto" {
+		prof = config.ResolveAutoProfileForProvider(cfg.DefaultProvider, cfg.DefaultModel)
+	}
+	tiny := prof == "tiny"
+	if maxIter <= 0 {
+		if tiny {
+			maxIter = 40
+		} else {
+			maxIter = loop.MaxIterations
+		}
+	}
+	if maxTok < 0 {
+		if tiny {
+			maxTok = 400000
+		} else {
+			maxTok = 0
+		}
+	}
+	return maxIter, maxTok
 }
 
 // buildZzzEngine assembles a *loop.Engine rooted at cwd (which may be a

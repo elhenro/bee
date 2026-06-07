@@ -48,6 +48,13 @@ const (
 	defaultMaxConsecutiveFails = 3
 	defaultHardErrorRetries    = 3
 	defaultNotesTailIters      = 5
+	// defaultMaxConsecutiveNoops ends a run after this many iters in a row that
+	// changed nothing. without it a weak model that only surveys (never writes)
+	// resets the fail streak every turn and spins to MaxIterations.
+	defaultMaxConsecutiveNoops = 5
+	// maxRetryBackoff caps the per-iter exponential backoff so a long provider
+	// outage can't park the loop in a 8-minute+ sleep between retries.
+	maxRetryBackoff = 60 * time.Second
 )
 
 func cfgMaxConsecutiveFails(c Config) int {
@@ -71,6 +78,13 @@ func cfgNotesTailIters(c Config) int {
 	return c.NotesTailIters
 }
 
+func cfgMaxConsecutiveNoops(c Config) int {
+	if c.MaxConsecutiveNoops > 0 {
+		return c.MaxConsecutiveNoops
+	}
+	return defaultMaxConsecutiveNoops
+}
+
 // Drive is the main overnight loop. Returns nil on a clean exit (objective
 // reached / max-iter / stop signal); error only on unrecoverable failure.
 //
@@ -78,7 +92,22 @@ func cfgNotesTailIters(c Config) int {
 // after current iteration finishes. If ui also satisfies Steerable, operator
 // nudges are drained between iterations: notes get appended to the next
 // prompt, stop closes the local graceful-stop path.
-func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, run *Run, ui UI) error {
+func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, run *Run, ui UI) (retErr error) {
+	// a panic from the engine (malformed tool output, nil deref, OOM) must not
+	// leave the run wedged at status=running with no EndedAt — and in TUI mode
+	// must not kill the goroutine before model.Done fires. Recover, mark the run
+	// failed terminally, persist, and return an error so callers unwind cleanly.
+	defer func() {
+		if r := recover(); r != nil {
+			run.Status = StatusFailed
+			run.StopCause = fmt.Sprintf("panic: %v", r)
+			run.EndedAt = time.Now().UTC()
+			_ = SaveMeta(run)
+			ui.Println(fmt.Sprintf("[zzz] PANIC recovered — run marked failed: %v", r))
+			ui.RenderSummary(run)
+			retErr = fmt.Errorf("zzz: recovered panic: %v", r)
+		}
+	}()
 	if err := preflightClean(run.RepoRoot); err != nil {
 		run.Status = StatusAborted
 		run.StopCause = "dirty git tree on startup"
@@ -92,7 +121,9 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 	}
 	var pendingNotes []string
 	consecutiveFails := 0
+	consecutiveNoops := 0
 	maxFails := cfgMaxConsecutiveFails(cfg)
+	maxNoops := cfgMaxConsecutiveNoops(cfg)
 	// priorTokens captures totals already on disk before this engine instance
 	// started recording. eng.Costs is fresh per invocation, so resume needs
 	// this baseline to keep accumulated tokens correct.
@@ -181,6 +212,7 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 		switch res.Status {
 		case IterCommitted:
 			consecutiveFails = 0
+			consecutiveNoops = 0
 			run.Commits = append(run.Commits, res.CommitSHA)
 			_ = AppendNote(run.ID, iter, res.Subject, res.DiffStat)
 			// persist SHA before any network attempt so push failures can't
@@ -190,10 +222,19 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 				pushAfterCommit(run, res, ui, iter)
 			}
 		case IterNoop:
-			// noop is not a failure — agent may have surveyed without
-			// writing this turn. reset the fail streak so plan-then-act
-			// sequences aren't killed.
+			// noop is not a failure — agent may have surveyed without writing
+			// this turn. reset the fail streak so plan-then-act sequences aren't
+			// killed, but leave a note (so the next prompt shows the survey
+			// already happened) and track the streak so a model that only ever
+			// surveys can't spin to MaxIterations committing nothing.
 			consecutiveFails = 0
+			consecutiveNoops++
+			_ = AppendNote(run.ID, iter, "noop — no file changes this iteration", res.Subject)
+			if consecutiveNoops >= maxNoops {
+				run.Status = StatusFailed
+				run.StopCause = fmt.Sprintf("%d consecutive no-op iterations (model made no changes)", consecutiveNoops)
+				goto finish
+			}
 		case IterReset, IterFailed:
 			consecutiveFails++
 			if consecutiveFails >= maxFails {
@@ -365,6 +406,9 @@ func runEngineWithRetry(ctx context.Context, eng Runner, prompt string, retries 
 			return loop.RunResult{}, ctx.Err()
 		}
 		delay *= 2
+		if delay > maxRetryBackoff {
+			delay = maxRetryBackoff
+		}
 	}
 	return loop.RunResult{}, lastErr
 }

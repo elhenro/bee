@@ -97,13 +97,19 @@ func LoadMeta(id string) (*Run, error) {
 	return &r, nil
 }
 
-// SavePrompt persists the original objective so resume keeps context.
+// SavePrompt persists the original objective so resume keeps context. Written
+// atomically (tmp+rename) so a crash mid-write can't leave a truncated objective
+// that a later resume would silently run with.
 func SavePrompt(id, objective string) error {
 	dir, err := RunDir(id)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "prompt.txt"), []byte(objective), 0o644)
+	tmp := filepath.Join(dir, "prompt.txt.tmp")
+	if err := os.WriteFile(tmp, []byte(objective), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(dir, "prompt.txt"))
 }
 
 // LoadPrompt reads the saved objective.

@@ -71,13 +71,13 @@ type stubUI struct {
 	steer   chan Steer
 }
 
-func (u *stubUI) SetIter(n, _ int)       { u.mu.Lock(); u.iters = append(u.iters, n); u.mu.Unlock() }
-func (u *stubUI) SetPhase(p string)      { u.mu.Lock(); u.phases = append(u.phases, p); u.mu.Unlock() }
-func (u *stubUI) SetTokens(t TokenStat)  { u.mu.Lock(); u.tokens = t; u.mu.Unlock() }
-func (u *stubUI) IncCommits()            { u.mu.Lock(); u.commits++; u.mu.Unlock() }
-func (u *stubUI) Println(s string)       { u.mu.Lock(); u.logs = append(u.logs, s); u.mu.Unlock() }
-func (u *stubUI) RenderSummary(r *Run)   { u.mu.Lock(); u.summary = r; u.mu.Unlock() }
-func (u *stubUI) Steer() <-chan Steer    { return u.steer }
+func (u *stubUI) SetIter(n, _ int)      { u.mu.Lock(); u.iters = append(u.iters, n); u.mu.Unlock() }
+func (u *stubUI) SetPhase(p string)     { u.mu.Lock(); u.phases = append(u.phases, p); u.mu.Unlock() }
+func (u *stubUI) SetTokens(t TokenStat) { u.mu.Lock(); u.tokens = t; u.mu.Unlock() }
+func (u *stubUI) IncCommits()           { u.mu.Lock(); u.commits++; u.mu.Unlock() }
+func (u *stubUI) Println(s string)      { u.mu.Lock(); u.logs = append(u.logs, s); u.mu.Unlock() }
+func (u *stubUI) RenderSummary(r *Run)  { u.mu.Lock(); u.summary = r; u.mu.Unlock() }
+func (u *stubUI) Steer() <-chan Steer   { return u.steer }
 
 // setupDriveTest builds a fresh git repo + HOME tempdir and returns the
 // run skeleton plus repo path.
@@ -164,9 +164,9 @@ func TestDrive_NoopDoesNotCountAsFail(t *testing.T) {
 	runner := &stubRunner{
 		dir: repo,
 		turns: []stubTurn{
-			{text: "thinking…", in: 10, out: 5},                                                            // noop
-			{text: "still thinking", in: 10, out: 5},                                                       // noop
-			{text: "feat: act now", write: map[string]string{"x.txt": "ok"}, in: 100, out: 50},             // commit
+			{text: "thinking…", in: 10, out: 5},                                                // noop
+			{text: "still thinking", in: 10, out: 5},                                           // noop
+			{text: "feat: act now", write: map[string]string{"x.txt": "ok"}, in: 100, out: 50}, // commit
 		},
 	}
 	ui := &stubUI{}
@@ -257,6 +257,69 @@ func TestDrive_GracefulStop(t *testing.T) {
 	}
 	if run.IterCount != 0 {
 		t.Errorf("no iter should have run, got IterCount=%d", run.IterCount)
+	}
+}
+
+// panicRunner panics on Run to exercise Drive's panic recovery.
+type panicRunner struct{}
+
+func (panicRunner) Run(context.Context, string) (loop.RunResult, error) {
+	panic("simulated engine panic")
+}
+func (panicRunner) CostTotal() cost.Summary { return cost.Summary{} }
+
+// TestDrive_PanicRecovered confirms a panic in the engine doesn't leave the run
+// wedged at status=running with no EndedAt — it must end terminally so the TUI
+// goroutine unwinds and a later resume/gc sees a finished run.
+func TestDrive_PanicRecovered(t *testing.T) {
+	run, _ := setupDriveTest(t)
+	ui := &stubUI{}
+	cfg := Config{MaxIterations: 3}
+	err := Drive(context.Background(), nil, panicRunner{}, cfg, run, ui)
+	if err == nil {
+		t.Fatal("expected an error from recovered panic")
+	}
+	if run.Status != StatusFailed {
+		t.Errorf("status want %s got %s", StatusFailed, run.Status)
+	}
+	if run.EndedAt.IsZero() {
+		t.Error("EndedAt should be set after panic recovery")
+	}
+	if !strings.Contains(run.StopCause, "panic") {
+		t.Errorf("stop cause should mention panic, got %q", run.StopCause)
+	}
+	// meta.json must reflect the terminal status.
+	reloaded, lerr := LoadMeta(run.ID)
+	if lerr != nil {
+		t.Fatalf("LoadMeta: %v", lerr)
+	}
+	if reloaded.Status != StatusFailed {
+		t.Errorf("persisted status want %s got %s", StatusFailed, reloaded.Status)
+	}
+}
+
+// TestDrive_NoopSpinBails confirms a model that only ever surveys (never writes)
+// ends on the consecutive-noop cap instead of spinning to MaxIterations.
+func TestDrive_NoopSpinBails(t *testing.T) {
+	run, repo := setupDriveTest(t)
+	turns := make([]stubTurn, 10)
+	for i := range turns {
+		turns[i] = stubTurn{text: "surveying the codebase…", in: 5, out: 2} // never writes
+	}
+	runner := &stubRunner{dir: repo, turns: turns}
+	ui := &stubUI{}
+	cfg := Config{MaxIterations: 20, MaxConsecutiveNoops: 3}
+	if err := Drive(context.Background(), nil, runner, cfg, run, ui); err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != StatusFailed {
+		t.Errorf("want failed (noop cap), got %s cause=%q", run.Status, run.StopCause)
+	}
+	if run.IterCount != 3 {
+		t.Errorf("should bail at 3 consecutive noops, ran %d iters", run.IterCount)
+	}
+	if !strings.Contains(run.StopCause, "no-op") {
+		t.Errorf("cause should mention no-op, got %q", run.StopCause)
 	}
 }
 

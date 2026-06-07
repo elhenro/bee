@@ -22,6 +22,10 @@ type Config struct {
 	// MaxConsecutiveFails ends the run after this many failed iters in a row.
 	// 0 → default (3). Noop iters do not count.
 	MaxConsecutiveFails int
+	// MaxConsecutiveNoops ends the run after this many no-change iters in a row.
+	// 0 → default (5). Stops a model that only ever surveys from spinning to
+	// MaxIterations without committing anything.
+	MaxConsecutiveNoops int
 	// HardErrorRetries bounds engine.Run retries per iter on transient errors.
 	// 0 → default (3).
 	HardErrorRetries int
@@ -32,21 +36,21 @@ type Config struct {
 
 // Run is the persisted metadata for one overnight session.
 type Run struct {
-	ID        string    `json:"id"`
-	Objective string    `json:"objective"`
-	Branch    string    `json:"branch"`
-	Worktree  string    `json:"worktree,omitempty"`
-	Mode      string    `json:"mode"` // "branch" | "current" | "worktree"
-	RepoRoot  string    `json:"repo_root"`
-	StartedAt time.Time `json:"started_at"`
-	EndedAt   time.Time `json:"ended_at,omitempty"`
-	Status    string    `json:"status"` // "running" | "completed" | "failed" | "aborted"
-	IterCount int       `json:"iter_count"`
-	Tokens    TokenStat `json:"tokens"`
-	Commits         []string `json:"commits"`
-	PushedCommits   []string `json:"pushed_commits,omitempty"`
-	PushFailedIters []int    `json:"push_failed_iters,omitempty"`
-	StopCause       string   `json:"stop_cause,omitempty"`
+	ID              string    `json:"id"`
+	Objective       string    `json:"objective"`
+	Branch          string    `json:"branch"`
+	Worktree        string    `json:"worktree,omitempty"`
+	Mode            string    `json:"mode"` // "branch" | "current" | "worktree"
+	RepoRoot        string    `json:"repo_root"`
+	StartedAt       time.Time `json:"started_at"`
+	EndedAt         time.Time `json:"ended_at,omitempty"`
+	Status          string    `json:"status"` // "running" | "completed" | "failed" | "aborted"
+	IterCount       int       `json:"iter_count"`
+	Tokens          TokenStat `json:"tokens"`
+	Commits         []string  `json:"commits"`
+	PushedCommits   []string  `json:"pushed_commits,omitempty"`
+	PushFailedIters []int     `json:"push_failed_iters,omitempty"`
+	StopCause       string    `json:"stop_cause,omitempty"`
 }
 
 // TokenStat is the running tally across all iterations.
