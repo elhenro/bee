@@ -46,6 +46,28 @@ func (r *Registry) Register(t Tool) error {
 	return nil
 }
 
+// Without returns a new Registry holding every tool except the named ones.
+// Used to hand observation-only agents (e.g. the queen's review gate) a surface
+// with the structured write tools removed, so an accidental edit-call fails
+// instead of mutating the tree mid-review. The excluded set is small, so a
+// linear skip-check is fine.
+func (r *Registry) Without(exclude ...string) *Registry {
+	skip := make(map[string]struct{}, len(exclude))
+	for _, n := range exclude {
+		skip[n] = struct{}{}
+	}
+	out := NewRegistry()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for name, t := range r.tools {
+		if _, drop := skip[name]; drop {
+			continue
+		}
+		out.tools[name] = t
+	}
+	return out
+}
+
 func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

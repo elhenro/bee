@@ -130,10 +130,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.eng.Cfg.Thinking = m.thinking
 		}
 		_ = PersistSetting("", "role", m.role)
-		// entering queen: arm exactly one rainbow glow loop + a one-shot warning
-		// that every turn now spawns a hive.
+		// entering queen: arm exactly one rainbow glow loop + a one-shot warning.
+		// substantial tasks spawn a planning+review hive; small/clear ones are
+		// triaged to a single pass.
 		if m.role == "queen" && prev != "queen" {
-			m.warning = "queen: every turn now spawns a hive — slower, higher quality, more tokens"
+			m.warning = "queen: big tasks spawn a planning+review hive; small ones run single-pass — higher quality, more tokens"
 			m.warningExpires = time.Now().Add(warningTTL)
 			return m, tea.Batch(glowTickCmd(), warningFadeCmd())
 		}

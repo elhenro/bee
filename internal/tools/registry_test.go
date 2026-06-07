@@ -131,3 +131,29 @@ func TestRegistry_Concurrent(t *testing.T) {
 		t.Errorf("concurrent register: %d tools, want 10", len(specs))
 	}
 }
+
+func TestRegistryWithout(t *testing.T) {
+	r := NewRegistry()
+	for _, n := range []string{"read", "bash", "edit", "write", "apply_patch"} {
+		if err := r.Register(&_stubTool{name: n}); err != nil {
+			t.Fatalf("register %s: %v", n, err)
+		}
+	}
+	got := r.Without("edit", "write", "apply_patch", "missing")
+	// excluded tools gone
+	for _, n := range []string{"edit", "write", "apply_patch"} {
+		if _, ok := got.Get(n); ok {
+			t.Errorf("%s should have been excluded", n)
+		}
+	}
+	// kept tools remain
+	for _, n := range []string{"read", "bash"} {
+		if _, ok := got.Get(n); !ok {
+			t.Errorf("%s should remain", n)
+		}
+	}
+	// source registry untouched
+	if _, ok := r.Get("edit"); !ok {
+		t.Error("Without mutated the source registry")
+	}
+}
