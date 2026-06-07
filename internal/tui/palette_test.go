@@ -79,6 +79,31 @@ func TestPalette_FuzzyRanking(t *testing.T) {
 	}
 }
 
+func TestPalette_NameRanksAboveDescription(t *testing.T) {
+	// typing "model" must surface /model, not /handoff whose description
+	// reads "...to a bigger model you pick".
+	p := newTestPalette(t)
+	p.Show("model")
+	if len(p.matches) == 0 {
+		t.Fatal("no matches for model")
+	}
+	top := p.pool[p.matches[0].Index]
+	if top.Name != "model" {
+		t.Errorf("want model first, got %q", top.Name)
+	}
+	// handoff still reachable via description fallback.
+	found := false
+	for _, m := range p.matches {
+		if p.pool[m.Index].Name == "handoff" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("handoff should remain in matches via description")
+	}
+}
+
 func TestPalette_FuzzyMatchesSkill(t *testing.T) {
 	p := newTestPalette(t)
 	p.Show("rls")

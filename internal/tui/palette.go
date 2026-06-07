@@ -153,13 +153,32 @@ func (p *PaletteModel) recomputeMatches() {
 	if i := strings.IndexByte(needle, ' '); i >= 0 {
 		needle = needle[:i]
 	}
-	// match against "name description" so descriptions can rank too; the
-	// renderer masks highlight indices to the name range below.
-	hay := make([]string, len(p.pool))
+	// two passes: name matches always outrank description matches so typing
+	// "model" surfaces /model first, not /handoff whose blurb mentions
+	// "model". descriptions stay searchable as a fallback. fuzzy.Match.Index
+	// points into the slice we pass, which is parallel to pool, so it maps
+	// straight back to a pool entry either way.
+	names := make([]string, len(p.pool))
+	descs := make([]string, len(p.pool))
 	for i, e := range p.pool {
-		hay[i] = e.Name + " " + e.Description
+		names[i] = e.Name
+		descs[i] = e.Description
 	}
-	p.matches = fuzzy.Find(needle, hay)
+	nameMatches := fuzzy.Find(needle, names)
+	seen := make(map[int]struct{}, len(nameMatches))
+	for _, m := range nameMatches {
+		seen[m.Index] = struct{}{}
+	}
+	// description-only hits, excluding anything already matched by name.
+	// renderer masks highlight indices to the name range, so desc-match
+	// indices simply don't highlight — acceptable for a fallback.
+	var descMatches fuzzy.Matches
+	for _, m := range fuzzy.Find(needle, descs) {
+		if _, ok := seen[m.Index]; !ok {
+			descMatches = append(descMatches, m)
+		}
+	}
+	p.matches = append(nameMatches, descMatches...)
 	if p.selected >= len(p.matches) {
 		p.selected = 0
 	}
