@@ -30,6 +30,7 @@ import (
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/tools/skillexec"
 )
 
 // runHeadlessReal is the actual headless implementation. main.go calls
@@ -170,6 +171,13 @@ func runHeadlessReal(args []string) {
 		fmt.Fprintf(os.Stderr, "bee run: tools: %v\n", err)
 		os.Exit(1)
 	}
+	ensureFirstRun()
+	skillReg := skills.NewRegistry()
+	_ = skillReg.Load(skills.BaseDir()) // best-effort
+	// exec-kind skills (including waggles) become model-callable tools. Done
+	// before the --allowed-tools filter so the allowlist governs them too.
+	skillexec.RegisterExecSkills(reg, skillReg.List())
+
 	if *allowedTools != "" {
 		if reg, err = filterTools(reg, *allowedTools); err != nil {
 			fmt.Fprintf(os.Stderr, "bee run: %v\n", err)
@@ -177,17 +185,14 @@ func runHeadlessReal(args []string) {
 		}
 	}
 
-	ensureFirstRun()
-	skillReg := skills.NewRegistry()
-	_ = skillReg.Load(skills.BaseDir()) // best-effort
-
 	if *skillName != "" {
 		s, ok := skillReg.Get(*skillName)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "bee run: unknown skill %q\n", *skillName)
 			os.Exit(2)
 		}
-		// prompt-kind: prepend body to user message. exec/mcp/http defer to v0.2.
+		// prompt-kind: prepend body to user message. exec-kind skills are
+		// registered as callable tools above; mcp/http defer to v0.2.
 		if s.Kind == skills.KindPrompt && s.Body != "" {
 			if userMsg == "" {
 				userMsg = s.Body

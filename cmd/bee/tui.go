@@ -24,6 +24,7 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
+	"github.com/elhenro/bee/internal/tools/skillexec"
 	"github.com/elhenro/bee/internal/tui"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -168,6 +169,8 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	ensureFirstRun()
 	skillReg := skills.NewRegistry()
 	_ = skillReg.Load(skills.BaseDir())
+	// exec-kind skills (including waggles) become model-callable tools.
+	skillexec.RegisterExecSkills(reg, skillReg.List())
 
 	// pre-warm the live model catalogue for the active provider so the
 	// context-fill indicator works for any model the API knows about,
@@ -250,6 +253,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		if err != nil {
 			return err
 		}
+		skillexec.RegisterExecSkills(newReg, skillReg.List())
 		e.Provider = newProv
 		e.Memory = newKnowledgeAdapter(newProv, e.Cfg)
 		e.Tools = newReg
