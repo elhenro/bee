@@ -55,6 +55,18 @@ func resolveSymlinks(path string) string {
 	return filepath.Clean(path)
 }
 
+// pathIsInside checks whether absPath is inside rootPath, handling both
+// forward- and backslash separators (important on Windows where
+// filepath.Rel may return a path with / separators, and may omit the
+// separator between ".." and the trailing component, e.g. "..tmp").
+func pathIsInside(absPath, rootPath string) bool {
+	rel, err := filepath.Rel(rootPath, absPath)
+	if err != nil {
+		return false
+	}
+	return rel == "." || !strings.HasPrefix(rel, "..")
+}
+
 // ResolveInRoot resolves path against workspace root and verifies containment.
 // It expands a leading ~, makes relative paths absolute under root, and
 // resolves symlinks on both sides so a symlinked workspace root (and absolute
@@ -76,8 +88,11 @@ func ResolveInRoot(root, path string) (abs, rel, rootAbs string, ok bool) {
 
 	rRoot := resolveSymlinks(rootAbs)
 	rAbs := resolveSymlinks(abs)
+	if !pathIsInside(rAbs, rRoot) {
+		return abs, "", rootAbs, false
+	}
 	rel, err = filepath.Rel(rRoot, rAbs)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil {
 		return abs, "", rootAbs, false
 	}
 	return abs, rel, rootAbs, true

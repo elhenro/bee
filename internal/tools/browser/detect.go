@@ -8,7 +8,9 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // ErrNotFound means no Chrome/Chromium binary could be located.
@@ -58,5 +60,11 @@ func isExec(p string) bool {
 	if err != nil || fi.IsDir() {
 		return false
 	}
-	return fi.Mode()&0o111 != 0
+	// Windows: os.Stat may not return execute bits for all files,
+	// so we also accept files that exist and have a common executable extension.
+	if fi.Mode()&0o111 != 0 {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(p))
+	return ext == ".exe" || ext == ".bat" || ext == ".cmd" || ext == ""
 }

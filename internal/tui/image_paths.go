@@ -93,7 +93,7 @@ func splitShellLike(s string) []shellToken {
 	rs := []rune(s)
 	for i := 0; i < len(rs); i++ {
 		c := rs[i]
-		if c == '\\' && i+1 < len(rs) {
+		if c == '\\' && i+1 < len(rs) && (rs[i+1] == ' ' || rs[i+1] == '\\') {
 			raw.WriteRune(c)
 			raw.WriteRune(rs[i+1])
 			un.WriteRune(rs[i+1])

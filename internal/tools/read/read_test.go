@@ -126,7 +126,7 @@ func TestOffsetBeyondEOF(t *testing.T) {
 	}
 }
 
-func TestCacheHitReturnsStub(t *testing.T) {
+func TestCacheHitAppendsNoteKeepsBody(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
 	if err := os.WriteFile(p, []byte("alpha\nbeta\n"), 0o644); err != nil {
@@ -140,15 +140,19 @@ func TestCacheHitReturnsStub(t *testing.T) {
 	if !strings.Contains(first.Content, "alpha") {
 		t.Fatalf("first read missing body: %s", first.Content)
 	}
+	if strings.Contains(first.Content, "unchanged") {
+		t.Fatalf("first read should not carry the note: %s", first.Content)
+	}
+	// repeat read: body still served (never withheld), note appended.
 	second, err := tool.Run(context.Background(), map[string]any{"path": p})
 	if err != nil || second.IsError {
 		t.Fatalf("second read failed: %v %s", err, second.Content)
 	}
-	if !strings.Contains(second.Content, "cache") {
-		t.Fatalf("cache hit expected, got body: %s", second.Content)
+	if !strings.Contains(second.Content, "alpha") {
+		t.Fatalf("repeat read must still serve body, got: %s", second.Content)
 	}
-	if strings.Contains(second.Content, "alpha") {
-		t.Fatalf("cache hit should drop body, got: %s", second.Content)
+	if !strings.Contains(second.Content, "unchanged since your earlier read") {
+		t.Fatalf("repeat read should append note, got: %s", second.Content)
 	}
 }
 

@@ -50,6 +50,14 @@ func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
 			switch use.Name {
 			case "edit", "hashline_edit", "apply_patch", "write":
 				return ""
+			case "read":
+				// the soft "unchanged since your earlier read" note is a
+				// model-only nudge appended to the real content — strip it
+				// from the human view, keep the file content itself.
+				res.Content = strings.TrimRight(
+					strings.TrimSuffix(strings.TrimRight(res.Content, "\n"),
+						"(note: unchanged since your earlier read this session)"),
+					"\n")
 			}
 		}
 	}

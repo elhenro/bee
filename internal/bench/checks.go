@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -55,6 +56,9 @@ func runCmdCheck(c Check, sandbox string, timeout time.Duration) CheckResult {
 		defer cancel()
 	}
 	cmd := exec.CommandContext(ctx, "sh", "-c", line)
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd", "/c", line)
+	}
 	cmd.Env = append(os.Environ(), "SANDBOX="+sandbox)
 	cmd.Dir = sandbox
 	out, err := cmd.CombinedOutput()

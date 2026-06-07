@@ -25,12 +25,11 @@ const (
 	binarySniffSize = 4096
 )
 
-// cacheEntry records a previously-served read keyed by file identity + slice.
-// hit returns a short stub so the model stops re-reading unchanged files. Key
-// includes mtime+size so any edit invalidates the entry naturally.
+// cacheEntry marks a read already served this session, keyed by file identity
+// + slice. Presence drives the soft "unchanged since your earlier read" note;
+// key includes mtime+size so any edit invalidates the entry naturally.
 type cacheEntry struct {
-	key  string
-	hits int
+	key string
 }
 
 // Tool is the read tool. Holds a per-tool (= per-Engine, in practice) cache
@@ -173,42 +172,35 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// any edit bumps mtime/size and invalidates the entry.
 	cacheKey := fmt.Sprintf("%s|%d|%d|%d|%d|%d|%t",
 		path, info.ModTime().UnixNano(), info.Size(), offset, limit, tail, hashline)
-	if hit := t.checkCache(cacheKey); hit != "" {
-		return tools.Result{Content: hit}, nil
-	}
-
 	out, err := readFile(path, offset, limit, tail, hashline)
 	if err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
-	t.recordCache(cacheKey)
+	// soft hint: never withhold content. on a repeat read of an unchanged
+	// slice, append a one-line note so the model knows it already saw this
+	// (curbs reflexive re-reads) without ever starving it — a hard cache that
+	// drops the body breaks once context is compacted and the model no longer
+	// has the earlier read to fall back on.
+	if t.seenBefore(cacheKey) {
+		out += "\n\n(note: unchanged since your earlier read this session)"
+	}
 	return tools.Result{Content: out}, nil
 }
 
-// checkCache returns a stub string when the key was already served this
-// session, empty otherwise. Body is dropped from the result so the model
-// stops re-reading unchanged files mid-task.
-func (t *Tool) checkCache(key string) string {
+// seenBefore records the key and reports whether it had already been read
+// this session. The key embeds mtime+size, so any edit yields a fresh key
+// (reported not-seen) — the note only fires on a truly unchanged slice.
+func (t *Tool) seenBefore(key string) bool {
 	if t == nil || t.cache == nil {
-		return ""
+		return false
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	e, ok := t.cache[key]
-	if !ok {
-		return ""
+	if _, ok := t.cache[key]; ok {
+		return true
 	}
-	e.hits++
-	return fmt.Sprintf("(cache) unchanged since prior read this session (%d repeats). file unchanged on disk; reuse prior result.", e.hits)
-}
-
-func (t *Tool) recordCache(key string) {
-	if t == nil || t.cache == nil {
-		return
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.cache[key] = &cacheEntry{key: key}
+	return false
 }
 
 func readFile(path string, offset, limit, tail int, hashline bool) (string, error) {
