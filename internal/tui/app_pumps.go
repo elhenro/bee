@@ -173,6 +173,7 @@ type (
 	openLoginMsg     struct{}
 	openResumeMsg    struct{}
 	openRoleMsg    struct{}
+	openEffortMsg  struct{}
 	openSettingsMsg  struct{}
 	openToolsMsg     struct{}
 )

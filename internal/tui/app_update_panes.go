@@ -50,6 +50,18 @@ func (m Model) onOpenRole(_ openRoleMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) onOpenEffort(_ openEffortMsg) (tea.Model, tea.Cmd) {
+	if m.effortPane == nil {
+		m.effortPane = NewEffortPane()
+	}
+	cur := m.thinking
+	if cur == "" {
+		cur = "auto"
+	}
+	m.effortPane.Show(cur)
+	return m, nil
+}
+
 func (m Model) onOpenSettings(_ openSettingsMsg) (tea.Model, tea.Cmd) {
 	if m.settingsPane == nil {
 		m.settingsPane = NewSettingsPane()

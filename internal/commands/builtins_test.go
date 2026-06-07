@@ -115,6 +115,11 @@ func (f *fakeSide) SetRole(role string) error {
 	return nil
 }
 func (f *fakeSide) GetRole() string { return f.role }
+func (f *fakeSide) SetThinking(level string) error {
+	f.thinking = level
+	return nil
+}
+func (f *fakeSide) GetThinking() string { return f.thinking }
 func (f *fakeSide) SetYolo(on bool) error {
 	f.yolo = on
 	return nil
@@ -831,17 +836,17 @@ func TestBuiltin_Role_SideError(t *testing.T) {
 	}
 }
 
-// the deprecated /effort alias maps legacy levels onto roles.
-func TestBuiltin_Effort_DeprecatedAlias(t *testing.T) {
+// /effort pins the reasoning budget directly.
+func TestBuiltin_Effort_SetsThinking(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
 	c, _ := r.Get("effort")
 	side := &fakeSide{}
-	if _, err := c.Run(context.Background(), []string{"mastermind"}, side); err != nil {
+	if _, err := c.Run(context.Background(), []string{"high"}, side); err != nil {
 		t.Fatal(err)
 	}
-	if side.role != "queen" {
-		t.Errorf("effort mastermind should map to queen, got %q", side.role)
+	if side.thinking != "high" {
+		t.Errorf("effort high should set thinking high, got %q", side.thinking)
 	}
 }
 

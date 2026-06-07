@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/elhenro/bee/internal/llm"
 )
 
 // SetRole switches the agent role (worker|scout|queen) live and persists it.
@@ -37,6 +39,36 @@ func (s *tuiSide) GetRole() string {
 	return s.m.role
 }
 
+// SetThinking pins the reasoning budget live, overriding the role-baked
+// default. Mirrored into m.thinking (display) + eng.Cfg.Thinking (engine
+// resolves it next turn). Unknown levels are rejected so a typo doesn't
+// silently fall to off.
+func (s *tuiSide) SetThinking(level string) error {
+	if s.m == nil {
+		return errors.New("thinking: no tui state")
+	}
+	raw := strings.ToLower(strings.TrimSpace(level))
+	switch raw {
+	case "off", "low", "medium", "med", "high", "max", "maximum", "auto":
+	default:
+		return fmt.Errorf("unknown thinking %q (want off|low|medium|high|max|auto)", level)
+	}
+	canonical := string(llm.ParseThinking(raw))
+	s.m.thinking = canonical
+	if s.m.eng != nil {
+		s.m.eng.Cfg.Thinking = canonical
+	}
+	return PersistSetting("", "thinking", canonical)
+}
+
+// GetThinking returns the active reasoning budget string.
+func (s *tuiSide) GetThinking() string {
+	if s.m == nil {
+		return ""
+	}
+	return s.m.thinking
+}
+
 // SetYolo flips the auto-approve toggle live and persists it.
 func (s *tuiSide) SetYolo(on bool) error {
 	if s.m == nil {
@@ -64,6 +96,19 @@ func (s *tuiSide) OpenRolePicker() error {
 		return errors.New("no role pane (headless)")
 	}
 	s.m.roleRequested = true
+	return nil
+}
+
+// OpenEffortPicker flips a sentinel that Model.Update consumes to display the
+// effort picker modal. Returns an error in headless contexts.
+func (s *tuiSide) OpenEffortPicker() error {
+	if s.m == nil {
+		return errors.New("no tui")
+	}
+	if s.m.effortPane == nil {
+		return errors.New("no effort pane (headless)")
+	}
+	s.m.effortRequested = true
 	return nil
 }
 

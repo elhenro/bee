@@ -209,10 +209,15 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		m.tutorialRequested = false
 		return m, func() tea.Msg { return openTutorialMsg{} }
 	}
-	// /effort (no args) asks to open the effort picker.
+	// /role (no args) asks to open the role picker.
 	if m.roleRequested {
 		m.roleRequested = false
 		return m, func() tea.Msg { return openRoleMsg{} }
+	}
+	// /effort (no args) asks to open the effort picker.
+	if m.effortRequested {
+		m.effortRequested = false
+		return m, func() tea.Msg { return openEffortMsg{} }
 	}
 	// /settings asks to open the settings pane.
 	if m.settingsRequested {

@@ -76,11 +76,20 @@ func (m Model) claimByPane(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 	}
 
-	// effort pane claims keys while open.
+	// role pane claims keys while open.
 	if m.rolePane != nil && m.rolePane.Open() {
 		if _, ok := msg.(tea.KeyMsg); ok {
 			newE, cmd := m.rolePane.Update(msg)
 			m.rolePane = newE
+			return m, cmd, true
+		}
+	}
+
+	// effort pane claims keys while open.
+	if m.effortPane != nil && m.effortPane.Open() {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			newE, cmd := m.effortPane.Update(msg)
+			m.effortPane = newE
 			return m, cmd, true
 		}
 	}

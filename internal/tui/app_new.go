@@ -103,6 +103,7 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		history:         NewHistoryPicker(),
 		picker:          pk,
 		rolePane:        NewRolePane(),
+		effortPane:      NewEffortPane(),
 		settingsPane:    NewSettingsPane(),
 		toolsPane:       NewToolsPane(),
 		hive:            NewHive(),

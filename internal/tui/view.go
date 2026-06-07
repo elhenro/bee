@@ -82,6 +82,9 @@ func (m Model) View() string {
 	if m.rolePane != nil && m.rolePane.Open() {
 		return overlayCenter(frame, m.rolePane.View(m.width, m.height), m.width)
 	}
+	if m.effortPane != nil && m.effortPane.Open() {
+		return overlayCenter(frame, m.effortPane.View(m.width, m.height), m.width)
+	}
 	if m.settingsPane != nil && m.settingsPane.Open() {
 		return overlayCenter(frame, m.settingsPane.View(m.width, m.height), m.width)
 	}

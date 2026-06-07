@@ -99,6 +99,14 @@ type Side interface {
 	// OpenRolePicker asks the TUI to display the role picker modal.
 	// Returns nil when the modal was scheduled; non-nil signals headless.
 	OpenRolePicker() error
+	// SetThinking pins the reasoning budget live (off|low|medium|high|max|auto),
+	// overriding the role-baked default until changed. Unknown values rejected.
+	SetThinking(level string) error
+	// GetThinking returns the active reasoning budget string.
+	GetThinking() string
+	// OpenEffortPicker asks the TUI to display the reasoning-effort picker modal.
+	// Returns nil when scheduled; non-nil signals headless.
+	OpenEffortPicker() error
 	// SetMaxIterations changes the per-Run tool-use iteration cap live and
 	// persists it. 0 = unlimited (loop until a token-budget or stall guard
 	// fires). Negatives are clamped to 0.

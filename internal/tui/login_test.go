@@ -57,6 +57,8 @@ func (s *loginSideStub) OpenTutorial() error                          { return n
 func (s *loginSideStub) OpenResume() error                             { return nil }
 func (s *loginSideStub) SetRole(string) error                          { return nil }
 func (s *loginSideStub) GetRole() string                               { return "worker" }
+func (s *loginSideStub) SetThinking(string) error                      { return nil }
+func (s *loginSideStub) GetThinking() string                           { return "auto" }
 func (s *loginSideStub) SetYolo(bool) error                            { return nil }
 func (s *loginSideStub) GetYolo() bool                                 { return false }
 func (s *loginSideStub) OpenRolePicker() error                         { return nil }

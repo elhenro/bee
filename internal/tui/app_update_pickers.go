@@ -130,6 +130,18 @@ func (m Model) onRolePicked(msg rolePickedMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) onEffortPicked(msg effortPickedMsg) (tea.Model, tea.Cmd) {
+	v := string(msg)
+	if err := m.side().SetThinking(v); err != nil {
+		m.lastErr = err.Error()
+		m.state = StateError
+		return m, nil
+	}
+	// SetThinking canonicalized m.thinking already; mirror the current row.
+	m.effortPane.SetCurrent(m.thinking)
+	return m, nil
+}
+
 // onHandoffPicked stops the stuck turn and kicks off async brief generation on
 // the pre-switch (small) provider. The model switch is deferred to
 // onHandoffReady so Rebuild never races the summarization goroutine.

@@ -93,6 +93,11 @@ const indexHTML = `<!DOCTYPE html>
     }
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  code {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    word-break: break-all;
+  }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     background: var(--bg);
@@ -147,6 +152,8 @@ const indexHTML = `<!DOCTYPE html>
     color: var(--accent);
     animation: float 6s ease-in-out infinite;
     text-shadow: 0 0 20px rgba(245, 214, 86, 0.15);
+    max-width: 100%;
+    overflow-x: hidden;
   }
   .bee-art-inner {
     white-space: pre;
@@ -266,7 +273,11 @@ const indexHTML = `<!DOCTYPE html>
     border-radius: 8px;
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 0.85rem;
-    overflow-x: auto;
+    overflow-x: visible;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-all;
     margin: 0.25rem 0;
     cursor: pointer;
     transition: background 0.2s;
@@ -286,6 +297,13 @@ const indexHTML = `<!DOCTYPE html>
     color: var(--muted);
     font-size: 0.8rem;
     margin-top: 0.5rem;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
+  .install-hint code {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    word-break: break-all;
   }
   .links {
     display: flex;

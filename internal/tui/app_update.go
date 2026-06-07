@@ -294,6 +294,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onOpenLogin(msg)
 	case openRoleMsg:
 		return m.onOpenRole(msg)
+	case openEffortMsg:
+		return m.onOpenEffort(msg)
 	case openSettingsMsg:
 		return m.onOpenSettings(msg)
 	case settingsToggleMsg:
@@ -318,6 +320,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onPickerLoginRequested(msg)
 	case rolePickedMsg:
 		return m.onRolePicked(msg)
+	case effortPickedMsg:
+		return m.onEffortPicked(msg)
 
 	case updateAvailableMsg:
 		return m.onUpdateAvailable(msg)

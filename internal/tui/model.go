@@ -185,10 +185,15 @@ type Model struct {
 	handoffing       bool
 	handoffStall     string
 
-	// effort pane — opened by /effort (no args). Arrow keys pick level;
+	// role pane — opened by /role (no args). Arrow keys pick role;
 	// enter commits, esc closes.
 	rolePane      *RolePane
 	roleRequested bool
+
+	// effort pane — opened by /effort (no args). Pins the reasoning budget,
+	// overriding the role-baked default.
+	effortPane      *EffortPane
+	effortRequested bool
 
 	// hive pane — opened by Left arrow on an empty input. Right arrow
 	// returns to the chat view. Mirrors Ctrl+H toggle path.

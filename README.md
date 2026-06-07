@@ -59,7 +59,7 @@ I've used claude code, codex, hermes, opencode, openclaw and pi. Each nails some
 
 1. **Tiny-context friendly.** Caveman-compressed system prompt, three tools, top-k memory. Scales from a 4k-context local Ollama up through small fine-tunes to million-token frontier models. Native [omlx](https://github.com/jundot/omlx) (Apple Silicon MLX server) and OpenRouter support out of the box. Shrinks itself when context gets tight.
 2. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. `bee criticize plan.md` just works, from any directory, in any shell.
-3. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint — all four are equally callable tools the model can invoke mid-task. Plug a personal-life agent in as a sub-agent (bundled `hermes.md` is a template). No IPC dance.
+3. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint. All four are equally callable tools the model can invoke mid-task. Plug a personal-life agent in as a sub-agent (bundled `hermes.md` is a template). No IPC dance.
 
 **It just works.** bee nudges models toward useful output, detects and breaks loops before they waste tokens, and handles the boring plumbing so you don't have to.
 
@@ -67,11 +67,11 @@ I've used claude code, codex, hermes, opencode, openclaw and pi. Each nails some
 
 bee runs against any OpenAI-compatible local server. Confirmed working:
 
-- **[omlx](https://github.com/jundot/omlx)** (Apple Silicon MLX server, `localhost:8000/v1`) — MLX-quantized coder models, strong tool-calling, low RAM.
-- **Ollama** (`localhost:11434/v1`) — `llama3.1:8b`, `qwen2.5-coder:7b`, `qwen3.6:35b`, `gemma4:12b`.
+- **[omlx](https://github.com/jundot/omlx)** (Apple Silicon MLX server, `localhost:8000/v1`). MLX-quantized coder models, strong tool-calling, low RAM.
+- **Ollama** (`localhost:11434/v1`). `llama3.1:8b`, `qwen2.5-coder:7b`, `qwen3.6:35b`, `gemma4:12b`.
 - **LM Studio** (`localhost:1234/v1`).
 
-For sub-8k-context models, switch to the tiny profile. `--profile` is not a CLI flag — set it via env or `~/.bee/config.toml`:
+For sub-8k-context models, switch to the tiny profile. `--profile` is not a CLI flag. Set it via env or `~/.bee/config.toml`:
 
     BEE_PROFILE=tiny bee run --provider omlx --model Qwen3.6-35B-A3B-4bit -- "..."
 
@@ -86,7 +86,7 @@ Three roles control how the agent thinks and acts. Cycle with `shift+tab` in the
 
 | Role | What it does | Reasoning budget |
 |---|---|---|
-| **worker** (default) | Full tool surface. Per-turn classifier picks read-only vs act — small models don't reflex into shell on a greeting. | auto |
+| **worker** (default) | Full tool surface. Per-turn classifier picks read-only vs act. Small models don't reflex into shell on a greeting. | auto |
 | **scout** | Read-only research + web. Proposes a plan, never mutates. Uses `web_search`/`web_fetch` by default. | high |
 | **queen** | Spawns a hive: decomposes → workers execute → critic → synthesizes. | max |
 
@@ -94,7 +94,7 @@ Worker is the default workhorse. Scout is for "tell me what to do" before you co
 
 ## Handoff
 
-When a small model gets stuck, bee can hand off the task to a bigger model. Call `bee handoff` to generate a rescue brief — the original goal, a terse summary of what was tried, where it got stuck, and the last few turns verbatim. The bigger model takes over and finishes the job without re-reading confused history.
+When a small model gets stuck, bee can hand off the task to a bigger model. Call `bee handoff` to generate a rescue brief. The original goal, a terse summary of what was tried, where it got stuck, and the last few turns verbatim. The bigger model takes over and finishes the job without re-reading confused history.
 
 ## Subcommands
 
@@ -169,7 +169,7 @@ Explicit value beats profile.
 
 ## Overnight loop: `bee zzz`
 
-Hand bee an objective and a budget, walk away, wake up to a branch full of small individually-revertable commits. Each iteration runs one focused change and either commits or `git reset --hard` rolls back on failure — the working tree never stays dirty. A live TUI shows the iteration ledger (🐝 foraging · 🌼 committed · 🍃 noop · 🥀 reset · 💥 failed), token cost, and a sleeping bee at the bottom. Type to nudge the run mid-flight; `/stop` exits gracefully after the current iteration, `/abort` cancels immediately.
+Hand bee an objective and a budget, walk away, wake up to a branch full of small individually-revertable commits. Each iteration runs one focused change and either commits or `git reset --hard` rolls back on failure. The working tree never stays dirty. A live TUI shows the iteration ledger (🐝 foraging · 🌼 committed · 🍃 noop · 🥀 reset · 💥 failed), token cost, and a sleeping bee at the bottom. Type to nudge the run mid-flight; `/stop` exits gracefully after the current iteration, `/abort` cancels immediately.
 
     bee zzz "tighten error messages across internal/tools" --max-iterations 30
     bee zzz --list                       # past runs
@@ -188,13 +188,13 @@ Artifacts live in `~/.bee/zzz/runs/<id>/`: `notes.md` per-iter summaries, `event
 
 ## Parallel agents: `bee agents`
 
-Spawn many bees at once, each on its own git worktree. The overview reuses the chat input — every submitted message starts a fresh detached agent under `~/.bee/agents/worktrees/<id>` on branch `agents/<short>`. Rows show initial prompt, elapsed, tokens up/down, last thought, locked model. `j/k`/arrows navigate, `l`/`→`/`enter` opens an agent fullscreen (existing session view), `m` retries a merge.
+Spawn many bees at once, each on its own git worktree. The overview reuses the chat input. Every submitted message starts a fresh detached agent under `~/.bee/agents/worktrees/<id>` on branch `agents/<short>`. Rows show initial prompt, elapsed, tokens up/down, last thought, locked model. `j/k`/arrows navigate, `l`/`→`/`enter` opens an agent fullscreen (existing session view), `m` retries a merge.
 
     bee agents
 
 When an agent ends its turn with `DONE: <summary>` the coordinator rebases its branch onto `main` and fast-forwards. Conflicts post a resolution prompt back to the agent via the inbox and flip its row to **needs input**; auto-retry every 10s or hit `m` to force a retry. Unmerged worktrees stay highlighted in red until they land.
 
-`/model <name>` and `/provider <name>` set the model used for the next spawn (sticky until changed) — mix and match across agents. Killing `bee agents` does not kill the running children; relaunching reconstructs the overview from `~/.bee/sessions/bg/`.
+`/model <name>` and `/provider <name>` set the model used for the next spawn (sticky until changed). Mix and match across agents. Killing `bee agents` does not kill the running children; relaunching reconstructs the overview from `~/.bee/sessions/bg/`.
 
 ## My setup / how I run this
 
@@ -203,8 +203,8 @@ Runs fast, handles small tasks reliably, doesn't choke on context. Good enough f
 
 ## Platform support
 
-- **macOS / Linux** — first-class. Static binaries published for `darwin/{amd64,arm64}` and `linux/{amd64,arm64}`.
-- **Windows** — untested
+- **macOS / Linux**. First-class. Static binaries published for `darwin/{amd64,arm64}` and `linux/{amd64,arm64}`.
+- **Windows**. Untested.
 
 ## Credits
 
