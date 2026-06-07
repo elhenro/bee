@@ -51,6 +51,7 @@ type Config struct {
 	Memory     MemoryConfig              `toml:"memory"`
 	Compaction CompactionConfig          `toml:"compaction"`
 	Watchdog   WatchdogConfig            `toml:"watchdog"`
+	Waggle     WaggleConfig              `toml:"waggle"`
 	Providers  map[string]ProviderConfig `toml:"providers"`
 	Profiles   map[string]Profile        `toml:"profiles"`
 
@@ -372,6 +373,14 @@ type MemoryConfig struct {
 	Enabled             bool `toml:"enabled"`
 	TopK                int  `toml:"top_k"`
 	BackgroundExtractor bool `toml:"background_extractor"`
+}
+
+// WaggleConfig gates procedure memory: crystallizing repeated read-only routes
+// into runnable waggles, predictive replay, and the waggle_lookup tool. On by
+// default; disable in config.toml with [waggle] enabled = false. Applies to
+// every role (worker/scout/queen) and to queen-spawned hive workers.
+type WaggleConfig struct {
+	Enabled bool `toml:"enabled"`
 }
 
 // CompactionConfig controls auto-summarization of long histories. Threshold is

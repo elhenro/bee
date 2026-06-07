@@ -133,6 +133,28 @@ top_k = 0
 	}
 }
 
+func TestDefaults_WaggleEnabled(t *testing.T) {
+	if !Defaults().Waggle.Enabled {
+		t.Error("waggle should be enabled by default")
+	}
+}
+
+func TestLoad_WaggleDisabledFromFile(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, `
+[waggle]
+enabled = false
+`)
+	t.Setenv("OPENROUTER_API_KEY", "sk-or")
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Waggle.Enabled {
+		t.Error("Waggle.Enabled should be false from file")
+	}
+}
+
 func TestLoad_EnvOverridesFile(t *testing.T) {
 	dir := t.TempDir()
 	writeConfig(t, dir, `default_provider = "openai"

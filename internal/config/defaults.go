@@ -52,6 +52,8 @@ func Defaults() Config {
 			StallSeconds: 90,
 			MaxResumes:   3,
 		},
+		// procedure memory on by default; disable with [waggle] enabled = false.
+		Waggle:        WaggleConfig{Enabled: true},
 		ShowBanner:    true,
 		ShowLoader:    true,
 		TutorialDone:  false,

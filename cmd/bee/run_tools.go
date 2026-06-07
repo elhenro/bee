@@ -38,61 +38,33 @@ import (
 	"github.com/elhenro/bee/internal/waggle"
 )
 
-// newWaggleManager builds the project-scoped procedure-memory manager for cwd.
-// It observes read-only tool routes and crystallizes repeated ones into waggles
-// under ~/.bee/waggle/proj/<hash>. Returns nil on store error (feature off).
-func newWaggleManager(cwd string) *waggle.Manager {
-	store, err := waggle.ProjectStore(cwd)
-	if err != nil {
+// waggleManager builds the project-scoped procedure-memory miner for cwd, or
+// nil when waggle is disabled in config. Gating here keeps every engine — run,
+// tui, and queen-spawned hive workers — consistent on one setting.
+func waggleManager(cfg config.Config, cwd string) *waggle.Manager {
+	if !cfg.Waggle.Enabled {
 		return nil
 	}
-	return waggle.NewManager(store, waggle.ManagerConfig{Scope: waggle.ScopeProject})
+	return waggle.ProjectManager(cwd)
 }
 
-// newWaggleReplayer loads crystallized routes (project for cwd + the shared user
-// store) into a predictive replayer. Returns nil when no routes exist or the
-// stores can't be resolved, so the loop runs unchanged on a cold library.
-func newWaggleReplayer(cwd string) *waggle.Replayer {
-	proj, errP := waggle.ProjectStore(cwd)
-	user, errU := waggle.UserStore()
-	var routes []waggle.Route
-	if errP == nil {
-		routes = append(routes, scopedRoutes(proj, waggle.ScopeProject)...)
-	}
-	if errU == nil {
-		routes = append(routes, scopedRoutes(user, waggle.ScopeUser)...)
-	}
-	if len(routes) == 0 {
+// waggleReplayer builds the predictive replayer for cwd, or nil when waggle is
+// disabled or the library is cold.
+func waggleReplayer(cfg config.Config, cwd string) *waggle.Replayer {
+	if !cfg.Waggle.Enabled {
 		return nil
 	}
-	r := waggle.NewReplayer(routes, 2)
-	if errP == nil {
-		r.SetLedger(waggle.ScopeProject, waggle.NewLedger(proj.LedgerPath()))
-	}
-	if errU == nil {
-		r.SetLedger(waggle.ScopeUser, waggle.NewLedger(user.LedgerPath()))
-	}
-	return r
+	return waggle.ProjectReplayer(cwd)
 }
 
-// scopedRoutes loads a store's routes and tags each with its scope so the
-// replayer records reuse against the right ledger.
-func scopedRoutes(s *waggle.Store, scope waggle.Scope) []waggle.Route {
-	rs, err := waggle.LoadRoutes(s)
-	if err != nil {
-		return nil
+// appendWaggleLookup registers the procedure-memory lookup tool iff waggle is
+// enabled and the library holds at least one waggle. One manifest slot exposes
+// the whole library on demand, so a cold install (no waggles yet) pays nothing
+// and the cost never grows with library size.
+func appendWaggleLookup(all []tools.Tool, cfg config.Config, cwd string) []tools.Tool {
+	if !cfg.Waggle.Enabled {
+		return all
 	}
-	for i := range rs {
-		rs[i].Scope = scope
-	}
-	return rs
-}
-
-// appendWaggleLookup registers the procedure-memory lookup tool iff the library
-// holds at least one waggle. One manifest slot exposes the whole library on
-// demand, so a cold install (no waggles yet) pays nothing and the cost never
-// grows with library size.
-func appendWaggleLookup(all []tools.Tool, cwd string) []tools.Tool {
 	proj, _ := waggle.ProjectStore(cwd)
 	user, _ := waggle.UserStore()
 	if waggleLibraryEmpty(proj) && waggleLibraryEmpty(user) {
@@ -256,7 +228,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
 	all = appendBrowserTools(all, cfg)
-	all = appendWaggleLookup(all, cwd)
+	all = appendWaggleLookup(all, cfg, cwd)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue
@@ -366,7 +338,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
 	all = appendBrowserTools(all, cfg)
-	all = appendWaggleLookup(all, cwd)
+	all = appendWaggleLookup(all, cfg, cwd)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue
