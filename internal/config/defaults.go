@@ -57,15 +57,17 @@ func Defaults() Config {
 		TutorialDone:  false,
 		MaxIterations: DefaultMaxIterations,
 		// mastermind off by default; when on, the hive spawns this many workers.
-		Mastermind:        false,
-		MastermindWorkers: 3,
-		Verbose:        false,
-		ShowThoughts:   true,
-		ShowNudges:     true,
-		ShowRecap:      false,
-		Compact:        true,
-		ShowContextBar: true,
-		Highlight:      true,
+		Mastermind:          false,
+		MastermindWorkers:   3,
+		MastermindReviewers: 1,
+		MastermindTriage:    true,
+		Verbose:             false,
+		ShowThoughts:        true,
+		ShowNudges:          true,
+		ShowRecap:           false,
+		Compact:             true,
+		ShowContextBar:      true,
+		Highlight:           true,
 		// silent by default: `!ls` runs in your shell without spending tokens
 		// on output. Set false (or toggle in /settings) to forward to the LLM.
 		ShellBangSilent: true,
@@ -189,10 +191,10 @@ func Defaults() Config {
 				// search-first discipline for 4k local models: read defaults
 				// to 100-line slices (max 500), grep capped at 50 matches.
 				// apply_patch dropped — tiny models mis-emit unified diffs.
-				SkipApplyPatch:           true,
-				ReadDefaultLines:         100,
-				ReadMaxLines:             500,
-				GrepMaxMatches:           50,
+				SkipApplyPatch:   true,
+				ReadDefaultLines: 100,
+				ReadMaxLines:     500,
+				GrepMaxMatches:   50,
 				// nudge tiny after 3 read-only turns: small models loop on reads.
 				NoMutationStallThreshold: 3,
 				// pin sampling: deterministic for tool turns, prevents temp drift on 4-bit MoE.

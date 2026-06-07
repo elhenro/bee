@@ -88,6 +88,19 @@ type Config struct {
 	// Defaults() seeds 3. The planner + critic are separate clones on top.
 	MastermindWorkers int `toml:"mastermind_workers"`
 
+	// MastermindReviewers is how many reviewer engines the queen hive spawns per
+	// turn. Defaults() seeds 1. The review gate scores three dimensions
+	// sequentially and Engine.Run is stateless across calls, so one engine
+	// serves all three via the queen's round-robin. Raise only to parallelize
+	// dimensions across distinct engines.
+	MastermindReviewers int `toml:"mastermind_reviewers"`
+
+	// MastermindTriage gates queen mode's adaptive routing: when true (default),
+	// a cheap classifier decides whether a task is small/clear enough to handle
+	// in a single streaming pass instead of spawning the full planning+review
+	// hive. Set false to force the hive on every queen turn.
+	MastermindTriage bool `toml:"mastermind_triage"`
+
 	// Verbose unlocks full tool-output rendering in the TUI (compact one-line
 	// preview otherwise). Toggle via /settings; persists across launches.
 	Verbose bool `toml:"verbose"`
