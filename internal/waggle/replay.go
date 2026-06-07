@@ -24,6 +24,8 @@ type Route struct {
 	Name   string
 	Steps  []Call
 	Params []Param
+	// Scope attributes a fired route to its store's ledger. Defaults to project.
+	Scope Scope
 }
 
 // Replayer follows known routes. It watches the live read-only call stream and,
@@ -39,6 +41,7 @@ type Replayer struct {
 	minPrefix int
 	yield     int
 	fired     map[string]bool
+	ledgers   map[Scope]*Ledger
 }
 
 // NewReplayer builds a replayer over routes. minPrefix is the smallest number of
@@ -48,7 +51,18 @@ func NewReplayer(routes []Route, minPrefix int) *Replayer {
 	if minPrefix < 2 {
 		minPrefix = 2
 	}
-	return &Replayer{routes: routes, minPrefix: minPrefix, fired: map[string]bool{}}
+	return &Replayer{routes: routes, minPrefix: minPrefix, fired: map[string]bool{}, ledgers: map[Scope]*Ledger{}}
+}
+
+// SetLedger registers the reuse log for a scope. Routes of that scope record an
+// entry each time they fire. A nil ledger (or unset scope) just skips logging.
+func (r *Replayer) SetLedger(scope Scope, l *Ledger) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ledgers[scope] = l
 }
 
 // Routes returns how many routes the replayer holds (0 for a nil/empty one).
@@ -104,9 +118,12 @@ func (r *Replayer) Follow(ctx context.Context, exec func(context.Context, string
 	if err != nil || strings.TrimSpace(out) == "" {
 		return "", false
 	}
+	gain := len(out) / 4
 	r.mu.Lock()
-	r.yield += len(out) / 4
+	r.yield += gain
+	ledger := r.ledgers[plan.scope]
 	r.mu.Unlock()
+	_ = ledger.Append(LedgerEntry{Name: plan.name, Steps: plan.steps, Yield: gain})
 	return formatBlock(plan, out), true
 }
 
@@ -116,6 +133,7 @@ type replayPlan struct {
 	script string
 	steps  int
 	key    string
+	scope  Scope
 }
 
 // matchLocked finds the first route whose leading steps align to the tail of the
@@ -140,7 +158,7 @@ func (r *Replayer) matchLocked() (replayPlan, bool) {
 			if !ok {
 				continue
 			}
-			return replayPlan{name: rt.Name, script: script, steps: total - j, key: rt.Name + "|" + script}, true
+			return replayPlan{name: rt.Name, script: script, steps: total - j, key: rt.Name + "|" + script, scope: rt.Scope}, true
 		}
 	}
 	return replayPlan{}, false

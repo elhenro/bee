@@ -52,21 +52,39 @@ func newWaggleManager(cwd string) *waggle.Manager {
 // store) into a predictive replayer. Returns nil when no routes exist or the
 // stores can't be resolved, so the loop runs unchanged on a cold library.
 func newWaggleReplayer(cwd string) *waggle.Replayer {
+	proj, errP := waggle.ProjectStore(cwd)
+	user, errU := waggle.UserStore()
 	var routes []waggle.Route
-	if proj, err := waggle.ProjectStore(cwd); err == nil {
-		if rs, err := waggle.LoadRoutes(proj); err == nil {
-			routes = append(routes, rs...)
-		}
+	if errP == nil {
+		routes = append(routes, scopedRoutes(proj, waggle.ScopeProject)...)
 	}
-	if user, err := waggle.UserStore(); err == nil {
-		if rs, err := waggle.LoadRoutes(user); err == nil {
-			routes = append(routes, rs...)
-		}
+	if errU == nil {
+		routes = append(routes, scopedRoutes(user, waggle.ScopeUser)...)
 	}
 	if len(routes) == 0 {
 		return nil
 	}
-	return waggle.NewReplayer(routes, 2)
+	r := waggle.NewReplayer(routes, 2)
+	if errP == nil {
+		r.SetLedger(waggle.ScopeProject, waggle.NewLedger(proj.LedgerPath()))
+	}
+	if errU == nil {
+		r.SetLedger(waggle.ScopeUser, waggle.NewLedger(user.LedgerPath()))
+	}
+	return r
+}
+
+// scopedRoutes loads a store's routes and tags each with its scope so the
+// replayer records reuse against the right ledger.
+func scopedRoutes(s *waggle.Store, scope waggle.Scope) []waggle.Route {
+	rs, err := waggle.LoadRoutes(s)
+	if err != nil {
+		return nil
+	}
+	for i := range rs {
+		rs[i].Scope = scope
+	}
+	return rs
 }
 
 // filterTools narrows reg to the comma-separated list of tool names.

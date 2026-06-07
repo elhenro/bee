@@ -39,6 +39,9 @@ func UserStore() (*Store, error) {
 // Dir is the absolute skills directory for this store.
 func (s *Store) Dir() string { return s.dir }
 
+// LedgerPath is the reuse-log path for this store, a sibling of the skills dir.
+func (s *Store) LedgerPath() string { return filepath.Join(filepath.Dir(s.dir), "ledger.jsonl") }
+
 // Exists reports whether a waggle named name is already stored.
 func (s *Store) Exists(name string) bool {
 	_, err := os.Stat(filepath.Join(s.dir, name+".md"))
