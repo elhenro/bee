@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://elhenro.github.io/bee/sitemap.xml

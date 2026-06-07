@@ -15,6 +15,9 @@ import (
 //go:embed assets/*
 var assetsFS embed.FS
 
+//go:embed robots.txt sitemap.xml llms.txt
+var seoFS embed.FS
+
 const indexHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,8 +26,11 @@ const indexHTML = `<!DOCTYPE html>
 <meta name="description" content="bee — a minimal coding agent harness written in Go. Skills as subcommands, works everywhere from Ollama to OpenRouter. Pure Go, single binary, zero fuss.">
 <meta name="keywords" content="bee, coding agent, AI agent, Go, openai, openrouter, ollama, CLI, developer tools, code generation, autonomous coding">
 <meta name="theme-color" content="#f5d656">
-<link rel="canonical" href="https://elhenro.github.io/bee/">
-<title>bee — a minimal coding agent harness</title>
+<meta name="author" content="Henry Schober">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<link rel="canonical" href="https://bee.hnr.bz/">
+<link rel="alternate" type="text/plain" href="https://bee.hnr.bz/llms.txt" title="llms.txt — structured summary for AI agents">
+<title>bee — minimal coding agent harness</title>
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/assets/favicon-16.png" sizes="16x16" type="image/png">
@@ -32,13 +38,16 @@ const indexHTML = `<!DOCTYPE html>
 <meta property="og:title" content="bee — a minimal coding agent harness">
 <meta property="og:description" content="A minimal coding agent harness written in Go. Skills as subcommands, works everywhere from Ollama to OpenRouter.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://elhenro.github.io/bee/">
-<meta property="og:image" content="https://elhenro.github.io/bee/assets/og-image.png">
+<meta property="og:site_name" content="bee">
+<meta property="og:url" content="https://bee.hnr.bz/">
+<meta property="og:image" content="https://bee.hnr.bz/assets/og-image.png">
+<meta property="og:image:alt" content="bee — a minimal coding agent harness written in Go">
 <meta property="og:locale" content="en_US">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="bee — a minimal coding agent harness">
 <meta name="twitter:description" content="A minimal coding agent harness written in Go. Skills as subcommands, works everywhere from Ollama to OpenRouter.">
-<meta name="twitter:image" content="https://elhenro.github.io/bee/assets/og-image.png">
+<meta name="twitter:image" content="https://bee.hnr.bz/assets/og-image.png">
+<meta name="twitter:image:alt" content="bee — a minimal coding agent harness written in Go">
 <link rel="preconnect" href="https://github.com">
 <link rel="preconnect" href="https://raw.githubusercontent.com">
 <style>
@@ -66,6 +75,22 @@ const indexHTML = `<!DOCTYPE html>
   }
   [data-theme="dark"] .bee-art {
     text-shadow: 0 0 30px rgba(245, 214, 86, 0.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    [data-theme="auto"] {
+      --bg: #1a1a1a;
+      --fg: #f0ede6;
+      --muted: #999;
+      --accent: #f5d656;
+      --accent-dark: #e0c040;
+      --card: #242424;
+      --code-bg: #2a2a2a;
+      --border: #333;
+      --shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    [data-theme="auto"] .bee-art {
+      text-shadow: 0 0 30px rgba(245, 214, 86, 0.25);
+    }
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -104,6 +129,7 @@ const indexHTML = `<!DOCTYPE html>
     font-size: 1.1rem;
     box-shadow: var(--shadow);
     transition: transform 0.2s;
+    align-self: center;
   }
   .theme-toggle:hover { transform: scale(1.1); }
   .hero {
@@ -209,6 +235,23 @@ const indexHTML = `<!DOCTYPE html>
     font-weight: 600;
     margin-bottom: 1rem;
   }
+  .faq-item {
+    border-top: 1px solid var(--border);
+    padding: 1rem 0;
+  }
+  .faq-item:last-child {
+    border-bottom: 1px solid var(--border);
+  }
+  .faq-item h3 {
+    font-size: 0.98rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+  .faq-item p {
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
   .install-box {
     background: var(--card);
     border: 1px solid var(--border);
@@ -298,7 +341,9 @@ const indexHTML = `<!DOCTYPE html>
   footer {
     margin-top: auto;
     padding: 2rem 0;
-    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     color: var(--muted);
     font-size: 0.8rem;
   }
@@ -320,8 +365,6 @@ const indexHTML = `<!DOCTYPE html>
 <body>
 <div class="container">
   <header>
-    <span style="font-weight:600;font-size:1.1rem;">🐝 bee</span>
-    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
   </header>
 
   <main>
@@ -349,7 +392,7 @@ const indexHTML = `<!DOCTYPE html>
                ÆÆ          §ËÆÆÆé         Æ³
              –ÆÆ                           Æ</span></pre>
       <h1>bee</h1>
-      <p class="tagline">a minimal coding agent harness</p>
+      <p class="tagline">minimal coding agent harness</p>
       <p class="fun-fact">"I'm not a bot. I'm a bee. There's a difference."</p>
     </div>
 
@@ -378,7 +421,7 @@ const indexHTML = `<!DOCTYPE html>
       <h2>What is it?</h2>
       <div class="features">
         <div class="feature">
-          <span class="emoji">🧠</span>
+          <span class="emoji">🐝</span>
           <span class="text"><strong>Coding agent</strong> — writes code, runs tests, commits changes</span>
         </div>
         <div class="feature">
@@ -386,11 +429,11 @@ const indexHTML = `<!DOCTYPE html>
           <span class="text"><strong>Pure Go</strong> — single static binary, no runtime deps</span>
         </div>
         <div class="feature">
-          <span class="emoji">📦</span>
-          <span class="text"><strong>Skills</strong> — `+ "`" + `bee &lt;name&gt;` + "`" + ` subcommands, one binary, one PATH</span>
+          <span class="emoji">🍳</span>
+          <span class="text"><strong>Skills</strong> — ` + "`" + `bee &lt;name&gt;` + "`" + ` subcommands, one binary, one PATH</span>
         </div>
         <div class="feature">
-          <span class="emoji">🔬</span>
+          <span class="emoji">💻</span>
           <span class="text"><strong>Works everywhere</strong> — Ollama local to OpenRouter, tiny models to frontier</span>
         </div>
       </div>
@@ -439,6 +482,50 @@ const indexHTML = `<!DOCTYPE html>
     </div>
 
     <div class="section">
+      <h2>FAQ</h2>
+
+      <div class="faq-item">
+        <h3>What is bee?</h3>
+        <p>bee is a minimal coding agent harness written in Go. It is a single static binary that turns any LLM into an autonomous agent which writes code, runs tests, and commits changes. There is no runtime to install and no daemon, just one executable on your PATH.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>How do I install bee?</h3>
+        <p>Run <code>curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh</code>, or <code>go install github.com/elhenro/bee/cmd/bee@latest</code> if you have Go. Then run <code>bee</code>, type <code>/model</code>, choose a runtime such as oMLX, Ollama, or OpenRouter, and pick a model.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Can bee run fully local and offline?</h3>
+        <p>Yes. bee runs against local models through Ollama or oMLX, so there are no API keys, no rate limits, and nothing leaves your machine. On macOS, oMLX adds native Apple Silicon acceleration with prompt caching for fast, memory-efficient inference.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>What hardware do I need to run bee locally?</h3>
+        <p>It scales to your machine. A MacBook M3 Max with 64 GB of RAM reliably runs a 34 GB 8-bit Qwen3.6-35B model. Smaller models such as gemma-4-12B at 10 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Which models work well with bee?</h3>
+        <p>bee works from tiny local models to frontier APIs. The reference model is Huihui-Qwen3.6-35B-A3B at 8-bit, with Qwen3-VL-4B for vision; gemma-4-12B and Qwen3-Coder-Next also perform well. bee handles vision automatically for models that only do text.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>What are bee skills?</h3>
+        <p>Skills are extra capabilities exposed as subcommands. You invoke them as <code>bee &lt;name&gt;</code>, so one binary on your PATH covers many jobs instead of a directory of separate scripts. This keeps installation to a single file while letting bee grow new abilities.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Does bee work with hosted providers like OpenRouter?</h3>
+        <p>Yes. Besides local Ollama and oMLX, bee connects to hosted providers such as OpenRouter, so you can mix local and cloud models. Switch at any time with the <code>/model</code> command and pick whichever runtime and model fit the task and your budget.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Is bee free and open source?</h3>
+        <p>Yes. bee is free and open source, with the full source, issues, and releases on GitHub at github.com/elhenro/bee. It is pure Go and ships as a single static binary for macOS, Linux, and Windows, with no runtime dependencies to manage.</p>
+      </div>
+    </div>
+
+    <div class="section">
       <h2>Get involved</h2>
       <div class="links">
         <a href="https://github.com/elhenro/bee">
@@ -456,24 +543,32 @@ const indexHTML = `<!DOCTYPE html>
   <footer>
     <p>built by <a href="https://github.com/elhenro">Henry Schober</a> — <span id="year"></span></p>
     <p style="margin-top:0.25rem;">"The bee is the only creature that can sting and fly at the same time."</p>
+    <button id="footer-theme" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" style="margin-top:1rem;">🌙</button>
   </footer>
 </div>
 
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
 
-  // Theme
-  const toggle = document.querySelector('.theme-toggle');
-  const saved = localStorage.getItem('bee-theme');
-  if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-  toggle.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
+  // Theme — follows system by default, user toggle persists
+  (function() {
+    const saved = localStorage.getItem('bee-theme');
+    if (saved === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else if (saved === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'auto');
+    }
+  })();
 
   function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
+    const next = current === 'dark' ? 'light' : current === 'light' ? 'auto' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('bee-theme', next);
-    toggle.textContent = next === 'dark' ? '☀️' : '🌙';
+    const btn = document.getElementById('footer-theme');
+    btn.textContent = next === 'dark' ? '☀️' : '🌙';
   }
 
   // Copy on click
@@ -575,18 +670,98 @@ const indexHTML = `<!DOCTYPE html>
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "bee",
-    "description": "A minimal coding agent harness written in Go. Skills as subcommands, works everywhere from Ollama to OpenRouter.",
-    "url": "https://elhenro.github.io/bee/",
-    "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "Any",
-    "programmingLanguage": "Go",
-    "author": {
-      "@type": "Person",
-      "name": "Henry Schober"
-    },
-    "keywords": "coding agent, AI agent, Go, openai, openrouter, ollama, CLI, developer tools"
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://bee.hnr.bz/#website",
+        "url": "https://bee.hnr.bz/",
+        "name": "bee",
+        "description": "A minimal coding agent harness written in Go.",
+        "inLanguage": "en",
+        "publisher": { "@id": "https://bee.hnr.bz/#author" }
+      },
+      {
+        "@type": "Person",
+        "@id": "https://bee.hnr.bz/#author",
+        "name": "Henry Schober",
+        "url": "https://github.com/elhenro",
+        "sameAs": [
+          "https://github.com/elhenro",
+          "https://pkg.go.dev/github.com/elhenro/bee"
+        ]
+      },
+      {
+        "@type": ["SoftwareApplication", "SoftwareSourceCode"],
+        "@id": "https://bee.hnr.bz/#software",
+        "name": "bee",
+        "description": "A minimal coding agent harness written in Go. Turns any LLM — from a tiny local model to a frontier API — into an autonomous coding agent that writes code, runs tests, and commits changes. Skills are exposed as subcommands. Runs fully local with Ollama or oMLX, or against hosted providers like OpenRouter.",
+        "url": "https://bee.hnr.bz/",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows",
+        "programmingLanguage": "Go",
+        "runtimePlatform": "Go",
+        "dateModified": "2026-06-07",
+        "codeRepository": "https://github.com/elhenro/bee",
+        "downloadUrl": "https://github.com/elhenro/bee/releases",
+        "softwareHelp": "https://github.com/elhenro/bee",
+        "license": "https://github.com/elhenro/bee/blob/main/LICENSE",
+        "author": { "@id": "https://bee.hnr.bz/#author" },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "keywords": "coding agent, AI agent, Go, openai, openrouter, ollama, oMLX, local LLM, CLI, developer tools, autonomous coding"
+      }
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is bee?",
+        "acceptedAnswer": { "@type": "Answer", "text": "bee is a minimal coding agent harness written in Go. It is a single static binary that turns any LLM into an autonomous agent which writes code, runs tests, and commits changes. There is no runtime to install and no daemon, just one executable on your PATH." }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I install bee?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Run curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh, or go install github.com/elhenro/bee/cmd/bee@latest if you have Go. Then run bee, type /model, choose a runtime such as oMLX, Ollama, or OpenRouter, and pick a model." }
+      },
+      {
+        "@type": "Question",
+        "name": "Can bee run fully local and offline?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee runs against local models through Ollama or oMLX, so there are no API keys, no rate limits, and nothing leaves your machine. On macOS, oMLX adds native Apple Silicon acceleration with prompt caching for fast, memory-efficient inference." }
+      },
+      {
+        "@type": "Question",
+        "name": "What hardware do I need to run bee locally?",
+        "acceptedAnswer": { "@type": "Answer", "text": "It scales to your machine. A MacBook M3 Max with 64 GB of RAM reliably runs a 34 GB 8-bit Qwen3.6-35B model. Smaller models such as gemma-4-12B at 10 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start." }
+      },
+      {
+        "@type": "Question",
+        "name": "Which models work well with bee?",
+        "acceptedAnswer": { "@type": "Answer", "text": "bee works from tiny local models to frontier APIs. The reference model is Huihui-Qwen3.6-35B-A3B at 8-bit, with Qwen3-VL-4B for vision; gemma-4-12B and Qwen3-Coder-Next also perform well. bee handles vision automatically for models that only do text." }
+      },
+      {
+        "@type": "Question",
+        "name": "What are bee skills?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Skills are extra capabilities exposed as subcommands. You invoke them as bee <name>, so one binary on your PATH covers many jobs instead of a directory of separate scripts. This keeps installation to a single file while letting bee grow new abilities." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does bee work with hosted providers like OpenRouter?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. Besides local Ollama and oMLX, bee connects to hosted providers such as OpenRouter, so you can mix local and cloud models. Switch at any time with the /model command and pick whichever runtime and model fit the task and your budget." }
+      },
+      {
+        "@type": "Question",
+        "name": "Is bee free and open source?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee is free and open source, with the full source, issues, and releases on GitHub at github.com/elhenro/bee. It is pure Go and ships as a single static binary for macOS, Linux, and Windows, with no runtime dependencies to manage." }
+      }
+    ]
   }
   </script>
 </body>
@@ -609,23 +784,18 @@ func main() {
 		w.Write([]byte(indexHTML))
 	})
 
-	// Static assets at root for crawlers
-	r.Get("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Write([]byte("User-agent: *\nAllow: /\nSitemap: https://elhenro.github.io/bee/sitemap.xml\n"))
-	})
-	r.Get("/sitemap.xml", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://elhenro.github.io/bee/</loc>
-    <lastmod>2026-06-07</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>1.0</priority>
-  </url>
-</urlset>`))
-	})
+	// Crawler files at root — served from embedded source so they match the
+	// static copies CF Pages serves in production (see build.sh).
+	seoFile := func(name, ctype string) http.HandlerFunc {
+		body, _ := seoFS.ReadFile(name)
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", ctype)
+			w.Write(body)
+		}
+	}
+	r.Get("/robots.txt", seoFile("robots.txt", "text/plain; charset=utf-8"))
+	r.Get("/sitemap.xml", seoFile("sitemap.xml", "application/xml; charset=utf-8"))
+	r.Get("/llms.txt", seoFile("llms.txt", "text/plain; charset=utf-8"))
 
 	assetsSub, _ := fs.Sub(assetsFS, "assets")
 	r.Handle("/assets/*", http.StripPrefix("/assets", http.FileServer(http.FS(assetsSub))))
