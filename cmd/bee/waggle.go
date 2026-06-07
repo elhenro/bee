@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/elhenro/bee/internal/waggle"
 )
@@ -29,7 +30,16 @@ func runWaggle(args []string) {
 	case "gc":
 		n1, _ := waggle.GC(proj)
 		n2, _ := waggle.GC(user)
-		fmt.Printf("waggle gc: removed %d project, %d user\n", n1, n2)
+		// curate: prune never-paid-off stale routes, then promote routes seen
+		// across multiple projects up to the portable user store.
+		const staleAge = 14 * 24 * time.Hour
+		ps, _ := waggle.ReadLedger(proj.LedgerPath())
+		us, _ := waggle.ReadLedger(user.LedgerPath())
+		sp, _ := waggle.PruneStale(proj, ps, staleAge, time.Now())
+		su, _ := waggle.PruneStale(user, us, staleAge, time.Now())
+		promoted, _ := waggle.Promote(user)
+		fmt.Printf("waggle gc: removed %d project, %d user; pruned %d stale; promoted %d to user\n",
+			n1+sp, n2+su, sp+su, promoted)
 	default:
 		fmt.Fprintf(os.Stderr, "bee waggle: unknown subcommand %q (want ls|gc)\n", sub)
 		os.Exit(2)
