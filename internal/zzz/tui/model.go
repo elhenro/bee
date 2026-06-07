@@ -42,6 +42,11 @@ type Model struct {
 	final   *zzz.Run
 	finalEr error
 
+	// stopArmed flips on the first ctrl+c (graceful stop). A second ctrl+c
+	// force-quits the program so a wedged iteration — one the engine can't
+	// drain steering into — can still be killed via ctx-cancel on Run() exit.
+	stopArmed bool
+
 	// closed guards m.msgs from a panic when Quit fires after Drive returned
 	// — Drive's goroutine keeps calling send() during shutdown, and a
 	// send-on-closed channel would crash the process.

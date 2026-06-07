@@ -45,7 +45,7 @@ func (m *Model) View() string {
 	}
 	b.WriteString(m.input.View())
 	b.WriteString("\n")
-	b.WriteString(styDim.Render("  enter to send · /stop · /abort · /note <text> · ctrl+c = graceful stop"))
+	b.WriteString(styDim.Render("  enter to send · /stop · /abort · /note <text> · ctrl+c stop (2× force) · ctrl+d quit"))
 	return b.String()
 }
 

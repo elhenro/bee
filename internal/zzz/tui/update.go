@@ -80,13 +80,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "ctrl+c":
-		// first ctrl+c = graceful stop; second = abort (handled by signal)
-		m.pushSteer(zzz.Steer{Kind: zzz.SteerStop})
-		return m, nil
-	case "ctrl+d":
 		if m.done {
 			return m, tea.Quit
 		}
+		// first ctrl+c = graceful stop (finish current iter). second = force
+		// quit: Run() returns, the launcher cancels ctx, the engine aborts a
+		// wedged iteration mid-stream. altscreen swallows SIGINT so this key is
+		// the only escape hatch while an iteration runs.
+		if m.stopArmed {
+			m.log = append(m.log, logMsg{level: "err", text: "[zzz] force quit — canceling run"})
+			return m, tea.Quit
+		}
+		m.stopArmed = true
+		m.pushSteer(zzz.Steer{Kind: zzz.SteerStop})
+		m.log = append(m.log, logMsg{level: "warn", text: "[zzz] ctrl+c again to force-quit a stuck iteration"})
+		return m, nil
+	case "ctrl+d":
+		// always exits. mid-run this cancels ctx via the launcher, so a wedged
+		// engine.run iteration is killed instead of hanging the TUI.
+		return m, tea.Quit
 	case "q":
 		if m.done {
 			return m, tea.Quit
@@ -97,8 +109,7 @@ func (m *Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if txt == "" {
 			return m, nil
 		}
-		m.dispatchInput(txt)
-		return m, nil
+		return m, m.dispatchInput(txt)
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(k)
@@ -106,11 +117,12 @@ func (m *Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // dispatchInput parses an operator line: `/stop`, `/abort`, `/note <text>`,
-// or free text (treated as a note).
-func (m *Model) dispatchInput(s string) {
+// or free text (treated as a note). Returns a non-nil tea.Cmd only when the
+// line forces the program to quit (`/abort`).
+func (m *Model) dispatchInput(s string) tea.Cmd {
 	if !strings.HasPrefix(s, "/") {
 		m.pushSteer(zzz.Steer{Kind: zzz.SteerNote, Text: s})
-		return
+		return nil
 	}
 	parts := strings.SplitN(s, " ", 2)
 	cmd := strings.ToLower(parts[0])
@@ -122,11 +134,17 @@ func (m *Model) dispatchInput(s string) {
 	case "/stop", "/quit":
 		m.pushSteer(zzz.Steer{Kind: zzz.SteerStop})
 	case "/abort", "/kill":
+		// abort means now, not after the current iteration. quitting the program
+		// makes the launcher cancel ctx, which aborts a wedged engine.run
+		// mid-stream. push SteerAbort too so a between-iters drain still records
+		// the right StopCause if the engine happens to return first.
 		m.pushSteer(zzz.Steer{Kind: zzz.SteerAbort})
+		m.log = append(m.log, logMsg{level: "err", text: "[zzz] abort — canceling run now"})
+		return tea.Quit
 	case "/note", "/say", "/nudge":
 		if rest == "" {
 			m.log = append(m.log, logMsg{level: "warn", text: "[zzz] /note needs text"})
-			return
+			return nil
 		}
 		m.pushSteer(zzz.Steer{Kind: zzz.SteerNote, Text: rest})
 	case "/help", "/?":
@@ -134,6 +152,7 @@ func (m *Model) dispatchInput(s string) {
 	default:
 		m.pushSteer(zzz.Steer{Kind: zzz.SteerNote, Text: s})
 	}
+	return nil
 }
 
 func (m *Model) pushSteer(s zzz.Steer) {

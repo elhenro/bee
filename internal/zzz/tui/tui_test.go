@@ -74,6 +74,45 @@ func TestModelDispatchsSlashCommands(t *testing.T) {
 	}
 }
 
+func TestCtrlCArmsThenForceQuits(t *testing.T) {
+	run := &zzz.Run{ID: "test", Branch: "zzz/test"}
+	m := New(run, zzz.Config{})
+
+	// first ctrl+c: graceful stop, no quit
+	upd, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = upd.(*Model)
+	if cmd != nil {
+		t.Fatal("first ctrl+c should not quit")
+	}
+	if !m.stopArmed {
+		t.Fatal("first ctrl+c should arm stop")
+	}
+	select {
+	case s := <-m.Steer():
+		if s.Kind != zzz.SteerStop {
+			t.Fatalf("want SteerStop, got %q", s.Kind)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first ctrl+c emitted no graceful stop")
+	}
+
+	// second ctrl+c: force quit
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("second ctrl+c should return tea.Quit")
+	}
+}
+
+func TestCtrlDQuitsMidRun(t *testing.T) {
+	run := &zzz.Run{ID: "test", Branch: "zzz/test"}
+	m := New(run, zzz.Config{})
+	// not done — ctrl+d must still quit (cancels ctx via launcher)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	if cmd == nil {
+		t.Fatal("ctrl+d should quit even mid-run")
+	}
+}
+
 func TestModelViewRendersBee(t *testing.T) {
 	run := &zzz.Run{ID: "test", Branch: "zzz/test", Status: "running"}
 	m := New(run, zzz.Config{MaxIterations: 50})
