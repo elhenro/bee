@@ -102,6 +102,12 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		return m.handleGoal(parts[1:])
 	}
 
+	// /watchdog flips the session-only auto-resume toggle on the Model — out of
+	// reach of a registry command's Run, like /stop.
+	if parts[0] == "watchdog" {
+		return m.handleWatchdog(parts[1:])
+	}
+
 	// /init submits a project-scan prompt as a user turn so the model uses its
 	// own file/shell tools to inspect the repo and write AGENTS.md. Extra args
 	// are appended as additional instructions.

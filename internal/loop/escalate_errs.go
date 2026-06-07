@@ -130,6 +130,27 @@ func (e *TruncatedStreamError) Error() string {
 func (e *TruncatedStreamError) Is(target error) bool { return target == ErrTruncatedStream }
 func (e *TruncatedStreamError) Unwrap() error        { return ErrTruncatedStream }
 
+// ErrMaxIterations indicates the loop hit its tool-use round cap without the
+// model signalling done. Not a wedge — the model was making progress, it just
+// ran out of budget — so the watchdog can resume it with a plain "continue".
+var ErrMaxIterations = errors.New("loop: hit max iterations")
+
+// MaxIterationsError carries the cap so callers can surface it and so
+// errors.Is(err, ErrMaxIterations) matches. Error() keeps the original
+// guidance text (type 'continue' / /iterations) callers and tests rely on.
+type MaxIterationsError struct {
+	Limit int
+}
+
+func (e *MaxIterationsError) Error() string {
+	return fmt.Sprintf("loop: hit max iterations (%d) — type 'continue' to resume, "+
+		"raise it with /iterations <n>, or remove the limit with /iterations 0 "+
+		"(or set max_iterations = 0 in config)", e.Limit)
+}
+
+func (e *MaxIterationsError) Is(target error) bool { return target == ErrMaxIterations }
+func (e *MaxIterationsError) Unwrap() error        { return ErrMaxIterations }
+
 // ErrEmptyCompletion indicates the provider returned whitespace-only output —
 // no text, no reasoning, no tool_use — N turns in a row. A nudge couldn't
 // shake it loose, so the model (or its inference template) is producing dead

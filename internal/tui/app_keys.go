@@ -57,6 +57,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cancelRun = nil
 			}
 			m.state = StateIdle
+			// user aborted — cancel any pending watchdog resume.
+			m.stallResumePending = false
+			m.resumeCount = 0
+			m.awaitingProgress = false
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.FollowUp):

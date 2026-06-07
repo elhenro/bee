@@ -255,6 +255,26 @@ type Model struct {
 	// the top bar after streaming ends until the next submit clears it.
 	lastTurnDuration time.Duration
 
+	// watchdog: inactivity stall detection + bounded auto-resume so a turn
+	// that hangs or stops on a recoverable error finishes unattended. Mirrored
+	// from cfg.Watchdog via WithWatchdog. The stall check reads
+	// time.Since(lastActivityAt) — NOT turn duration — so a productive long
+	// turn (output still streaming) is never interrupted.
+	watchdogEnabled    bool
+	watchdogStall      time.Duration
+	watchdogMaxResumes int
+	watchdogDisabled   bool      // /watchdog off — session-only opt-out
+	lastActivityAt     time.Time // bumped on every stream/think/live/warn delta
+	resumeCount        int       // consecutive auto-resumes for the current task
+	awaitingProgress   bool      // set after a resume; first activity resets resumeCount
+	resumeErrGen       int       // invalidates a scheduled error-resume on a newer turn
+	// stall-resume handshake: on a stall we cancel the run and wait for its
+	// context.Canceled turnDoneMsg before resubmitting, so two eng.Run calls
+	// never overlap on the shared engine.
+	stallResumePending bool
+	stallResumeText    string
+	stallResumeReason  string
+
 	// compacting is true while an async /compact goroutine is running.
 	// renderLive uses this to keep the loader animation alive while the
 	// summarization LLM call streams, since state stays StateIdle.

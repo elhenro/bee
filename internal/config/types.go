@@ -5,8 +5,20 @@
 // of the codebase only ever reads flat values.
 package config
 
+import "time"
+
 // DefaultMaxIterations is the default safety cap for tool-use rounds.
 const DefaultMaxIterations = 100
+
+// watchdog defaults. used when the corresponding config field is zero.
+const (
+	// DefaultWatchdogTimeout is the headless per-attempt wall-clock cap.
+	DefaultWatchdogTimeout = 10 * time.Minute
+	// DefaultWatchdogStall is the TUI inactivity threshold before re-trigger.
+	DefaultWatchdogStall = 90 * time.Second
+	// DefaultWatchdogMaxResumes caps consecutive auto-resumes per task.
+	DefaultWatchdogMaxResumes = 3
+)
 
 // Config is the merged, post-resolution view of bee's settings. Adapters and
 // the agent loop read from this; nothing else.
@@ -27,6 +39,7 @@ type Config struct {
 	Shell      ShellConfig               `toml:"shell"`
 	Memory     MemoryConfig              `toml:"memory"`
 	Compaction CompactionConfig          `toml:"compaction"`
+	Watchdog   WatchdogConfig            `toml:"watchdog"`
 	Providers  map[string]ProviderConfig `toml:"providers"`
 	Profiles   map[string]Profile        `toml:"profiles"`
 
@@ -339,4 +352,44 @@ type MemoryConfig struct {
 type CompactionConfig struct {
 	Enabled   bool    `toml:"enabled"`
 	Threshold float64 `toml:"threshold"` // 0.0–1.0
+}
+
+// WatchdogConfig is the auto-resume safety net. When a turn stops on a
+// recoverable condition (timeout, dropped stream, transient wedge, max-iter),
+// bee re-triggers the model with a continuation instead of giving up — bounded
+// so it can never loop forever. Conservative by design: a long but *active*
+// turn (reasoning or tool output streaming) is never interrupted — the TUI
+// stall check keys off inactivity, not wall-clock duration.
+type WatchdogConfig struct {
+	Enabled bool `toml:"enabled"`
+	// TimeoutSec is the headless per-attempt wall-clock cap. 0 → 600 (10m).
+	TimeoutSec int `toml:"timeout_seconds"`
+	// StallSeconds is the TUI inactivity threshold before re-trigger. 0 → 90.
+	StallSeconds int `toml:"stall_seconds"`
+	// MaxResumes caps consecutive auto-resumes per task. 0 → 3.
+	MaxResumes int `toml:"max_resumes"`
+}
+
+// Timeout resolves the headless per-attempt wall-clock cap.
+func (w WatchdogConfig) Timeout() time.Duration {
+	if w.TimeoutSec <= 0 {
+		return DefaultWatchdogTimeout
+	}
+	return time.Duration(w.TimeoutSec) * time.Second
+}
+
+// Stall resolves the TUI inactivity threshold.
+func (w WatchdogConfig) Stall() time.Duration {
+	if w.StallSeconds <= 0 {
+		return DefaultWatchdogStall
+	}
+	return time.Duration(w.StallSeconds) * time.Second
+}
+
+// Resumes resolves the per-task auto-resume cap.
+func (w WatchdogConfig) Resumes() int {
+	if w.MaxResumes <= 0 {
+		return DefaultWatchdogMaxResumes
+	}
+	return w.MaxResumes
 }

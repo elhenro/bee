@@ -121,6 +121,11 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	if m.state == StateError {
 		m.state = StateIdle
 		m.lastErr = ""
+		// user is driving again — drop the auto-resume budget and any pending
+		// stall handshake so the watchdog doesn't fight the manual recovery.
+		m.resumeCount = 0
+		m.awaitingProgress = false
+		m.stallResumePending = false
 	}
 	// /compact runs async with state=StateIdle (loader driven by m.compacting).
 	// Without this guard, submit() mid-compact would race the engine —
@@ -265,6 +270,10 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	m.lastTurnDuration = 0
 	// invalidate any pending post-turn recap tick from the previous turn.
 	m.recapGen++
+	// watchdog: stamp activity so the stall clock starts fresh, and invalidate
+	// any pending error-resume tick (a new turn supersedes it).
+	m.lastActivityAt = time.Now()
+	m.resumeErrGen++
 
 	// build content blocks: text first, then a pending image if staged.
 	// dragged/typed image file paths load as image blocks; the path token is

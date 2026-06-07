@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -252,10 +251,35 @@ func runHeadlessReal(args []string) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
+	// signal parent so Ctrl-C surfaces as a clean context.Canceled (the
+	// watchdog never resumes a user abort) rather than killing the process.
+	parent, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	res, err := eng.Run(ctx, userMsg)
+	// bounded auto-resume: a turn that stops on a recoverable condition
+	// (timeout, dropped stream, transient wedge, max-iter) is re-triggered with
+	// a continuation instead of giving up — capped at MaxResumes so a hopeless
+	// spiral can't burn forever. Disabled => exactly one attempt (old behavior).
+	msg := userMsg
+	var res loop.RunResult
+	for attempt := 0; ; attempt++ {
+		runCtx, cancel := context.WithTimeout(parent, cfg.Watchdog.Timeout())
+		res, err = eng.Run(runCtx, msg)
+		cancel()
+
+		if !cfg.Watchdog.Enabled {
+			break
+		}
+		d := loop.ClassifyResume(err, res)
+		if !d.Resume || attempt >= cfg.Watchdog.Resumes() {
+			break
+		}
+		fmt.Fprintf(os.Stderr, "bee: turn stopped (%s), auto-resuming %d/%d…\n",
+			d.Reason, attempt+1, cfg.Watchdog.Resumes())
+		eng.InitialMessages = res.Messages // carry context into the next attempt
+		msg = d.Continuation
+	}
+
 	if err != nil {
 		if *jsonOut {
 			eng.JSONEmitter.Emit(jsonmode.Event{Type: "error", Message: err.Error()})
@@ -287,6 +311,11 @@ func runHeadlessReal(args []string) {
 		// empty-output loop → model returned whitespace-only turns. same wedge
 		// family — signals "switch model" (often a broken thinking template).
 		if errors.Is(err, loop.ErrEmptyCompletion) {
+			os.Exit(7)
+		}
+		// max-iterations after resumes exhausted → same wedge family: the run
+		// kept needing more rounds than the cap allows.
+		if errors.Is(err, loop.ErrMaxIterations) {
 			os.Exit(7)
 		}
 		// escalate → another distinct code so the user/CI knows the model

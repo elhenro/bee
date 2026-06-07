@@ -42,6 +42,14 @@ func Defaults() Config {
 			Enabled:   true,
 			Threshold: 0.75,
 		},
+		// on by default with bounded resumes: a stopped turn re-triggers so
+		// tasks finish unattended, but at most MaxResumes times per task.
+		Watchdog: WatchdogConfig{
+			Enabled:      true,
+			TimeoutSec:   600,
+			StallSeconds: 90,
+			MaxResumes:   3,
+		},
 		ShowBanner:    true,
 		ShowLoader:    true,
 		MaxIterations: DefaultMaxIterations,

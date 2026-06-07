@@ -19,12 +19,14 @@ import (
 // block lands via liveMsgMsg/turnDoneMsg (the final renders from the
 // message, the partial is just for the in-flight view).
 func (m Model) onThinkDelta(msg thinkDeltaMsg) (tea.Model, tea.Cmd) {
+	m.noteActivity()
 	m.thinkPartial += msg.Delta
 	m.turnOutChars += len(msg.Delta)
 	return m, m.waitThink()
 }
 
 func (m Model) onStreamDelta(msg streamDeltaMsg) (tea.Model, tea.Cmd) {
+	m.noteActivity()
 	// append to live partial. View() picks it up next render. The pump
 	// re-arms itself so subsequent deltas keep draining.
 	m.partial += msg.Delta
@@ -50,6 +52,7 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	// leaving the live buffer would double-render the same text. Dedupe
 	// by ID so a turnDoneMsg replacement followed by a late-arriving
 	// live msg doesn't double-add.
+	m.noteActivity()
 	if msg.Msg.ID != "" {
 		for _, existing := range m.messages {
 			if existing.ID == msg.Msg.ID {
@@ -92,7 +95,10 @@ func pendingToolUses(m types.Message) []types.ToolUse {
 func (m Model) onWarning(msg warningMsg) (tea.Model, tea.Cmd) {
 	// transient notice from the loop (stream retry, watchdog stall).
 	// Show the latest one; arm a fade tick to clear it. Re-arm the
-	// channel pump so subsequent notices also surface.
+	// channel pump so subsequent notices also surface. A retry notice is
+	// real progress signal — bump the stall clock so a recovering stream
+	// isn't double-killed by the watchdog.
+	m.noteActivity()
 	m.warning = msg.Text
 	m.warningExpires = time.Now().Add(warningTTL)
 	return m, tea.Batch(warningFadeCmd(), m.waitWarn())
@@ -112,6 +118,35 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	// tick die when we leave streaming/compacting keeps idle terminals quiet.
 	if m.state != StateStreaming && !m.compacting {
 		return m, nil
+	}
+	// inactivity watchdog: a streaming turn that has gone silent (no stream/
+	// think/tool/warn activity) for watchdogStall is treated as stalled —
+	// cancel it and wait for the cancelled turn to land before resubmitting
+	// (so two eng.Run calls never overlap). Suppressed while the user is
+	// mid-steer (typing) and once a stall-resume is already pending.
+	if m.state == StateStreaming && m.watchdogEnabled && !m.watchdogDisabled &&
+		!m.stallResumePending && strings.TrimSpace(m.input.Value()) == "" &&
+		!m.lastActivityAt.IsZero() && time.Since(m.lastActivityAt) >= m.watchdogStall {
+		// continue from partial output when the turn produced any, else
+		// re-send the original instruction.
+		text := resumeContinueText
+		if m.turnOutChars == 0 {
+			text = lastUserText(m.messages)
+		}
+		// cancel the hang even at the resume cap — retrigger parks it in
+		// StateError ("gave up") rather than leaving the turn wedged.
+		if strings.TrimSpace(text) != "" {
+			if m.cancelRun != nil {
+				m.cancelRun()
+				m.cancelRun = nil
+			}
+			m.stallResumePending = true
+			m.stallResumeText = text
+			m.stallResumeReason = "stalled"
+			m.warning = "bee stalled — auto-resuming…"
+			m.warningExpires = time.Now().Add(warningTTL)
+			return m, tea.Batch(warningFadeCmd(), loaderTickCmd())
+		}
 	}
 	m.loaderFrame++
 	// sample output throughput once per tick — drives particle density. Clamp
@@ -227,7 +262,27 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		m.lastTurnDuration = time.Since(m.turnStartedAt)
 		m.turnStartedAt = time.Time{}
 	}
+	// error-resume cmd, populated in the error branch when the watchdog arms.
+	var errResumeCmd tea.Cmd
 	switch {
+	case m.stallResumePending && errors.Is(msg.err, context.Canceled):
+		// watchdog cancelled a stalled turn. The in-flight goroutine has now
+		// returned (we got its Canceled), so it's safe to re-trigger without
+		// two eng.Run calls overlapping. Carry the partial messages for context.
+		m.stallResumePending = false
+		text, reason := m.stallResumeText, m.stallResumeReason
+		m.stallResumeText, m.stallResumeReason = "", ""
+		if len(msg.result.Messages) > 0 {
+			m.messages = msg.result.Messages
+		}
+		m.commitFlushed()
+		m.streamFlushed = ""
+		m.streamFenceOpen = false
+		m.pendingFlushedPrefix = ""
+		m.partial = ""
+		m.thinkPartial = ""
+		m.pendingTools = nil
+		return m.retrigger(text, reason)
 	case errors.Is(msg.err, context.Canceled):
 		// user pressed esc — clean cancel, not a failure. preserve any
 		// messages the engine flushed before the cancel landed so the
@@ -240,6 +295,9 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		m.partial = ""
 		m.thinkPartial = ""
 		m.state = StateIdle
+		// user intervened — give the next task a fresh resume budget.
+		m.resumeCount = 0
+		m.awaitingProgress = false
 	case isEscalate(msg.err):
 		// escalate isn't a crash — the model handed control back. The yellow
 		// escalate card already sits in scrollback (rendered live), so don't
@@ -265,12 +323,27 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		m.thinkPartial = ""
 		m.state = StateError
 		m.lastErr = msg.err.Error()
+		// recoverable error → schedule a bounded auto-resume after a short,
+		// visible cancel window instead of parking until the user hits Enter.
+		if m.watchdogArmedForError(msg.err) {
+			d := loop.ClassifyResume(msg.err, msg.result)
+			if len(msg.result.Messages) > 0 {
+				m.messages = msg.result.Messages // carry context into the resume
+			}
+			m.resumeErrGen++
+			m.warning = "error — auto-resuming in 3s (esc or type to cancel)…"
+			m.warningExpires = time.Now().Add(warningTTL)
+			errResumeCmd = tea.Batch(scheduleErrorResume(m.resumeErrGen, d.Continuation, d.Reason), warningFadeCmd())
+		}
 	default:
 		m.messages = msg.result.Messages
 		m.commitFlushed()
 		m.partial = ""
 		m.thinkPartial = ""
 		m.state = StateIdle
+		// clean finish — reset the resume budget for the next task.
+		m.resumeCount = 0
+		m.awaitingProgress = false
 	}
 	// turn finished/cancelled/errored — no tools left in flight.
 	m.pendingTools = nil
@@ -316,7 +389,7 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err == nil {
 		m, goalCmd = m.maybeStartGoalEval()
 	}
-	return m, tea.Batch(flushCmd, costCmd, recapCmd, goalCmd)
+	return m, tea.Batch(flushCmd, costCmd, recapCmd, goalCmd, errResumeCmd)
 }
 
 func (m Model) onCostTick(_ costTickMsg) (tea.Model, tea.Cmd) {

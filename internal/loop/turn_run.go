@@ -475,7 +475,5 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction, Options: esc.Options}
 		}
 	}
-	return res, fmt.Errorf("loop: hit max iterations (%d) — type 'continue' to resume, "+
-		"raise it with /iterations <n>, or remove the limit with /iterations 0 "+
-		"(or set max_iterations = 0 in config)", maxIter)
+	return res, &MaxIterationsError{Limit: maxIter}
 }

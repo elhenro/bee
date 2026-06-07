@@ -91,6 +91,13 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		if m.approver != nil {
 			m.approver.Resolve(dec.UseID, dec.Decision)
 		}
+		// the modal consumed the loader-tick chain while it was up; revive it
+		// (and the stall watchdog that rides it) and reset the stall clock —
+		// the approval wait was a human block, not a model stall.
+		m.lastActivityAt = time.Now()
+		if m.state == StateStreaming {
+			return m, loaderTickCmd()
+		}
 		return m, nil
 	}
 	// ask_user question arrives from the engine goroutine via the Asker
@@ -105,6 +112,12 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	if a, ok := msg.(AskAnswerMsg); ok {
 		if m.asker != nil {
 			m.asker.Resolve(a.UseID, a.Answer)
+		}
+		// revive the loader-tick/watchdog chain the modal consumed; the
+		// question wait was a human block, not a model stall.
+		m.lastActivityAt = time.Now()
+		if m.state == StateStreaming {
+			return m, loaderTickCmd()
 		}
 		return m, nil
 	}
@@ -208,6 +221,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onExternalDone(msg)
 	case turnDoneMsg:
 		return m.onTurnDone(msg)
+	case resumeAfterErrorMsg:
+		return m.onResumeAfterError(msg)
 	case goalEvalDoneMsg:
 		return m.onGoalEvalDone(msg)
 	case recapIdleTickMsg:

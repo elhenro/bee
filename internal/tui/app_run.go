@@ -155,6 +155,13 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 	if eng != nil && eng.WarnCh != nil {
 		m = m.WithWarnCh(eng.WarnCh)
 	}
+	if eng != nil {
+		wc := eng.Cfg.Watchdog
+		if os.Getenv("BEE_WATCHDOG_OFF") != "" {
+			wc.Enabled = false
+		}
+		m = m.WithWatchdog(wc.Enabled, wc.Stall(), wc.Resumes())
+	}
 	if eng != nil && eng.Costs != nil {
 		m = m.WithCostTracker(eng.Costs)
 	}

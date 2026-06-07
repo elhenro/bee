@@ -41,14 +41,9 @@ func stalledStep(streak int, prev, reason string) (int, string) {
 // failing call, per-tool cap, malformed envelope, output loop) rather than a
 // fatal error. Interactive sessions survive these — the headless goal loop
 // should too: spend the turn, reframe, retry. Escalate is excluded — that is
-// the model deliberately stopping to ask the user.
-func isWedgedTurn(err error) bool {
-	return errors.Is(err, loop.ErrTwoStrike) ||
-		errors.Is(err, loop.ErrPerToolFailureCap) ||
-		errors.Is(err, loop.ErrFormatStrike) ||
-		errors.Is(err, loop.ErrRepeatStream) ||
-		errors.Is(err, loop.ErrEmptyCompletion)
-}
+// the model deliberately stopping to ask the user. Shares one definition with
+// the watchdog resume classifier via loop.IsWedge.
+func isWedgedTurn(err error) bool { return loop.IsWedge(err) }
 
 // parseGoalMessage detects a "/goal …" headless request and returns the
 // trimmed condition. show/clear/aliases and the bare command return ("", true)
