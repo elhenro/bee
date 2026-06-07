@@ -42,6 +42,7 @@ func scheduleErrorResume(gen int, continuation, reason string) tea.Cmd {
 // (the "genuine progress" signal so each real task gets a fresh budget).
 func (m *Model) noteActivity() {
 	m.lastActivityAt = time.Now()
+	m.turnSawActivity = true // first sign of life lifts first-token grace
 	if m.awaitingProgress {
 		m.resumeCount = 0
 		m.awaitingProgress = false

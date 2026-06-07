@@ -10,8 +10,10 @@ import (
 )
 
 // armedWatchdog builds a streaming model with the watchdog enabled, an already
-// stale activity clock, and a prior user instruction to resume. eng is nil so
-// submit() takes the echo path — retrigger completes without a real provider.
+// stale activity clock, a turn that has already shown activity (so first-token
+// grace doesn't suppress the stall), and a prior user instruction to resume.
+// eng is nil so submit() takes the echo path — retrigger completes without a
+// real provider.
 func armedWatchdog(t *testing.T) Model {
 	t.Helper()
 	m := newTestModel(t)
@@ -24,6 +26,7 @@ func armedWatchdog(t *testing.T) Model {
 		Content: []types.ContentBlock{{Type: types.BlockText, Text: "finish the task"}},
 	}}
 	m.lastActivityAt = time.Now().Add(-time.Second) // already stale
+	m.turnSawActivity = true                        // produced output, then went silent
 	m.cancelRun = func() {}
 	return m
 }
@@ -65,6 +68,39 @@ func TestWatchdog_StallResumesOnCancelLanding(t *testing.T) {
 	last := got.messages[len(got.messages)-1]
 	if last.Role != types.RoleUser || last.Content[0].Text != "finish the task" {
 		t.Fatalf("expected the instruction re-sent, got %+v", last)
+	}
+}
+
+func TestWatchdog_NoStallBeforeFirstActivity(t *testing.T) {
+	// queue/prefill latency: the turn is streaming but nothing has come back
+	// yet. first-token grace must hold off the stall-resume — resubmitting a
+	// queued request only deepens a busy local model's server queue.
+	m := armedWatchdog(t)
+	m.turnSawActivity = false
+	out, cmd := m.onLoaderTick(loaderTickMsg{})
+	got := out.(Model)
+	if got.stallResumePending {
+		t.Fatal("must not stall before the first sign of life")
+	}
+	if cmd == nil {
+		t.Fatal("loader should re-arm while waiting for the first token")
+	}
+}
+
+func TestWatchdog_FirstActivityArmsStall(t *testing.T) {
+	// once a token lands, grace lifts: a later silence past the stall window is
+	// a real wedge and should resume.
+	m := armedWatchdog(t)
+	m.turnSawActivity = false
+	out, _ := m.Update(streamDeltaMsg{Delta: "hi"})
+	m = out.(Model)
+	if !m.turnSawActivity {
+		t.Fatal("first stream delta should arm the stall watchdog")
+	}
+	m.lastActivityAt = time.Now().Add(-time.Second) // now go silent past the window
+	out, _ = m.onLoaderTick(loaderTickMsg{})
+	if !out.(Model).stallResumePending {
+		t.Fatal("after first activity then silence, watchdog should fire")
 	}
 }
 

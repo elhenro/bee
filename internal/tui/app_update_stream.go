@@ -119,14 +119,18 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	if m.state != StateStreaming && !m.compacting {
 		return m, nil
 	}
-	// inactivity watchdog: a streaming turn that has gone silent (no stream/
-	// think/tool/warn activity) for watchdogStall is treated as stalled —
-	// cancel it and wait for the cancelled turn to land before resubmitting
-	// (so two eng.Run calls never overlap). Suppressed while the user is
-	// mid-steer (typing) and once a stall-resume is already pending.
+	// inactivity watchdog: a streaming turn that has shown activity and then
+	// gone silent (no stream/think/tool/warn delta) for watchdogStall is
+	// treated as stalled — cancel it and wait for the cancelled turn to land
+	// before resubmitting (so two eng.Run calls never overlap). Held off until
+	// the turn's first sign of life (turnSawActivity): a queued or prefilling
+	// request on a busy local model is silent for a while, and resubmitting it
+	// only deepens the server queue — a turn that never produces anything is
+	// caught by the provider-level stall guard instead. Suppressed while the
+	// user is mid-steer (typing) and once a stall-resume is already pending.
 	if m.state == StateStreaming && m.watchdogEnabled && !m.watchdogDisabled &&
 		!m.stallResumePending && strings.TrimSpace(m.input.Value()) == "" &&
-		!m.lastActivityAt.IsZero() && time.Since(m.lastActivityAt) >= m.watchdogStall {
+		m.turnSawActivity && time.Since(m.lastActivityAt) >= m.watchdogStall {
 		// continue from partial output when the turn produced any, else
 		// re-send the original instruction.
 		text := resumeContinueText

@@ -296,6 +296,7 @@ type Model struct {
 	watchdogMaxResumes int
 	watchdogDisabled   bool      // /watchdog off — session-only opt-out
 	lastActivityAt     time.Time // bumped on every stream/think/live/warn delta
+	turnSawActivity    bool      // first-token grace: false until the turn shows life; gates the stall watchdog
 	resumeCount        int       // consecutive auto-resumes for the current task
 	awaitingProgress   bool      // set after a resume; first activity resets resumeCount
 	resumeErrGen       int       // invalidates a scheduled error-resume on a newer turn

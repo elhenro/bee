@@ -276,9 +276,11 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	m.lastTurnDuration = 0
 	// invalidate any pending post-turn recap tick from the previous turn.
 	m.recapGen++
-	// watchdog: stamp activity so the stall clock starts fresh, and invalidate
-	// any pending error-resume tick (a new turn supersedes it).
+	// watchdog: stamp activity so the stall clock starts fresh, re-arm
+	// first-token grace (no stall-resume until this turn shows life), and
+	// invalidate any pending error-resume tick (a new turn supersedes it).
 	m.lastActivityAt = time.Now()
+	m.turnSawActivity = false
 	m.resumeErrGen++
 
 	// build content blocks: text first, then a pending image if staged.
