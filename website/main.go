@@ -392,8 +392,8 @@ const indexHTML = `<!DOCTYPE html>
                ÆÆ          §ËÆÆÆé         Æ³
              –ÆÆ                           Æ</span></pre>
       <h1>bee</h1>
-      <p class="tagline">agent harness for local models</p>
-      <p class="fun-fact">tiny but mighty</p>
+      <p class="tagline">tiny but mighty</p>
+      <p class="fun-fact">agent harness for local models</p>
     </div>
 
     <div class="gallery">
