@@ -175,16 +175,64 @@ func TestQueen_CapsAtMaxSubTasks(t *testing.T) {
 	}
 }
 
-func TestQueen_PropagatesWorkerError(t *testing.T) {
+func TestQueen_WorkerErrorDoesNotAbort(t *testing.T) {
 	planner := &scriptedRunner{outputs: []string{
 		`["a","b"]`,
-		"unused",
+		"final synthesis",
 	}}
-	w := &scriptedRunner{outputs: []string{"ok"}, errAfter: 2} // second call errors
+	// single worker, round-robin handles both sub-tasks; second call errors.
+	w := &scriptedRunner{outputs: []string{"ok"}, errAfter: 2}
 	q := NewQueen(planner, []Runner{w})
 	res, err := q.Run(context.Background(), "task")
+	if err != nil {
+		t.Fatalf("worker error must not fail Run, got: %v", err)
+	}
+	if len(res.WorkerResults) != 2 {
+		t.Fatalf("worker results = %d, want 2", len(res.WorkerResults))
+	}
+	// exactly one worker carries the scripted failure; the other succeeded.
+	var failed, succeeded int
+	for _, r := range res.WorkerResults {
+		if r.Err != nil {
+			failed++
+		} else if r.Final != "" {
+			succeeded++
+		}
+	}
+	if failed != 1 {
+		t.Errorf("failed workers = %d, want 1", failed)
+	}
+	if succeeded != 1 {
+		t.Errorf("succeeded workers = %d, want 1", succeeded)
+	}
+	// synthesis still runs over whatever succeeded.
+	if res.Final != "final synthesis" {
+		t.Errorf("Final = %q, want %q", res.Final, "final synthesis")
+	}
+}
+
+// cancelRunner cancels the supplied ctx on its first call, then returns
+// ctx.Err() to mimic a worker observing the cancellation.
+type cancelRunner struct {
+	cancel context.CancelFunc
+}
+
+func (c *cancelRunner) Run(ctx context.Context, _ string) (loop.RunResult, error) {
+	c.cancel()
+	return loop.RunResult{}, ctx.Err()
+}
+
+func TestQueen_CtxCancellationAborts(t *testing.T) {
+	planner := &scriptedRunner{outputs: []string{
+		`["a"]`,
+		"unused",
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	w := &cancelRunner{cancel: cancel}
+	q := NewQueen(planner, []Runner{w})
+	_, err := q.Run(ctx, "task")
 	if err == nil {
-		t.Fatalf("expected error, got nil; res=%+v", res)
+		t.Fatal("expected error on ctx cancellation, got nil")
 	}
 }
 

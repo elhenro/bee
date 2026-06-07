@@ -34,6 +34,8 @@ type Hooks struct {
 	OnPlan        func(plan []SubTask)
 	OnWorkerStart func(idx int, sub SubTask)
 	OnWorkerDone  func(idx int, res Result)
+	OnReview      func(dimension string, claims []string)
+	OnVerify      func(f Finding)
 	OnCritique    func(critique string)
 	OnSynthesize  func()
 }
@@ -53,6 +55,16 @@ func (h Hooks) workerDone(i int, r Result) {
 		h.OnWorkerDone(i, r)
 	}
 }
+func (h Hooks) review(dim string, claims []string) {
+	if h.OnReview != nil {
+		h.OnReview(dim, claims)
+	}
+}
+func (h Hooks) verify(f Finding) {
+	if h.OnVerify != nil {
+		h.OnVerify(f)
+	}
+}
 func (h Hooks) critique(c string) {
 	if h.OnCritique != nil {
 		h.OnCritique(c)
@@ -67,10 +79,17 @@ func (h Hooks) synthesize() {
 // Queen orchestrates a planner Runner and N worker Runners. Critic is optional;
 // when set, its output is appended to the synthesize prompt.
 type Queen struct {
-	Planner     Runner
-	Workers     []Runner
-	Critic      Runner
-	MaxParallel int // 0 => len(Workers)
+	Planner Runner
+	Workers []Runner
+	Critic  Runner
+	// Reviewers drive the verified review gate (decompose → … → review →
+	// verify → synthesize). When non-empty it supersedes Critic: each reviewer
+	// is paired to a ReviewDimension by index and inspects the real working-tree
+	// changes. Verifier (optional) re-checks every finding adversarially.
+	Reviewers        []Runner
+	Verifier         Runner
+	ReviewDimensions []ReviewDimension // 0 => DefaultReviewDimensions()
+	MaxParallel      int               // 0 => len(Workers)
 	// Hooks observes progress for a live UI. Zero value = no observation.
 	Hooks Hooks
 }
@@ -80,6 +99,7 @@ type QueenResult struct {
 	Plan          []SubTask
 	WorkerResults []Result
 	Critique      string
+	Findings      []Finding // verified review-gate findings (empty if gate not run)
 	Final         string
 }
 
@@ -109,11 +129,26 @@ func (q *Queen) Run(ctx context.Context, task string) (QueenResult, error) {
 
 	results, err := q.dispatch(ctx, plan)
 	if err != nil {
+		// dispatch only errors on ctx cancellation; worker failures are kept in
+		// Result.Err and must not abort the run.
 		return QueenResult{Plan: plan, WorkerResults: results}, err
 	}
 
+	// review gate: the verified Reviewers path supersedes the legacy single
+	// Critic. Both feed their summary into synthesize via the critique string.
 	var critique string
-	if q.Critic != nil {
+	var findings []Finding
+	switch {
+	case len(q.Reviewers) > 0:
+		findings, err = q.reviewAndVerify(ctx, task, plan, results)
+		if err != nil {
+			return QueenResult{Plan: plan, WorkerResults: results, Findings: findings}, fmt.Errorf("queen: review: %w", err)
+		}
+		critique = renderFindings(findings)
+		if critique != "" {
+			q.Hooks.critique(critique)
+		}
+	case q.Critic != nil:
 		critique, err = q.review(ctx, task, plan, results)
 		if err != nil {
 			return QueenResult{Plan: plan, WorkerResults: results}, fmt.Errorf("queen: review: %w", err)
@@ -124,9 +159,9 @@ func (q *Queen) Run(ctx context.Context, task string) (QueenResult, error) {
 	q.Hooks.synthesize()
 	final, err := q.synthesize(ctx, task, plan, results, critique)
 	if err != nil {
-		return QueenResult{Plan: plan, WorkerResults: results, Critique: critique}, fmt.Errorf("queen: synthesize: %w", err)
+		return QueenResult{Plan: plan, WorkerResults: results, Critique: critique, Findings: findings}, fmt.Errorf("queen: synthesize: %w", err)
 	}
-	return QueenResult{Plan: plan, WorkerResults: results, Critique: critique, Final: final}, nil
+	return QueenResult{Plan: plan, WorkerResults: results, Critique: critique, Findings: findings, Final: final}, nil
 }
 
 // decompose asks the planner to split task into 2-8 independent sub-tasks
@@ -154,7 +189,9 @@ func (q *Queen) decompose(ctx context.Context, task string) ([]SubTask, error) {
 }
 
 // dispatch fans plan out across workers round-robin and waits for all to
-// finish, honoring ctx cancellation. Returns partial results on first error.
+// finish. An individual worker error does not abort siblings; it is recorded
+// in that worker's Result.Err and the run proceeds. A hard error is returned
+// only when the parent ctx is cancelled.
 func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) {
 	results := make([]Result, len(plan))
 	parallel := q.MaxParallel
@@ -163,12 +200,7 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 	}
 	sem := make(chan struct{}, parallel)
 
-	subCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	var wg sync.WaitGroup
-	var firstErr error
-	var errOnce sync.Once
 
 	for i, sub := range plan {
 		worker := q.Workers[i%len(q.Workers)]
@@ -177,12 +209,12 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 			defer wg.Done()
 			select {
 			case sem <- struct{}{}:
-			case <-subCtx.Done():
+			case <-ctx.Done():
 				results[idx] = Result{
 					WorkerID: fmt.Sprintf("w%d", idx),
 					Name:     fmt.Sprintf("worker-%d", idx),
 					Task:     st.Task,
-					Err:      subCtx.Err(),
+					Err:      ctx.Err(),
 				}
 				return
 			}
@@ -190,7 +222,7 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 
 			q.Hooks.workerStart(idx, st)
 			started := time.Now().UTC()
-			out, err := w.Run(subCtx, st.Task)
+			out, err := w.Run(ctx, st.Task)
 			ended := time.Now().UTC()
 			r := Result{
 				WorkerID: fmt.Sprintf("w%d", idx),
@@ -201,7 +233,6 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 			}
 			if err != nil {
 				r.Err = err
-				errOnce.Do(func() { firstErr = err; cancel() })
 			} else {
 				r.Final = out.FinalText
 			}
@@ -211,9 +242,7 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 	}
 
 	wg.Wait()
-	if firstErr != nil {
-		return results, firstErr
-	}
+	// only ctx cancellation aborts; individual worker errors ride in Result.Err.
 	if ctx.Err() != nil {
 		return results, ctx.Err()
 	}
