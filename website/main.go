@@ -392,8 +392,8 @@ const indexHTML = `<!DOCTYPE html>
                ÆÆ          §ËÆÆÆé         Æ³
              –ÆÆ                           Æ</span></pre>
       <h1>bee</h1>
-      <p class="tagline">minimal coding agent harness</p>
-      <p class="fun-fact">"I'm not a bot. I'm a bee. There's a difference."</p>
+      <p class="tagline">agent harness for local models</p>
+      <p class="fun-fact">tiny but mighty</p>
     </div>
 
     <div class="gallery">
@@ -435,6 +435,14 @@ const indexHTML = `<!DOCTYPE html>
         <div class="feature">
           <span class="emoji">💻</span>
           <span class="text"><strong>Works everywhere</strong> — Ollama local to OpenRouter, tiny models to frontier</span>
+        </div>
+        <div class="feature">
+          <span class="emoji">👑</span>
+          <span class="text"><strong>Three modes</strong> — worker (full surface), scout (read-only research), queen (hive planning)</span>
+        </div>
+        <div class="feature">
+          <span class="emoji">🤝</span>
+          <span class="text"><strong>Handoff</strong> — stuck small model? hand off to a bigger one with a rescue brief</span>
         </div>
       </div>
     </div>
@@ -542,7 +550,7 @@ const indexHTML = `<!DOCTYPE html>
 
   <footer>
     <p>built by <a href="https://github.com/elhenro">Henry Schober</a> — <span id="year"></span></p>
-    <p style="margin-top:0.25rem;">"The bee is the only creature that can sting and fly at the same time."</p>
+    <p style="margin-top:0.25rem;">"klein aber oho"</p>
     <button id="footer-theme" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" style="margin-top:1rem;">🌙</button>
   </footer>
 </div>

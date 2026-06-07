@@ -80,6 +80,22 @@ For sub-8k-context models, switch to the tiny profile. `--profile` is not a CLI 
     default_provider = "omlx"
     default_model = "Qwen3.6-35B-A3B-4bit"
 
+## Modes: worker / scout / queen
+
+Three roles control how the agent thinks and acts. Cycle with `shift+tab` in the TUI, or pin one in `~/.bee/config.toml` (`role = "scout"`).
+
+| Role | What it does | Reasoning budget |
+|---|---|---|
+| **worker** (default) | Full tool surface. Per-turn classifier picks read-only vs act — small models don't reflex into shell on a greeting. | auto |
+| **scout** | Read-only research + web. Proposes a plan, never mutates. Uses `web_search`/`web_fetch` by default. | high |
+| **queen** | Spawns a hive: decomposes → workers execute → critic → synthesizes. | max |
+
+Worker is the default workhorse. Scout is for "tell me what to do" before you commit. Queen for big multi-step tasks that benefit from parallel execution.
+
+## Handoff
+
+When a small model gets stuck, bee can hand off the task to a bigger model. Call `bee handoff` to generate a rescue brief — the original goal, a terse summary of what was tried, where it got stuck, and the last few turns verbatim. The bigger model takes over and finishes the job without re-reading confused history.
+
 ## Subcommands
 
 `bee run` for headless, `bee` for TUI. Other subcommands:
