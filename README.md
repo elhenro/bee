@@ -116,6 +116,20 @@ $ bee remote-control                # LAN web relay for remote control
 
 `~/.bee/config.toml`, sane defaults, set an API key, change models.
 
+## Procedure memory (waggle)
+
+bee watches its own read-only tool use (read, search, glob, ls) and, when it repeats the same route, crystallizes it into a runnable shortcut called a *waggle*. Next time that route comes up bee replays the known steps directly instead of paying for the same round-trips again. This matters most for small local models, where re-deriving a workflow from scratch is most of the cost.
+
+It runs automatically and stores routes under `~/.bee/waggle/`. Inspect and curate the library:
+
+    bee waggle ls    # routes ranked by estimated tokens saved
+    bee waggle gc    # prune stale routes, demote ones that stopped working, promote cross-project ones
+
+On by default for the worker, scout, and queen roles (including queen-spawned hive workers). Turn it off in `~/.bee/config.toml`:
+
+    [waggle]
+    enabled = false
+
 ## Browser tools
 
 Enable in `~/.bee/config.toml`:
