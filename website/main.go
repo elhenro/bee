@@ -19,10 +19,27 @@ const indexHTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="bee — a minimal coding agent harness. Pure Go, single binary, zero fuss.">
+<meta name="description" content="bee — a minimal coding agent harness written in Go. Skills as subcommands, works everywhere from Ollama to OpenRouter. Pure Go, single binary, zero fuss.">
+<meta name="keywords" content="bee, coding agent, AI agent, Go, openai, openrouter, ollama, CLI, developer tools, code generation, autonomous coding">
 <meta name="theme-color" content="#f5d656">
-<title>bee</title>
-<link rel="icon" href="/assets/favicon.svg">
+<link rel="canonical" href="https://elhenro.github.io/bee/">
+<title>bee — a minimal coding agent harness</title>
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/assets/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<meta property="og:title" content="bee — a minimal coding agent harness">
+<meta property="og:description" content="A minimal coding agent harness written in Go. Skills as subcommands, works everywhere from Ollama to OpenRouter.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://elhenro.github.io/bee/">
+<meta property="og:image" content="https://elhenro.github.io/bee/assets/og-image.png">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="bee — a minimal coding agent harness">
+<meta name="twitter:description" content="A minimal coding agent harness written in Go. Skills as subcommands, works everywhere from Ollama to OpenRouter.">
+<meta name="twitter:image" content="https://elhenro.github.io/bee/assets/og-image.png">
+<link rel="preconnect" href="https://github.com">
+<link rel="preconnect" href="https://raw.githubusercontent.com">
 <style>
   :root {
     --bg: #faf8f4;
@@ -298,7 +315,7 @@ const indexHTML = `<!DOCTYPE html>
   </main>
 
   <footer>
-    <p>built by <a href="https://github.com/elhenro">henro</a> — <span id="year"></span></p>
+    <p>built by <a href="https://github.com/elhenro">Henry Schober</a> — <span id="year"></span></p>
     <p style="margin-top:0.25rem;">"The bee is the only creature that can sting and fly at the same time."</p>
   </footer>
 </div>
@@ -330,6 +347,23 @@ const indexHTML = `<!DOCTYPE html>
     });
   }
 </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "bee",
+    "description": "A minimal coding agent harness written in Go. Skills as subcommands, works everywhere from Ollama to OpenRouter.",
+    "url": "https://elhenro.github.io/bee/",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Any",
+    "programmingLanguage": "Go",
+    "author": {
+      "@type": "Person",
+      "name": "Henry Schober"
+    },
+    "keywords": "coding agent, AI agent, Go, openai, openrouter, ollama, CLI, developer tools"
+  }
+  </script>
 </body>
 </html>`
 
@@ -348,6 +382,24 @@ func main() {
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(indexHTML))
+	})
+
+	// Static assets at root for crawlers
+	r.Get("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte("User-agent: *\nAllow: /\nSitemap: https://elhenro.github.io/bee/sitemap.xml\n"))
+	})
+	r.Get("/sitemap.xml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://elhenro.github.io/bee/</loc>
+    <lastmod>2026-06-07</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>`))
 	})
 
 	r.Handle("/assets/*", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
