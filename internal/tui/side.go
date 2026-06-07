@@ -75,10 +75,6 @@ func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 		// re-resolve profile + caveman when auto is in play. Explicit user
 		// choices (tiny/normal/large or full/lite/ultra/off) are preserved.
 		s.m.eng.Cfg = reapplyAutoProfile(s.m.eng.Cfg)
-		if s.m.eng.Cfg.Mode == "auto" && config.IsLocalProvider(provider) {
-			s.m.eng.Cfg.Mode = "edit"
-			s.m.mode = "edit"
-		}
 		if s.m.eng.Rebuild != nil {
 			if err := s.m.eng.Rebuild(s.m.eng); err != nil {
 				return fmt.Errorf("model: rebuild: %w", err)
@@ -113,6 +109,22 @@ func (s *tuiSide) OpenPicker() error {
 		return errors.New("no picker (headless)")
 	}
 	s.m.pickerRequested = true
+	return nil
+}
+
+// OpenHandoff arms the rescue flow: opens the same provider+model picker as
+// /model AND marks the resulting pick to route into the handoff path instead
+// of a plain swap. Returns an error in headless contexts (no picker built) so
+// the slash command can fall back to text.
+func (s *tuiSide) OpenHandoff() error {
+	if s.m == nil {
+		return errors.New("no tui")
+	}
+	if s.m.picker == nil {
+		return errors.New("no picker (headless)")
+	}
+	s.m.handoffRequested = true
+	s.m.handoffActive = true
 	return nil
 }
 
@@ -208,6 +220,31 @@ func (s *tuiSide) OpenResume() error {
 	}
 	s.m.resumeRequested = true
 	return nil
+}
+
+// OpenRewind asks the TUI to display the interactive rewind picker.
+func (s *tuiSide) OpenRewind() error {
+	if s.m == nil {
+		return errors.New("no tui")
+	}
+	s.m.rewindRequested = true
+	return nil
+}
+
+// SaveCheckpoint snapshots the work-tree now, keyed to the latest message so it
+// surfaces against the current turn in the rewind picker.
+func (s *tuiSide) SaveCheckpoint(label string) (string, error) {
+	if s.m == nil || s.m.checkpoints == nil {
+		return "", errors.New("checkpoints disabled")
+	}
+	key := ""
+	if n := len(s.m.messages); n > 0 {
+		key = s.m.messages[n-1].ID
+	}
+	if key == "" {
+		return "", errors.New("nothing to checkpoint yet")
+	}
+	return s.m.checkpoints.Snapshot(key, label)
 }
 
 // NewSession clears scrollback for a fresh conversation. Past content

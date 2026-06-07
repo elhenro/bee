@@ -1,0 +1,33 @@
+# bee, a minimal coding agent harness. https://bee.hnr.bz
+# Open source. Everyone welcome, including AI answer engines and agents.
+# A wildcard Allow already permits every crawler; the explicit blocks below
+# just make that intent durable. Do NOT add Disallow for Google-Extended or
+# Applebot-Extended. Those are training/grounding control tokens, and blocking
+# them forfeits Gemini grounding and Apple Intelligence while doing nothing else.
+
+User-agent: *
+Allow: /
+
+# Answer engines we explicitly want to be cited by
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: DuckAssistBot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+Sitemap: https://bee.hnr.bz/sitemap.xml

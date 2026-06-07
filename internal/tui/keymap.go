@@ -15,9 +15,9 @@ type KeyMap struct {
 	CostOpen     key.Binding
 	SlashPalette  key.Binding
 	HistorySearch key.Binding
-	CavemanCycle  key.Binding
-	ThinkingCycle key.Binding
-	ModeCycle     key.Binding
+	CavemanCycle key.Binding
+	RoleCycle    key.Binding
+	YoloToggle   key.Binding
 	ApproveAllow   key.Binding
 	ApproveSession key.Binding
 	ApproveAlways  key.Binding
@@ -86,13 +86,13 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("ctrl+/", "ctrl+_"),
 			key.WithHelp("ctrl+/", "cycle caveman"),
 		),
-		ThinkingCycle: key.NewBinding(
-			key.WithKeys("alt+t"),
-			key.WithHelp("alt+t", "cycle thinking"),
-		),
-		ModeCycle: key.NewBinding(
+		RoleCycle: key.NewBinding(
 			key.WithKeys("shift+tab"),
-			key.WithHelp("shift+tab", "cycle mode (plan/auto/edit/yolo)"),
+			key.WithHelp("shift+tab", "cycle role (worker/scout/queen)"),
+		),
+		YoloToggle: key.NewBinding(
+			key.WithKeys("alt+y"),
+			key.WithHelp("alt+y", "toggle yolo (auto-approve)"),
 		),
 		ApproveAllow: key.NewBinding(
 			key.WithKeys("a", "y", "enter"),

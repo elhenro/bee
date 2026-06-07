@@ -87,11 +87,18 @@ type Engine struct {
 	Rebuild func(*Engine) error
 
 	// OnceAllowTools force-allows plan-only tools (e.g. ask_user) for the next
-	// Run, regardless of the active mode. A prompt skill sets it from its
-	// frontmatter `tools` list so /plan can ask the user even in edit/auto.
-	// Only plan-only tools are honoured — it can't re-enable write/bash that
-	// plan mode legitimately strips. Cleared at the top of each Run.
+	// Run, regardless of the active role. A prompt skill sets it from its
+	// frontmatter `tools` list so /plan can ask the user even from worker.
+	// Only plan-only tools are honoured — it can't re-enable write/bash that a
+	// read-only turn legitimately strips. Cleared at the top of each Run.
 	OnceAllowTools []string
+
+	// SkipPostureClassifier disables the worker read-only/act classifier for
+	// this engine, so a worker turn always gets the full tool surface. Set for
+	// the scripted-provider test harness (the extra side Stream call would
+	// desync scripted response counts) and for callers that want byte-for-byte
+	// "always act" worker behavior.
+	SkipPostureClassifier bool
 
 	// lastInputTokens is the most recent provider-reported input-token count
 	// from the latest EventDone usage. Used to drive the context-window

@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/elhenro/bee/internal/llm"
 )
 
 func (m Model) renderTopBar() string {
@@ -66,18 +65,16 @@ func (m Model) renderTopBar() string {
 	if timer := m.renderTurnTimer(); timer != "" {
 		right += timer + "  "
 	}
-	if badge := m.renderModeBadge(); badge != "" {
-		right += badge + "  "
+	// yolo badge is always shown — it's a safety state, not a chrome preference.
+	if yb := m.renderYoloBadge(); yb != "" {
+		right += yb + "  "
 	}
-	// mastermind is orchestration, not a reasoning budget, so its chip shows
-	// regardless of whether the model honors thinking — "t:master" instead of
-	// the pinned "t:max" underneath.
-	if m.showEffort && m.mastermind {
-		right += m.styles.Dim.Render("t:master") + " "
-	} else if m.showEffort && m.thinking != "" && m.thinking != "off" && llm.ThinkingApplies(m.model) {
-		// hide the effort chip for models that can't act on it — a non-thinking
-		// model (qwen3-coder, plain instruct) showing "t:medium" is misleading.
-		right += m.styles.Dim.Render("t:"+m.thinking) + " "
+	// showEffort now gates the role chip (the reasoning-effort chip it used to
+	// gate is gone — thinking is baked per role).
+	if m.showEffort {
+		if badge := m.renderRoleBadge(); badge != "" {
+			right += badge + "  "
+		}
 	}
 	pad := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if pad < 1 {
@@ -180,25 +177,35 @@ func (m Model) renderCostBadge(usd float64) string {
 	return number
 }
 
-// renderModeBadge renders a mode chip in the top bar, always visible so
-// shift+tab cycling is legible. plan = honey, auto = citron, yolo = sriracha
-// (auto-approves, pay attention), edit = quiet squid (the resting default).
-func (m Model) renderModeBadge() string {
-	if m.mode == "" {
+// renderRoleBadge renders the active-role chip in the top bar, always visible
+// so shift+tab cycling is legible. worker = quiet squid (resting default),
+// scout = honey, queen = lilac (regal, pairs with the queen rainbow glow).
+func (m Model) renderRoleBadge() string {
+	if m.role == "" {
 		return ""
 	}
 	var fg lipgloss.TerminalColor
-	switch m.mode {
-	case "plan":
+	switch m.role {
+	case "scout":
 		fg = accentHoney
-	case "auto":
-		fg = accentBusy
-	case "yolo":
-		fg = semError
-	default:
+	case "queen":
+		fg = accentTool
+	default: // worker
 		fg = fgSquid
 	}
-	return lipgloss.NewStyle().Foreground(fg).Bold(true).Render(m.mode)
+	return lipgloss.NewStyle().Foreground(fg).Bold(true).Render(m.role)
+}
+
+// renderYoloBadge renders a loud inverse-red YOLO block, shown only while the
+// yolo toggle is armed (auto-approves dangerous shell — pay attention).
+func (m Model) renderYoloBadge() string {
+	if !m.yolo {
+		return ""
+	}
+	return lipgloss.NewStyle().
+		Foreground(fgButter).Background(semError).
+		Bold(true).Padding(0, 1).
+		Render("YOLO")
 }
 
 // displayModel returns the model name namespaced with its provider when the

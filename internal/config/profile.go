@@ -169,9 +169,6 @@ func ApplyProfile(c Config) Config {
 	if c.Caveman == "" || c.Caveman == "auto" {
 		c.Caveman = p.Caveman
 	}
-	if c.Mode == "auto" && IsLocalProvider(c.DefaultProvider) {
-		c.Mode = "edit"
-	}
 	// profile-level override for recap (tiny forces off to avoid extra round-trip).
 	if p.ShowRecap != nil {
 		c.ShowRecap = *p.ShowRecap

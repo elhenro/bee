@@ -564,11 +564,20 @@ const indexHTML = `<!DOCTYPE html>
 
   function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : current === 'light' ? 'auto' : 'dark';
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    let next;
+    if (current === 'dark') {
+      next = 'light';
+    } else if (current === 'light') {
+      next = 'auto';
+    } else {
+      // auto — toggle to the opposite of the system state so it visibly changes
+      next = isDark ? 'light' : 'dark';
+    }
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('bee-theme', next);
     const btn = document.getElementById('footer-theme');
-    btn.textContent = next === 'dark' ? '☀️' : '🌙';
+    btn.textContent = next === 'dark' ? '🌙' : '☀️';
   }
 
   // Copy on click

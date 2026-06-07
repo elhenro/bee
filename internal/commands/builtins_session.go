@@ -39,6 +39,40 @@ func registerSession(r *Registry) {
 		},
 	})
 	r.Register(Command{
+		Name:        "rewind",
+		Description: "jump back to a previous code/conversation checkpoint",
+		Run: func(_ context.Context, _ []string, s Side) (string, error) {
+			if s == nil {
+				return "", nil
+			}
+			if err := s.OpenRewind(); err != nil {
+				return "rewind needs the interactive TUI", nil
+			}
+			return "", nil
+		},
+	})
+	r.Register(Command{
+		Name:        "checkpoint",
+		Description: "save a checkpoint now (/checkpoint save [label]) or browse them",
+		Run: func(_ context.Context, args []string, s Side) (string, error) {
+			if s == nil {
+				return "", nil
+			}
+			if len(args) > 0 && args[0] == "save" {
+				label := strings.TrimSpace(strings.Join(args[1:], " "))
+				sha, err := s.SaveCheckpoint(label)
+				if err != nil {
+					return "", err
+				}
+				return "checkpoint saved: " + sha, nil
+			}
+			if err := s.OpenRewind(); err != nil {
+				return "rewind needs the interactive TUI", nil
+			}
+			return "", nil
+		},
+	})
+	r.Register(Command{
 		Name:        "new",
 		Description: "start a fresh session",
 		Run: func(_ context.Context, _ []string, s Side) (string, error) {

@@ -164,7 +164,7 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 // mastermind tier is active so switching it off lets the tick die and leaves
 // idle terminals quiet.
 func (m Model) onGlowTick(_ glowTickMsg) (tea.Model, tea.Cmd) {
-	if !m.mastermind {
+	if m.role != "queen" {
 		return m, nil
 	}
 	m.glowFrame++
@@ -255,6 +255,13 @@ func (m Model) onRecapReady(msg recapReadyMsg) (tea.Model, tea.Cmd) {
 func isEscalate(err error) bool { return err != nil && errors.Is(err, loop.ErrEscalate) }
 
 func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
+	// ignore a stale result from a turn that was cancelled or superseded: its
+	// late turnDoneMsg would otherwise nil cancelRun (breaking esc for the live
+	// turn), flip state to idle, and clobber m.messages with an old snapshot.
+	// mirrors the recapGen / resumeErrGen epoch guards.
+	if msg.gen != m.turnGen {
+		return m, nil
+	}
 	m.cancelRun = nil
 	// freeze elapsed at turn end. Guard zero turnStartedAt — late msgs
 	// after Model reset shouldn't synthesize a huge duration.
@@ -264,6 +271,8 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	}
 	// error-resume cmd, populated in the error branch when the watchdog arms.
 	var errResumeCmd tea.Cmd
+	// snapCmd, populated on a clean finish, snapshots the work-tree for rewind.
+	var snapCmd tea.Cmd
 	switch {
 	case m.stallResumePending && errors.Is(msg.err, context.Canceled):
 		// watchdog cancelled a stalled turn. The in-flight goroutine has now
@@ -344,6 +353,8 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		// clean finish — reset the resume budget for the next task.
 		m.resumeCount = 0
 		m.awaitingProgress = false
+		// snapshot the resulting code state so the user can rewind to this turn.
+		snapCmd = m.snapshotAfterTurn(msg.result.Messages)
 	}
 	// turn finished/cancelled/errored — no tools left in flight.
 	m.pendingTools = nil
@@ -369,17 +380,17 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		nxt := m.queue[0]
 		m.queue = m.queue[1:]
 		nm, runCmd := m.submit(nxt)
-		return nm, tea.Batch(flushCmd, costCmd, recapCmd, runCmd)
+		return nm, tea.Batch(flushCmd, costCmd, recapCmd, runCmd, snapCmd)
 	}
-	// post-plan handoff: a clean plan-mode turn produced a plan, but plan mode
-	// strips mutators so "do it" silently no-ops. Offer to switch into a build
-	// mode (optionally a fresh session carrying just the plan). Queue is empty
-	// here (drained above); skip when a goal loop drives its own continuation,
-	// and skip when the turn produced no text (nothing to act on or carry).
-	if msg.err == nil && loop.ParseMode(m.mode) == loop.ModePlan && !m.goal.Active {
+	// post-scout handoff: a clean scout turn produced a plan, but scout strips
+	// mutators so "do it" silently no-ops. Offer to switch into worker
+	// (optionally a fresh session carrying just the plan). Queue is empty here
+	// (drained above); skip when a goal loop drives its own continuation, and
+	// skip when the turn produced no text (nothing to act on or carry).
+	if msg.err == nil && m.role == "scout" && !m.goal.Active {
 		if plan := lastAssistantText(msg.result.Messages); plan != "" {
 			m.pendingPlan = plan
-			m.planmode.Show(m.isLocalProvider())
+			m.planmode.Show()
 		}
 	}
 	// goal loop: on a clean finish with the queue empty, judge the active
@@ -389,7 +400,7 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err == nil {
 		m, goalCmd = m.maybeStartGoalEval()
 	}
-	return m, tea.Batch(flushCmd, costCmd, recapCmd, goalCmd, errResumeCmd)
+	return m, tea.Batch(flushCmd, costCmd, recapCmd, goalCmd, errResumeCmd, snapCmd)
 }
 
 func (m Model) onCostTick(_ costTickMsg) (tea.Model, tea.Cmd) {
@@ -439,6 +450,11 @@ func (m Model) onIntroTick(_ introTickMsg) (tea.Model, tea.Cmd) {
 		}
 		banner := renderIntroPlaceholder(m.width, introPulseFrames)
 		m.introDone = false
+		// intro anchored — surface the deferred first-run welcome gate now.
+		if m.tutorialPending {
+			m.tutorialPending = false
+			m.tutorial = tutorialState{active: true, phase: tutPhaseGate}
+		}
 		return m, tea.Println(banner)
 	}
 	return m, nil

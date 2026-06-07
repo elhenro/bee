@@ -138,26 +138,6 @@ func TestApplyProfile_ResolvesAuto(t *testing.T) {
 	}
 }
 
-func TestApplyProfile_LocalProviderForcesEditMode(t *testing.T) {
-	c := Defaults()
-	c.DefaultProvider = "ollama"
-	c.Mode = "auto"
-	out := ApplyProfile(c)
-	if out.Mode != "edit" {
-		t.Errorf("auto+local should flip to edit, got %q", out.Mode)
-	}
-}
-
-func TestApplyProfile_HostedProviderKeepsAutoMode(t *testing.T) {
-	c := Defaults()
-	c.DefaultProvider = "openai"
-	c.Mode = "auto"
-	out := ApplyProfile(c)
-	if out.Mode != "auto" {
-		t.Errorf("auto+hosted should stay auto, got %q", out.Mode)
-	}
-}
-
 func TestResolveAutoProfileForProvider_LocalForcesTiny(t *testing.T) {
 	cases := []struct {
 		provider, model string

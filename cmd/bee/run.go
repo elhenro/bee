@@ -100,11 +100,12 @@ func runHeadlessReal(args []string) {
 			os.Exit(1)
 		}
 	}
-	// scripted provider needs deterministic Stream-call count: disable the
-	// classifier (mode=auto fires a side-query), compaction, and memory
-	// selection. tests script exactly the calls they expect.
+	// scripted provider needs deterministic Stream-call count: pin worker role
+	// (SkipPostureClassifier is set on the engine below so the read|act side-
+	// query never fires), and disable compaction + memory selection. tests
+	// script exactly the calls they expect.
 	if os.Getenv("BEE_TEST_PROVIDER") == "scripted" {
-		cfg.Mode = "edit"
+		cfg.Role = "worker"
 		cfg.Compaction.Enabled = false
 		cfg.Memory.Enabled = false
 	}
@@ -209,6 +210,12 @@ func runHeadlessReal(args []string) {
 
 	memStore := newKnowledgeAdapter(prov, cfg)
 
+	// the queen hive only runs in the TUI; headless falls back to a single
+	// worker turn rather than locking up. note it so the behavior isn't silent.
+	if loop.ParseRole(cfg.Role) == loop.RoleQueen {
+		fmt.Fprintln(os.Stderr, "bee: queen role spawns a hive only in the TUI — running a single worker turn here")
+	}
+
 	eng := &loop.Engine{
 		Provider: prov,
 		Tools:    reg,
@@ -219,6 +226,9 @@ func runHeadlessReal(args []string) {
 		Cwd:      cwd,
 		Stdout:   os.Stdout,
 		Costs:    cost.New(),
+	}
+	if os.Getenv("BEE_TEST_PROVIDER") == "scripted" {
+		eng.SkipPostureClassifier = true
 	}
 	if *jsonOut {
 		eng.JSONEmitter = jsonmode.New(os.Stdout)

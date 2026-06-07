@@ -10,27 +10,29 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
-// PlanProceedMsg is published when the user picks an option from the post-plan
-// picker. Mode is the mode to switch into ("" = keep planning, no-op); Fresh
-// clears context first and seeds the new turn with the plan text. A non-empty
-// Mode always auto-submits a continuation turn.
+// PlanProceedMsg is published when the user picks an option from the post-scout
+// picker. Role is the role to switch into ("" = keep scouting, no-op); Yolo arms
+// the auto-approve toggle; Fresh clears context first and seeds the new turn
+// with the plan text. A non-empty Role always auto-submits a continuation turn.
 type PlanProceedMsg struct {
-	Mode  string
+	Role  string
+	Yolo  bool
 	Fresh bool
 }
 
-// planOption is one row in the post-plan picker.
+// planOption is one row in the post-scout picker.
 type planOption struct {
 	label string
-	mode  string // target mode; "" means keep planning
+	role  string // target role; "" means keep scouting
+	yolo  bool
 	fresh bool
 }
 
-// PlanModeModel is the inline picker shown after a clean plan-mode turn. It
-// fixes the plan→build trap: plan mode strips mutators, so "yes do it" used to
-// silently no-op. The picker lets the user switch into a build mode (and
-// optionally start a fresh session carrying just the plan) in one keystroke.
-// Inactive = renders nothing.
+// PlanModeModel is the inline picker shown after a clean scout turn. It fixes
+// the scout→build trap: scout strips mutators, so "yes do it" used to silently
+// no-op. The picker lets the user switch into worker (and optionally start a
+// fresh session carrying just the plan) in one keystroke. Inactive = renders
+// nothing.
 type PlanModeModel struct {
 	styles  Styles
 	Active  bool
@@ -47,20 +49,16 @@ func NewPlanModeModel(styles Styles) PlanModeModel {
 // SetWidth records the terminal width so View can wrap option rows.
 func (m *PlanModeModel) SetWidth(w int) { m.width = w }
 
-// Show opens the picker. local hides the auto option — the classifier wastes
-// tokens on on-host models, matching cycleMode's behavior. Focus defaults to
-// the trailing "keep planning" option so a reflexive enter never switches mode
-// or fires a build turn; the build actions are one number-key away.
-func (m *PlanModeModel) Show(local bool) {
+// Show opens the picker. Focus defaults to the trailing "keep scouting" option
+// so a reflexive enter never switches role or fires a build turn; the build
+// actions are one number-key away.
+func (m *PlanModeModel) Show() {
 	opts := []planOption{
-		{label: "Build it (edit mode)", mode: "edit"},
-		{label: "Build it in a fresh session — clears context, keeps the plan", mode: "edit", fresh: true},
-		{label: "Build it (yolo — auto-approves commands)", mode: "yolo"},
+		{label: "Build it (worker)", role: "worker"},
+		{label: "Build it in a fresh session — clears context, keeps the plan", role: "worker", fresh: true},
+		{label: "Build it (worker + yolo — auto-approves commands)", role: "worker", yolo: true},
+		{label: "Keep scouting (stay in scout)", role: ""},
 	}
-	if !local {
-		opts = append(opts, planOption{label: "Switch to auto", mode: "auto"})
-	}
-	opts = append(opts, planOption{label: "Keep planning (stay in plan)", mode: ""})
 	m.options = opts
 	m.Active = true
 	m.focus = len(opts) - 1
@@ -109,7 +107,7 @@ func (m PlanModeModel) pick(idx int) (PlanModeModel, tea.Cmd) {
 	m.Active = false
 	m.options = nil
 	return m, func() tea.Msg {
-		return PlanProceedMsg{Mode: opt.mode, Fresh: opt.fresh}
+		return PlanProceedMsg{Role: opt.role, Yolo: opt.yolo, Fresh: opt.fresh}
 	}
 }
 
@@ -124,7 +122,7 @@ func (m PlanModeModel) View() string {
 	if width < 20 {
 		width = 20
 	}
-	lines := []string{rail + " " + m.styles.WarnBadge.Render(" PLAN READY ") + " " + dim.Render("how do you want to proceed?")}
+	lines := []string{rail + " " + m.styles.WarnBadge.Render(" SCOUT READY ") + " " + dim.Render("how do you want to proceed?")}
 	for i, opt := range m.options {
 		label := pad(i+1) + opt.label
 		wrapped := wrapHanging(label, width)
@@ -139,7 +137,7 @@ func (m PlanModeModel) View() string {
 			}
 		}
 	}
-	lines = append(lines, rail+" "+dim.Render("↑↓ move · 1-9 pick · enter select · esc keep planning"))
+	lines = append(lines, rail+" "+dim.Render("↑↓ move · 1-9 pick · enter select · esc keep scouting"))
 	return strings.Join(lines, "\n")
 }
 
@@ -206,19 +204,28 @@ func (m Model) clearForFreshSession() (Model, error) {
 	return m, nil
 }
 
-// onPlanProceed applies a post-plan pick: switch mode, optionally clear context
-// for a fresh session, then auto-submit a continuation turn so plan mode hands
-// off to building instead of silently no-opping.
+// onPlanProceed applies a post-scout pick: switch role (+ optional yolo),
+// optionally clear context for a fresh session, then auto-submit a continuation
+// turn so scout hands off to building instead of silently no-opping.
 func (m Model) onPlanProceed(c PlanProceedMsg) (tea.Model, tea.Cmd) {
 	plan := m.pendingPlan
 	m.pendingPlan = ""
-	// keep planning: leave mode and context untouched.
-	if c.Mode == "" {
+	// keep scouting: leave role and context untouched.
+	if c.Role == "" {
 		return m, nil
 	}
-	m.mode = c.Mode
+	m.role = c.Role
+	m.thinking = roleThinking(c.Role)
 	if m.eng != nil {
-		m.eng.Cfg.Mode = c.Mode
+		m.eng.Cfg.Role = c.Role
+		m.eng.Cfg.Thinking = m.thinking
+	}
+	if c.Yolo {
+		m.yolo = true
+		if m.eng != nil {
+			m.eng.Cfg.Yolo = true
+		}
+		_ = PersistSetting("", "yolo", true)
 	}
 	if c.Fresh {
 		nm, err := m.clearForFreshSession()

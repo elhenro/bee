@@ -21,67 +21,84 @@ func TestApplySkillToolGrants(t *testing.T) {
 	_ = reg.Register(fakeTool{"ask_user"})
 	_ = reg.Register(fakeTool{"write"})
 
-	// edit mode dropped ask_user (plan-only); a grant re-adds it.
-	edit := filterToolSpecsForMode([]llm.ToolSpec{{Name: "read"}}, ModeEdit)
-	got := applySkillToolGrants(edit, reg, []string{"ask_user"})
+	// an act turn dropped ask_user (plan-only); a grant re-adds it.
+	act := filterToolSpecsForRole([]llm.ToolSpec{{Name: "read"}}, RoleWorker, false)
+	got := applySkillToolGrants(act, reg, []string{"ask_user"})
 	if !hasSpec(got, "ask_user") {
 		t.Error("grant should re-add plan-only ask_user")
 	}
 
-	// a non-plan-only grant (write) must NOT be force-added in plan mode —
-	// plan mode's read-only guarantee stays intact.
-	plan := filterToolSpecsForMode([]llm.ToolSpec{{Name: "read"}}, ModePlan)
-	got = applySkillToolGrants(plan, reg, []string{"write"})
+	// a non-plan-only grant (write) must NOT be force-added on a read-only turn —
+	// the read-only guarantee stays intact.
+	ro := filterToolSpecsForRole([]llm.ToolSpec{{Name: "read"}}, RoleScout, true)
+	got = applySkillToolGrants(ro, reg, []string{"write"})
 	if hasSpec(got, "write") {
-		t.Error("grant must not re-enable non-plan-only write in plan mode")
+		t.Error("grant must not re-enable non-plan-only write on a read-only turn")
 	}
 
 	// nil grant and nil registry are no-ops.
-	if out := applySkillToolGrants(edit, nil, []string{"ask_user"}); len(out) != len(edit) {
+	if out := applySkillToolGrants(act, nil, []string{"ask_user"}); len(out) != len(act) {
 		t.Error("nil registry should be a no-op")
 	}
-	if out := applySkillToolGrants(edit, reg, nil); len(out) != len(edit) {
+	if out := applySkillToolGrants(act, reg, nil); len(out) != len(act) {
 		t.Error("nil grant should be a no-op")
 	}
 }
 
-func TestParseMode(t *testing.T) {
-	cases := map[string]Mode{
-		"plan":   ModePlan,
-		"PLAN":   ModePlan,
-		" auto ": ModeAuto,
-		"yolo":   ModeYolo,
-		"YOLO":   ModeYolo,
-		"edit":   ModeEdit,
-		"":       ModeEdit,
-		"junk":   ModeEdit,
+func TestParseRole(t *testing.T) {
+	cases := map[string]Role{
+		"worker":     RoleWorker,
+		"WORKER":     RoleWorker,
+		" scout ":    RoleScout,
+		"queen":      RoleQueen,
+		"QUEEN":      RoleQueen,
+		"":           RoleWorker,
+		"junk":       RoleWorker,
+		"plan":       RoleScout,  // legacy mode
+		"auto":       RoleWorker, // legacy mode
+		"edit":       RoleWorker, // legacy mode
+		"yolo":       RoleWorker, // legacy mode (toggle handled separately)
+		"mastermind": RoleQueen,  // legacy effort tier
 	}
 	for in, want := range cases {
-		if got := ParseMode(in); got != want {
-			t.Errorf("ParseMode(%q) = %q, want %q", in, got, want)
+		if got := ParseRole(in); got != want {
+			t.Errorf("ParseRole(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
 
-func TestParseClassifyOutput(t *testing.T) {
-	cases := map[string]Mode{
-		"plan":         ModePlan,
-		"  PLAN.":      ModePlan,
-		"\"plan\"":     ModePlan,
-		"plan mode":    ModePlan,
-		"edit":         ModeEdit,
-		"unknown":      ModeEdit,
-		"":             ModeEdit,
-		"let me think": ModeEdit,
+func TestRoleThinking(t *testing.T) {
+	cases := map[Role]llm.Thinking{
+		RoleWorker: llm.ThinkingAuto,
+		RoleScout:  llm.ThinkingHigh,
+		RoleQueen:  llm.ThinkingMax,
 	}
-	for in, want := range cases {
-		if got := parseClassifyOutput(in); got != want {
-			t.Errorf("parseClassifyOutput(%q) = %q, want %q", in, got, want)
+	for r, want := range cases {
+		if got := RoleThinking(r); got != want {
+			t.Errorf("RoleThinking(%q) = %q, want %q", r, got, want)
 		}
 	}
 }
 
-func TestFilterToolSpecsForMode(t *testing.T) {
+func TestParseClassifyReadOnly(t *testing.T) {
+	cases := map[string]bool{
+		"plan":         true,
+		"  PLAN.":      true,
+		"\"plan\"":     true,
+		"plan mode":    true,
+		"edit":         false,
+		"unknown":      false,
+		"":             false,
+		"let me think": false,
+	}
+	for in, want := range cases {
+		if got := parseClassifyReadOnly(in); got != want {
+			t.Errorf("parseClassifyReadOnly(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestFilterToolSpecsForRole(t *testing.T) {
 	specs := []llm.ToolSpec{
 		{Name: "read"},
 		{Name: "search"},
@@ -89,42 +106,52 @@ func TestFilterToolSpecsForMode(t *testing.T) {
 		{Name: "edit"},
 		{Name: "write"},
 		{Name: "knowledge_search"},
+		{Name: "web_search"},
 	}
-	// edit passes through
-	if got := filterToolSpecsForMode(specs, ModeEdit); len(got) != len(specs) {
-		t.Errorf("ModeEdit should pass through %d specs, got %d", len(specs), len(got))
+	// worker act turn passes everything through (no plan-only tools present)
+	if got := filterToolSpecsForRole(specs, RoleWorker, false); len(got) != len(specs) {
+		t.Errorf("worker act should pass through %d specs, got %d", len(specs), len(got))
 	}
-	// yolo gets the same full surface as edit
-	if got := filterToolSpecsForMode(specs, ModeYolo); len(got) != len(specs) {
-		t.Errorf("ModeYolo should pass through %d specs, got %d", len(specs), len(got))
-	}
-	// plan drops mutators
-	got := filterToolSpecsForMode(specs, ModePlan)
+	// a read-only worker turn drops mutators (and web — worker read-only is not scout)
+	got := filterToolSpecsForRole(specs, RoleWorker, true)
 	for _, s := range got {
-		if !planSafeTools[s.Name] {
-			t.Errorf("ModePlan leaked mutator %q", s.Name)
+		if !readOnlyTools[s.Name] {
+			t.Errorf("worker read-only leaked %q", s.Name)
 		}
 	}
 	if len(got) != 3 { // read, search, knowledge_search
-		t.Errorf("ModePlan filtered set size = %d, want 3", len(got))
+		t.Errorf("worker read-only set size = %d, want 3", len(got))
+	}
+	// scout keeps the read-only whitelist PLUS web tools
+	scout := filterToolSpecsForRole(specs, RoleScout, true)
+	if !hasSpec(scout, "web_search") {
+		t.Error("scout should keep web_search")
+	}
+	for _, s := range scout {
+		if !readOnlyTools[s.Name] && !scoutExtraTools[s.Name] {
+			t.Errorf("scout leaked mutator %q", s.Name)
+		}
+	}
+	if len(scout) != 4 { // read, search, knowledge_search, web_search
+		t.Errorf("scout set size = %d, want 4", len(scout))
 	}
 }
 
-func TestFilterToolSpecsForMode_AskUserPlanOnly(t *testing.T) {
+func TestFilterToolSpecsForRole_AskUserPlanOnly(t *testing.T) {
 	specs := []llm.ToolSpec{{Name: "read"}, {Name: "ask_user"}, {Name: "write"}}
 
-	// plan mode keeps ask_user (it's plan-safe)
-	plan := filterToolSpecsForMode(specs, ModePlan)
-	if !hasSpec(plan, "ask_user") {
-		t.Error("ModePlan should keep ask_user")
+	// read-only turn keeps ask_user (it's read-only-safe)
+	ro := filterToolSpecsForRole(specs, RoleScout, true)
+	if !hasSpec(ro, "ask_user") {
+		t.Error("read-only turn should keep ask_user")
 	}
-	// edit mode drops ask_user (plan-only) but keeps everything else
-	edit := filterToolSpecsForMode(specs, ModeEdit)
-	if hasSpec(edit, "ask_user") {
-		t.Error("ModeEdit should drop plan-only ask_user")
+	// act turn drops ask_user (plan-only) but keeps everything else
+	act := filterToolSpecsForRole(specs, RoleWorker, false)
+	if hasSpec(act, "ask_user") {
+		t.Error("act turn should drop plan-only ask_user")
 	}
-	if !hasSpec(edit, "read") || !hasSpec(edit, "write") {
-		t.Error("ModeEdit should keep non-plan-only tools")
+	if !hasSpec(act, "read") || !hasSpec(act, "write") {
+		t.Error("act turn should keep non-plan-only tools")
 	}
 }
 
@@ -137,11 +164,19 @@ func hasSpec(specs []llm.ToolSpec, name string) bool {
 	return false
 }
 
-func TestModePromptPrefix(t *testing.T) {
-	if modePromptPrefix(ModeEdit) != "" {
-		t.Error("ModeEdit must have empty prefix")
+func TestRolePromptPrefix(t *testing.T) {
+	if rolePromptPrefix(RoleWorker, false) != "" {
+		t.Error("act turn must have empty prefix")
 	}
-	if modePromptPrefix(ModePlan) == "" {
-		t.Error("ModePlan prefix must be non-empty")
+	if rolePromptPrefix(RoleWorker, true) == "" {
+		t.Error("read-only worker turn prefix must be non-empty")
+	}
+	scout := rolePromptPrefix(RoleScout, true)
+	if scout == "" {
+		t.Error("scout prefix must be non-empty")
+	}
+	// scout gets the extra web nudge that a plain read-only worker turn doesn't.
+	if scout == rolePromptPrefix(RoleWorker, true) {
+		t.Error("scout prefix should add the web-tools nudge")
 	}
 }

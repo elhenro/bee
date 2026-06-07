@@ -106,16 +106,20 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		recs = r
 	}
 
-	// resolve effective mode: auto fires a side classifier off userText.
-	// Local providers skip the classifier — round-trip is expensive on slow
-	// local models; default to edit so tools stay available.
-	mode := ParseMode(e.Cfg.Mode)
-	if mode == ModeAuto {
+	// resolve role + per-turn posture. worker fires a side classifier off
+	// userText to pick read-only vs act so small models don't reflex into shell
+	// on a greeting. Local providers skip the classifier — the round-trip is
+	// expensive on slow local models; default to act so tools stay available.
+	// scout is always read-only; queen never reaches here (the TUI routes queen
+	// turns through the hive).
+	role := ParseRole(e.Cfg.Role)
+	readOnly := role == RoleScout
+	if role == RoleWorker && !e.SkipPostureClassifier {
 		switch {
 		case config.IsLocalProvider(e.Cfg.DefaultProvider):
-			mode = ModeEdit
+			readOnly = false
 		default:
-			mode = ClassifyMode(ctx, e.Provider, e.Cfg.DefaultModel, userText)
+			readOnly = classifyPosture(ctx, e.Provider, e.Cfg.DefaultModel, userText)
 		}
 	}
 
@@ -136,8 +140,8 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// no-op when the profile uses tool_format=xml (schema is nilled by the
 	// textmode wrapper before it reaches the wire).
 	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg)
-	// then narrow by mode: plan mode drops mutators entirely.
-	specs = filterToolSpecsForMode(specs, mode)
+	// then narrow by role/posture: a read-only turn drops mutators entirely.
+	specs = filterToolSpecsForRole(specs, role, readOnly)
 	// re-add any plan-only tool a prompt skill granted for this turn (e.g.
 	// /plan granting ask_user so it can prompt the user from edit/auto mode).
 	specs = applySkillToolGrants(specs, e.Tools, e.OnceAllowTools)
@@ -156,13 +160,13 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 
 	// reuse cached system prompt when the inputs fingerprint matches. saves
 	// the Assemble + budget-trim work on every Run when nothing changed.
-	cacheKey := sysPromptCacheKey(e.Cfg, mode, specs, skillManifest, recs, ctxFiles)
+	cacheKey := sysPromptCacheKey(e.Cfg, role, readOnly, specs, skillManifest, recs, ctxFiles)
 	var sys string
 	if e.sysPromptCache.key == cacheKey && cacheKey != "" {
 		sys = e.sysPromptCache.value
 	} else {
 		sys = prompt.Assemble(e.Cfg, specs, skillManifest, recs, ctxFiles)
-		if prefix := modePromptPrefix(mode); prefix != "" {
+		if prefix := rolePromptPrefix(role, readOnly); prefix != "" {
 			sys = prefix + "\n" + sys
 		}
 		if cacheKey != "" {
@@ -218,7 +222,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	unlimited := maxIter <= 0
 	tokenBudget, stallCap := computeBudgetCaps(e.Cfg)
 	for i := 0; unlimited || i < maxIter; i++ {
-		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget, stallCap, mode); err != nil {
+		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget, stallCap, readOnly); err != nil {
 			return res, err
 		}
 		// mid-turn steering: drain pending user input into a synthetic
@@ -263,17 +267,24 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		}
 
 		prof := config.ActiveProfile(e.Cfg)
-		resolvedThinking := llm.ResolveThinking(llm.ParseThinking(e.Cfg.Thinking), e.Cfg.DefaultModel)
+		// thinking is baked per-role when the user hasn't pinned an explicit
+		// override (Cfg.Thinking empty). a CLI/env override sets a concrete
+		// value that wins here.
+		think := llm.ParseThinking(e.Cfg.Thinking)
+		if strings.TrimSpace(e.Cfg.Thinking) == "" {
+			think = RoleThinking(role)
+		}
+		resolvedThinking := llm.ResolveThinking(think, e.Cfg.DefaultModel)
 		reqSys := sys
 		// Qwen3 hybrid family (a3b, 235b) consumes `/think` / `/no_think`
 		// via a literal system-prompt token instead of a reasoning_effort wire
-		// field. Plan mode → /think (explicit reasoning); everything else →
+		// field. read-only turn → /think (explicit reasoning); everything else →
 		// /no_think (skip the reasoning trace — saves 200-2000 tokens per turn
 		// on a sparse MoE). User-explicit Thinking=medium+ overrides.
 		var templateKwargs map[string]any
 		if llm.IsQwen3HybridThinking(e.Cfg.DefaultModel) {
 			eff := resolvedThinking
-			if mode == ModePlan && eff == llm.ThinkingOff {
+			if readOnly && eff == llm.ThinkingOff {
 				eff = llm.ThinkingMedium
 			}
 			if hint := llm.Qwen3ThinkingHint(eff); hint != "" {
@@ -450,7 +461,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		blocks, repeatErr := observeRepeats(e, toolUses, toolResults, blocks)
 		blocks = observeDuplicateWrites(e, toolUses, toolResults, blocks)
 		blocks = observeEditNoVerify(e, toolUses, toolResults, blocks)
-		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget, mode)
+		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget, readOnly)
 		toolMsg := types.Message{
 			ID:       newID(),
 			ParentID: assistantMsg.ID,

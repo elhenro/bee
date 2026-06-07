@@ -40,9 +40,10 @@ func TestRun_ReasoningOnlyTurn_Nudges(t *testing.T) {
 	prov := &reasoningThenTextProvider{}
 	cfg := config.Defaults()
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	cfg.Mode = "edit"
+	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	eng := &Engine{
+		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},
@@ -122,7 +123,7 @@ func TestRun_FailedToolCallShape_NudgesFormatCorrection(t *testing.T) {
 	prov := &jsonToolAttemptThenSuccess{}
 	cfg := config.Defaults()
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	cfg.Mode = "edit"
+	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	reg := tools.NewRegistry()
 	// register a stub `shell` so the spec list carries the name that the
@@ -131,6 +132,7 @@ func TestRun_FailedToolCallShape_NudgesFormatCorrection(t *testing.T) {
 		return tools.Result{}, nil
 	}})
 	eng := &Engine{
+		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    reg,
 		Memory:   stubMemStore{},
@@ -166,9 +168,10 @@ func TestRun_ReasoningOnlyTurn_NudgesAtMostOnce(t *testing.T) {
 	prov := &reasoningOnlyAlwaysProvider{}
 	cfg := config.Defaults()
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	cfg.Mode = "edit"
+	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	eng := &Engine{
+		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},

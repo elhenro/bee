@@ -40,8 +40,9 @@ func (p *loopingProvider) Stream(ctx context.Context, _ llm.Request) (<-chan llm
 func TestStream_CutsRepetitionLoopAndBails(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	cfg.Mode = "edit" // skip auto-classify (would call the looping provider)
+	cfg.Role = "worker" // skip auto-classify (would call the looping provider)
 	eng := &Engine{
+		SkipPostureClassifier: true,
 		Provider: &loopingProvider{},
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},

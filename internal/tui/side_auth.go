@@ -99,6 +99,16 @@ func (s *tuiSide) OpenLogin() error {
 	return nil
 }
 
+// OpenTutorial flips a sentinel Model.Update consumes to replay the first-run
+// walkthrough. Used by the /tutorial slash command.
+func (s *tuiSide) OpenTutorial() error {
+	if s.m == nil {
+		return errors.New("no tui")
+	}
+	s.m.tutorialRequested = true
+	return nil
+}
+
 // Logout removes both the stored OAuth token AND any stored api key file
 // for the named provider. Either may be absent — both deletes are no-ops
 // on ErrNotExist.

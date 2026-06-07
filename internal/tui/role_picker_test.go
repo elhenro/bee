@@ -8,55 +8,72 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 )
 
-// TestEffortLevels_IncludesMastermind guards the picker exposing the top tier.
-func TestEffortLevels_IncludesMastermind(t *testing.T) {
-	var found bool
-	for _, e := range effortLevels {
-		if e.value == "mastermind" {
-			found = true
+// TestRoleLevels_CoversAllRoles guards the picker exposing every role.
+func TestRoleLevels_CoversAllRoles(t *testing.T) {
+	want := map[string]bool{"worker": false, "scout": false, "queen": false}
+	for _, e := range roleLevels {
+		if _, ok := want[e.value]; ok {
+			want[e.value] = true
 		}
 	}
-	if !found {
-		t.Fatalf("effortLevels missing the mastermind row: %+v", effortLevels)
+	for v, found := range want {
+		if !found {
+			t.Errorf("roleLevels missing %q row: %+v", v, roleLevels)
+		}
 	}
 }
 
-// TestSetThinking_MastermindTier verifies selecting mastermind pins thinking to
-// max + flips the hive flag, and that leaving for a plain tier clears it.
-func TestSetThinking_MastermindTier(t *testing.T) {
+// TestSetRole verifies switching role mirrors the baked thinking budget into
+// the engine config and rejects unknown roles.
+func TestSetRole(t *testing.T) {
 	// redirect persistence to a throwaway file so the real config is untouched.
 	t.Setenv("BEE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
 
 	eng := &loop.Engine{Cfg: config.Defaults()}
 	s := &tuiSide{m: &Model{eng: eng}}
 
-	if err := s.SetThinking("mastermind"); err != nil {
-		t.Fatalf("SetThinking(mastermind): %v", err)
+	if err := s.SetRole("queen"); err != nil {
+		t.Fatalf("SetRole(queen): %v", err)
 	}
-	if !s.GetMastermind() {
-		t.Error("GetMastermind = false, want true after selecting mastermind")
+	if s.GetRole() != "queen" {
+		t.Errorf("GetRole = %q, want queen", s.GetRole())
 	}
-	if !eng.Cfg.Mastermind {
-		t.Error("eng.Cfg.Mastermind = false, want true")
+	if eng.Cfg.Role != "queen" {
+		t.Errorf("eng.Cfg.Role = %q, want queen", eng.Cfg.Role)
 	}
-	if eng.Cfg.Thinking != "max" {
+	if eng.Cfg.Thinking != "max" { // queen bakes max
 		t.Errorf("eng.Cfg.Thinking = %q, want max", eng.Cfg.Thinking)
 	}
-	if got := s.GetThinking(); got != "mastermind" {
-		t.Errorf("GetThinking = %q, want mastermind", got)
+
+	if err := s.SetRole("scout"); err != nil {
+		t.Fatalf("SetRole(scout): %v", err)
+	}
+	if eng.Cfg.Thinking != "high" { // scout bakes high
+		t.Errorf("eng.Cfg.Thinking = %q, want high", eng.Cfg.Thinking)
 	}
 
-	// switch to a normal tier — hive turns off, thinking follows the new level.
-	if err := s.SetThinking("high"); err != nil {
-		t.Fatalf("SetThinking(high): %v", err)
+	if err := s.SetRole("bogus"); err == nil {
+		t.Error("SetRole(bogus) should reject an unknown role")
 	}
-	if s.GetMastermind() {
-		t.Error("GetMastermind = true, want false after leaving for high")
+}
+
+// TestSetYolo flips the auto-approve toggle independent of role.
+func TestSetYolo(t *testing.T) {
+	t.Setenv("BEE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+	eng := &loop.Engine{Cfg: config.Defaults()}
+	s := &tuiSide{m: &Model{eng: eng}}
+
+	if err := s.SetYolo(true); err != nil {
+		t.Fatalf("SetYolo(true): %v", err)
 	}
-	if eng.Cfg.Mastermind {
-		t.Error("eng.Cfg.Mastermind = true, want false")
+	if !s.GetYolo() || !eng.Cfg.Yolo {
+		t.Error("yolo should be armed on both model and engine config")
 	}
-	if got := s.GetThinking(); got != "high" {
-		t.Errorf("GetThinking = %q, want high", got)
+	// switching role must not clear the yolo toggle.
+	if err := s.SetRole("scout"); err != nil {
+		t.Fatalf("SetRole: %v", err)
+	}
+	if !s.GetYolo() {
+		t.Error("yolo toggle should survive a role switch")
 	}
 }

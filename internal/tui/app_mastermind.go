@@ -30,7 +30,7 @@ import (
 // here is the decomposition + critic verify, not wall-clock — which is also what
 // lifts small/local models, where parallelism wouldn't help anyway. Parallel
 // workers on isolated worktrees (the `swarm --isolated` path) is a follow-up.
-func (m Model) runMastermind(ctx context.Context, content []types.ContentBlock, history, prior []types.Message) tea.Cmd {
+func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan struct{}, content []types.ContentBlock, history, prior []types.Message) tea.Cmd {
 	planner := m.eng
 	warn := m.warnCh
 	live := m.liveMsgCh
@@ -42,6 +42,10 @@ func (m Model) runMastermind(ctx context.Context, content []types.ContentBlock, 
 	}
 
 	return func() tea.Msg {
+		defer close(done)
+		if prevDone != nil {
+			<-prevDone // wait for a prior (possibly esc'd) run to fully return
+		}
 		var mu sync.Mutex
 		var streamed []types.Message
 		var idN int
@@ -102,7 +106,7 @@ func (m Model) runMastermind(ctx context.Context, content []types.ContentBlock, 
 		// context; workers stay focused on their single sub-task (no history).
 		plannerEng, plannerSess, err := spawn("planner")
 		if err != nil {
-			return turnDoneMsg{err: fmt.Errorf("mastermind: planner: %w", err)}
+			return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: planner: %w", err)}
 		}
 		sessions = append(sessions, plannerSess)
 		plannerEng.InitialMessages = history
@@ -111,7 +115,7 @@ func (m Model) runMastermind(ctx context.Context, content []types.ContentBlock, 
 		for i := 0; i < workerCount; i++ {
 			w, sess, werr := spawn(fmt.Sprintf("worker-%d", i))
 			if werr != nil {
-				return turnDoneMsg{err: fmt.Errorf("mastermind: worker %d: %w", i, werr)}
+				return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: worker %d: %w", i, werr)}
 			}
 			sessions = append(sessions, sess)
 			workers = append(workers, w)
@@ -119,7 +123,7 @@ func (m Model) runMastermind(ctx context.Context, content []types.ContentBlock, 
 
 		critic, criticSess, err := spawn("critic")
 		if err != nil {
-			return turnDoneMsg{err: fmt.Errorf("mastermind: critic: %w", err)}
+			return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: critic: %w", err)}
 		}
 		sessions = append(sessions, criticSess)
 
@@ -150,7 +154,7 @@ func (m Model) runMastermind(ctx context.Context, content []types.ContentBlock, 
 		mu.Lock()
 		out := append(append([]types.Message(nil), prior...), streamed...)
 		mu.Unlock()
-		return turnDoneMsg{result: loop.RunResult{Messages: out, FinalText: final}, err: runErr}
+		return turnDoneMsg{gen: gen, result: loop.RunResult{Messages: out, FinalText: final}, err: runErr}
 	}
 }
 

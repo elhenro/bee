@@ -81,20 +81,21 @@ func newEngine(p llm.Provider, reg *tools.Registry) (*Engine, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	cfg := config.Defaults()
 	cfg.Caveman = "off"
-	// force edit mode in tests so the classifier doesn't burn a stub script.
-	cfg.Mode = "edit"
+	// worker role in tests, classifier disabled so it doesn't burn a stub script.
+	cfg.Role = "worker"
 	// pin profile so tests don't pick up tiny's MaxIterations=12 from the
 	// auto-resolution against deepseek-flash.
 	cfg.Profile = "normal"
 	// disable sandbox wrapping in tests so shell tool input stays inspectable
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	return &Engine{
-		Provider: p,
-		Tools:    reg,
-		Memory:   stubMemStore{},
-		Cfg:      cfg,
-		Cwd:      ".",
-		Stdout:   buf,
+		Provider:              p,
+		Tools:                 reg,
+		Memory:                stubMemStore{},
+		Cfg:                   cfg,
+		Cwd:                   ".",
+		Stdout:                buf,
+		SkipPostureClassifier: true,
 	}, buf
 }
 
@@ -619,12 +620,12 @@ func (r *recordingProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm
 	return ch, nil
 }
 
-func TestRun_ClassifierCalled_HostedAutoMode(t *testing.T) {
+func TestRun_ClassifierCalled_HostedWorkerRole(t *testing.T) {
 	p := &recordingProvider{}
 	buf := &bytes.Buffer{}
 	cfg := config.Defaults()
 	cfg.Caveman = "off"
-	cfg.Mode = "auto"
+	cfg.Role = "worker"
 	cfg.Profile = "normal"
 	cfg.DefaultProvider = "openrouter"
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
@@ -645,12 +646,12 @@ func TestRun_ClassifierCalled_HostedAutoMode(t *testing.T) {
 	}
 }
 
-func TestRun_ClassifierSkipped_LocalAutoMode(t *testing.T) {
+func TestRun_ClassifierSkipped_LocalWorkerRole(t *testing.T) {
 	p := &recordingProvider{}
 	buf := &bytes.Buffer{}
 	cfg := config.Defaults()
 	cfg.Caveman = "off"
-	cfg.Mode = "auto"
+	cfg.Role = "worker"
 	cfg.Profile = "normal"
 	cfg.DefaultProvider = "ollama"
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}

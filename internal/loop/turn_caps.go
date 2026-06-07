@@ -39,12 +39,12 @@ func computeBudgetCaps(cfg config.Config) (tokenBudget, stallCap int) {
 // re-arm the token warnings, and continue. Only once the recovery budget is
 // spent does it hard-stop. Returns a non-nil error only on hard stop; callers
 // return it as the Run error verbatim. msgs is mutated in place on recovery.
-func (e *Engine) handleBudgetCaps(ctx context.Context, msgs *[]types.Message, currentIter, tokenBudget, stallCap int, mode Mode) error {
+func (e *Engine) handleBudgetCaps(ctx context.Context, msgs *[]types.Message, currentIter, tokenBudget, stallCap int, readOnly bool) error {
 	// read-only stall: model kept calling reads for stallCap iters without any
 	// mutation — almost always stuck in an explore-loop. no recovery. disabled
-	// in plan mode: read-only is the intended behavior there, so the streak is
-	// not a stall and must not hard-stop a legit plan run.
-	if mode != ModePlan && e.noMutationStreak >= stallCap {
+	// on read-only turns: read-only is the intended behavior there, so the
+	// streak is not a stall and must not hard-stop a legit research run.
+	if !readOnly && e.noMutationStreak >= stallCap {
 		return fmt.Errorf("loop: %d read-only iters with no edits, stopping — type 'continue' to resume", e.noMutationStreak)
 	}
 	// token budget: cumulative input+output across iterations. only enforced

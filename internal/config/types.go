@@ -30,11 +30,22 @@ type Config struct {
 	FastModel string `toml:"fast_model"`
 	Caveman   string `toml:"caveman"`
 	Profile   string `toml:"profile"`
-	Thinking  string `toml:"thinking"` // auto | off | low | medium | high
-	// Mode gates how the agent reacts to user input. plan = read-only
-	// research + proposed plan, no mutations. edit = full tool surface
-	// (default). auto = side-LLM classifier picks plan|edit per turn.
-	Mode       string                    `toml:"mode"` // plan | auto | edit
+	// Thinking is the reasoning budget. Empty = derive from Role per turn
+	// (worker→auto, scout→high, queen→max). A non-empty value (set via
+	// --thinking/--effort/BEE_EFFORT) is an explicit override that wins.
+	Thinking string `toml:"thinking"` // "" | auto | off | low | medium | high | max
+	// Role is the agent stance, cycled with shift+tab. worker = full surface
+	// with a per-turn read|act classifier (default); scout = read-only research
+	// + web; queen = spawns a hive. Each role bundles tool surface + reasoning
+	// budget + orchestration.
+	Role string `toml:"role"` // worker | scout | queen
+	// Yolo auto-approves dangerous shell commands without prompting (a separate
+	// safety toggle on any role; alt+y in the TUI, --yolo/--yes headless).
+	Yolo bool `toml:"yolo"`
+	// Mode is the legacy permission axis (plan/auto/edit/yolo), superseded by
+	// Role. Kept only so an old config.toml migrates forward on load — not read
+	// by the engine. See migrateLegacyRoleFields.
+	Mode       string                    `toml:"mode"` // deprecated → Role
 	Sandbox    SandboxConfig             `toml:"sandbox"`
 	Shell      ShellConfig               `toml:"shell"`
 	Memory     MemoryConfig              `toml:"memory"`
@@ -57,21 +68,24 @@ type Config struct {
 	// caret). Default true. Toggle via /settings; persists across launches.
 	ShowLoader bool `toml:"show_loader"`
 
+	// TutorialDone records that the user has finished or dismissed the
+	// first-run interactive walkthrough. false (default) shows the welcome
+	// gate on the next TUI start; set true to suppress it. Replay anytime
+	// with /tutorial. Persisted by the tutorial flow, not /settings.
+	TutorialDone bool `toml:"tutorial_done"`
+
 	// MaxIterations caps tool-use rounds per Run. 0 = unlimited (loop until the
 	// token-budget or read-only-stall guard fires). Defaults() seeds DefaultMaxIterations;
 	// raise for tool-heavy agents, set 0 to lift the cap, lower to fail fast.
 	MaxIterations int `toml:"max_iterations"`
 
-	// Mastermind is the top effort tier: every turn spawns a sub-agent hive
-	// (decompose → workers → critic → synthesize) instead of a single turn,
-	// trading time + tokens for the best quality the model can reach — the one
-	// effort level that lifts small/local models, since it adds orchestration
-	// rather than just a bigger reasoning budget. Selected via /effort; the
-	// picker also pins Thinking to max. Off by default. Persists across launches.
-	Mastermind bool `toml:"mastermind"`
+	// Mastermind is the legacy flag for hive orchestration, superseded by the
+	// queen role. Kept only so an old config.toml migrates forward on load
+	// (mastermind=true → role=queen). Not read by the engine.
+	Mastermind bool `toml:"mastermind"` // deprecated → Role=queen
 
-	// MastermindWorkers is how many worker bees the mastermind hive spawns per
-	// turn. Defaults() seeds 3. The planner + critic are separate clones on top.
+	// MastermindWorkers is how many worker bees the queen hive spawns per turn.
+	// Defaults() seeds 3. The planner + critic are separate clones on top.
 	MastermindWorkers int `toml:"mastermind_workers"`
 
 	// Verbose unlocks full tool-output rendering in the TUI (compact one-line
@@ -129,7 +143,7 @@ type Config struct {
 	ShowContextPct  bool `toml:"show_context_pct"`  // "4%" next to glyph
 	ShowModel       bool `toml:"show_model"`        // provider/model label
 	ShowCwd         bool `toml:"show_cwd"`          // current working dir
-	ShowEffort      bool `toml:"show_effort"`       // "t:max" thinking level
+	ShowEffort      bool `toml:"show_effort"`       // role chip (worker/scout/queen)
 	ShowTurnTimer   bool `toml:"show_turn_timer"`   // ⏱ live / final elapsed
 	ShowGitBranch   bool `toml:"show_git_branch"`   // ⎇ current git branch
 	ShowTotalTokens bool `toml:"show_total_tokens"` // Σ session tokens (in+out)

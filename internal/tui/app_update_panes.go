@@ -38,15 +38,15 @@ func (m Model) onOpenLogin(_ openLoginMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) onOpenEffort(_ openEffortMsg) (tea.Model, tea.Cmd) {
-	if m.effortPane == nil {
-		m.effortPane = NewEffortPane()
+func (m Model) onOpenRole(_ openRoleMsg) (tea.Model, tea.Cmd) {
+	if m.rolePane == nil {
+		m.rolePane = NewRolePane()
 	}
-	cur := m.thinking
-	if m.mastermind {
-		cur = "mastermind"
+	cur := m.role
+	if cur == "" {
+		cur = "worker"
 	}
-	m.effortPane.Show(cur)
+	m.rolePane.Show(cur)
 	return m, nil
 }
 

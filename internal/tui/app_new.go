@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/elhenro/bee/internal/caveman"
+	"github.com/elhenro/bee/internal/checkpoint"
 	"github.com/elhenro/bee/internal/commands"
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/loop"
 )
@@ -53,23 +53,26 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 	reg := commands.NewRegistry()
 	commands.RegisterBuiltins(reg)
 
-	thinking := string(llm.ThinkingOff)
+	role := string(loop.RoleWorker)
+	if eng != nil && eng.Cfg.Role != "" {
+		role = string(loop.ParseRole(eng.Cfg.Role))
+	}
+	// thinking mirrors the role's baked budget unless the user pinned an
+	// explicit override in config.
+	thinking := roleThinking(role)
 	if eng != nil && eng.Cfg.Thinking != "" {
 		thinking = string(llm.ParseThinking(eng.Cfg.Thinking))
-	}
-
-	mode := string(loop.ModeAuto)
-	if eng != nil && eng.Cfg.Mode != "" {
-		mode = string(loop.ParseMode(eng.Cfg.Mode))
-		// resolve auto: local providers skip the classifier, land in edit.
-		if mode == "auto" && (eng.Cfg.Profile == "tiny" || config.IsLocalProvider(eng.Cfg.DefaultProvider)) {
-			mode = "edit"
-		}
 	}
 
 	var pk *Picker
 	if eng != nil {
 		pk = NewPicker(eng.Cfg)
+	}
+
+	// best-effort: a nil store disables checkpoints rather than failing startup.
+	var ckpt *checkpoint.Store
+	if cwd != "" {
+		ckpt, _ = checkpoint.Open(cwd)
 	}
 
 	return Model{
@@ -82,8 +85,8 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		scope:           scope,
 		caveLvl:         lvl,
 		thinking:        thinking,
-		mode:            mode,
-		mastermind:      eng != nil && eng.Cfg.Mastermind,
+		role:            role,
+		yolo:            eng != nil && eng.Cfg.Yolo,
 		eng:             eng,
 		approval:        NewApprovalModel(styles, keys),
 		askModel:        NewAskModel(styles),
@@ -95,9 +98,11 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		palette:         NewPalette(reg, nil),
 		tree:            NewSessionTree(),
 		resume:          NewResumePicker(),
+		rewind:          NewRewindPicker(),
+		checkpoints:     ckpt,
 		history:         NewHistoryPicker(),
 		picker:          pk,
-		effortPane:      NewEffortPane(),
+		rolePane:        NewRolePane(),
 		settingsPane:    NewSettingsPane(),
 		toolsPane:       NewToolsPane(),
 		hive:            NewHive(),

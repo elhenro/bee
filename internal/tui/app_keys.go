@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -119,21 +121,34 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.CavemanCycle):
 		m.caveLvl = cycleCaveman(m.caveLvl)
 		return m, nil
-	case key.Matches(msg, m.keys.ThinkingCycle):
-		m.thinking = cycleThinking(m.thinking)
+	case key.Matches(msg, m.keys.RoleCycle):
+		prev := m.role
+		m.role = cycleRole(m.role)
+		m.thinking = roleThinking(m.role)
 		if m.eng != nil {
+			m.eng.Cfg.Role = m.role
 			m.eng.Cfg.Thinking = m.thinking
 		}
-		_ = PersistSetting("", "thinking", m.thinking)
-		return m, nil
-	case key.Matches(msg, m.keys.ModeCycle):
-		prov := ""
-		if m.eng != nil {
-			prov = m.eng.Cfg.DefaultProvider
+		_ = PersistSetting("", "role", m.role)
+		// entering queen: arm exactly one rainbow glow loop + a one-shot warning
+		// that every turn now spawns a hive.
+		if m.role == "queen" && prev != "queen" {
+			m.warning = "queen: every turn now spawns a hive — slower, higher quality, more tokens"
+			m.warningExpires = time.Now().Add(warningTTL)
+			return m, tea.Batch(glowTickCmd(), warningFadeCmd())
 		}
-		m.mode = cycleMode(m.mode, prov)
+		return m, nil
+	case key.Matches(msg, m.keys.YoloToggle):
+		m.yolo = !m.yolo
 		if m.eng != nil {
-			m.eng.Cfg.Mode = m.mode
+			m.eng.Cfg.Yolo = m.yolo
+		}
+		_ = PersistSetting("", "yolo", fmt.Sprintf("%v", m.yolo))
+		// loud one-shot warning when arming; disarming is quiet.
+		if m.yolo {
+			m.warning = "yolo ON — dangerous shell auto-approves, no prompt"
+			m.warningExpires = time.Now().Add(warningTTL)
+			return m, warningFadeCmd()
 		}
 		return m, nil
 	}

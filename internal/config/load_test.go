@@ -17,6 +17,64 @@ func writeConfig(t *testing.T, dir, body string) {
 	t.Setenv("BEE_CONFIG", path)
 }
 
+func TestMigrateLegacyRoleFields(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       Config
+		wantRole string
+		wantYolo bool
+	}{
+		{"legacy plan", Config{Mode: "plan"}, "scout", false},
+		{"legacy auto", Config{Mode: "auto"}, "worker", false},
+		{"legacy edit", Config{Mode: "edit"}, "worker", false},
+		{"legacy yolo", Config{Mode: "yolo"}, "worker", true},
+		{"legacy mastermind wins", Config{Mode: "plan", Mastermind: true}, "queen", false},
+		{"empty defaults to worker", Config{}, "worker", false},
+		{"unknown mode", Config{Mode: "wat"}, "worker", false},
+		{"explicit role respected", Config{Role: "scout", Mode: "yolo"}, "scout", false},
+		{"explicit queen role respected over mastermind", Config{Role: "worker", Mastermind: true}, "worker", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := tc.in
+			migrateLegacyRoleFields(&c)
+			if c.Role != tc.wantRole {
+				t.Errorf("Role = %q, want %q", c.Role, tc.wantRole)
+			}
+			if c.Yolo != tc.wantYolo {
+				t.Errorf("Yolo = %v, want %v", c.Yolo, tc.wantYolo)
+			}
+		})
+	}
+}
+
+func TestLoad_MigratesLegacyConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, `
+default_provider = "openrouter"
+mode = "yolo"
+mastermind = true
+mastermind_workers = 5
+thinking = "high"
+`)
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// mastermind=true wins over mode-derived role.
+	if c.Role != "queen" {
+		t.Errorf("Role = %q, want queen", c.Role)
+	}
+	if !c.Yolo {
+		t.Error("Yolo should be true (migrated from mode=yolo)")
+	}
+	// explicit thinking override survives migration.
+	if c.Thinking != "high" {
+		t.Errorf("Thinking = %q, want high", c.Thinking)
+	}
+}
+
 func TestLoad_MissingFileUsesDefaults(t *testing.T) {
 	t.Setenv("BEE_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
 	t.Setenv("OPENROUTER_API_KEY", "sk-test")

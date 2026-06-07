@@ -27,6 +27,15 @@ func (m Model) claimByPane(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 	}
 
+	// rewind picker modal claims keys while open.
+	if m.rewind != nil && m.rewind.Open() {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			newR, cmd := m.rewind.Update(msg)
+			m.rewind = newR
+			return m, cmd, true
+		}
+	}
+
 	// cost pane claims keys while open.
 	if m.costPane != nil && m.costPane.Open() {
 		if _, ok := msg.(tea.KeyMsg); ok {
@@ -68,10 +77,10 @@ func (m Model) claimByPane(msg tea.Msg) (Model, tea.Cmd, bool) {
 	}
 
 	// effort pane claims keys while open.
-	if m.effortPane != nil && m.effortPane.Open() {
+	if m.rolePane != nil && m.rolePane.Open() {
 		if _, ok := msg.(tea.KeyMsg); ok {
-			newE, cmd := m.effortPane.Update(msg)
-			m.effortPane = newE
+			newE, cmd := m.rolePane.Update(msg)
+			m.rolePane = newE
 			return m, cmd, true
 		}
 	}

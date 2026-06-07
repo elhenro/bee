@@ -10,7 +10,6 @@ import (
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/config"
-	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/loop"
 )
 
@@ -172,6 +171,17 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 	if seed != "" {
 		m = m.WithSeedPrompt(seed)
 	}
+	// first-run walkthrough: show the welcome gate on a fresh interactive start
+	// (not a skill dispatch, not a resume). Deferred past the intro when it
+	// plays (activated from onIntroTick); BEE_NO_TUTORIAL suppresses it.
+	if eng != nil && !eng.Cfg.TutorialDone && seed == "" &&
+		len(eng.InitialMessages) == 0 && os.Getenv("BEE_NO_TUTORIAL") == "" {
+		if m.introActive {
+			m.tutorialPending = true
+		} else {
+			m.tutorial = tutorialState{active: true, phase: tutPhaseGate}
+		}
+	}
 	m.ctx = ctx
 	// Always inline: View() owns only the live region (status + partial +
 	// input), finalized messages get pushed up via tea.Println, terminal
@@ -217,46 +227,28 @@ func (m *Model) currentLeafID() string {
 	return m.messages[len(m.messages)-1].ID
 }
 
-// cycleThinking rotates Auto → Off → Low → Medium → High → Max → Auto.
-func cycleThinking(t string) string {
-	switch llm.ParseThinking(t) {
-	case llm.ThinkingAuto:
-		return string(llm.ThinkingOff)
-	case llm.ThinkingOff:
-		return string(llm.ThinkingLow)
-	case llm.ThinkingLow:
-		return string(llm.ThinkingMedium)
-	case llm.ThinkingMedium:
-		return string(llm.ThinkingHigh)
-	case llm.ThinkingHigh:
-		return string(llm.ThinkingMax)
+// cycleRole rotates worker → scout → queen → worker. No provider special-case:
+// each role bundles its own tool surface + reasoning budget, so there's no auto
+// classifier stop left to skip. Unknown input lands on worker (the default).
+func cycleRole(role string) string {
+	switch loop.ParseRole(role) {
+	case loop.RoleWorker:
+		return string(loop.RoleScout)
+	case loop.RoleScout:
+		return string(loop.RoleQueen)
+	case loop.RoleQueen:
+		return string(loop.RoleWorker)
 	default:
-		return string(llm.ThinkingAuto)
+		return string(loop.RoleWorker)
 	}
 }
 
-// cycleMode rotates plan → auto → edit → yolo → plan. Local providers skip the
-// auto stop — the classifier wastes tokens on slow on-host models and the
-// extra round-trip is more painful than the value of intent-guessing.
-// Unknown input lands on auto (the default) so shift+tab from a fresh session
-// behaves predictably.
-func cycleMode(mode, provider string) string {
-	local := config.IsLocalProvider(provider)
-	switch loop.ParseMode(mode) {
-	case loop.ModePlan:
-		if local {
-			return string(loop.ModeEdit)
-		}
-		return string(loop.ModeAuto)
-	case loop.ModeAuto:
-		return string(loop.ModeEdit)
-	case loop.ModeEdit:
-		return string(loop.ModeYolo)
-	case loop.ModeYolo:
-		return string(loop.ModePlan)
-	default:
-		return string(loop.ModeAuto)
-	}
+// roleThinking is the reasoning budget baked into each role, mirrored into
+// m.thinking for display and into eng.Cfg.Thinking so the engine resolves the
+// same value. Kept here (not via loop.RoleThinking) so the TUI controls the
+// mirror string without a per-turn config dependency.
+func roleThinking(role string) string {
+	return string(loop.RoleThinking(loop.ParseRole(role)))
 }
 
 // cycleCaveman rotates Off → Lite → Full → Ultra → Off.

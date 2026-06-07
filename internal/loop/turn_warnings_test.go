@@ -39,7 +39,7 @@ func TestStallWarning_FirstNudge(t *testing.T) {
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
-	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, ModeEdit)
+	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, false)
 	text := extractWarnText(out)
 	if !strings.Contains(text, "[stall] 3 read-only iters") {
 		t.Errorf("expected first stall nudge, got: %q", text)
@@ -60,7 +60,7 @@ func TestStallWarning_SuppressedInPlanMode(t *testing.T) {
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
-	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, ModePlan)
+	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, true)
 	text := extractWarnText(out)
 	if strings.Contains(text, "[stall]") {
 		t.Errorf("stall nudge should be suppressed in plan mode, got: %q", text)
@@ -77,7 +77,7 @@ func TestStallWarning_EscalateAfterIgnored(t *testing.T) {
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
-	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, ModeEdit)
+	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, false)
 	text := extractWarnText(out)
 	if !strings.Contains(text, "previous nudge ignored") {
 		t.Errorf("expected escalation nudge, got: %q", text)
@@ -98,7 +98,7 @@ func TestStallWarning_EscalateOnceOnly(t *testing.T) {
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
-	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, ModeEdit)
+	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, false)
 	text := extractWarnText(out)
 	if strings.Contains(text, "previous nudge ignored") {
 		t.Error("escalation should not fire twice")
@@ -116,7 +116,7 @@ func TestStallWarning_CatchupFiresBoth(t *testing.T) {
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
-	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, ModeEdit)
+	out := injectIterAndTokenWarnings(e, blocks, 1, 50, 0, false)
 	text := extractWarnText(out)
 	if !strings.Contains(text, "[stall]") {
 		t.Error("expected first-tier stall nudge")

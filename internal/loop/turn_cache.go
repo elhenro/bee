@@ -13,10 +13,11 @@ import (
 )
 
 // sysPromptCacheKey builds a cheap fingerprint of the inputs to prompt.Assemble.
-// inputs include cwd + mode + profile + caveman level + tool specs (name+desc
-// lengths) + skill manifest length + record names/sizes + ctx-file paths/lengths.
+// inputs include cwd + role + posture + profile + caveman level + tool specs
+// (name+desc lengths) + skill manifest length + record names/sizes + ctx-file
+// paths/lengths. read-only is folded in because it flips the prompt prefix.
 // returns "" if any required input is unstable enough to skip caching.
-func sysPromptCacheKey(cfg config.Config, mode Mode, specs []llm.ToolSpec, skillManifest string, recs []knowledge.Record, ctxFiles []prompt.ContextFile) string {
+func sysPromptCacheKey(cfg config.Config, role Role, readOnly bool, specs []llm.ToolSpec, skillManifest string, recs []knowledge.Record, ctxFiles []prompt.ContextFile) string {
 	var b strings.Builder
 	b.WriteString(cfg.DefaultProvider)
 	b.WriteByte('|')
@@ -26,7 +27,9 @@ func sysPromptCacheKey(cfg config.Config, mode Mode, specs []llm.ToolSpec, skill
 	b.WriteByte('|')
 	b.WriteString(cfg.Caveman)
 	b.WriteByte('|')
-	b.WriteString(string(mode))
+	b.WriteString(string(role))
+	b.WriteByte('|')
+	b.WriteString(strconv.FormatBool(readOnly))
 	b.WriteByte('|')
 	for _, s := range specs {
 		b.WriteString(s.Name)

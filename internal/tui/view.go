@@ -56,6 +56,9 @@ func (m Model) View() string {
 	if m.updatePrompt.Active {
 		return overlayCenter(frame, m.updatePrompt.View(), m.width)
 	}
+	if m.tutorial.active {
+		return overlayCenter(frame, m.renderTutorial(), m.width)
+	}
 	// palette, atpicker, picker, history all render inline above the input in
 	// renderBottomBar — no extra overlay needed for any picker-style flow.
 	if m.tree != nil && m.tree.Open() {
@@ -63,6 +66,9 @@ func (m Model) View() string {
 	}
 	if m.resume != nil && m.resume.Open() {
 		return overlayCenter(frame, m.resume.View(m.width, m.height), m.width)
+	}
+	if m.rewind != nil && m.rewind.Open() {
+		return overlayCenter(frame, m.rewind.View(m.width, m.height), m.width)
 	}
 	if m.costPane != nil && m.costPane.Open() {
 		return overlayCenter(frame, m.costPane.View(m.width, m.height), m.width)
@@ -73,8 +79,8 @@ func (m Model) View() string {
 	if m.loginPane != nil && m.loginPane.Open() {
 		return overlayCenter(frame, m.loginPane.View(m.width, m.height), m.width)
 	}
-	if m.effortPane != nil && m.effortPane.Open() {
-		return overlayCenter(frame, m.effortPane.View(m.width, m.height), m.width)
+	if m.rolePane != nil && m.rolePane.Open() {
+		return overlayCenter(frame, m.rolePane.View(m.width, m.height), m.width)
 	}
 	if m.settingsPane != nil && m.settingsPane.Open() {
 		return overlayCenter(frame, m.settingsPane.View(m.width, m.height), m.width)
@@ -158,7 +164,12 @@ func (m Model) renderLive(maxRows int) string {
 			}
 		}
 	}
-	if m.compacting {
+	// tutorial typewriter: render the faked assistant reply in the live region
+	// using the real stream renderer so it looks like a genuine turn.
+	if m.tutorial.active && m.tutorial.typing {
+		parts = append(parts, m.stream.RenderStreaming(m.tutorial.typed, m.loaderFrame))
+	}
+	if m.compacting || m.handoffing {
 		parts = append(parts, m.stream.RenderCompacting(m.loaderFrame))
 	}
 	if m.state == StateError && m.lastErr != "" {
@@ -312,7 +323,7 @@ func (m Model) renderBottomBar() string {
 		// take effect on View(). Re-focusing re-points the cached style to
 		// our local copy. Discard the returned cmd (cursor uses Static mode).
 		_ = m.input.Focus()
-	} else if m.mastermind {
+	} else if m.role == "queen" {
 		// mastermind tier: prompt + typed text glow rainbow, cycling per
 		// glowFrame. Shell-mode `!` above keeps precedence. Same re-Focus
 		// trick as the shell block — the cached style pointer must be
@@ -329,7 +340,7 @@ func (m Model) renderBottomBar() string {
 	if !m.showHelp {
 		return quitHint + staged + palette + picker + atp + history + m.input.View()
 	}
-	hint := fmt.Sprintf("mode:%s · caveman:%s · think:%s · ^P model · ^R history · ^W ws · ← agents · ^H hive · ^/ caveman · ^I image · shift+↵/^J newline · shift+tab mode · alt+t think · ^O expand output · ? hide · esc cancel · ^V verbose", m.mode, string(m.caveLvl), m.thinking)
+	hint := fmt.Sprintf("role:%s · caveman:%s · ^P model · ^R history · ^W ws · ← agents · ^H hive · ^/ caveman · ^I image · shift+↵/^J newline · shift+tab role · alt+y yolo · ^O expand output · ? hide · esc cancel · ^V verbose", m.role, string(m.caveLvl))
 	return quitHint + staged + palette + picker + atp + history + m.input.View() + "\n" + m.styles.BottomBar.Render(hint)
 }
 

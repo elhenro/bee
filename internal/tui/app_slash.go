@@ -184,6 +184,11 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		m.resumeRequested = false
 		return m, func() tea.Msg { return openResumeMsg{} }
 	}
+	// /rewind asks to open the rewind picker.
+	if m.rewindRequested {
+		m.rewindRequested = false
+		return m, func() tea.Msg { return openRewindMsg{} }
+	}
 	// /cost asks to open the cost modal.
 	if m.costRequested {
 		m.costRequested = false
@@ -199,10 +204,15 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		m.loginRequested = false
 		return m, func() tea.Msg { return openLoginMsg{} }
 	}
+	// /tutorial asks to replay the interactive walkthrough.
+	if m.tutorialRequested {
+		m.tutorialRequested = false
+		return m, func() tea.Msg { return openTutorialMsg{} }
+	}
 	// /effort (no args) asks to open the effort picker.
-	if m.effortRequested {
-		m.effortRequested = false
-		return m, func() tea.Msg { return openEffortMsg{} }
+	if m.roleRequested {
+		m.roleRequested = false
+		return m, func() tea.Msg { return openRoleMsg{} }
 	}
 	// /settings asks to open the settings pane.
 	if m.settingsRequested {
@@ -213,6 +223,12 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 	if m.toolsRequested {
 		m.toolsRequested = false
 		return m, func() tea.Msg { return openToolsMsg{} }
+	}
+	// /handoff arms the rescue flow then opens the same picker as /model;
+	// handoffActive (set alongside) routes the resulting pick into the handoff.
+	if m.handoffRequested {
+		m.handoffRequested = false
+		return m, func() tea.Msg { return openProviderMsg{} }
 	}
 	// /model (no args) asks to open the provider+model picker.
 	if m.pickerRequested {

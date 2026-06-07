@@ -9,45 +9,55 @@ import (
 
 // fakeSide tracks calls for behavior assertions.
 type fakeSide struct {
-	compactCalled    bool
-	switchedTo       string
-	listSessions     []string
-	listErr          error
-	opened           string
-	newCalled        bool
-	copyCalled       bool
-	quitCalled       bool
-	treeOpened       bool
-	forkedFrom       string
-	forkCalled       bool
-	cloneCalled      bool
-	loginProvider    string
-	loginErr         error
-	loginStatus      []ProviderAuth
-	openLoginCalled  bool
-	openLoginErr     error
-	logoutOf         string
-	logoutErr        error
-	costOpened       bool
-	usageOpened      bool
-	thinking         string
-	thinkErr         error
-	maxIter          int
-	openResumeCalled bool
-	openResumeErr    error
-	pickerOpened     bool
-	pickerErr        error
-	verbose          bool
-	verboseSet       bool
-	showThoughts     bool
-	showThoughtsSet  bool
-	compact          bool
-	compactSet       bool
-	showNudges       bool
-	showNudgesSet    bool
-	saveKeyProvider  string
-	saveKeyValue     string
-	saveKeyErr       error
+	compactCalled     bool
+	switchedTo        string
+	listSessions      []string
+	listErr           error
+	opened            string
+	newCalled         bool
+	copyCalled        bool
+	quitCalled        bool
+	treeOpened        bool
+	forkedFrom        string
+	forkCalled        bool
+	cloneCalled       bool
+	loginProvider     string
+	loginErr          error
+	loginStatus       []ProviderAuth
+	openLoginCalled   bool
+	openLoginErr      error
+	logoutOf          string
+	logoutErr         error
+	costOpened        bool
+	usageOpened       bool
+	thinking          string
+	thinkErr          error
+	role              string
+	roleErr           error
+	yolo              bool
+	maxIter           int
+	openResumeCalled  bool
+	openResumeErr     error
+	openRewindCalled  bool
+	openRewindErr     error
+	savedLabel        string
+	savedSHA          string
+	saveCheckpointErr error
+	pickerOpened      bool
+	pickerErr         error
+	handoffOpened     bool
+	handoffErr        error
+	verbose           bool
+	verboseSet        bool
+	showThoughts      bool
+	showThoughtsSet   bool
+	compact           bool
+	compactSet        bool
+	showNudges        bool
+	showNudgesSet     bool
+	saveKeyProvider   string
+	saveKeyValue      string
+	saveKeyErr        error
 
 	toolsList       []ToolInfo
 	toolDisabled    map[string]bool
@@ -68,6 +78,7 @@ func (f *fakeSide) SwitchProviderModel(p, m string) error {
 	return nil
 }
 func (f *fakeSide) OpenPicker() error               { f.pickerOpened = true; return f.pickerErr }
+func (f *fakeSide) OpenHandoff() error              { f.handoffOpened = true; return f.handoffErr }
 func (f *fakeSide) ListSessions() ([]string, error) { return f.listSessions, f.listErr }
 func (f *fakeSide) OpenSession(id string) error     { f.opened = id; return nil }
 func (f *fakeSide) NewSession() error               { f.newCalled = true; return nil }
@@ -79,6 +90,11 @@ func (f *fakeSide) OpenUsage() error                { f.usageOpened = true; retu
 func (f *fakeSide) UsageText() string               { return "usage overview" }
 func (f *fakeSide) ForkSession(id string) error     { f.forkCalled = true; f.forkedFrom = id; return nil }
 func (f *fakeSide) CloneSession() error             { f.cloneCalled = true; return nil }
+func (f *fakeSide) OpenRewind() error               { f.openRewindCalled = true; return f.openRewindErr }
+func (f *fakeSide) SaveCheckpoint(label string) (string, error) {
+	f.savedLabel = label
+	return f.savedSHA, f.saveCheckpointErr
+}
 func (f *fakeSide) Login(_ context.Context, p string) error {
 	f.loginProvider = p
 	return f.loginErr
@@ -90,14 +106,20 @@ func (f *fakeSide) SaveAPIKey(p, k string) error {
 }
 func (f *fakeSide) LoginStatus() []ProviderAuth { return f.loginStatus }
 func (f *fakeSide) OpenLogin() error            { f.openLoginCalled = true; return f.openLoginErr }
-func (f *fakeSide) SetThinking(level string) error {
-	if f.thinkErr != nil {
-		return f.thinkErr
+func (f *fakeSide) OpenTutorial() error         { return nil }
+func (f *fakeSide) SetRole(role string) error {
+	if f.roleErr != nil {
+		return f.roleErr
 	}
-	f.thinking = level
+	f.role = role
 	return nil
 }
-func (f *fakeSide) GetThinking() string { return f.thinking }
+func (f *fakeSide) GetRole() string { return f.role }
+func (f *fakeSide) SetYolo(on bool) error {
+	f.yolo = on
+	return nil
+}
+func (f *fakeSide) GetYolo() bool { return f.yolo }
 func (f *fakeSide) SetMaxIterations(n int) error {
 	f.maxIter = n
 	return nil
@@ -108,9 +130,9 @@ func (f *fakeSide) OpenResume() error {
 	return f.openResumeErr
 }
 
-// fake returns an error so the /effort command falls back to its inline
-// "effort: <level>" path — which is what the existing tests assert.
-func (f *fakeSide) OpenEffortPicker() error { return errors.New("no picker") }
+// fake returns an error so the /role command falls back to its inline
+// "role: <role>" path — which is what the tests assert.
+func (f *fakeSide) OpenRolePicker() error { return errors.New("no picker") }
 func (f *fakeSide) SetVerbose(v bool) error {
 	f.verbose = v
 	f.verboseSet = true
@@ -213,7 +235,7 @@ func (f *fakeSide) VisionFallback(_, _, _ string) (string, error) { return "", n
 func TestRegisterBuiltins_Names(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
-	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "usage", "fork", "clone", "login", "logout", "effort", "iterations", "iter", "settings", "tools", "browser", "vision", "bg", "agent", "attach", "agents", "goal", "init", "remote-control", "stop", "watchdog", "edit", "vim", "term"}
+	want := []string{"compact", "model", "resume", "rewind", "checkpoint", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "usage", "fork", "clone", "login", "logout", "tutorial", "role", "effort", "iterations", "iter", "settings", "tools", "browser", "vision", "bg", "agent", "attach", "agents", "goal", "init", "remote-control", "stop", "watchdog", "handoff", "edit", "vim", "term"}
 	for _, n := range want {
 		if _, ok := r.Get(n); !ok {
 			t.Errorf("missing builtin %q", n)
@@ -258,6 +280,43 @@ func TestBuiltin_Model_OpensPicker(t *testing.T) {
 	}
 	if side.switchedTo != "" {
 		t.Errorf("should not have switched, but did: %q", side.switchedTo)
+	}
+}
+
+func TestBuiltin_Handoff_OpensPicker(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, ok := r.Get("handoff")
+	if !ok {
+		t.Fatal("/handoff not registered")
+	}
+	side := &fakeSide{}
+	out, err := c.Run(context.Background(), nil, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !side.handoffOpened {
+		t.Error("expected OpenHandoff to be called for /handoff")
+	}
+	if out != "" {
+		t.Errorf("expected empty output when picker opens, got %q", out)
+	}
+	if side.switchedTo != "" {
+		t.Errorf("/handoff must not switch the model directly, but did: %q", side.switchedTo)
+	}
+}
+
+func TestBuiltin_Handoff_FallbackHint(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("handoff")
+	side := &fakeSide{handoffErr: errors.New("no picker")}
+	out, err := c.Run(context.Background(), nil, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "interactive picker") {
+		t.Errorf("expected headless hint when picker unavailable, got %q", out)
 	}
 }
 
@@ -731,44 +790,58 @@ func TestBuiltin_Logout_CallsSide(t *testing.T) {
 	}
 }
 
-func TestBuiltin_Effort_NoArg(t *testing.T) {
+func TestBuiltin_Role_NoArg(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
-	c, _ := r.Get("effort")
-	side := &fakeSide{thinking: "high"}
+	c, _ := r.Get("role")
+	side := &fakeSide{role: "scout"}
 	out, err := c.Run(context.Background(), nil, side)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "high") {
-		t.Errorf("expected current level in output, got %q", out)
+	if !strings.Contains(out, "scout") {
+		t.Errorf("expected current role in output, got %q", out)
 	}
 }
 
-func TestBuiltin_Effort_Set(t *testing.T) {
+func TestBuiltin_Role_Set(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("role")
+	side := &fakeSide{}
+	out, err := c.Run(context.Background(), []string{"scout"}, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if side.role != "scout" {
+		t.Errorf("role = %q want scout", side.role)
+	}
+	if !strings.Contains(out, "scout") {
+		t.Errorf("output missing role: %q", out)
+	}
+}
+
+func TestBuiltin_Role_SideError(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("role")
+	side := &fakeSide{roleErr: errors.New("nope")}
+	if _, err := c.Run(context.Background(), []string{"scout"}, side); err == nil {
+		t.Fatal("expected error from Side")
+	}
+}
+
+// the deprecated /effort alias maps legacy levels onto roles.
+func TestBuiltin_Effort_DeprecatedAlias(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
 	c, _ := r.Get("effort")
 	side := &fakeSide{}
-	out, err := c.Run(context.Background(), []string{"medium"}, side)
-	if err != nil {
+	if _, err := c.Run(context.Background(), []string{"mastermind"}, side); err != nil {
 		t.Fatal(err)
 	}
-	if side.thinking != "medium" {
-		t.Errorf("thinking = %q want medium", side.thinking)
-	}
-	if !strings.Contains(out, "medium") {
-		t.Errorf("output missing level: %q", out)
-	}
-}
-
-func TestBuiltin_Effort_SideError(t *testing.T) {
-	r := NewRegistry()
-	RegisterBuiltins(r)
-	c, _ := r.Get("effort")
-	side := &fakeSide{thinkErr: errors.New("nope")}
-	if _, err := c.Run(context.Background(), []string{"medium"}, side); err == nil {
-		t.Fatal("expected error from Side")
+	if side.role != "queen" {
+		t.Errorf("effort mastermind should map to queen, got %q", side.role)
 	}
 }
 

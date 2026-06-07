@@ -112,10 +112,11 @@ func (p *emptyProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Eve
 func TestRun_EmptyCompletionBails(t *testing.T) {
 	prov := &emptyProvider{}
 	cfg := config.Defaults()
-	cfg.Mode = "edit"
+	cfg.Role = "worker"
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	eng := &Engine{
+		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},

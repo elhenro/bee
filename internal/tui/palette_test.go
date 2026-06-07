@@ -245,7 +245,7 @@ func TestPalette_View_RendersListWhenActive(t *testing.T) {
 	p.SetWidth(120)
 	out := p.View()
 	// first-page rows: alphabetized commands well inside maxPaletteRows.
-	for _, want := range []string{"compact", "clear"} {
+	for _, want := range []string{"browser", "clear"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view missing %q: %q", want, out)
 		}

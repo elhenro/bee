@@ -30,6 +30,10 @@ type Side interface {
 	// Returns nil when the modal was scheduled; non-nil signals headless
 	// fallback so the slash command can hint usage instead.
 	OpenPicker() error
+	// OpenHandoff arms /handoff: opens the provider+model picker and routes the
+	// pick into the stuck-agent handoff flow (summarize → switch → continue)
+	// instead of a plain model swap. Returns an error in headless contexts.
+	OpenHandoff() error
 	// ListSessions returns recent session ids, newest first.
 	ListSessions() ([]string, error)
 	// OpenSession loads a previously-recorded session by id.
@@ -57,6 +61,12 @@ type Side interface {
 	ForkSession(fromMsgID string) error
 	// CloneSession clones the entire current session into a new one.
 	CloneSession() error
+	// OpenRewind opens the interactive rewind picker. Returns an error in
+	// headless contexts so the caller can fall back to a hint.
+	OpenRewind() error
+	// SaveCheckpoint snapshots the working tree now under an optional label and
+	// returns the short sha. Errors when checkpoints are disabled.
+	SaveCheckpoint(label string) (string, error)
 	// Login runs the OAuth PKCE flow for a provider and persists the token.
 	Login(ctx context.Context, provider string) error
 	// Logout removes the stored OAuth token AND any stored api key file for
@@ -74,14 +84,21 @@ type Side interface {
 	// caller (slash command) to fall back to rendered text — useful for
 	// headless contexts where no pane exists.
 	OpenLogin() error
-	// SetThinking changes the active reasoning-effort level
-	// (off|low|medium|high). Empty input is rejected by the caller.
-	SetThinking(level string) error
-	// GetThinking returns the current reasoning-effort level.
-	GetThinking() string
-	// OpenEffortPicker asks the TUI to display the effort picker modal.
+	// OpenTutorial asks the TUI to replay the interactive first-run
+	// walkthrough. Returns an error in headless contexts.
+	OpenTutorial() error
+	// SetRole switches the active agent role (worker|scout|queen). Unknown
+	// values are rejected.
+	SetRole(role string) error
+	// GetRole returns the active role string.
+	GetRole() string
+	// SetYolo flips the auto-approve toggle.
+	SetYolo(on bool) error
+	// GetYolo reports whether auto-approve is armed.
+	GetYolo() bool
+	// OpenRolePicker asks the TUI to display the role picker modal.
 	// Returns nil when the modal was scheduled; non-nil signals headless.
-	OpenEffortPicker() error
+	OpenRolePicker() error
 	// SetMaxIterations changes the per-Run tool-use iteration cap live and
 	// persists it. 0 = unlimited (loop until a token-budget or stall guard
 	// fires). Negatives are clamped to 0.
@@ -193,14 +210,14 @@ type ToolInfo struct {
 
 // ProviderAuth summarizes one provider's auth posture for /login UX.
 type ProviderAuth struct {
-	Name         string // provider id (e.g., "anthropic")
-	HasOAuth     bool   // [providers.<n>.oauth] is configured
-	EnvKey       string // env var that supplies a static key (e.g., OPENAI_API_KEY)
-	EnvSet       bool   // EnvKey is set in the current environment
-	TokenSaved   bool   // ~/.bee/auth/<n>.json exists
-	KeySaved     bool   // ~/.bee/auth/<n>.key exists (set via /login)
-	KeyOptional  bool   // provider runs unauthenticated if no key set (e.g. omlx)
-	IsDefault    bool   // matches Cfg.DefaultProvider
+	Name        string // provider id (e.g., "anthropic")
+	HasOAuth    bool   // [providers.<n>.oauth] is configured
+	EnvKey      string // env var that supplies a static key (e.g., OPENAI_API_KEY)
+	EnvSet      bool   // EnvKey is set in the current environment
+	TokenSaved  bool   // ~/.bee/auth/<n>.json exists
+	KeySaved    bool   // ~/.bee/auth/<n>.key exists (set via /login)
+	KeyOptional bool   // provider runs unauthenticated if no key set (e.g. omlx)
+	IsDefault   bool   // matches Cfg.DefaultProvider
 }
 
 // Command is a /name entry.

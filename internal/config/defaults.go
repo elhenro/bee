@@ -17,13 +17,15 @@ func Defaults() Config {
 		// (flash/mini/nano/haiku/8b…) get the 4-tool tiny surface — a
 		// minimal budget tuned for that class.
 		Profile: "auto",
-		// "off" = no reasoning tokens. Override per-run with `--thinking off|low|medium|high`
-		// (or "auto" to re-enable — medium when model supports reasoning_effort/thinking-budget).
-		Thinking: "off",
-		// "auto" runs an 8-token classifier per turn to pick plan|edit. Cheap
-		// and avoids mutator spam on greetings/questions where small models
-		// (flash/mini/8b…) otherwise reflex into shell calls.
-		Mode: "auto",
+		// "" = derive from Role per turn (worker→auto, scout→high, queen→max).
+		// Override per-run with `--thinking off|low|medium|high|max` (or "auto").
+		Thinking: "",
+		// "" lets migrateLegacyRoleFields resolve the role on load — from a
+		// legacy mode= key if present, else worker. worker is the everyday role:
+		// full tool surface with a per-turn 8-token classifier picking read|act,
+		// so small models (flash/mini/8b…) don't reflex into shell on greetings.
+		Role: "",
+		Yolo: false,
 		Sandbox: SandboxConfig{
 			// danger-full-access: no OS confinement — the default. The seatbelt/bwrap
 			// wrapper caused more friction than it prevented (blocked signals to
@@ -52,6 +54,7 @@ func Defaults() Config {
 		},
 		ShowBanner:    true,
 		ShowLoader:    true,
+		TutorialDone:  false,
 		MaxIterations: DefaultMaxIterations,
 		// mastermind off by default; when on, the hive spawns this many workers.
 		Mastermind:        false,

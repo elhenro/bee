@@ -10,84 +10,74 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
-func newPlanFixture(local bool) PlanModeModel {
+func newPlanFixture() PlanModeModel {
 	m := NewPlanModeModel(DefaultStyles())
 	m.SetWidth(80)
-	m.Show(local)
+	m.Show()
 	return m
 }
 
-func TestPlanMode_ShowOffersBuildAndAuto(t *testing.T) {
-	m := newPlanFixture(false)
+func TestPlanMode_ShowOffersBuildOptions(t *testing.T) {
+	m := newPlanFixture()
 	if !m.Active {
 		t.Fatal("Show should activate the picker")
 	}
-	// remote: edit, fresh-edit, yolo, auto, keep = 5 options
-	if len(m.options) != 5 {
-		t.Fatalf("remote should offer 5 options, got %d", len(m.options))
+	// worker, fresh-worker, worker+yolo, keep-scouting = 4 options
+	if len(m.options) != 4 {
+		t.Fatalf("should offer 4 options, got %d", len(m.options))
 	}
-	if m.options[0].mode != "edit" || m.options[0].fresh {
-		t.Errorf("first option should build in edit, got %+v", m.options[0])
+	if m.options[0].role != "worker" || m.options[0].fresh || m.options[0].yolo {
+		t.Errorf("first option should build as plain worker, got %+v", m.options[0])
 	}
 	if !m.options[1].fresh {
 		t.Errorf("second option should be the fresh-session build, got %+v", m.options[1])
 	}
+	if !m.options[2].yolo {
+		t.Errorf("third option should arm yolo, got %+v", m.options[2])
+	}
 	last := m.options[len(m.options)-1]
-	if last.mode != "" {
-		t.Errorf("last option should be keep-planning, got %+v", last)
+	if last.role != "" {
+		t.Errorf("last option should be keep-scouting, got %+v", last)
 	}
-	// focus defaults to keep-planning so a reflexive enter is non-destructive.
+	// focus defaults to keep-scouting so a reflexive enter is non-destructive.
 	if m.focus != len(m.options)-1 {
-		t.Errorf("focus should default to keep-planning (idx %d), got %d", len(m.options)-1, m.focus)
-	}
-}
-
-func TestPlanMode_LocalHidesAuto(t *testing.T) {
-	m := newPlanFixture(true)
-	for _, o := range m.options {
-		if o.mode == "auto" {
-			t.Fatal("local providers must not offer the auto option")
-		}
-	}
-	// edit, fresh-edit, yolo, keep = 4
-	if len(m.options) != 4 {
-		t.Fatalf("local should offer 4 options, got %d", len(m.options))
+		t.Errorf("focus should default to keep-scouting (idx %d), got %d", len(m.options)-1, m.focus)
 	}
 }
 
 func TestPlanMode_EnterDefaultsToKeepPlanning(t *testing.T) {
-	m := newPlanFixture(false)
+	m := newPlanFixture()
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m2.Active {
 		t.Fatal("picker should deactivate after pick")
 	}
-	// focus defaults to keep-planning, so a reflexive enter must not build.
+	// focus defaults to keep-scouting, so a reflexive enter must not build.
 	msg, ok := cmd().(PlanProceedMsg)
-	if !ok || msg.Mode != "" {
-		t.Fatalf("got %+v, want keep-planning (empty mode)", msg)
+	if !ok || msg.Role != "" {
+		t.Fatalf("got %+v, want keep-scouting (empty role)", msg)
 	}
 }
 
-func TestPlanMode_NumberKeyOneBuildsEdit(t *testing.T) {
-	m := newPlanFixture(false)
+func TestPlanMode_NumberKeyOneBuildsWorker(t *testing.T) {
+	m := newPlanFixture()
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
 	msg := cmd().(PlanProceedMsg)
-	if msg.Mode != "edit" || msg.Fresh {
-		t.Fatalf("key 1 should build in edit, got %+v", msg)
+	if msg.Role != "worker" || msg.Fresh || msg.Yolo {
+		t.Fatalf("key 1 should build as plain worker, got %+v", msg)
 	}
 }
 
 func TestPlanMode_NumberKeyPicksFresh(t *testing.T) {
-	m := newPlanFixture(false)
+	m := newPlanFixture()
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	msg := cmd().(PlanProceedMsg)
-	if !msg.Fresh || msg.Mode != "edit" {
+	if !msg.Fresh || msg.Role != "worker" {
 		t.Fatalf("key 2 should pick fresh-session build, got %+v", msg)
 	}
 }
 
 func TestPlanMode_EscDismissesNoChoice(t *testing.T) {
-	m := newPlanFixture(false)
+	m := newPlanFixture()
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if m2.Active {
 		t.Fatal("esc should deactivate the picker")
@@ -98,8 +88,8 @@ func TestPlanMode_EscDismissesNoChoice(t *testing.T) {
 }
 
 func TestPlanMode_ViewListsOptions(t *testing.T) {
-	out := stripANSI(newPlanFixture(false).View())
-	for _, want := range []string{"PLAN READY", "edit mode", "fresh session", "yolo", "Keep planning"} {
+	out := stripANSI(newPlanFixture().View())
+	for _, want := range []string{"SCOUT READY", "worker", "fresh session", "yolo", "Keep scouting"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("view missing %q:\n%s", want, out)
 		}
@@ -131,12 +121,12 @@ func TestFreshContinuePrompt(t *testing.T) {
 
 func TestOnPlanProceed_KeepPlanningNoSwitch(t *testing.T) {
 	m := newTestModel(t)
-	m.mode = "plan"
+	m.role = "scout"
 	m.pendingPlan = "the plan"
-	nm, cmd := m.onPlanProceed(PlanProceedMsg{Mode: ""})
+	nm, cmd := m.onPlanProceed(PlanProceedMsg{Role: ""})
 	got := nm.(Model)
-	if got.mode != "plan" {
-		t.Errorf("keep-planning must not switch mode, got %q", got.mode)
+	if got.role != "scout" {
+		t.Errorf("keep-scouting must not switch role, got %q", got.role)
 	}
 	if got.pendingPlan != "" {
 		t.Errorf("pendingPlan should be cleared, got %q", got.pendingPlan)
@@ -148,12 +138,12 @@ func TestOnPlanProceed_KeepPlanningNoSwitch(t *testing.T) {
 
 func TestOnPlanProceed_BuildSwitchesMode(t *testing.T) {
 	m := newTestModel(t)
-	m.mode = "plan"
+	m.role = "scout"
 	m.pendingPlan = "the plan"
-	nm, cmd := m.onPlanProceed(PlanProceedMsg{Mode: "edit"})
+	nm, cmd := m.onPlanProceed(PlanProceedMsg{Role: "worker"})
 	got := nm.(Model)
-	if got.mode != "edit" {
-		t.Errorf("build should switch to edit, got %q", got.mode)
+	if got.role != "worker" {
+		t.Errorf("build should switch to worker, got %q", got.role)
 	}
 	if cmd == nil {
 		t.Error("build should auto-submit a continuation turn")
@@ -162,7 +152,7 @@ func TestOnPlanProceed_BuildSwitchesMode(t *testing.T) {
 
 func TestOnTurnDone_ShowsPickerAfterPlanTurn(t *testing.T) {
 	m := newTestModel(t)
-	m.mode = "plan"
+	m.role = "scout"
 	m.state = StateStreaming
 	res := loop.RunResult{Messages: []types.Message{
 		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "plan it"}}},
@@ -180,7 +170,7 @@ func TestOnTurnDone_ShowsPickerAfterPlanTurn(t *testing.T) {
 
 func TestOnTurnDone_NoPickerWhenPlanEmpty(t *testing.T) {
 	m := newTestModel(t)
-	m.mode = "plan"
+	m.role = "scout"
 	m.state = StateStreaming
 	// assistant turn with no text block (e.g. tool/thinking only) — nothing to
 	// act on or carry, so the picker must stay closed.
@@ -195,7 +185,7 @@ func TestOnTurnDone_NoPickerWhenPlanEmpty(t *testing.T) {
 
 func TestOnTurnDone_NoPickerOutsidePlanMode(t *testing.T) {
 	m := newTestModel(t)
-	m.mode = "edit"
+	m.role = "worker"
 	m.state = StateStreaming
 	res := loop.RunResult{Messages: []types.Message{
 		{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockText, Text: "done"}}},

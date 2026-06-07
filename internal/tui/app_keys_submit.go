@@ -119,6 +119,9 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	// allow recovery from StateError: clear the error and proceed. blocking
 	// here was the root cause of "Enter does nothing after max-iter abort".
 	if m.state == StateError {
+		// preserve the bail reason for a following /handoff before clearing it —
+		// the brief's stall signal would otherwise be lost on recovery.
+		m.handoffStall = m.lastErr
 		m.state = StateIdle
 		m.lastErr = ""
 		// user is driving again — drop the auto-resume budget and any pending
@@ -251,6 +254,9 @@ func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 // scrollback while the expanded skill body (text) goes to the model.
 func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	m.state = StateStreaming
+	// a fresh turn supersedes any stashed bail reason — a later /handoff must
+	// not inherit a stall from an already-recovered failure.
+	m.handoffStall = ""
 	// fresh stream — drop any lingering flush state from a previous turn so
 	// the next progressive flush starts clean.
 	m.streamFlushed = ""
@@ -309,6 +315,18 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	})
 	userFlush := m.flush()
 
+	// stamp this turn with a monotonic epoch so a late result from a previously
+	// cancelled turn (user esc) is ignored by onTurnDone instead of clobbering
+	// this one. serialize the engine goroutine behind the prior run's completion
+	// (prevDone) so an esc'd turn still unwinding never mutates the shared engine
+	// concurrently with this one — the manual-cancel analogue of the watchdog's
+	// wait-for-landing handshake. done closes when this run's goroutine returns.
+	m.turnGen++
+	gen := m.turnGen
+	prevDone := m.runDone
+	done := make(chan struct{})
+	m.runDone = done
+
 	if m.eng == nil {
 		// no engine wired (tests): synthesize an echo turn so state still advances
 		echo := types.Message{
@@ -319,7 +337,13 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 		merged = append(merged, echo)
 		return m, tea.Batch(
 			userFlush,
-			func() tea.Msg { return turnDoneMsg{result: loop.RunResult{Messages: merged}} },
+			func() tea.Msg {
+				defer close(done)
+				if prevDone != nil {
+					<-prevDone
+				}
+				return turnDoneMsg{gen: gen, result: loop.RunResult{Messages: merged}}
+			},
 			loaderTickCmd(),
 		)
 	}
@@ -339,23 +363,28 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	}
 	// mastermind tier: route the turn through a sub-agent hive instead of a
 	// single engine Run. The glow tick keeps the rainbow input alive mid-turn.
-	if m.mastermind {
+	if m.role == "queen" {
 		// the glow tick is already running (armed when the tier was enabled and
 		// self-rearming across turns), so don't arm a second loop here.
 		prior := append([]types.Message(nil), m.messages...)
 		return m, tea.Batch(
 			userFlush,
-			m.runMastermind(ctx, content, history, prior),
+			m.runMastermind(ctx, gen, prevDone, done, content, history, prior),
 			loaderTickCmd(),
 		)
 	}
-	// seed prior turns into engine so the model retains context across submits.
-	eng.InitialMessages = history
 	return m, tea.Batch(
 		userFlush,
 		func() tea.Msg {
+			defer close(done)
+			if prevDone != nil {
+				<-prevDone // wait for a prior (possibly esc'd) run to fully return
+			}
+			// seed prior turns into the engine here, after the prior run released
+			// it, so two runs never write InitialMessages concurrently.
+			eng.InitialMessages = history
 			res, err := eng.RunWithContentDisplay(ctx, content, display)
-			return turnDoneMsg{result: res, err: err}
+			return turnDoneMsg{gen: gen, result: res, err: err}
 		},
 		loaderTickCmd(),
 	)

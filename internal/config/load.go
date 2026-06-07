@@ -20,6 +20,7 @@ func Load() (Config, error) {
 		return c, err
 	}
 	mergeEnv(&c)
+	migrateLegacyRoleFields(&c)
 	c = ApplyProfile(c)
 
 	if err := resolveAPIKey(&c); err != nil {
@@ -66,6 +67,12 @@ func mergeEnv(c *Config) {
 	if v := os.Getenv("BEE_MODE"); v != "" {
 		c.Mode = v
 	}
+	if v := os.Getenv("BEE_ROLE"); v != "" {
+		c.Role = v
+	}
+	if v := os.Getenv("BEE_YOLO"); v != "" {
+		c.Yolo = boolEnv(v)
+	}
 	if v := os.Getenv("BEE_EXTRA_TOOLS"); v != "" {
 		c.ExtraTools = splitCSV(v)
 	}
@@ -77,6 +84,29 @@ func mergeEnv(c *Config) {
 	}
 	if v := os.Getenv("BEE_SHELL_RC_FILE"); v != "" {
 		c.Shell.RCFile = v
+	}
+}
+
+// migrateLegacyRoleFields resolves Role from the deprecated mode/mastermind
+// keys when a config (or env) hasn't set the new role axis. An explicit Role
+// (file or BEE_ROLE) is respected as-is. Mapping: plan→scout, yolo→worker +
+// Yolo toggle, auto/edit/unknown→worker; a legacy mastermind=true upgrades the
+// result to queen (the hive flag wins over the mode-derived role).
+func migrateLegacyRoleFields(c *Config) {
+	if c.Role != "" {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Mode)) {
+	case "plan":
+		c.Role = "scout"
+	case "yolo":
+		c.Role = "worker"
+		c.Yolo = true
+	default:
+		c.Role = "worker"
+	}
+	if c.Mastermind {
+		c.Role = "queen"
 	}
 }
 

@@ -39,7 +39,7 @@ func RunModelCommand(args []string, s modelSide) (string, error) {
 	return "", s.SwitchModel(args[0])
 }
 
-// registerModel adds model + effort commands.
+// registerModel adds model + role commands.
 func registerModel(r *Registry) {
 	r.Register(Command{
 		Name:           "model",
@@ -50,27 +50,41 @@ func registerModel(r *Registry) {
 		},
 	})
 	r.Register(Command{
-		Name:           "effort",
-		Description:    "set reasoning effort / thinking — /effort [off|low|medium|high] (off & low disable thinking)",
+		Name:           "role",
+		Description:    "set agent role — /role [worker|scout|queen] (or open the picker)",
 		AllowDuringRun: true,
 		Run: func(_ context.Context, args []string, s Side) (string, error) {
 			if s == nil {
 				return "", nil
 			}
 			if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-				if err := s.OpenEffortPicker(); err == nil {
+				if err := s.OpenRolePicker(); err == nil {
 					return "", nil
 				}
-				cur := s.GetThinking()
-				if cur == "" {
-					cur = "off"
-				}
-				return "effort: " + cur + " (usage: /effort <off|low|medium|high>; off & low disable thinking)", nil
+				return "role: " + s.GetRole() + " (usage: /role <worker|scout|queen>)", nil
 			}
-			if err := s.SetThinking(args[0]); err != nil {
+			if err := s.SetRole(args[0]); err != nil {
 				return "", err
 			}
-			return "effort: " + s.GetThinking(), nil
+			return "role: " + s.GetRole(), nil
+		},
+	})
+	r.Register(Command{
+		Name:           "effort",
+		Description:    "deprecated — use /role (mastermind→queen, plan→scout, else worker)",
+		AllowDuringRun: true,
+		Run: func(_ context.Context, args []string, s Side) (string, error) {
+			if s == nil {
+				return "", nil
+			}
+			if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+				_ = s.OpenRolePicker()
+				return "/effort is deprecated — use /role (worker|scout|queen)", nil
+			}
+			if err := s.SetRole(legacyEffortToRole(args[0])); err != nil {
+				return "", err
+			}
+			return "/effort is deprecated; role set to " + s.GetRole(), nil
 		},
 	})
 	r.Register(Command{
@@ -85,6 +99,21 @@ func registerModel(r *Registry) {
 		AllowDuringRun: true,
 		Run:            func(_ context.Context, args []string, s Side) (string, error) { return runIterations(args, s) },
 	})
+}
+
+// legacyEffortToRole maps a deprecated /effort argument onto a role. Only
+// mastermind→queen and plan→scout are true equivalences; the old thinking
+// budgets (off/low/medium/high/max/auto) were never modes, so they collapse to
+// worker — the honest fallback.
+func legacyEffortToRole(arg string) string {
+	switch strings.ToLower(strings.TrimSpace(arg)) {
+	case "mastermind", "queen":
+		return "queen"
+	case "plan", "scout":
+		return "scout"
+	default:
+		return "worker"
+	}
 }
 
 // runIterations backs /iterations and its /iter alias: prints the current cap

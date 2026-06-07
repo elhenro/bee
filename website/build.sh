@@ -9,6 +9,11 @@ rm -rf "$DIST"
 mkdir -p "$DIST/assets"
 cp "$WEB/assets"/* "$DIST/assets/"
 
+# Crawler files must sit at the deploy root so CF Pages serves them as real
+# files (a static file beats the SPA/index.html catch-all). In assets/ they'd
+# only answer /assets/robots.txt, which crawlers never request.
+cp "$WEB/robots.txt" "$WEB/sitemap.xml" "$WEB/llms.txt" "$DIST/"
+
 # Build the binary
 cd "$WEB"
 GOBIN="$DIST" go build -o "$DIST/website" .

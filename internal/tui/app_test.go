@@ -542,7 +542,7 @@ func TestModel_ApprovalKey_ResolvesApprover(t *testing.T) {
 // AllowOnce straight from the ApprovalAskMsg handler.
 func TestModel_YoloMode_AutoApproves(t *testing.T) {
 	m := newTestModel(t)
-	m.mode = "yolo"
+	m.yolo = true
 	appr := NewApprover()
 	m = m.WithApprover(appr)
 	ch := make(chan approval.Decision, 1)
@@ -929,30 +929,22 @@ func TestModel_WithStreamCh_PumpsDelta(t *testing.T) {
 	}
 }
 
-func TestCycleMode(t *testing.T) {
-	want := []string{"auto", "edit", "yolo", "plan", "auto"}
-	m := "plan"
+func TestCycleRole(t *testing.T) {
+	// worker → scout → queen → worker, no provider special-case.
+	want := []string{"scout", "queen", "worker", "scout"}
+	r := "worker"
 	for i, w := range want {
-		m = cycleMode(m, "openai")
-		if m != w {
-			t.Fatalf("step %d: want %q, got %q", i, w, m)
+		r = cycleRole(r)
+		if r != w {
+			t.Fatalf("step %d: want %q, got %q", i, w, r)
 		}
 	}
 }
 
-// local providers skip the auto stop — cycle is plan → edit → yolo → plan.
-func TestCycleMode_LocalSkipsAuto(t *testing.T) {
-	if got := cycleMode("plan", "ollama"); got != "edit" {
-		t.Fatalf("plan→ollama want edit, got %q", got)
-	}
-	if got := cycleMode("edit", "ollama"); got != "yolo" {
-		t.Fatalf("edit→ollama want yolo, got %q", got)
-	}
-	if got := cycleMode("yolo", "ollama"); got != "plan" {
-		t.Fatalf("yolo→ollama want plan, got %q", got)
-	}
-	if got := cycleMode("plan", "openai"); got != "auto" {
-		t.Fatalf("plan→openai want auto, got %q", got)
+// unknown input lands on worker so a fresh session cycles predictably.
+func TestCycleRole_UnknownDefaultsToWorker(t *testing.T) {
+	if got := cycleRole("junk"); got != "scout" {
+		t.Fatalf("junk should be treated as worker → scout, got %q", got)
 	}
 }
 

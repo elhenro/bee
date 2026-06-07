@@ -64,6 +64,18 @@ type compactDoneMsg struct {
 	msgs  []types.Message
 }
 
+// handoffReadyMsg carries the generated rescue brief back into Update after the
+// async /handoff summarization goroutine finishes. err non-nil → render the
+// error and abort (no model switch). provider/model are the user's pick,
+// applied here (not at PickedMsg) so the switch lands only after the brief is
+// built on the pre-switch (small) model.
+type handoffReadyMsg struct {
+	brief    string
+	provider string
+	model    string
+	err      error
+}
+
 // loaderTickInterval is the frame cadence. 120ms is fast enough that the
 // bee-trail bounce looks alive but slow enough to keep the redraw cost
 // invisible on a remote terminal.
@@ -73,9 +85,9 @@ func loaderTickCmd() tea.Cmd {
 	return tea.Tick(loaderTickInterval, func(time.Time) tea.Msg { return loaderTickMsg{} })
 }
 
-// glowTickMsg drives the mastermind rainbow-input animation. Unlike the loader
-// tick it runs at idle too — it self-rearms for as long as m.mastermind is set
-// (see onGlowTick) and dies on its own once the tier is switched off.
+// glowTickMsg drives the queen rainbow-input animation. Unlike the loader
+// tick it runs at idle too — it self-rearms for as long as the queen role is
+// active (see onGlowTick) and dies on its own once the role changes.
 type glowTickMsg struct{}
 
 // glowTickInterval paces the rainbow hue sweep. 120ms matches the loader so the
@@ -111,8 +123,12 @@ func introTickCmd() tea.Cmd {
 	return tea.Tick(introFrameDelay, func(time.Time) tea.Msg { return introTickMsg{} })
 }
 
-// turnDoneMsg is published when the engine finishes a Run.
+// turnDoneMsg is published when the engine finishes a Run. gen is the
+// m.turnGen epoch captured at submit; onTurnDone ignores a msg whose gen no
+// longer matches, so a late result from a cancelled/superseded turn can't
+// clobber the live one. Mirrors the recapGen / resumeErrGen epoch guards.
 type turnDoneMsg struct {
+	gen    int
 	result loop.RunResult
 	err    error
 }
@@ -156,7 +172,7 @@ type (
 	openUsageMsg     struct{}
 	openLoginMsg     struct{}
 	openResumeMsg    struct{}
-	openEffortMsg    struct{}
+	openRoleMsg    struct{}
 	openSettingsMsg  struct{}
 	openToolsMsg     struct{}
 )

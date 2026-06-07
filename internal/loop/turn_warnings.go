@@ -11,7 +11,7 @@ import (
 // injectIterAndTokenWarnings prepends one-shot warning prefixes to the next
 // tool-result block when iter/token/stall thresholds cross. Each warning
 // fires at most once per Run (dedup via Engine flags).
-func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentIter, maxIter, tokenBudget int, mode Mode) []types.ContentBlock {
+func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentIter, maxIter, tokenBudget int, readOnly bool) []types.ContentBlock {
 	// context-window warning: if usage crosses threshold, prepend a one-shot
 	// notice so the model summarizes/drops noise on the following turn.
 	if !e.warnedContext {
@@ -51,11 +51,11 @@ func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentI
 			e.warnedTokenEighty = true
 		}
 	}
-	// stall warning is opt-in: profile must set a positive threshold. skipped in
-	// plan mode — mutators are filtered out there, so the read-only streak is
-	// expected, not a stall. nudging "commit edits" would contradict the
-	// plan-mode prompt that forbids edits.
-	if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 && mode != ModePlan {
+	// stall warning is opt-in: profile must set a positive threshold. skipped on
+	// read-only turns — mutators are filtered out there, so the read-only streak
+	// is expected, not a stall. nudging "commit edits" would contradict the
+	// read-only prompt that forbids edits.
+	if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 && !readOnly {
 		if !e.warnedStall && e.noMutationStreak >= t {
 			w := fmt.Sprintf("[stall] %d read-only iters; commit edits when ready.\n\n", e.noMutationStreak)
 			blocks = prependWarningToToolResult(blocks, w)

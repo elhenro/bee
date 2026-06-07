@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 
 	"github.com/elhenro/bee/internal/caveman"
+	"github.com/elhenro/bee/internal/checkpoint"
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/goal"
@@ -87,15 +88,14 @@ type Model struct {
 	model    string
 	scope    string
 	caveLvl  caveman.Level
-	thinking string // off | low | medium | high
-	mode     string // plan | auto | edit (shift+tab cycles)
-	// mastermind is the top effort tier: every submit spawns a sub-agent hive
-	// instead of a single turn, and the input prompt glows rainbow while it's
-	// on. Mirrors eng.Cfg.Mastermind; toggled from the /effort picker.
-	mastermind bool
-	// glowFrame drives the rainbow input animation while mastermind is active.
-	// Incremented by glowTickMsg on its own self-rearming tick (independent of
-	// the streaming loaderFrame so the glow lives at idle too).
+	thinking string // internal mirror of the role's baked reasoning budget
+	role     string // worker | scout | queen (shift+tab cycles)
+	// yolo auto-approves dangerous shell on any role (alt+y toggles it).
+	// Mirrors eng.Cfg.Yolo; rendered as a loud red badge while on.
+	yolo bool
+	// glowFrame drives the rainbow input animation while the queen role is
+	// active. Incremented by glowTickMsg on its own self-rearming tick
+	// (independent of the streaming loaderFrame so the glow lives at idle too).
 	glowFrame int
 	showHelp  bool // toggle the bottom hint line (`?` to show)
 
@@ -103,6 +103,17 @@ type Model struct {
 	eng       *loop.Engine
 	ctx       context.Context
 	cancelRun context.CancelFunc
+
+	// turnGen is a monotonic epoch bumped on every submit and stamped onto the
+	// turn's turnDoneMsg. A late result from a cancelled turn (user esc) carries
+	// a stale gen and is dropped by onTurnDone, so it can't nil cancelRun, flip
+	// state to idle, or overwrite messages of a newer turn.
+	turnGen int
+	// runDone closes when the in-flight engine goroutine returns. A resubmit
+	// waits on the prior run's runDone before touching the shared engine, so an
+	// esc'd turn still unwinding never runs concurrently with the next one — the
+	// manual-cancel analogue of the watchdog's wait-for-landing handshake.
+	runDone chan struct{}
 
 	// queue holds follow-up messages submitted via Alt+Enter; drained
 	// one-at-a-time when each turn finishes.
@@ -145,6 +156,14 @@ type Model struct {
 	resume          *ResumePicker
 	resumeRequested bool
 
+	// rewind picker modal — opened by /rewind. Lists prior turns; picking
+	// restores code and/or conversation to that checkpoint.
+	rewind          *RewindPicker
+	rewindRequested bool
+	// checkpoints snapshots the work-tree per turn into a hidden shadow repo
+	// so rewind can restore code. nil disables the feature gracefully.
+	checkpoints *checkpoint.Store
+
 	// login modal — opened by /login (no args).
 	loginPane      *LoginPane
 	loginRequested bool
@@ -154,10 +173,22 @@ type Model struct {
 	picker          *Picker
 	pickerRequested bool
 
+	// handoff flow — /handoff reuses the picker but routes the pick into a
+	// stuck-agent rescue: build a distilled brief on the small/fast model,
+	// switch to the picked bigger model, drop the stuck transcript, continue.
+	// handoffActive routes the next PickedMsg; handoffing drives the loader
+	// while the brief builds. handoffStall preserves the last wedge/bail reason
+	// across handleSubmit's StateError recovery (which clears lastErr) so a
+	// following /handoff can still feed it into the brief.
+	handoffRequested bool
+	handoffActive    bool
+	handoffing       bool
+	handoffStall     string
+
 	// effort pane — opened by /effort (no args). Arrow keys pick level;
 	// enter commits, esc closes.
-	effortPane      *EffortPane
-	effortRequested bool
+	rolePane      *RolePane
+	roleRequested bool
 
 	// hive pane — opened by Left arrow on an empty input. Right arrow
 	// returns to the chat view. Mirrors Ctrl+H toggle path.
@@ -414,6 +445,17 @@ type Model struct {
 	// updateApplying flags an in-flight install subprocess so the user can't
 	// trigger a second one before the first finishes.
 	updateApplying bool
+
+	// tutorial drives the first-run interactive walkthrough — a faked,
+	// LLM-free session that teaches input, tool calls, roles, and slash
+	// commands. Zero value = inactive. Replayed via /tutorial.
+	tutorial tutorialState
+	// tutorialPending defers the welcome gate until the intro animation
+	// settles (set at startup when intro will play; consumed in onIntroTick).
+	tutorialPending bool
+	// tutorialRequested is the /tutorial sentinel Model.Update consumes to
+	// replay the walkthrough — mirror of loginRequested/settingsRequested.
+	tutorialRequested bool
 
 	// goal holds the active /goal completion-condition loop state. Zero value
 	// = inactive. After each clean turn a fast model judges whether the

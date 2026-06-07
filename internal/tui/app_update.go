@@ -62,10 +62,10 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	// Dangerous-command prompt arrives from the engine goroutine via the
 	// Approver adapter. Surface the modal so the user can pick.
 	if ask, ok := msg.(ApprovalAskMsg); ok {
-		// yolo: auto-approve flagged commands, no modal. reads the live mode so
-		// shift+tab → yolo takes effect mid-session. hardline refusals still
-		// fire upstream in the shell tool — yolo only answers approvable prompts.
-		if m.mode == "yolo" {
+		// yolo: auto-approve flagged commands, no modal. reads the live toggle so
+		// alt+y takes effect mid-session. hardline refusals still fire upstream
+		// in the shell tool — yolo only answers approvable prompts.
+		if m.yolo {
 			if m.approver != nil {
 				m.approver.Resolve(ask.UseID, ApprovalAllow)
 			}
@@ -156,6 +156,12 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.updatePrompt = newP
 		return m, cmd
 	}
+	// tutorial claims keys while active; ticks/window-size fall through.
+	if m.tutorial.active {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			return m.onTutorialKey(km)
+		}
+	}
 
 	if nm, cmd, claimed := m.claimByPane(msg); claimed {
 		return nm, cmd
@@ -217,6 +223,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onGlowTick(msg)
 	case compactDoneMsg:
 		return m.onCompactDone(msg)
+	case handoffReadyMsg:
+		return m.onHandoffReady(msg)
 	case externalDoneMsg:
 		return m.onExternalDone(msg)
 	case turnDoneMsg:
@@ -233,6 +241,10 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onCostTick(msg)
 	case introTickMsg:
 		return m.onIntroTick(msg)
+	case tutorialTickMsg:
+		return m.onTutorialTick(msg)
+	case openTutorialMsg:
+		return m.onOpenTutorial(msg)
 
 	case openPaletteMsg:
 		return m.onOpenPalette(msg)
@@ -257,6 +269,14 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onResumeSelect(msg)
 	case ResumeDismissedMsg:
 		return m, nil
+	case openRewindMsg:
+		return m.onOpenRewind(msg)
+	case RewindSelectMsg:
+		return m.onRewindSelect(msg)
+	case RewindDismissedMsg:
+		return m, nil
+	case checkpointDoneMsg:
+		return m.onCheckpointDone(msg)
 	case SessionForkMsg:
 		return m.onSessionFork(msg)
 	case SessionCloneMsg:
@@ -272,8 +292,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onOpenUsage(msg)
 	case openLoginMsg:
 		return m.onOpenLogin(msg)
-	case openEffortMsg:
-		return m.onOpenEffort(msg)
+	case openRoleMsg:
+		return m.onOpenRole(msg)
 	case openSettingsMsg:
 		return m.onOpenSettings(msg)
 	case settingsToggleMsg:
@@ -290,11 +310,14 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	case PickedMsg:
 		return m.onPicked(msg)
 	case PickerDismissedMsg:
+		// cancelling the picker mid-/handoff disarms the flow; the stuck turn
+		// (if any) keeps running since we never reached onHandoffPicked.
+		m.handoffActive = false
 		return m, nil
 	case PickerLoginRequestedMsg:
 		return m.onPickerLoginRequested(msg)
-	case effortPickedMsg:
-		return m.onEffortPicked(msg)
+	case rolePickedMsg:
+		return m.onRolePicked(msg)
 
 	case updateAvailableMsg:
 		return m.onUpdateAvailable(msg)

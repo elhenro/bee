@@ -28,6 +28,7 @@ func (s *loginSideStub) Compact(context.Context) error            { return nil }
 func (s *loginSideStub) SwitchModel(string) error                 { return nil }
 func (s *loginSideStub) SwitchProviderModel(string, string) error { return nil }
 func (s *loginSideStub) OpenPicker() error                        { return nil }
+func (s *loginSideStub) OpenHandoff() error                       { return nil }
 func (s *loginSideStub) ListSessions() ([]string, error)          { return nil, nil }
 func (s *loginSideStub) OpenSession(string) error                 { return nil }
 func (s *loginSideStub) NewSession() error                        { return nil }
@@ -39,6 +40,8 @@ func (s *loginSideStub) OpenUsage() error                         { return nil }
 func (s *loginSideStub) UsageText() string                        { return "" }
 func (s *loginSideStub) ForkSession(string) error                 { return nil }
 func (s *loginSideStub) CloneSession() error                      { return nil }
+func (s *loginSideStub) OpenRewind() error                        { return nil }
+func (s *loginSideStub) SaveCheckpoint(string) (string, error)    { return "", nil }
 func (s *loginSideStub) Login(_ context.Context, p string) error {
 	s.loginCalled = p
 	return s.loginErr
@@ -50,10 +53,13 @@ func (s *loginSideStub) SaveAPIKey(p, k string) error {
 }
 func (s *loginSideStub) LoginStatus() []commands.ProviderAuth          { return s.statuses }
 func (s *loginSideStub) OpenLogin() error                              { return nil }
+func (s *loginSideStub) OpenTutorial() error                          { return nil }
 func (s *loginSideStub) OpenResume() error                             { return nil }
-func (s *loginSideStub) SetThinking(string) error                      { return nil }
-func (s *loginSideStub) GetThinking() string                           { return "off" }
-func (s *loginSideStub) OpenEffortPicker() error                       { return nil }
+func (s *loginSideStub) SetRole(string) error                          { return nil }
+func (s *loginSideStub) GetRole() string                               { return "worker" }
+func (s *loginSideStub) SetYolo(bool) error                            { return nil }
+func (s *loginSideStub) GetYolo() bool                                 { return false }
+func (s *loginSideStub) OpenRolePicker() error                         { return nil }
 func (s *loginSideStub) SetMaxIterations(int) error                    { return nil }
 func (s *loginSideStub) GetMaxIterations() int                         { return 0 }
 func (s *loginSideStub) SetShowThoughts(bool) error                    { return nil }

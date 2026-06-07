@@ -43,13 +43,14 @@ func TestRun_FormatSlipNudgesTwice(t *testing.T) {
 	prov := &jsonToolAttemptTwiceThenSuccess{}
 	cfg := config.Defaults()
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	cfg.Mode = "edit"
+	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	reg := tools.NewRegistry()
 	_ = reg.Register(&stubTool{name: "shell", desc: "run shell", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
 		return tools.Result{}, nil
 	}})
 	eng := &Engine{
+		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    reg,
 		Memory:   stubMemStore{},
@@ -87,13 +88,13 @@ func TestRun_FormatNudgeIncludesRealToolName(t *testing.T) {
 	prov := &jsonToolAttemptTwiceThenSuccess{}
 	cfg := config.Defaults()
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	cfg.Mode = "edit"
+	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	reg := tools.NewRegistry()
 	_ = reg.Register(&stubTool{name: "shell", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
 		return tools.Result{}, nil
 	}})
-	eng := &Engine{Provider: prov, Tools: reg, Memory: stubMemStore{}, Cfg: cfg, Cwd: "."}
+	eng := &Engine{SkipPostureClassifier: true, Provider: prov, Tools: reg, Memory: stubMemStore{}, Cfg: cfg, Cwd: "."}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	res, _ := eng.Run(ctx, "test")
@@ -136,13 +137,13 @@ func TestRun_FormatSlipDetectsParenProse(t *testing.T) {
 	prov := &parenProseSlip{}
 	cfg := config.Defaults()
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	cfg.Mode = "edit"
+	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	reg := tools.NewRegistry()
 	_ = reg.Register(&stubTool{name: "read", desc: "read file", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
 		return tools.Result{}, nil
 	}})
-	eng := &Engine{Provider: prov, Tools: reg, Memory: stubMemStore{}, Cfg: cfg, Cwd: "."}
+	eng := &Engine{SkipPostureClassifier: true, Provider: prov, Tools: reg, Memory: stubMemStore{}, Cfg: cfg, Cwd: "."}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	res, _ := eng.Run(ctx, "test")
@@ -184,13 +185,13 @@ func TestRun_FormatStrikeBailsAtThree(t *testing.T) {
 	prov := &jsonToolAttemptForever{}
 	cfg := config.Defaults()
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	cfg.Mode = "edit"
+	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	reg := tools.NewRegistry()
 	_ = reg.Register(&stubTool{name: "shell", desc: "x", fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
 		return tools.Result{}, nil
 	}})
-	eng := &Engine{Provider: prov, Tools: reg, Memory: stubMemStore{}, Cfg: cfg, Cwd: "."}
+	eng := &Engine{SkipPostureClassifier: true, Provider: prov, Tools: reg, Memory: stubMemStore{}, Cfg: cfg, Cwd: "."}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, err := eng.Run(ctx, "test")
