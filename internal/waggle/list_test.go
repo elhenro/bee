@@ -34,6 +34,20 @@ func TestList_ReturnsCrystallized(t *testing.T) {
 	}
 }
 
+func TestList_SkipsDisabled(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	s, _ := ProjectStore("/p")
+	seedWaggle(t, s, "live", []Call{{Tool: "ls", Args: map[string]string{"path": "x"}}, rd("a")})
+	seedWaggle(t, s, "dead", []Call{{Tool: "ls", Args: map[string]string{"path": "y"}}, rd("b")})
+	if err := disableFile(filepath.Join(s.Dir(), "dead.md")); err != nil {
+		t.Fatal(err)
+	}
+	metas, _ := List(s)
+	if len(metas) != 1 || metas[0].Name != "live" {
+		t.Fatalf("disabled waggle must not be listed: %+v", metas)
+	}
+}
+
 func TestList_MissingDir(t *testing.T) {
 	t.Setenv("BEE_HOME", t.TempDir())
 	s, _ := ProjectStore("/never-written")

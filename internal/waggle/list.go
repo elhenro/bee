@@ -33,6 +33,9 @@ func List(s *Store) ([]Meta, error) {
 			continue
 		}
 		p := filepath.Join(s.dir, e.Name())
+		if isDisabled(p) {
+			continue // demoted route: hidden from ls, the leaderboard, and lookup
+		}
 		sk, err := skills.ParseFile(p)
 		if err != nil {
 			continue

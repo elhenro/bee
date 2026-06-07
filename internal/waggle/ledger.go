@@ -16,6 +16,10 @@ type LedgerEntry struct {
 	Name  string `json:"name"`
 	Steps int    `json:"steps"`
 	Yield int    `json:"yield"`
+	// Fail marks a divergence: the route matched a prefix but its tail exec
+	// failed or returned nothing. Recorded with zero yield; curation demotes a
+	// waggle that keeps diverging without ever paying off.
+	Fail bool `json:"fail,omitempty"`
 }
 
 // Ledger is an append-only reuse log for one scope, persisted as JSONL beside
@@ -52,11 +56,51 @@ func (l *Ledger) Append(e LedgerEntry) error {
 	return err
 }
 
+// CompactLedger rewrites a ledger, keeping only entries whose Name is in keep.
+// Run it after deleting waggle files so a later re-mine of the same (content-
+// stable) name starts with clean stats instead of inheriting a dead route's
+// history — otherwise stale Fails would auto-demote the fresh route. A missing
+// ledger is a no-op.
+func CompactLedger(path string, keep map[string]bool) error {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var kept [][]byte
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var e LedgerEntry
+		if json.Unmarshal(line, &e) != nil || e.Name == "" || !keep[e.Name] {
+			continue
+		}
+		kept = append(kept, append([]byte(nil), line...))
+	}
+	f.Close()
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	for _, l := range kept {
+		buf.Write(l)
+		buf.WriteByte('\n')
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
+}
+
 // Stat is a waggle's aggregated reuse: how many times it was followed and the
 // total estimated tokens saved.
 type Stat struct {
 	Uses  int
 	Yield int
+	Fails int // recorded divergences (replay matched but its tail exec failed)
 }
 
 // ReadLedger aggregates a JSONL ledger by waggle name. A missing file is not an
@@ -83,8 +127,12 @@ func ReadLedger(path string) (map[string]Stat, error) {
 			continue
 		}
 		s := out[e.Name]
-		s.Uses++
-		s.Yield += e.Yield
+		if e.Fail {
+			s.Fails++
+		} else {
+			s.Uses++
+			s.Yield += e.Yield
+		}
 		out[e.Name] = s
 	}
 	return out, sc.Err()

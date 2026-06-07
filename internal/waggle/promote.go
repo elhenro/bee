@@ -29,6 +29,9 @@ type frontmatter struct {
 	Exec        []string `yaml:"exec"`
 	Uses        int      `yaml:"uses"`
 	Yield       int      `yaml:"yield"`
+	// Disabled is set by curation when a route's replay repeatedly diverged
+	// without paying off. The file is kept for inspection but skipped by replay.
+	Disabled bool `yaml:"disabled,omitempty"`
 	// Route is the structured per-step form the replayer rehydrates: each step's
 	// tool plus its args, with varying positions encoded as positional tokens
 	// ($N) and fixed positions as literals. The skills parser ignores it; only

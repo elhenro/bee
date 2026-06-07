@@ -116,6 +116,12 @@ func (r *Replayer) Follow(ctx context.Context, exec func(context.Context, string
 
 	out, err := exec(ctx, plan.script)
 	if err != nil || strings.TrimSpace(out) == "" {
+		// divergence: the prefix matched but the stored tail no longer runs
+		// clean. Record it so curation can demote a route the tree outgrew.
+		r.mu.Lock()
+		ledger := r.ledgers[plan.scope]
+		r.mu.Unlock()
+		_ = ledger.Append(LedgerEntry{Name: plan.name, Steps: plan.steps, Fail: true})
 		return "", false
 	}
 	gain := len(out) / 4
@@ -264,11 +270,15 @@ func loadRouteFile(path string) (Route, bool) {
 		return Route{}, false
 	}
 	var meta struct {
-		Name  string      `yaml:"name"`
-		Route []routeStep `yaml:"route"`
+		Name     string      `yaml:"name"`
+		Disabled bool        `yaml:"disabled"`
+		Route    []routeStep `yaml:"route"`
 	}
 	if err := yaml.Unmarshal(fm, &meta); err != nil || len(meta.Route) == 0 {
 		return Route{}, false
+	}
+	if meta.Disabled {
+		return Route{}, false // demoted by curation; keep the file, skip replay
 	}
 	if meta.Name == "" {
 		meta.Name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))

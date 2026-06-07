@@ -30,10 +30,50 @@ func TestLedger_AppendAndAggregate(t *testing.T) {
 	}
 }
 
+func TestReadLedger_AggregatesFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	l := NewLedger(path)
+	_ = l.Append(LedgerEntry{Name: "wag_d", Steps: 2, Yield: 80})  // a success
+	_ = l.Append(LedgerEntry{Name: "wag_d", Steps: 2, Fail: true}) // a divergence
+	_ = l.Append(LedgerEntry{Name: "wag_d", Steps: 2, Fail: true}) // another divergence
+	stats, err := ReadLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := stats["wag_d"]
+	if got.Uses != 1 || got.Yield != 80 || got.Fails != 2 {
+		t.Errorf("fail aggregation wrong: %+v", got)
+	}
+}
+
 func TestReadLedger_MissingIsEmpty(t *testing.T) {
 	stats, err := ReadLedger(filepath.Join(t.TempDir(), "none.jsonl"))
 	if err != nil || len(stats) != 0 {
 		t.Fatalf("missing ledger should be empty: %v %v", stats, err)
+	}
+}
+
+func TestCompactLedger_DropsOrphanEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	l := NewLedger(path)
+	_ = l.Append(LedgerEntry{Name: "gone", Fail: true})
+	_ = l.Append(LedgerEntry{Name: "gone", Fail: true})
+	_ = l.Append(LedgerEntry{Name: "kept", Yield: 50})
+	if err := CompactLedger(path, map[string]bool{"kept": true}); err != nil {
+		t.Fatal(err)
+	}
+	stats, _ := ReadLedger(path)
+	if _, ok := stats["gone"]; ok {
+		t.Error("orphan entries should be compacted away")
+	}
+	if stats["kept"].Uses != 1 || stats["kept"].Yield != 50 {
+		t.Errorf("surviving entries must be preserved: %+v", stats["kept"])
+	}
+}
+
+func TestCompactLedger_MissingIsNoop(t *testing.T) {
+	if err := CompactLedger(filepath.Join(t.TempDir(), "none.jsonl"), nil); err != nil {
+		t.Fatalf("missing ledger compact should be no-op: %v", err)
 	}
 }
 

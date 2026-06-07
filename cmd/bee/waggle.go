@@ -28,18 +28,13 @@ func runWaggle(args []string) {
 		waggleLs("project", proj)
 		waggleLs("user", user)
 	case "gc":
-		n1, _ := waggle.GC(proj)
-		n2, _ := waggle.GC(user)
-		// curate: prune never-paid-off stale routes, then promote routes seen
-		// across multiple projects up to the portable user store.
+		// full curation pass: gc dups, demote chronic divergers, prune stale,
+		// compact orphaned ledger history, promote cross-project routes.
 		const staleAge = 14 * 24 * time.Hour
-		ps, _ := waggle.ReadLedger(proj.LedgerPath())
-		us, _ := waggle.ReadLedger(user.LedgerPath())
-		sp, _ := waggle.PruneStale(proj, ps, staleAge, time.Now())
-		su, _ := waggle.PruneStale(user, us, staleAge, time.Now())
-		promoted, _ := waggle.Promote(user)
-		fmt.Printf("waggle gc: removed %d project, %d user; pruned %d stale; promoted %d to user\n",
-			n1+sp, n2+su, sp+su, promoted)
+		const minDivergence = 3
+		r, _ := waggle.Curate(proj, user, staleAge, minDivergence, time.Now())
+		fmt.Printf("waggle gc: removed %d project, %d user; pruned %d stale; demoted %d diverging; promoted %d to user\n",
+			r.RemovedProj+r.PrunedProj, r.RemovedUser+r.PrunedUser, r.PrunedProj+r.PrunedUser, r.Demoted, r.Promoted)
 	default:
 		fmt.Fprintf(os.Stderr, "bee waggle: unknown subcommand %q (want ls|gc)\n", sub)
 		os.Exit(2)

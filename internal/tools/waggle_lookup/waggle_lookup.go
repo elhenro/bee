@@ -106,6 +106,9 @@ func (t *Tool) follow(ctx context.Context, name string, in map[string]any) (tool
 		if !s.Exists(name) {
 			continue
 		}
+		if s.IsDisabled(name) {
+			return tools.Result{Content: fmt.Sprintf("waggle %q is disabled (demoted for repeated divergence)", name), IsError: true}, nil
+		}
 		sk, err := skills.ParseFile(filepath.Join(s.Dir(), name+".md"))
 		if err != nil {
 			return tools.Result{Content: fmt.Sprintf("waggle %q failed to parse: %v", name, err), IsError: true}, nil

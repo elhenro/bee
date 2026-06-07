@@ -48,6 +48,12 @@ func (s *Store) Exists(name string) bool {
 	return err == nil
 }
 
+// IsDisabled reports whether the named waggle was demoted by curation. The
+// on-demand lookup path uses this to refuse a retired route.
+func (s *Store) IsDisabled(name string) bool {
+	return isDisabled(filepath.Join(s.dir, name+".md"))
+}
+
 // Write persists the waggle markdown as <name>.md, creating the dir on demand.
 func (s *Store) Write(name, md string) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {

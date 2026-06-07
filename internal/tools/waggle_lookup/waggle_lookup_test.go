@@ -55,6 +55,28 @@ func TestRun_UnknownName(t *testing.T) {
 	}
 }
 
+func TestRun_RefusesDisabled(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	s, _ := waggle.ProjectStore("/p")
+	writeDisabledExec(t, s, "wag_dead", "echo NOPE")
+	tool := New(s)
+	res, _ := tool.Run(context.Background(), map[string]any{"name": "wag_dead"})
+	if !res.IsError || strings.Contains(res.Content, "NOPE") {
+		t.Errorf("disabled waggle must not run: err=%v %q", res.IsError, res.Content)
+	}
+}
+
+// writeDisabledExec writes an exec-skill waggle marked disabled by curation.
+func writeDisabledExec(t *testing.T, s *waggle.Store, name, script string) {
+	t.Helper()
+	md := "---\nname: " + name + "\ntype: exec\ntools: [bash]\n" +
+		"description: \"waggle: test\"\norigin: waggle\nscope: project\ndisabled: true\n" +
+		"exec: [bash, -c, \"" + script + "\"]\n---\nDisabled waggle.\n"
+	if err := s.Write(name, md); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // writeExec writes a minimal valid exec-skill waggle to the store.
 func writeExec(t *testing.T, s *waggle.Store, name, script string) {
 	t.Helper()

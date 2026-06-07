@@ -2,6 +2,7 @@ package waggle
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,33 @@ import (
 
 func okExec(out string) func(context.Context, string) (string, error) {
 	return func(context.Context, string) (string, error) { return out, nil }
+}
+
+func TestReplay_RecordsDivergenceOnFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	rt := litRoute()
+	rt.Scope = ScopeProject
+	r := NewReplayer([]Route{rt}, 2)
+	r.SetLedger(ScopeProject, NewLedger(path))
+	r.Observe(Call{Tool: "ls", Args: map[string]string{"path": "internal"}})
+	r.Observe(rd("a.go"))
+	failExec := func(context.Context, string) (string, error) { return "", errors.New("boom") }
+	if _, ok := r.Follow(context.Background(), failExec); ok {
+		t.Fatal("failing exec must not fire")
+	}
+	got := mustReadLedger(t, path)["wag_x"]
+	if got.Fails != 1 || got.Uses != 0 {
+		t.Errorf("divergence not recorded: %+v", got)
+	}
+}
+
+func mustReadLedger(t *testing.T, path string) map[string]Stat {
+	t.Helper()
+	stats, err := ReadLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stats
 }
 
 // a literal route long enough to leave a tail after a 2-step prefix.
