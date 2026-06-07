@@ -29,6 +29,19 @@ type frontmatter struct {
 	Exec        []string `yaml:"exec"`
 	Uses        int      `yaml:"uses"`
 	Yield       int      `yaml:"yield"`
+	// Route is the structured per-step form the replayer rehydrates: each step's
+	// tool plus its args, with varying positions encoded as positional tokens
+	// ($N) and fixed positions as literals. The skills parser ignores it; only
+	// replay reads it. Kept beside exec (the runnable joined script) so a waggle
+	// stays a valid exec-skill while also being matchable step-by-step.
+	Route []routeStep `yaml:"route,omitempty"`
+}
+
+// routeStep is one step of a waggle's structured route on disk. A param arg
+// holds its "$N" token; a literal arg holds its value.
+type routeStep struct {
+	Tool string            `yaml:"tool"`
+	Args map[string]string `yaml:"args,omitempty"`
 }
 
 // scriptOf renders a candidate's steps into a single bash script (steps joined
@@ -76,6 +89,7 @@ func Render(name string, c Candidate, scope Scope) (string, bool) {
 		Scope:       string(scope),
 		Params:      paramNames,
 		Exec:        []string{"bash", "-c", script},
+		Route:       routeOf(c),
 	}
 	y, err := yaml.Marshal(fm)
 	if err != nil {
@@ -104,6 +118,29 @@ func assignParams(params []Param) (map[int]map[string]int, []string) {
 		names = append(names, nm)
 	}
 	return pos, names
+}
+
+// routeOf renders a candidate's steps into the structured on-disk route. Varying
+// argument positions become "$N" tokens (matching the joined script), so the
+// replayer can tell a wildcard prefix slot from a literal one without parsing
+// shell. Mirrors assignParams so token ordinals line up with the exec script.
+func routeOf(c Candidate) []routeStep {
+	paramPos, _ := assignParams(c.Params)
+	steps := make([]routeStep, len(c.Steps))
+	for s, call := range c.Steps {
+		args := make(map[string]string, len(call.Args))
+		for k, v := range call.Args {
+			if m := paramPos[s]; m != nil {
+				if n, ok := m[k]; ok {
+					args[k] = fmt.Sprintf("$%d", n)
+					continue
+				}
+			}
+			args[k] = v
+		}
+		steps[s] = routeStep{Tool: call.Tool, Args: args}
+	}
+	return steps
 }
 
 func describe(steps []Call, params []string) string {

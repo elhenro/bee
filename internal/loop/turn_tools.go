@@ -57,6 +57,7 @@ func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]typ
 		results[i] = e.runOneTrapped(ctx, u)
 	}
 	flush()
+	e.replayFollow(ctx, uses, results)
 	for _, r := range results {
 		if e.JSONEmitter != nil {
 			e.JSONEmitter.Emit(jsonmode.Event{
@@ -107,6 +108,58 @@ func (e *Engine) runOneTrapped(ctx context.Context, u types.ToolUse) types.ToolR
 		}
 	}
 	return res
+}
+
+// replayFollow feeds this batch's successful read-only calls to the predictive
+// replayer in input order (the parallel dispatch path can't preserve order, so
+// this runs once, post-flush) and, on a confident prefix match, runs the route's
+// remaining steps and appends the combined output to the call that completed the
+// recognized prefix. Best-effort: never errors the turn.
+func (e *Engine) replayFollow(ctx context.Context, uses []types.ToolUse, results []types.ToolResult) {
+	if e.Replay == nil {
+		return
+	}
+	last := -1
+	for i, u := range uses {
+		if results[i].IsError || !safeParallelTools[u.Name] {
+			continue
+		}
+		e.Replay.Observe(waggle.Call{Tool: u.Name, Args: stringifyArgs(u.Input)})
+		last = i
+	}
+	if last < 0 {
+		return
+	}
+	if block, ok := e.Replay.Follow(ctx, e.replayExec); ok {
+		results[last].Content += block
+	}
+}
+
+// replayExec runs a fully-literal read-only script for the replayer through the
+// host shell tool, so sandbox wrapping, secret redaction and per-tool truncation
+// apply exactly as for a model-issued call. A hardline safety re-check guards
+// against a recorded route that resolves to something dangerous later.
+func (e *Engine) replayExec(ctx context.Context, script string) (string, error) {
+	if e.Tools == nil {
+		return "", errors.New("replay: tools unavailable")
+	}
+	if err := safety.CheckShellCommand(script); err != nil {
+		return "", err
+	}
+	t, ok := e.Tools.Get("bash")
+	if !ok {
+		return "", errors.New("replay: shell tool unavailable")
+	}
+	out, err := t.Run(ctx, wrapShellInput(map[string]any{"command": script}, e.Cfg.Sandbox, e.Cwd))
+	if err != nil {
+		return "", err
+	}
+	if out.IsError {
+		return "", fmt.Errorf("replay step failed: %s", out.Content)
+	}
+	content := safety.Redact(out.Content)
+	content, _ = tools.TruncateWithLimit("bash", content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
+	return content, nil
 }
 
 func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult, error) {

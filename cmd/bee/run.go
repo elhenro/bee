@@ -226,6 +226,7 @@ func runHeadlessReal(args []string) {
 		Tools:    reg,
 		Skills:   skillReg,
 		Waggle:   newWaggleManager(cwd),
+		Replay:   newWaggleReplayer(cwd),
 		Memory:   memStore,
 		Sessions: roll,
 		Cfg:      cfg,

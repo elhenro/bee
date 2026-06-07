@@ -40,6 +40,13 @@ type Engine struct {
 	// Waggle, when non-nil, observes read-only tool calls so repeated routes can
 	// be crystallized into reusable exec-skills (procedure memory). nil disables.
 	Waggle *waggle.Manager
+	// Replay, when non-nil, follows previously crystallized routes: after a tool
+	// batch it matches the recent read-only calls against stored waggle prefixes
+	// and, on a confident match, runs the route's remaining read-only steps off
+	// the model's path, folding their output into the triggering tool result so
+	// the model skips the round-trips. Zero prompt cost (matching is in Go). nil
+	// disables.
+	Replay *waggle.Replayer
 	Cfg    config.Config
 	Cwd    string
 	Stdout io.Writer

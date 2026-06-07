@@ -48,6 +48,27 @@ func newWaggleManager(cwd string) *waggle.Manager {
 	return waggle.NewManager(store, waggle.ManagerConfig{Scope: waggle.ScopeProject})
 }
 
+// newWaggleReplayer loads crystallized routes (project for cwd + the shared user
+// store) into a predictive replayer. Returns nil when no routes exist or the
+// stores can't be resolved, so the loop runs unchanged on a cold library.
+func newWaggleReplayer(cwd string) *waggle.Replayer {
+	var routes []waggle.Route
+	if proj, err := waggle.ProjectStore(cwd); err == nil {
+		if rs, err := waggle.LoadRoutes(proj); err == nil {
+			routes = append(routes, rs...)
+		}
+	}
+	if user, err := waggle.UserStore(); err == nil {
+		if rs, err := waggle.LoadRoutes(user); err == nil {
+			routes = append(routes, rs...)
+		}
+	}
+	if len(routes) == 0 {
+		return nil
+	}
+	return waggle.NewReplayer(routes, 2)
+}
+
 // filterTools narrows reg to the comma-separated list of tool names.
 // Unknown names are an error so typos fail loudly. Empty list returns reg
 // unchanged.

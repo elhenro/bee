@@ -224,6 +224,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		Tools:    reg,
 		Skills:   skillReg,
 		Waggle:   newWaggleManager(cwd),
+		Replay:   newWaggleReplayer(cwd),
 		Memory:   newKnowledgeAdapter(prov, cfg),
 		Sessions: roll,
 		Cfg:      cfg,
