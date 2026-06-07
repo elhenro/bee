@@ -97,6 +97,8 @@ func main() {
 		runDoctor(os.Args[2:])
 	case "bench":
 		runBench(os.Args[2:])
+	case "waggle":
+		runWaggle(os.Args[2:])
 	case "browse":
 		browse(os.Args[2:])
 	case "version", "-v", "--version":
