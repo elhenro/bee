@@ -47,6 +47,12 @@ type Side interface {
 	OpenResume() error
 	// OpenCost opens the cost monitor modal.
 	OpenCost() error
+	// OpenUsage opens the historical usage-overview modal. Returns an error in
+	// headless contexts so the command falls back to UsageText.
+	OpenUsage() error
+	// UsageText renders the usage overview as compact plain text (the headless
+	// fallback when no pane is available).
+	UsageText() string
 	// ForkSession forks a new session at fromMsgID (or entire session if empty).
 	ForkSession(fromMsgID string) error
 	// CloneSession clones the entire current session into a new one.

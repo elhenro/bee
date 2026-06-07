@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -132,6 +133,60 @@ const indexHTML = `<!DOCTYPE html>
     font-size: 0.9rem;
     font-style: italic;
     margin-top: 1rem;
+  }
+  .gallery {
+    position: relative;
+    margin-bottom: 3rem;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+  .gallery-main {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    background: var(--card);
+  }
+  .gallery-main img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  .gallery-main img.active {
+    opacity: 1;
+  }
+  .gallery-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: 0.75rem 0;
+    background: var(--card);
+  }
+  .gallery-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+  }
+  .gallery-dot.active {
+    background: var(--accent);
+    transform: scale(1.3);
+  }
+  .gallery-counter {
+    text-align: center;
+    padding: 0 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--muted);
   }
   .section {
     margin-bottom: 3rem;
@@ -264,6 +319,18 @@ const indexHTML = `<!DOCTYPE html>
       <p class="fun-fact">"I'm not a bot. I'm a bee. There's a difference."</p>
     </div>
 
+    <div class="gallery">
+      <div class="gallery-main">
+        <img src="/assets/screenshot-1.webp" alt="bee agent screenshot" class="active" loading="lazy">
+        <img src="/assets/screenshot-2.webp" alt="bee agent screenshot" loading="lazy">
+        <img src="/assets/screenshot-3.webp" alt="bee agent screenshot" loading="lazy">
+        <img src="/assets/screenshot-4.webp" alt="bee agent screenshot" loading="lazy">
+        <img src="/assets/screenshot-5.webp" alt="bee agent screenshot" loading="lazy">
+      </div>
+      <div class="gallery-dots" id="gallery-dots"></div>
+      <div class="gallery-counter" id="gallery-counter"></div>
+    </div>
+
     <div class="section">
       <h2>Install</h2>
       <div class="install-box">
@@ -346,6 +413,92 @@ const indexHTML = `<!DOCTYPE html>
       setTimeout(() => el.textContent = orig, 1500);
     });
   }
+
+  // Gallery
+  const galleryImgs = document.querySelectorAll('.gallery-main img');
+  const dotsContainer = document.getElementById('gallery-dots');
+  const counter = document.getElementById('gallery-counter');
+  let galleryIdx = 0;
+  let autoTimer = null;
+  let autoInterval = 4000;
+  const galleryEl = document.querySelector('.gallery-main');
+
+  // Measure first image for aspect ratio
+  function measureAspect() {
+    const first = galleryImgs[0];
+    if (first.naturalWidth && first.naturalHeight) {
+      galleryEl.style.aspectRatio = first.naturalWidth + ' / ' + first.naturalHeight;
+    } else {
+      first.onload = () => {
+        galleryEl.style.aspectRatio = first.naturalWidth + ' / ' + first.naturalHeight;
+      };
+    }
+  }
+
+  galleryImgs.forEach((_, i) => {
+    const dot = document.createElement('button');
+    dot.className = 'gallery-dot' + (i === 0 ? ' active' : '');
+    dot.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+    dot.onclick = () => { setGallery(i); resetAuto(); };
+    dotsContainer.appendChild(dot);
+  });
+
+  measureAspect();
+
+  function setGallery(i) {
+    galleryImgs[galleryIdx].classList.remove('active');
+    dotsContainer.children[galleryIdx].classList.remove('active');
+    galleryIdx = i;
+    galleryImgs[galleryIdx].classList.add('active');
+    dotsContainer.children[galleryIdx].classList.add('active');
+    counter.textContent = (galleryIdx + 1) + ' / ' + galleryImgs.length;
+  }
+
+  function galleryNav(dir) {
+    let next = galleryIdx + dir;
+    if (next < 0) next = galleryImgs.length - 1;
+    if (next >= galleryImgs.length) next = 0;
+    setGallery(next);
+    resetAuto();
+  }
+
+  // Auto-rotate
+  function startAuto() {
+    autoTimer = setInterval(() => {
+      let next = (galleryIdx + 1) % galleryImgs.length;
+      setGallery(next);
+    }, autoInterval);
+  }
+
+  function resetAuto() {
+    clearInterval(autoTimer);
+    startAuto();
+  }
+
+  // Pause on hover
+  galleryEl.addEventListener('mouseenter', () => {
+    clearInterval(autoTimer);
+  });
+
+  galleryEl.addEventListener('mouseleave', () => {
+    startAuto();
+  });
+
+  startAuto();
+
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') galleryNav(-1);
+    if (e.key === 'ArrowRight') galleryNav(1);
+  });
+
+  // Touch swipe
+  let touchStartX = 0;
+  galleryEl.addEventListener('touchstart', (e) => { touchStartX = e.changedTouches[0].screenX; }, { passive: true });
+  galleryEl.addEventListener('touchend', (e) => {
+    const diff = e.changedTouches[0].screenX - touchStartX;
+    if (Math.abs(diff) > 50) galleryNav(diff > 0 ? -1 : 1);
+  }, { passive: true });
 </script>
   <script type="application/ld+json">
   {
@@ -402,7 +555,8 @@ func main() {
 </urlset>`))
 	})
 
-	r.Handle("/assets/*", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
+	assetsSub, _ := fs.Sub(assetsFS, "assets")
+	r.Handle("/assets/*", http.StripPrefix("/assets", http.FileServer(http.FS(assetsSub))))
 
 	fmt.Printf("🐝 bee website — http://localhost:%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, r))

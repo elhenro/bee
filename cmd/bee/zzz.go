@@ -34,7 +34,7 @@ import (
 
 func runZzz(args []string) {
 	fs := flag.NewFlagSet("zzz", flag.ContinueOnError)
-	maxIter := fs.Int("max-iterations", 50, "stop after N iterations (default 50)")
+	maxIter := fs.Int("max-iterations", loop.MaxIterations, "stop after N iterations (default 100)")
 	maxTok := fs.Int("max-tokens", 0, "stop after N total tokens (0 = unlimited)")
 	stopWhen := fs.String("stop-when", "", "stop when assistant text contains this substring")
 	wantWorktree := fs.Bool("worktree", false, "run in isolated git worktree under ~/.bee/zzz/worktrees/")
@@ -53,6 +53,7 @@ func runZzz(args []string) {
 	model := fs.String("model", "", "override config default_model")
 	provider := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope")
+	safe := fs.Bool("safe", false, "shorthand for --sandbox workspace-write: confine writes to cwd+tmp, block network")
 	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high|max")
 	effort := fs.String("effort", "", "alias for --thinking")
 	cavemanLvl := fs.String("caveman", "", "force caveman level")
@@ -93,7 +94,7 @@ func runZzz(args []string) {
 		}
 	}
 
-	cfg, prov, app, skillReg, err := buildZzzDeps(*model, *provider, *sandboxScope, *thinking, *effort, *cavemanLvl, *yes || *yolo)
+	cfg, prov, app, skillReg, err := buildZzzDeps(*model, *provider, resolveSafe(*sandboxScope, *safe), *thinking, *effort, *cavemanLvl, *yes || *yolo)
 	if err != nil {
 		fatalf("zzz: setup: %v", err)
 	}

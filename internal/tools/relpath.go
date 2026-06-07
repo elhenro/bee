@@ -23,6 +23,13 @@ func RelTo(base, p string) string {
 	return rel
 }
 
+// isRooted reports whether p starts at a path root without naming a volume,
+// e.g. "/tmp" or "\tmp". filepath.IsAbs returns false for these on Windows, so
+// callers must special-case them to avoid joining absolute inputs under root.
+func isRooted(p string) bool {
+	return len(p) > 0 && (p[0] == '/' || p[0] == '\\')
+}
+
 // expandHome expands a leading ~ or ~/ against $HOME. Other paths pass through.
 func expandHome(p string) string {
 	if p == "~" {
@@ -80,8 +87,12 @@ func pathIsPrefix(absPath, rootPath string) bool {
 	// Normalize separators for comparison
 	absPath = filepath.ToSlash(absPath)
 	rootPath = filepath.ToSlash(rootPath)
-	// Trailing separator ensures /tmp resolves outside the root
-	// (e.g. C:\...\001 is NOT a prefix of C:\...\001\tmp when root has trailing /).
+	// The root contains itself.
+	if absPath == rootPath {
+		return true
+	}
+	// A child must sit under root with a separator boundary, so /x/001 is not
+	// treated as containing /x/0011 and /tmp doesn't resolve inside /x/001.
 	if !strings.HasSuffix(rootPath, "/") {
 		rootPath += "/"
 	}
@@ -97,7 +108,12 @@ func pathIsPrefix(absPath, rootPath string) bool {
 func ResolveInRoot(root, path string) (abs, rel, rootAbs string, ok bool) {
 	path = expandHome(path)
 	abs = path
-	if !filepath.IsAbs(abs) {
+	// isRooted catches volume-less rooted inputs ("/tmp", "\tmp"). On Windows
+	// filepath.IsAbs is false for these (no drive letter), so without this they
+	// get joined under root and wrongly pass the containment check. Treating
+	// them as absolute makes them resolve to the drive root — outside the
+	// sandbox — matching Unix, where "/tmp" already escapes.
+	if !filepath.IsAbs(abs) && !isRooted(abs) {
 		abs = filepath.Join(root, path)
 	}
 	abs = filepath.Clean(abs)

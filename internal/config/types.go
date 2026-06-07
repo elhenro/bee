@@ -5,6 +5,9 @@
 // of the codebase only ever reads flat values.
 package config
 
+// DefaultMaxIterations is the default safety cap for tool-use rounds.
+const DefaultMaxIterations = 100
+
 // Config is the merged, post-resolution view of bee's settings. Adapters and
 // the agent loop read from this; nothing else.
 type Config struct {
@@ -42,9 +45,21 @@ type Config struct {
 	ShowLoader bool `toml:"show_loader"`
 
 	// MaxIterations caps tool-use rounds per Run. 0 = unlimited (loop until the
-	// token-budget or read-only-stall guard fires). config.Defaults() seeds 50;
+	// token-budget or read-only-stall guard fires). Defaults() seeds DefaultMaxIterations;
 	// raise for tool-heavy agents, set 0 to lift the cap, lower to fail fast.
 	MaxIterations int `toml:"max_iterations"`
+
+	// Mastermind is the top effort tier: every turn spawns a sub-agent hive
+	// (decompose → workers → critic → synthesize) instead of a single turn,
+	// trading time + tokens for the best quality the model can reach — the one
+	// effort level that lifts small/local models, since it adds orchestration
+	// rather than just a bigger reasoning budget. Selected via /effort; the
+	// picker also pins Thinking to max. Off by default. Persists across launches.
+	Mastermind bool `toml:"mastermind"`
+
+	// MastermindWorkers is how many worker bees the mastermind hive spawns per
+	// turn. Defaults() seeds 3. The planner + critic are separate clones on top.
+	MastermindWorkers int `toml:"mastermind_workers"`
 
 	// Verbose unlocks full tool-output rendering in the TUI (compact one-line
 	// preview otherwise). Toggle via /settings; persists across launches.
@@ -172,6 +187,10 @@ type ProviderConfig struct {
 	// switches like `enable_thinking=false` so the model emits canonical tool
 	// envelopes instead of prose summaries. Omitted when empty.
 	ChatTemplateKwargs map[string]any `toml:"chat_template_kwargs"`
+	// ReportsCost opts this provider into a request flag asking the service to
+	// return actual per-call spend in the usage block. Set only for routed
+	// aggregators that return real cost; strict endpoints reject the field.
+	ReportsCost bool `toml:"reports_cost"`
 }
 
 // OAuthConfig configures a generic OAuth 2.0 PKCE flow for a provider. bee

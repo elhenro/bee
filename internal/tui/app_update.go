@@ -113,10 +113,19 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.input.SetValue(c.Text)
 		return m.handleSubmit()
 	}
+	// post-plan pick: switch mode (maybe clear context), then proceed.
+	if c, ok := msg.(PlanProceedMsg); ok {
+		return m.onPlanProceed(c)
+	}
 	// modal first: it consumes keys when active.
 	if m.escalate.Active {
 		newEsc, cmd := m.escalate.Update(msg)
 		m.escalate = newEsc
+		return m, cmd
+	}
+	if m.planmode.Active {
+		newPM, cmd := m.planmode.Update(msg)
+		m.planmode = newPM
 		return m, cmd
 	}
 	if m.approval.Active {
@@ -158,6 +167,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.askModel.SetWidth(msg.Width)
 		m.approval.SetWidth(msg.Width)
 		m.escalate.SetWidth(msg.Width)
+		m.planmode.SetWidth(msg.Width)
 		if m.picker != nil {
 			m.picker.SetSize(msg.Width-4, msg.Height-4)
 		}
@@ -190,6 +200,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onWarningFade(msg)
 	case loaderTickMsg:
 		return m.onLoaderTick(msg)
+	case glowTickMsg:
+		return m.onGlowTick(msg)
 	case compactDoneMsg:
 		return m.onCompactDone(msg)
 	case externalDoneMsg:
@@ -241,6 +253,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 
 	case openCostMsg:
 		return m.onOpenCost(msg)
+	case openUsageMsg:
+		return m.onOpenUsage(msg)
 	case openLoginMsg:
 		return m.onOpenLogin(msg)
 	case openEffortMsg:

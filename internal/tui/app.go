@@ -95,6 +95,9 @@ func (m Model) Init() tea.Cmd {
 	if m.introActive {
 		cmds = append(cmds, introTickCmd())
 	}
+	if m.mastermind {
+		cmds = append(cmds, glowTickCmd())
+	}
 	// one-shot auto-submit: fire the seeded prompt as if the user typed it.
 	// banner is non-blocking so submitting now is safe.
 	if m.seedPrompt != "" {

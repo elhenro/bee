@@ -40,6 +40,10 @@ type OpenAICompatConfig struct {
 	// field. Lets local servers flip Qwen3 template switches that change tool
 	// emission shape. Nil = omit. Per-provider (TOML `chat_template_kwargs`).
 	ChatTemplateKwargs map[string]any
+	// ReportsCost opts the provider into a request flag asking for actual spend
+	// in the usage block. Off by default; strict endpoints would reject the
+	// extra field, so only set it for services that return real per-call cost.
+	ReportsCost bool
 }
 
 // OpenAICompatProvider implements Provider against an OpenAI-compatible API.
@@ -235,6 +239,11 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 		})
 	}
 	wr := wire.BuildRequest(req.Model, req.System, req.Messages, tools, req.MaxTokens, req.Temperature, req.TopP, req.Stop, req.Stream)
+	// opt in to provider-reported cost when the service supports it. gated so
+	// strict endpoints never see the extra field.
+	if p.cfg.ReportsCost {
+		wr.Usage = &wire.UsageRequest{Include: true}
+	}
 	// OpenAI o-series + compatible: pass thinking level as reasoning_effort.
 	// Omit on Off, and omit for models that don't honor the field — a non-
 	// reasoning model (qwen3-coder, plain instruct) would otherwise receive an
@@ -248,8 +257,15 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 		}
 		wr.ReasoningEffort = eff
 	}
-	if len(p.cfg.ChatTemplateKwargs) > 0 {
-		wr.ChatTemplateKwargs = p.cfg.ChatTemplateKwargs
+	if len(p.cfg.ChatTemplateKwargs) > 0 || len(req.ChatTemplateKwargs) > 0 {
+		merged := make(map[string]any, len(p.cfg.ChatTemplateKwargs)+len(req.ChatTemplateKwargs))
+		for k, v := range p.cfg.ChatTemplateKwargs {
+			merged[k] = v
+		}
+		for k, v := range req.ChatTemplateKwargs {
+			merged[k] = v
+		}
+		wr.ChatTemplateKwargs = merged
 	}
 	return wr
 }

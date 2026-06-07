@@ -51,7 +51,7 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	var b strings.Builder
 	b.WriteString("Summarize this coding-agent conversation tersely. Keep file paths, key decisions, errors, and TODOs. Drop chatter. Caveman compress.\n\n")
 	for _, m := range older {
-		txt := flattenText(m)
+		txt := flattenForSummary(m)
 		if txt == "" {
 			continue
 		}
@@ -157,13 +157,77 @@ func estimateMessageTokens(m types.Message) int {
 	return total
 }
 
-func flattenText(m types.Message) string {
+// summaryToolResultCap bounds how much of a single tool result feeds the
+// summarizer. Tool output (file reads, command dumps) dominates a coding
+// session and can be huge; the head carries the signal (what was found),
+// so cap per-result to keep the summarization prompt — and the FastModel
+// that runs it — from drowning in raw dumps.
+const summaryToolResultCap = 1500
+
+// flattenForSummary renders one message for the summarizer. Unlike a text-only
+// flatten it includes tool calls and tool results — the bulk of what a coding
+// agent actually did and learned — so the summary isn't built from chatter
+// alone. Thinking blocks are skipped: they're scratch reasoning (and the source
+// of context bloat), not facts worth carrying forward.
+func flattenForSummary(m types.Message) string {
 	var b strings.Builder
 	for _, c := range m.Content {
-		if c.Type == types.BlockText {
+		switch c.Type {
+		case types.BlockText:
 			b.WriteString(c.Text)
 			b.WriteString(" ")
+		case types.BlockToolUse:
+			if c.Use != nil {
+				fmt.Fprintf(&b, "→%s(%s) ", c.Use.Name, truncate(toolInputBrief(c.Use.Input), summaryToolResultCap))
+			}
+		case types.BlockToolResult:
+			if c.Result != nil {
+				fmt.Fprintf(&b, "←%s ", truncate(c.Result.Content, summaryToolResultCap))
+			}
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// toolInputBrief renders a tool-call input map as compact JSON, empty on error.
+func toolInputBrief(in any) string {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// truncate clips s to n runes, marking the cut so the summarizer knows output
+// was elided rather than empty. Ranges by rune so the cut lands on a rune
+// boundary — slicing by byte could split a multi-byte rune into invalid UTF-8.
+func truncate(s string, n int) string {
+	count := 0
+	for i := range s {
+		if count == n {
+			return s[:i] + "…[truncated]"
+		}
+		count++
+	}
+	return s
+}
+
+// compactWorthwhile reports whether auto-compaction can actually reclaim
+// meaningful budget. Compaction only rewrites the older slice (everything
+// before the verbatim PreserveTail); it never touches the fixed overhead —
+// system prompt + tool schemas — or the preserved tail. When the older slice
+// is already small, re-compacting burns a summarization LLM call every turn
+// for no gain (the over-budget signal is coming from overhead bee can't
+// shrink). Suppress the trigger in that state and let the token-budget cap
+// handle a genuinely wedged run. budget<=0 disables the floor (unknown window).
+func compactWorthwhile(msgs []types.Message, budget int) bool {
+	if len(msgs) <= PreserveTail {
+		return false
+	}
+	older := msgs[:len(msgs)-PreserveTail]
+	floor := budget / 10
+	if floor < 2000 {
+		floor = 2000
+	}
+	return totalTokens(older) >= floor
 }

@@ -19,9 +19,9 @@ import (
 )
 
 // MaxIterations is the default safety cap: if the model keeps emitting
-// tool_use past this many turns, abort. Override per-engine via
-// Config.MaxIterations (0 = use this default).
-const MaxIterations = 50
+// tool_use past this many turns, abort. Per-run override via
+// Config.MaxIterations (0 = unlimited).
+const MaxIterations = config.DefaultMaxIterations
 
 // KnowledgeStore abstracts knowledge selection so the engine doesn't pull
 // in the full knowledge package (and tests can stub it).
@@ -191,6 +191,20 @@ type Engine struct {
 	// visionWarned dedupes the "no fallback configured" notice per Run.
 	visionCache  map[string]string
 	visionWarned bool
+	// emptyCompletionStreak counts consecutive turns that produced no text, no
+	// reasoning, and no tool call (whitespace-only output). drives
+	// EmptyCompletionError at emptyCompletionBailAt; reset by any turn with
+	// content. catches models whose thinking-suppression switch degenerates the
+	// response to whitespace instead of suppressing the trace.
+	emptyCompletionStreak int
+	// thinkingSuppressRequested records whether this turn asked the model to
+	// skip reasoning (effort off on a model that nominally supports thinking).
+	// set per turn; read by verifyThinkingSuppression to detect non-compliance.
+	thinkingSuppressRequested bool
+	// warnedThinkingIgnored dedupes the "model ignores thinking suppression"
+	// notice. session-level (NOT reset per Run): the model rarely changes
+	// mid-session, so one warning is enough.
+	warnedThinkingIgnored bool
 }
 
 // mutatorTools are names that count as state-changing for stall detection.

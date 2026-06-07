@@ -60,6 +60,51 @@ func TestBuildAnthropicMessages_ToolRoundtrip(t *testing.T) {
 	}
 }
 
+func TestBuildAnthropicMessages_RollingHistoryCacheBreakpoints(t *testing.T) {
+	msgs := []types.Message{
+		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "first"}}},
+		{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockText, Text: "reply"}}},
+		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "second"}}},
+	}
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "sys", msgs, nil, 0, 0, true, 0)
+	if len(req.Messages) != 3 {
+		t.Fatalf("want 3 messages, got %d", len(req.Messages))
+	}
+	// last two messages get a rolling breakpoint on their final block
+	last := req.Messages[2].Content
+	prev := req.Messages[1].Content
+	if last[len(last)-1].CacheControl == nil {
+		t.Error("last message should carry a cache breakpoint")
+	}
+	if prev[len(prev)-1].CacheControl == nil {
+		t.Error("second-to-last message should carry a cache breakpoint")
+	}
+	// the oldest message must NOT be marked — only the tail rolls
+	if req.Messages[0].Content[0].CacheControl != nil {
+		t.Error("oldest message should not carry a cache breakpoint")
+	}
+	// total breakpoints (system + last tool + 2 history) must stay within
+	// Anthropic's hard limit of 4
+	b, _ := json.Marshal(req)
+	if n := strings.Count(string(b), `"cache_control"`); n > 4 {
+		t.Errorf("cache breakpoints exceed Anthropic max of 4: got %d", n)
+	}
+}
+
+func TestBuildAnthropicMessages_SingleMessageBreakpoint(t *testing.T) {
+	msgs := []types.Message{
+		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "only"}}},
+	}
+	req := BuildAnthropicMessagesRequest("m", "", msgs, nil, 0, 0, true, 0)
+	if len(req.Messages) != 1 {
+		t.Fatalf("want 1 message, got %d", len(req.Messages))
+	}
+	c := req.Messages[0].Content
+	if c[len(c)-1].CacheControl == nil {
+		t.Error("single message should still get a tail breakpoint")
+	}
+}
+
 func TestBuildAnthropicMessages_StrictAlternation(t *testing.T) {
 	// Two consecutive user messages should merge into one user message with
 	// concatenated content (Anthropic rejects same-role neighbors).

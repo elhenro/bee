@@ -89,7 +89,15 @@ type Model struct {
 	caveLvl  caveman.Level
 	thinking string // off | low | medium | high
 	mode     string // plan | auto | edit (shift+tab cycles)
-	showHelp bool   // toggle the bottom hint line (`?` to show)
+	// mastermind is the top effort tier: every submit spawns a sub-agent hive
+	// instead of a single turn, and the input prompt glows rainbow while it's
+	// on. Mirrors eng.Cfg.Mastermind; toggled from the /effort picker.
+	mastermind bool
+	// glowFrame drives the rainbow input animation while mastermind is active.
+	// Incremented by glowTickMsg on its own self-rearming tick (independent of
+	// the streaming loaderFrame so the glow lives at idle too).
+	glowFrame int
+	showHelp  bool // toggle the bottom hint line (`?` to show)
 
 	// engine + plumbing — nil in tests
 	eng       *loop.Engine
@@ -115,6 +123,13 @@ type Model struct {
 	// Renders inline under the live region; picking submits the chosen
 	// option as the next user turn.
 	escalate EscalateModel
+
+	// planmode picker — shown after a clean plan-mode turn so the user can
+	// switch into a build mode (and optionally a fresh session) instead of
+	// silently no-opping in plan mode. pendingPlan holds the plan text
+	// captured when it opens, used to seed a fresh session.
+	planmode    PlanModeModel
+	pendingPlan string
 
 	// slash command registry + palette
 	cmds          *commands.Registry
@@ -264,6 +279,9 @@ type Model struct {
 	// costPane is the Ctrl+Y modal — opens on demand, claims keys while open.
 	costPane      *CostPane
 	costRequested bool
+	// usagePane is the /usage modal — historical cross-session usage overview.
+	usagePane      *UsagePane
+	usageRequested bool
 	// costFlashFrame counts up while a brief post-turn animation plays in
 	// the top bar: colour-cycling the dollar amount and showing the delta.
 	// costFlashUntil holds the inclusive end frame (0 = no flash active).

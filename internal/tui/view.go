@@ -67,6 +67,9 @@ func (m Model) View() string {
 	if m.costPane != nil && m.costPane.Open() {
 		return overlayCenter(frame, m.costPane.View(m.width, m.height), m.width)
 	}
+	if m.usagePane != nil && m.usagePane.Open() {
+		return overlayCenter(frame, m.usagePane.View(m.width, m.height), m.width)
+	}
 	if m.loginPane != nil && m.loginPane.Open() {
 		return overlayCenter(frame, m.loginPane.View(m.width, m.height), m.width)
 	}
@@ -163,6 +166,9 @@ func (m Model) renderLive(maxRows int) string {
 	}
 	if m.escalate.Active {
 		parts = append(parts, m.escalate.View())
+	}
+	if m.planmode.Active {
+		parts = append(parts, m.planmode.View())
 	}
 	return strings.Join(parts, "\n")
 }
@@ -305,6 +311,19 @@ func (m Model) renderBottomBar() string {
 		// FocusedStyle (in the outer Model), so the mutations above wouldn't
 		// take effect on View(). Re-focusing re-points the cached style to
 		// our local copy. Discard the returned cmd (cursor uses Static mode).
+		_ = m.input.Focus()
+	} else if m.mastermind {
+		// mastermind tier: prompt + typed text glow rainbow, cycling per
+		// glowFrame. Shell-mode `!` above keeps precedence. Same re-Focus
+		// trick as the shell block — the cached style pointer must be
+		// re-pointed at this value copy for the per-frame color to land.
+		glow := lipgloss.NewStyle().Foreground(rainbowColorForFrame(m.glowFrame)).Bold(true)
+		m.input.FocusedStyle.Prompt = glow
+		m.input.FocusedStyle.Text = glow
+		m.input.FocusedStyle.CursorLine = glow
+		m.input.BlurredStyle.Prompt = glow
+		m.input.BlurredStyle.Text = glow
+		m.input.BlurredStyle.CursorLine = glow
 		_ = m.input.Focus()
 	}
 	if !m.showHelp {

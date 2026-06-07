@@ -21,6 +21,7 @@ var effortLevels = []effortLevel{
 	{value: "medium", label: "medium", desc: "moderate reasoning"},
 	{value: "high", label: "high", desc: "deep reasoning — best quality, slowest"},
 	{value: "max", label: "max", desc: "maximum budget — slowest, top quality"},
+	{value: "mastermind", label: "mastermind", desc: "spawn a hive — decompose, sub-agents, verify, synthesize · best quality, slowest, most tokens"},
 }
 
 // EffortPane is a modal picker for reasoning effort. Arrow keys pick, enter

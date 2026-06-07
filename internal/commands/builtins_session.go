@@ -115,6 +115,20 @@ func registerSession(r *Registry) {
 		},
 	})
 	r.Register(Command{
+		Name:           "usage",
+		Description:    "usage overview — day/week/month/all by provider & model",
+		AllowDuringRun: true,
+		Run: func(_ context.Context, _ []string, s Side) (string, error) {
+			if s == nil {
+				return "", nil
+			}
+			if err := s.OpenUsage(); err == nil {
+				return "", nil
+			}
+			return s.UsageText(), nil
+		},
+	})
+	r.Register(Command{
 		Name:        "fork",
 		Description: "fork a new session — /fork [msgID]",
 		Run: func(_ context.Context, args []string, s Side) (string, error) {

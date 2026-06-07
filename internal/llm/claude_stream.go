@@ -157,7 +157,19 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 
 	final := Event{Type: EventDone, StopReason: stopReason}
 	if usage != nil {
-		final.Usage = &Usage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens}
+		// Anthropic reports input_tokens as the NON-cached portion only; the
+		// cached prefix lands in cache_read/cache_creation. Fold them into
+		// InputTokens so it reflects the true prompt size — matching the
+		// openai-compat convention (CachedTokens ⊆ InputTokens). Without this,
+		// once prompt caching kicks in input_tokens collapses to the new-turn
+		// delta and the auto-compact budget check stops firing, letting context
+		// grow until it overflows the window. CachedTokens carries the cheap
+		// cache-read portion so cost/budget code can discount it.
+		final.Usage = &Usage{
+			InputTokens:  usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens,
+			OutputTokens: usage.OutputTokens,
+			CachedTokens: usage.CacheReadInputTokens,
+		}
 	}
 	out <- final
 }

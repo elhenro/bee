@@ -17,6 +17,18 @@ func (m Model) onOpenCost(_ openCostMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// onOpenUsage toggles the historical usage pane. Unlike the cost monitor it is
+// not gated on the active provider: past usage may include non-local providers
+// even when the current one is local.
+func (m Model) onOpenUsage(_ openUsageMsg) (tea.Model, tea.Cmd) {
+	if m.usagePane == nil {
+		m.usagePane = NewUsagePane(m.costs)
+	}
+	newU, cmd := m.usagePane.Update(ToggleUsagePaneMsg{})
+	m.usagePane = newU
+	return m, cmd
+}
+
 func (m Model) onOpenLogin(_ openLoginMsg) (tea.Model, tea.Cmd) {
 	if m.loginPane == nil {
 		m.loginPane = NewLoginPane(m.side())
@@ -30,7 +42,11 @@ func (m Model) onOpenEffort(_ openEffortMsg) (tea.Model, tea.Cmd) {
 	if m.effortPane == nil {
 		m.effortPane = NewEffortPane()
 	}
-	m.effortPane.Show(m.thinking)
+	cur := m.thinking
+	if m.mastermind {
+		cur = "mastermind"
+	}
+	m.effortPane.Show(cur)
 	return m, nil
 }
 

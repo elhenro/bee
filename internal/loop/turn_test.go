@@ -390,7 +390,7 @@ func TestRunMaxIterationsUnlimited(t *testing.T) {
 			return tools.Result{Content: "ok"}, nil
 		},
 	})
-	// 60 tool-use rounds (past the old 50 cap) then a final text answer.
+	// 60 tool-use rounds (past the old 100 cap) then a final text answer.
 	scripts := make([][]llm.Event, 0, 61)
 	for i := 0; i < 60; i++ {
 		scripts = append(scripts, []llm.Event{
@@ -413,7 +413,7 @@ func TestRunMaxIterationsUnlimited(t *testing.T) {
 		t.Errorf("FinalText = %q want %q", res.FinalText, "done")
 	}
 	if got := p.calls.Load(); got != 61 {
-		t.Errorf("provider calls = %d, want 61 (ran past the 50 cap)", got)
+		t.Errorf("provider calls = %d, want 61 (ran past the 100 cap)", got)
 	}
 }
 
@@ -687,15 +687,15 @@ func TestRun_MaxIter_TinyProfileOverrides(t *testing.T) {
 		},
 	}}
 	eng, _ := newEngine(p, reg)
-	// override test default of normal: tiny → MaxIterations=50 from profile.
+	// override test default of normal: tiny → MaxIterations=100 from profile.
 	eng.Cfg.Profile = "tiny"
 	eng.Cfg.MaxIterations = 0 // clear cfg default so profile wins cleanly
 	_, err := eng.Run(context.Background(), "loop me")
 	if err == nil || !strings.Contains(err.Error(), "max iterations") {
 		t.Fatalf("expected max-iterations error, got %v", err)
 	}
-	if got := p.calls.Load(); got != 50 {
-		t.Errorf("tiny profile maxIter: provider calls = %d, want 50", got)
+	if got := p.calls.Load(); got != 100 {
+		t.Errorf("tiny profile maxIter: provider calls = %d, want 100", got)
 	}
 }
 
@@ -715,19 +715,19 @@ func TestRun_MaxIter_NormalProfileFallsThrough(t *testing.T) {
 		},
 	}}
 	eng, _ := newEngine(p, reg)
-	// profile=normal pinned by newEngine; cfg.MaxIterations=50 from Defaults.
+	// profile=normal pinned by newEngine; cfg.MaxIterations=100 from Defaults.
 	_, err := eng.Run(context.Background(), "loop me")
 	if err == nil || !strings.Contains(err.Error(), "max iterations") {
 		t.Fatalf("expected max-iterations error, got %v", err)
 	}
-	if got := p.calls.Load(); got != 50 {
-		t.Errorf("normal profile maxIter: provider calls = %d, want 50 (cfg default)", got)
+	if got := p.calls.Load(); got != 100 {
+		t.Errorf("normal profile maxIter: provider calls = %d, want 100 (cfg default)", got)
 	}
 }
 
 // TestRun_TokenBudgetCap drives the adaptive token cap: provider reports
 // 200k input tokens per call against a 65k-window model (deepseek-reasoner
-// → 650k budget). Loop must bail on token budget BEFORE the 50-iter cap.
+// → 650k budget). Loop must bail on token budget BEFORE the 100-iter cap.
 func TestRun_TokenBudgetCap(t *testing.T) {
 	reg := tools.NewRegistry()
 	_ = reg.Register(&stubTool{
@@ -745,13 +745,13 @@ func TestRun_TokenBudgetCap(t *testing.T) {
 	}}
 	eng, _ := newEngine(p, reg)
 	// 65k-window model → tokenBudget = 650k. Provider emits 250k per call
-	// → trips after 3 iters, well under the 50-iter cap.
+	// → trips after 3 iters, well under the 100-iter cap.
 	eng.Cfg.DefaultModel = "deepseek-reasoner"
 	_, err := eng.Run(context.Background(), "loop me")
 	if err == nil || !strings.Contains(err.Error(), "token budget") {
 		t.Fatalf("expected token-budget error, got %v", err)
 	}
-	if got := p.calls.Load(); got >= 50 {
+	if got := p.calls.Load(); got >= 100 {
 		t.Errorf("token cap should fire before iter cap; got %d calls", got)
 	}
 }
@@ -812,7 +812,62 @@ func TestRun_StallCap(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "read-only iters") {
 		t.Fatalf("expected stall-cap error, got %v", err)
 	}
-	if got := p.calls.Load(); got >= 50 {
+	if got := p.calls.Load(); got >= 100 {
 		t.Errorf("stall cap should fire before iter cap; got %d calls", got)
+	}
+}
+
+// capturingProvider records the last Request it received.
+type capturingProvider struct {
+	last llm.Request
+}
+
+func (c *capturingProvider) Name() string { return "capturing" }
+
+func (c *capturingProvider) Stream(_ context.Context, req llm.Request) (<-chan llm.Event, error) {
+	c.last = req
+	ch := make(chan llm.Event, 2)
+	ch <- llm.Event{Type: llm.EventTextDelta, Delta: "ok"}
+	ch <- llm.Event{Type: llm.EventDone, StopReason: "stop"}
+	close(ch)
+	return ch, nil
+}
+
+// effort off on a Qwen3 hybrid + local provider must forward
+// chat_template_kwargs enable_thinking=false — the /no_think token alone is
+// ignored by some MLX templates. Hosted providers and non-Qwen3 models get no
+// kwarg (they may reject the field or it's a no-op).
+func TestRun_EnableThinkingKwarg(t *testing.T) {
+	cases := []struct {
+		name     string
+		model    string
+		provider string
+		thinking string
+		wantSet  bool
+		wantVal  bool
+	}{
+		{"qwen3 local off", "qwen3-235b-a3b", "omlx", "off", true, false},
+		{"qwen3 local medium", "qwen3-235b-a3b", "omlx", "medium", true, true},
+		{"qwen3 hosted off", "qwen3-235b-a3b", "openrouter", "off", false, false},
+		{"non-qwen3 local off", "llama-3.1-8b", "omlx", "off", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &capturingProvider{}
+			eng, _ := newEngine(p, tools.NewRegistry())
+			eng.Cfg.DefaultModel = tc.model
+			eng.Cfg.DefaultProvider = tc.provider
+			eng.Cfg.Thinking = tc.thinking
+			if _, err := eng.Run(context.Background(), "hi"); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			got, ok := p.last.ChatTemplateKwargs["enable_thinking"]
+			if ok != tc.wantSet {
+				t.Fatalf("enable_thinking present = %v, want %v (kwargs: %v)", ok, tc.wantSet, p.last.ChatTemplateKwargs)
+			}
+			if tc.wantSet && got != tc.wantVal {
+				t.Errorf("enable_thinking = %v, want %v", got, tc.wantVal)
+			}
+		})
 	}
 }

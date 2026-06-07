@@ -25,6 +25,45 @@ import (
 // matches the prompt budget; defends against runaway plans.
 const MaxSubTasks = 8
 
+// Hooks observes a Queen run as it progresses. Every callback is optional;
+// nil callbacks are skipped, so existing callers (bee swarm) pass a zero
+// Hooks and see unchanged behavior. Callbacks run on the goroutine driving
+// the phase (OnWorkerStart/Done fire from worker goroutines) — keep them
+// cheap and non-blocking (a channel send the UI drains is ideal).
+type Hooks struct {
+	OnPlan        func(plan []SubTask)
+	OnWorkerStart func(idx int, sub SubTask)
+	OnWorkerDone  func(idx int, res Result)
+	OnCritique    func(critique string)
+	OnSynthesize  func()
+}
+
+func (h Hooks) plan(p []SubTask) {
+	if h.OnPlan != nil {
+		h.OnPlan(p)
+	}
+}
+func (h Hooks) workerStart(i int, s SubTask) {
+	if h.OnWorkerStart != nil {
+		h.OnWorkerStart(i, s)
+	}
+}
+func (h Hooks) workerDone(i int, r Result) {
+	if h.OnWorkerDone != nil {
+		h.OnWorkerDone(i, r)
+	}
+}
+func (h Hooks) critique(c string) {
+	if h.OnCritique != nil {
+		h.OnCritique(c)
+	}
+}
+func (h Hooks) synthesize() {
+	if h.OnSynthesize != nil {
+		h.OnSynthesize()
+	}
+}
+
 // Queen orchestrates a planner Runner and N worker Runners. Critic is optional;
 // when set, its output is appended to the synthesize prompt.
 type Queen struct {
@@ -32,6 +71,8 @@ type Queen struct {
 	Workers     []Runner
 	Critic      Runner
 	MaxParallel int // 0 => len(Workers)
+	// Hooks observes progress for a live UI. Zero value = no observation.
+	Hooks Hooks
 }
 
 // QueenResult is the aggregate of one Queen.Run.
@@ -64,6 +105,7 @@ func (q *Queen) Run(ctx context.Context, task string) (QueenResult, error) {
 		// fallback: planner returned nothing useful; treat as single-task.
 		plan = []SubTask{{Role: RoleBuilder, Task: task}}
 	}
+	q.Hooks.plan(plan)
 
 	results, err := q.dispatch(ctx, plan)
 	if err != nil {
@@ -76,8 +118,10 @@ func (q *Queen) Run(ctx context.Context, task string) (QueenResult, error) {
 		if err != nil {
 			return QueenResult{Plan: plan, WorkerResults: results}, fmt.Errorf("queen: review: %w", err)
 		}
+		q.Hooks.critique(critique)
 	}
 
+	q.Hooks.synthesize()
 	final, err := q.synthesize(ctx, task, plan, results, critique)
 	if err != nil {
 		return QueenResult{Plan: plan, WorkerResults: results, Critique: critique}, fmt.Errorf("queen: synthesize: %w", err)
@@ -144,6 +188,7 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 			}
 			defer func() { <-sem }()
 
+			q.Hooks.workerStart(idx, st)
 			started := time.Now().UTC()
 			out, err := w.Run(subCtx, st.Task)
 			ended := time.Now().UTC()
@@ -161,6 +206,7 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 				r.Final = out.FinalText
 			}
 			results[idx] = r
+			q.Hooks.workerDone(idx, r)
 		}(i, worker, sub)
 	}
 

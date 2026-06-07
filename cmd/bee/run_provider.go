@@ -38,6 +38,15 @@ func resolveUserMessage(positional []string, stdin io.Reader) (string, error) {
 	return s, nil
 }
 
+// resolveSafe maps the --safe shorthand to a sandbox scope. An explicit
+// --sandbox always wins; --safe only applies when no scope was given.
+func resolveSafe(sandboxScope string, safe bool) string {
+	if sandboxScope == "" && safe {
+		return "workspace-write"
+	}
+	return sandboxScope
+}
+
 func applyOverrides(cfg *config.Config, model, provName, sandboxScope string) {
 	if model != "" {
 		cfg.DefaultModel = model
@@ -108,6 +117,7 @@ func buildProviderInner(cfg config.Config) (llm.Provider, error) {
 			BaseURL:            prov.BaseURL,
 			EnvKey:             prov.EnvKey,
 			ChatTemplateKwargs: prov.ChatTemplateKwargs,
+			ReportsCost:        prov.ReportsCost,
 		}), nil
 	case "gemini":
 		key := cfg.APIKey

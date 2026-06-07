@@ -76,6 +76,9 @@ type AnthropicContentPart struct {
 	ToolUseID string                 `json:"tool_use_id,omitempty"`
 	IsError   bool                   `json:"is_error,omitempty"`
 	Content   []AnthropicContentPart `json:"content,omitempty"`
+	// CacheControl marks this block as a prompt-cache breakpoint. Placed on the
+	// last block of recent turns so the conversation prefix caches across turns.
+	CacheControl *AnthropicCacheCtl `json:"cache_control,omitempty"`
 }
 
 // AnthropicImageSource is the base64-payload image envelope.
@@ -151,7 +154,29 @@ func BuildAnthropicMessagesRequest(model, system string, messages []types.Messag
 		}
 		req.Messages = append(req.Messages, am)
 	}
+	// Roll prompt-cache breakpoints across the conversation tail so the growing
+	// history caches turn-over-turn — not just the static system + tools prefix.
+	// Anthropic allows 4 breakpoints; system + last tool take 2, leaving 2 for
+	// history here, staying within the limit.
+	markHistoryCacheBreakpoints(req.Messages)
 	return req
+}
+
+// markHistoryCacheBreakpoints sets cache_control on the last content block of
+// the final two messages, giving Anthropic rolling prompt-cache breakpoints over
+// the conversation tail. Each turn writes a small delta to cache and reads the
+// prior conversation back as a cache hit. Sub-minimum prefixes are ignored by
+// the API, so marking short early conversations is harmless. No-op when empty.
+func markHistoryCacheBreakpoints(msgs []AnthropicMessage) {
+	marked := 0
+	for i := len(msgs) - 1; i >= 0 && marked < 2; i-- {
+		parts := msgs[i].Content
+		if len(parts) == 0 {
+			continue
+		}
+		parts[len(parts)-1].CacheControl = &AnthropicCacheCtl{Type: "ephemeral"}
+		marked++
+	}
 }
 
 // normalizeInputSchema ensures the schema Anthropic sees has a top-level

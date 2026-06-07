@@ -125,6 +125,17 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	return m, loaderTickCmd()
 }
 
+// onGlowTick advances the rainbow input animation. Self-rearms only while the
+// mastermind tier is active so switching it off lets the tick die and leaves
+// idle terminals quiet.
+func (m Model) onGlowTick(_ glowTickMsg) (tea.Model, tea.Cmd) {
+	if !m.mastermind {
+		return m, nil
+	}
+	m.glowFrame++
+	return m, glowTickCmd()
+}
+
 func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 	m.compacting = false
 	if msg.err != nil {
@@ -137,6 +148,13 @@ func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 	// nil msgs = engine no-op (no session, no shrink) — leave m.messages alone.
 	if len(msg.msgs) > 0 {
 		m.messages = append([]types.Message(nil), msg.msgs...)
+		// the swapped-in slice is shorter than the printed scrollback, so the old
+		// printedCount now points past its end. re-anchor to the new length: the
+		// original (longer) messages were already Println'd into the terminal, so
+		// flush() should only emit the tail from here. without this, flush() hits
+		// its printedCount > len re-anchor branch and silently drops the
+		// "(/compact done …)" summary appended just below.
+		m.printedCount = len(m.messages)
 		if m.eng != nil {
 			m.eng.InitialMessages = nil
 			// nudge the context-fill indicator down immediately — without
@@ -279,6 +297,17 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		m.queue = m.queue[1:]
 		nm, runCmd := m.submit(nxt)
 		return nm, tea.Batch(flushCmd, costCmd, recapCmd, runCmd)
+	}
+	// post-plan handoff: a clean plan-mode turn produced a plan, but plan mode
+	// strips mutators so "do it" silently no-ops. Offer to switch into a build
+	// mode (optionally a fresh session carrying just the plan). Queue is empty
+	// here (drained above); skip when a goal loop drives its own continuation,
+	// and skip when the turn produced no text (nothing to act on or carry).
+	if msg.err == nil && loop.ParseMode(m.mode) == loop.ModePlan && !m.goal.Active {
+		if plan := lastAssistantText(msg.result.Messages); plan != "" {
+			m.pendingPlan = plan
+			m.planmode.Show(m.isLocalProvider())
+		}
 	}
 	// goal loop: on a clean finish with the queue empty, judge the active
 	// goal and either announce success, stop on caps, or auto-continue. No-op

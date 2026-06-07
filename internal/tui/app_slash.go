@@ -183,6 +183,11 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		m.costRequested = false
 		return m, func() tea.Msg { return openCostMsg{} }
 	}
+	// /usage asks to open the historical usage modal.
+	if m.usageRequested {
+		m.usageRequested = false
+		return m, func() tea.Msg { return openUsageMsg{} }
+	}
 	// /login (no args) asks to open the login pane.
 	if m.loginRequested {
 		m.loginRequested = false

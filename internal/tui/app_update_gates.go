@@ -36,6 +36,15 @@ func (m Model) claimByPane(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 	}
 
+	// usage pane claims keys while open.
+	if m.usagePane != nil && m.usagePane.Open() {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			newU, cmd := m.usagePane.Update(msg)
+			m.usagePane = newU
+			return m, cmd, true
+		}
+	}
+
 	// model picker claims all input while active. modelsLoadedMsg /
 	// spinner.TickMsg are routed unconditionally below so async loads still
 	// settle into the cache.

@@ -69,7 +69,7 @@ func (p *OpenAICompatProvider) nonStreamLoop(resp *http.Response, out chan<- Eve
 	}
 	done := Event{Type: EventDone, StopReason: choice.FinishReason}
 	if body.Usage != nil {
-		done.Usage = &Usage{InputTokens: body.Usage.PromptTokens, OutputTokens: body.Usage.CompletionTokens}
+		done.Usage = usageFromWire(body.Usage)
 	}
 	out <- done
 }
@@ -201,7 +201,17 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 	}
 	final := Event{Type: EventDone, StopReason: stopReason}
 	if usage != nil {
-		final.Usage = &Usage{InputTokens: usage.PromptTokens, OutputTokens: usage.CompletionTokens}
+		final.Usage = usageFromWire(usage)
 	}
 	out <- final
+}
+
+// usageFromWire maps the wire usage block to the internal Usage, carrying the
+// optional cost and cached-token fields when present.
+func usageFromWire(u *wire.StreamUsage) *Usage {
+	out := &Usage{InputTokens: u.PromptTokens, OutputTokens: u.CompletionTokens, CostUSD: u.Cost}
+	if u.PromptTokensDetails != nil {
+		out.CachedTokens = u.PromptTokensDetails.CachedTokens
+	}
+	return out
 }

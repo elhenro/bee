@@ -303,6 +303,36 @@ func TestOpenAICompat_ReasoningEffort(t *testing.T) {
 	}
 }
 
+// buildWireRequest merges per-request chat_template_kwargs over the provider's
+// static kwargs (request wins), without mutating the shared cfg map, and omits
+// the field entirely when both are empty.
+func TestOpenAICompat_ChatTemplateKwargsMerge(t *testing.T) {
+	t.Run("request overrides static, cfg unmutated", func(t *testing.T) {
+		cfgKwargs := map[string]any{"enable_thinking": true, "tools": true}
+		p := NewOpenAICompat(OpenAICompatConfig{ChatTemplateKwargs: cfgKwargs})
+		wr := p.buildWireRequest(Request{
+			Model:              "qwen3-235b",
+			ChatTemplateKwargs: map[string]any{"enable_thinking": false},
+		})
+		if got := wr.ChatTemplateKwargs["enable_thinking"]; got != false {
+			t.Errorf("enable_thinking: want false (request wins), got %v", got)
+		}
+		if got := wr.ChatTemplateKwargs["tools"]; got != true {
+			t.Errorf("tools: want true (from static cfg), got %v", got)
+		}
+		if cfgKwargs["enable_thinking"] != true {
+			t.Errorf("shared cfg map was mutated: %v", cfgKwargs)
+		}
+	})
+	t.Run("omitted when both empty", func(t *testing.T) {
+		p := NewOpenAICompat(OpenAICompatConfig{})
+		wr := p.buildWireRequest(Request{Model: "qwen3-235b"})
+		if wr.ChatTemplateKwargs != nil {
+			t.Errorf("expected nil chat_template_kwargs, got %v", wr.ChatTemplateKwargs)
+		}
+	})
+}
+
 // non-thinking models must never receive reasoning_effort, even when the user
 // leaves effort at a non-off level — the field is ignored noise for them.
 func TestOpenAICompat_ReasoningEffortOmittedForNonThinkingModel(t *testing.T) {

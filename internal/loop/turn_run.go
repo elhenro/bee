@@ -59,6 +59,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	e.warnedReasoningDup = false
 	e.dupWrites = newDuplicateWriteTracker()
 	e.escalateErr = nil
+	e.emptyCompletionStreak = 0
 	res := RunResult{}
 
 	// probe the active model's context window before the first iteration so
@@ -181,7 +182,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// run when available; otherwise falls back to estimator over sys+history.
 	if e.Cfg.Compaction.Enabled {
 		budget := contextBudget(e.Cfg)
-		if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) {
+		if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
 			if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
 				res.Messages = e.emitCompactNotice(compacted, stats)
 				e.lastInputTokens = 0
@@ -207,7 +208,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 
 	// resolve the per-Run iteration ceiling. 0 (or negative) = unlimited: the
 	// loop runs until a real guard fires (token budget or read-only stall).
-	// config.Defaults() seeds 50, so 0 only appears when the user explicitly
+	// config.Defaults() seeds config.DefaultMaxIterations, so 0 only appears when the user explicitly
 	// lifted the cap (/iterations 0 or max_iterations = 0). A profile's
 	// MaxIterations overrides the config value when set (0 = inherit).
 	maxIter := e.Cfg.MaxIterations
@@ -249,7 +250,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// surfaces usage); fall back to the estimator on the first turn.
 		if e.Cfg.Compaction.Enabled {
 			budget := contextBudget(e.Cfg)
-			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) {
+			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
 				if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
 					res.Messages = e.emitCompactNotice(compacted, stats)
 					// post-compact: reset lastInputTokens so the next
@@ -269,6 +270,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// field. Plan mode → /think (explicit reasoning); everything else →
 		// /no_think (skip the reasoning trace — saves 200-2000 tokens per turn
 		// on a sparse MoE). User-explicit Thinking=medium+ overrides.
+		var templateKwargs map[string]any
 		if llm.IsQwen3HybridThinking(e.Cfg.DefaultModel) {
 			eff := resolvedThinking
 			if mode == ModePlan && eff == llm.ThinkingOff {
@@ -277,16 +279,26 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			if hint := llm.Qwen3ThinkingHint(eff); hint != "" {
 				reqSys = strings.TrimRight(reqSys, "\n") + "\n\n" + hint
 			}
+			// omlx/vllm honor the enable_thinking template switch; the
+			// /no_think token above is ignored by some Qwen3 MLX templates.
+			// local-only: hosted providers may reject chat_template_kwargs.
+			if config.IsLocalProvider(e.Cfg.DefaultProvider) {
+				templateKwargs = map[string]any{"enable_thinking": eff != llm.ThinkingOff}
+			}
 		}
+		// suppression requested when effort resolved to off on a model that
+		// nominally reasons. drives the post-turn compliance check below.
+		e.thinkingSuppressRequested = resolvedThinking == llm.ThinkingOff && llm.ThinkingApplies(e.Cfg.DefaultModel)
 		req := llm.Request{
-			Model:       e.Cfg.DefaultModel,
-			System:      reqSys,
-			Messages:    e.applyVisionFallback(ctx, dropEphemeral(res.Messages)),
-			Tools:       specs,
-			Stream:      true,
-			Temperature: prof.Temperature,
-			TopP:        prof.TopP,
-			Thinking:    resolvedThinking,
+			Model:              e.Cfg.DefaultModel,
+			System:             reqSys,
+			Messages:           e.applyVisionFallback(ctx, dropEphemeral(res.Messages)),
+			Tools:              specs,
+			Stream:             true,
+			Temperature:        prof.Temperature,
+			TopP:               prof.TopP,
+			Thinking:           resolvedThinking,
+			ChatTemplateKwargs: templateKwargs,
 		}
 		assistantMsg, finalText, toolUses, err := e.streamOnce(ctx, req)
 		if err != nil {
@@ -303,6 +315,10 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// duplicate streak so injectIterAndTokenWarnings can fire a hard nudge
 		// when the model rehashes the same thinking turn after turn.
 		observeReasoningDup(e, assistantMsg.Content)
+
+		// effort-off compliance: warn once if the model reasoned despite the
+		// suppression signal (some templates ignore /no_think + enable_thinking).
+		e.verifyThinkingSuppression(finalText, assistantMsg)
 
 		// stream was cut mid-repetition: nudge the model back on track, or bail
 		// after loopCutBailAt consecutive cuts (wedged in a token loop).
@@ -358,7 +374,34 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		}
 		e.truncCutStreak = 0
 
+		// a turn with any text or tool call clears the empty-completion streak.
+		if strings.TrimSpace(finalText) != "" || len(toolUses) > 0 {
+			e.emptyCompletionStreak = 0
+		}
+
 		if len(toolUses) == 0 || detectDoneSignal(finalText) {
+			// whitespace-only turn: no text, no reasoning, no tool. nudge once,
+			// then bail with a typed error so the wrapper can surface "switch
+			// model" instead of ending on a blank answer or spinning the budget.
+			if strings.TrimSpace(finalText) == "" && len(toolUses) == 0 && !hasThinkingOnly(assistantMsg) {
+				e.emptyCompletionStreak++
+				if e.emptyCompletionStreak >= emptyCompletionBailAt {
+					return res, &EmptyCompletionError{Streak: e.emptyCompletionStreak}
+				}
+				nudge := types.Message{
+					ID:       newID(),
+					ParentID: assistantMsg.ID,
+					Role:     types.RoleUser,
+					Content: []types.ContentBlock{{Type: types.BlockText, Text: "[nudge] your last turn was empty — no answer and no tool call. " +
+						"respond now: call a tool to make progress or give a short final answer."}},
+					Time: time.Now().UTC(),
+				}
+				if err := e.appendMessage(ctx, nudge); err != nil {
+					return res, err
+				}
+				res.Messages = append(res.Messages, nudge)
+				continue
+			}
 			// format-slip streak: a turn with zero tool_uses but text that
 			// looks like an attempted call counts toward the strike budget.
 			// done-signal turns are intentional exits, not slips. real done

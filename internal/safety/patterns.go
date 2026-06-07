@@ -44,6 +44,8 @@ var dangerousPatterns = []DangerousPattern{
 	{regexp.MustCompile(`\bgit\s+push\b.*\s-f\b`), "git-push-force-short", "git force push (-f)"},
 	{regexp.MustCompile(`\bgit\s+clean\s+-[^\s]*f`), "git-clean-force", "git clean with force"},
 	{regexp.MustCompile(`\bgit\s+branch\s+-D\b`), "git-branch-delete", "git branch force delete"},
+	{regexp.MustCompile(`\bgit\s+checkout\s+(?:[^\s]+\s+)*(--(\s|$)|\.(\s|$)|-f\b|--force\b)`), "git-checkout-discard", "git checkout discarding local changes"},
+	{regexp.MustCompile(`\bgit\s+restore\s+(?:[^\s]+\s+)*(\.(\s|$)|--worktree\b)`), "git-restore-discard", "git restore discarding working-tree changes"},
 
 	// writes to sensitive paths
 	{regexp.MustCompile(`>>?\s*["']?(/etc/|/private/etc/)`), "write-etc", "write to system config"},

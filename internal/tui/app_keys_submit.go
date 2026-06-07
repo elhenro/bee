@@ -322,14 +322,26 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithCancel(parent)
 	m.cancelRun = cancel
 	eng := m.eng
-	// seed prior turns into engine so the model retains context across
-	// submits. exclude the optimistic user msg we just appended — engine
-	// adds its own properly-IDed copy.
+	// prior turns for context. exclude the optimistic user msg we just appended
+	// (history); prior keeps it (the full list mastermind rebuilds its result from).
+	var history []types.Message
 	if n := len(m.messages); n > 0 {
-		eng.InitialMessages = nonEphemeral(m.messages[:n-1])
-	} else {
-		eng.InitialMessages = nil
+		history = nonEphemeral(m.messages[:n-1])
 	}
+	// mastermind tier: route the turn through a sub-agent hive instead of a
+	// single engine Run. The glow tick keeps the rainbow input alive mid-turn.
+	if m.mastermind {
+		// the glow tick is already running (armed when the tier was enabled and
+		// self-rearming across turns), so don't arm a second loop here.
+		prior := append([]types.Message(nil), m.messages...)
+		return m, tea.Batch(
+			userFlush,
+			m.runMastermind(ctx, content, history, prior),
+			loaderTickCmd(),
+		)
+	}
+	// seed prior turns into engine so the model retains context across submits.
+	eng.InitialMessages = history
 	return m, tea.Batch(
 		userFlush,
 		func() tea.Msg {

@@ -25,7 +25,7 @@ func RegisterBuiltins(r *Registry) {
 		Description:    "list slash commands",
 		AllowDuringRun: true,
 		Run: func(_ context.Context, _ []string, _ Side) (string, error) {
-			return "/init, /compact, /model, /effort, /settings, /tools, /browser, /vision, /resume, /new, /clear, /copy, /tree, /fork, /clone, /login, /logout, /bg, /agent, /attach, /goal, /edit, /vim, /term, /remote-control, /stop, /quit, /exit, /help", nil
+			return "/init, /compact, /model, /effort, /settings, /tools, /browser, /vision, /resume, /new, /clear, /copy, /tree, /cost, /usage, /fork, /clone, /login, /logout, /bg, /agent, /attach, /goal, /edit, /vim, /term, /remote-control, /stop, /quit, /exit, /help", nil
 		},
 	})
 }

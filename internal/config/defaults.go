@@ -1,7 +1,7 @@
 package config
 
 // Defaults returns the canonical out-of-the-box configuration: OpenRouter +
-// deepseek-v4-flash, three profiles, caveman-full, workspace-write-net +
+// deepseek-v4-flash, three profiles, caveman-full, danger-full-access +
 // on-request sandbox, memory enabled with top_k=3.
 //
 // Zero-config startup: set OPENROUTER_API_KEY and bee runs.
@@ -25,13 +25,12 @@ func Defaults() Config {
 		// (flash/mini/8b…) otherwise reflex into shell calls.
 		Mode: "auto",
 		Sandbox: SandboxConfig{
-			// workspace-write-net: outbound network allowed (npm/pip/go installs
-			// work out of the box) but writes stay confined to cwd+tmp. plain
-			// workspace-write blocks all network, which silently breaks installs
-			// and reads as "no network" to the model. tighten to
-			// `--sandbox workspace-write` (no net) or `read-only` for untrusted
-			// work; `--sandbox danger-full-access` drops confinement entirely.
-			Scope:    "workspace-write-net",
+			// danger-full-access: no OS confinement — the default. The seatbelt/bwrap
+			// wrapper caused more friction than it prevented (blocked signals to
+			// child processes, port binds, daemons) so confinement is opt-in now.
+			// Re-enable it with `--safe` (writes confined to cwd+tmp, network
+			// blocked) or `--sandbox read-only|workspace-write|workspace-write-net`.
+			Scope:    "danger-full-access",
 			Approval: "on-request",
 		},
 		Memory: MemoryConfig{
@@ -45,7 +44,10 @@ func Defaults() Config {
 		},
 		ShowBanner:    true,
 		ShowLoader:    true,
-		MaxIterations: 50,
+		MaxIterations: DefaultMaxIterations,
+		// mastermind off by default; when on, the hive spawns this many workers.
+		Mastermind:        false,
+		MastermindWorkers: 3,
 		Verbose:        false,
 		ShowThoughts:   true,
 		ShowNudges:     true,
@@ -73,6 +75,9 @@ func Defaults() Config {
 				WireAPI:      "chat",
 				EnvKey:       "OPENROUTER_API_KEY",
 				DefaultModel: "deepseek/deepseek-v4-flash",
+				// routed aggregator returns real per-call credits in the usage
+				// block when asked; opt in so /usage shows actual spend.
+				ReportsCost: true,
 			},
 			"openai": {
 				BaseURL:      "https://api.openai.com/v1",
@@ -160,7 +165,7 @@ func Defaults() Config {
 				// local runs. 0 = unbounded; -1 = drop section entirely.
 				SkillManifestChars: -1,
 				Caveman:            "ultra",
-				MaxIterations:      50,
+				MaxIterations:      DefaultMaxIterations,
 				// tool format inherits native tool_calls (the global default).
 				// capable local models emit clean native calls via the
 				// oai-compatible server; the xml textmode wrapper handicaps

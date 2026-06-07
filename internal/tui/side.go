@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/prompt"
 	"github.com/elhenro/bee/internal/session"
+	"github.com/elhenro/bee/internal/types"
 	"github.com/google/uuid"
 )
 
@@ -151,6 +154,14 @@ func (s *tuiSide) OpenSession(id string) error {
 	}
 	s.m.eng.Sessions = roll
 	s.m.messages = prior
+	// seed the cost tracker so the context-fill bar reflects the resumed
+	// conversation immediately. without this, LastInput() carries the prior
+	// session's value (or 0) until the next provider event lands — the bar
+	// updates only after the first reply. mirrors what /compact does via
+	// SetEstimatedInput. exact count overwrites this on the next Record.
+	if s.m.eng.Costs != nil {
+		s.m.eng.Costs.SetEstimatedInput(prompt.EstimateTokens(messagesText(prior)))
+	}
 	s.m.partial = ""
 	s.m.streamFlushed = ""
 	s.m.streamFenceOpen = false
@@ -161,7 +172,33 @@ func (s *tuiSide) OpenSession(id string) error {
 	// terminal scrollback. The slash-command caller (runSlash) calls flush
 	// after Run() returns.
 	s.m.printedCount = 0
+	if s.m.eng.Costs != nil {
+		s.m.eng.Costs.Reset()
+	}
 	return nil
+}
+
+// messagesText flattens a transcript into a single string for token
+// estimation. Includes assistant/user text and tool-result bodies (the heavy
+// part of a resumed context), skips ephemeral UI-only echoes.
+func messagesText(msgs []types.Message) string {
+	var sb strings.Builder
+	for _, m := range msgs {
+		if m.Ephemeral {
+			continue
+		}
+		for _, b := range m.Content {
+			if b.Text != "" {
+				sb.WriteString(b.Text)
+				sb.WriteByte('\n')
+			}
+			if b.Result != nil && b.Result.Content != "" {
+				sb.WriteString(b.Result.Content)
+				sb.WriteByte('\n')
+			}
+		}
+	}
+	return sb.String()
 }
 
 // OpenResume asks the TUI to display the interactive resume picker.
@@ -236,6 +273,19 @@ func (s *tuiSide) OpenCost() error {
 	s.m.costRequested = true
 	return nil
 }
+
+// OpenUsage flips a sentinel for the historical usage pane. Returns an error
+// when there is no live model (headless) so the caller falls back to text.
+func (s *tuiSide) OpenUsage() error {
+	if s.m == nil {
+		return errors.New("no tui")
+	}
+	s.m.usageRequested = true
+	return nil
+}
+
+// UsageText renders the usage overview as plain text (headless fallback).
+func (s *tuiSide) UsageText() string { return renderUsageText() }
 
 // ForkSession forks the active session at fromMsgID (or fully if empty) and
 // swaps the engine's rollout to the new one. Existing scrollback is cleared.

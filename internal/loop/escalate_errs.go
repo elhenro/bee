@@ -129,3 +129,22 @@ func (e *TruncatedStreamError) Error() string {
 
 func (e *TruncatedStreamError) Is(target error) bool { return target == ErrTruncatedStream }
 func (e *TruncatedStreamError) Unwrap() error        { return ErrTruncatedStream }
+
+// ErrEmptyCompletion indicates the provider returned whitespace-only output —
+// no text, no reasoning, no tool_use — N turns in a row. A nudge couldn't
+// shake it loose, so the model (or its inference template) is producing dead
+// turns; bail and let the user switch model instead of spinning the iter
+// budget. Commonly a thinking-suppression switch the chat template mishandles.
+var ErrEmptyCompletion = errors.New("loop: model returned empty output repeatedly")
+
+// EmptyCompletionError wraps an empty-completion bail with the streak length.
+type EmptyCompletionError struct {
+	Streak int
+}
+
+func (e *EmptyCompletionError) Error() string {
+	return fmt.Sprintf("%s: streak=%d", ErrEmptyCompletion.Error(), e.Streak)
+}
+
+func (e *EmptyCompletionError) Is(target error) bool { return target == ErrEmptyCompletion }
+func (e *EmptyCompletionError) Unwrap() error        { return ErrEmptyCompletion }

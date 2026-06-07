@@ -35,6 +35,8 @@ func (s *loginSideStub) CopyLast() error                          { return nil }
 func (s *loginSideStub) Quit()                                    {}
 func (s *loginSideStub) OpenTree() error                          { return nil }
 func (s *loginSideStub) OpenCost() error                          { return nil }
+func (s *loginSideStub) OpenUsage() error                         { return nil }
+func (s *loginSideStub) UsageText() string                        { return "" }
 func (s *loginSideStub) ForkSession(string) error                 { return nil }
 func (s *loginSideStub) CloneSession() error                      { return nil }
 func (s *loginSideStub) Login(_ context.Context, p string) error {

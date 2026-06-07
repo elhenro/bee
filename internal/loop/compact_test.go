@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
@@ -101,6 +102,84 @@ func TestShouldAutoCompactWithUsage_PrefersActualTokens(t *testing.T) {
 	}
 	if ShouldAutoCompactWithUsage("system", msgs, 500, 1000, 0.8) {
 		t.Error("want false when actual tokens under threshold")
+	}
+}
+
+func TestFlattenForSummary_IncludesToolResults(t *testing.T) {
+	m := types.Message{
+		Role: types.RoleTool,
+		Content: []types.ContentBlock{
+			{Type: types.BlockThinking, Text: "secret scratch reasoning"},
+			{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: "1", Content: "func add() {} in math.go"}},
+		},
+	}
+	got := flattenForSummary(m)
+	if !strings.Contains(got, "math.go") {
+		t.Errorf("summary input must include tool result, got %q", got)
+	}
+	if strings.Contains(got, "scratch reasoning") {
+		t.Errorf("thinking blocks must be dropped from summary input, got %q", got)
+	}
+}
+
+func TestFlattenForSummary_TruncatesHugeResult(t *testing.T) {
+	huge := strings.Repeat("x", 50_000)
+	m := types.Message{
+		Role:    types.RoleTool,
+		Content: []types.ContentBlock{{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: "1", Content: huge}}},
+	}
+	got := flattenForSummary(m)
+	if len(got) > summaryToolResultCap+64 {
+		t.Errorf("result should be capped near %d, got %d chars", summaryToolResultCap, len(got))
+	}
+	if !strings.Contains(got, "truncated") {
+		t.Errorf("truncation should be marked, got tail %q", got[len(got)-32:])
+	}
+}
+
+func TestCompactWorthwhile(t *testing.T) {
+	big := mkMsg(types.RoleUser, strings.Repeat("x", 40_000)) // ~10k tokens
+	small := mkMsg(types.RoleUser, "hi")
+	// older slice (everything before PreserveTail) holds the big msg → worth it.
+	worth := append([]types.Message{big}, repeatMsg(small, PreserveTail)...)
+	if !compactWorthwhile(worth, 32768) {
+		t.Error("want worthwhile when older slice is large")
+	}
+	// only the tiny tail remains compactible → not worth re-compacting.
+	notWorth := repeatMsg(small, PreserveTail+1)
+	if compactWorthwhile(notWorth, 32768) {
+		t.Error("want NOT worthwhile when older slice is tiny (overhead-bound)")
+	}
+	if compactWorthwhile(repeatMsg(small, PreserveTail), 32768) {
+		t.Error("want NOT worthwhile when nothing past the preserved tail")
+	}
+}
+
+func repeatMsg(m types.Message, n int) []types.Message {
+	out := make([]types.Message, n)
+	for i := range out {
+		out[i] = m
+	}
+	return out
+}
+
+func TestTruncate_RuneSafe(t *testing.T) {
+	// each "世" is 3 bytes; 10 runes = 30 bytes. Byte-slicing at 5 would
+	// split the 2nd rune and emit invalid UTF-8.
+	got := truncate(strings.Repeat("世", 10), 5)
+	if !utf8.ValidString(got) {
+		t.Errorf("truncate split a rune, invalid UTF-8: %q", got)
+	}
+	if !strings.HasPrefix(got, strings.Repeat("世", 5)) {
+		t.Errorf("want first 5 runes preserved, got %q", got)
+	}
+	if !strings.Contains(got, "truncated") {
+		t.Errorf("cut should be marked, got %q", got)
+	}
+	// 5 runes (6 bytes) is at the cap, not over it — pass through unchanged.
+	// Byte-based truncate wrongly clipped this to 4 runes.
+	if out := truncate("héllo", 5); out != "héllo" {
+		t.Errorf("5-rune string should pass through unchanged, got %q", out)
 	}
 }
 

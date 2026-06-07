@@ -105,6 +105,69 @@ func TestClaude_APIKey_HeadersAndStream(t *testing.T) {
 	}
 }
 
+func TestClaude_CacheTokensFoldedIntoUsage(t *testing.T) {
+	t.Setenv("CLAUDE_TEST_KEY", "sk-ant-api-xyz")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		write := func(payload any) {
+			b, _ := json.Marshal(payload)
+			_, _ = w.Write([]byte("data: "))
+			_, _ = w.Write(b)
+			_, _ = w.Write([]byte("\n\n"))
+			flusher.Flush()
+		}
+		// Anthropic reports the cached prefix separately from input_tokens.
+		write(map[string]any{
+			"type": "message_start",
+			"message": map[string]any{"id": "m1", "usage": map[string]any{
+				"input_tokens":                100,
+				"output_tokens":               0,
+				"cache_read_input_tokens":     900,
+				"cache_creation_input_tokens": 50,
+			}},
+		})
+		write(map[string]any{
+			"type":  "message_delta",
+			"delta": map[string]any{"stop_reason": "end_turn"},
+			"usage": map[string]any{"output_tokens": 7},
+		})
+	}))
+	defer srv.Close()
+
+	p := NewClaude(ClaudeConfig{Name: "anthropic", BaseURL: srv.URL, EnvKey: "CLAUDE_TEST_KEY"})
+	ch, err := p.Stream(context.Background(), Request{
+		Model:    "claude-sonnet-4-6",
+		Stream:   true,
+		Messages: []types.Message{{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "hi"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var done Event
+	for ev := range ch {
+		if ev.Type == EventDone {
+			done = ev
+		}
+	}
+	if done.Usage == nil {
+		t.Fatal("usage missing")
+	}
+	// InputTokens must reflect the TRUE prompt size (input + cache_read +
+	// cache_creation) so the auto-compact budget check doesn't undercount once
+	// caching kicks in.
+	if done.Usage.InputTokens != 1050 {
+		t.Errorf("InputTokens = %d, want 1050 (100+900+50)", done.Usage.InputTokens)
+	}
+	if done.Usage.CachedTokens != 900 {
+		t.Errorf("CachedTokens = %d, want 900 (cache_read)", done.Usage.CachedTokens)
+	}
+	if done.Usage.OutputTokens != 7 {
+		t.Errorf("OutputTokens = %d, want 7", done.Usage.OutputTokens)
+	}
+}
+
 func TestClaude_APIKey_CacheControlAndNoRemap(t *testing.T) {
 	t.Setenv("CLAUDE_TEST_KEY", "sk-ant-api-foo")
 

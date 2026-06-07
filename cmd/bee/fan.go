@@ -42,6 +42,7 @@ func runFan(args []string) {
 	model := fs.String("model", "", "override config default_model")
 	providerName := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope")
+	safe := fs.Bool("safe", false, "shorthand for --sandbox workspace-write: confine writes to cwd+tmp, block network")
 	isolated := fs.Bool("isolated", false, "give each worker its own git worktree (avoids write races)")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
@@ -71,7 +72,7 @@ func runFan(args []string) {
 			os.Exit(1)
 		}
 	}
-	applyOverrides(&cfg, *model, *providerName, *sandboxScope)
+	applyOverrides(&cfg, *model, *providerName, resolveSafe(*sandboxScope, *safe))
 
 	prov, err := buildProvider(cfg)
 	if err != nil {

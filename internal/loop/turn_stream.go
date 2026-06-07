@@ -167,7 +167,22 @@ events:
 				e.JSONEmitter.Emit(jsonmode.Event{Type: "done", Usage: u})
 			}
 			if e.Costs != nil && ev.Usage != nil {
-				e.Costs.Record(e.Cfg.DefaultProvider, req.Model, ev.Usage.InputTokens, ev.Usage.OutputTokens)
+				cev := e.Costs.Record(e.Cfg.DefaultProvider, req.Model, ev.Usage.InputTokens, ev.Usage.OutputTokens)
+				// prefer provider-reported spend over the static estimate.
+				usd, reported := cev.USD, false
+				if ev.Usage.CostUSD > 0 {
+					usd, reported = ev.Usage.CostUSD, true
+				}
+				cost.AppendUsage(cost.UsageRecord{
+					Time:         cev.Time,
+					Provider:     e.Cfg.DefaultProvider,
+					Model:        req.Model,
+					Input:        ev.Usage.InputTokens,
+					Output:       ev.Usage.OutputTokens,
+					Cached:       ev.Usage.CachedTokens,
+					USD:          usd,
+					CostReported: reported,
+				})
 			}
 			// Bump persisted lifetime totals so the splash banner can show
 			// "1.2M tok" across all bee sessions ever. Separate from the

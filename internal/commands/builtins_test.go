@@ -29,6 +29,7 @@ type fakeSide struct {
 	logoutOf         string
 	logoutErr        error
 	costOpened       bool
+	usageOpened      bool
 	thinking         string
 	thinkErr         error
 	maxIter          int
@@ -74,6 +75,8 @@ func (f *fakeSide) CopyLast() error                 { f.copyCalled = true; retur
 func (f *fakeSide) Quit()                           { f.quitCalled = true }
 func (f *fakeSide) OpenTree() error                 { f.treeOpened = true; return nil }
 func (f *fakeSide) OpenCost() error                 { f.costOpened = true; return nil }
+func (f *fakeSide) OpenUsage() error                { f.usageOpened = true; return nil }
+func (f *fakeSide) UsageText() string               { return "usage overview" }
 func (f *fakeSide) ForkSession(id string) error     { f.forkCalled = true; f.forkedFrom = id; return nil }
 func (f *fakeSide) CloneSession() error             { f.cloneCalled = true; return nil }
 func (f *fakeSide) Login(_ context.Context, p string) error {
@@ -210,7 +213,7 @@ func (f *fakeSide) VisionFallback(_, _, _ string) (string, error) { return "", n
 func TestRegisterBuiltins_Names(t *testing.T) {
 	r := NewRegistry()
 	RegisterBuiltins(r)
-	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "fork", "clone", "login", "logout", "effort", "iterations", "iter", "settings", "tools", "browser", "vision", "bg", "agent", "attach", "agents", "goal", "init", "remote-control", "stop", "edit", "vim", "term"}
+	want := []string{"compact", "model", "resume", "new", "clear", "copy", "quit", "exit", "help", "tree", "cost", "usage", "fork", "clone", "login", "logout", "effort", "iterations", "iter", "settings", "tools", "browser", "vision", "bg", "agent", "attach", "agents", "goal", "init", "remote-control", "stop", "edit", "vim", "term"}
 	for _, n := range want {
 		if _, ok := r.Get(n); !ok {
 			t.Errorf("missing builtin %q", n)

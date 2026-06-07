@@ -36,12 +36,22 @@ type ChatRequest struct {
 	// or `tools=true` that flip the model out of prose-summary mode into the
 	// `<tool_call>` envelope shape bee expects. Omitted when empty.
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
+	// Usage opts in to provider-reported actual spend on the final usage block.
+	// Only routed aggregators understand it; strict OpenAI-style endpoints
+	// reject unknown body fields, so it is gated (set only when the provider
+	// advertises the capability) rather than always emitted.
+	Usage *UsageRequest `json:"usage,omitempty"`
 }
 
 // StreamOptions matches OpenAI's stream_options envelope. Only include_usage
 // is used today.
 type StreamOptions struct {
 	IncludeUsage bool `json:"include_usage,omitempty"`
+}
+
+// UsageRequest asks the service to include real cost in the usage block.
+type UsageRequest struct {
+	Include bool `json:"include"`
 }
 
 // ChatMessage is one role-tagged message in the OpenAI schema.

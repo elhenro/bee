@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -103,12 +104,26 @@ func (m Model) onPickerLoginRequested(msg PickerLoginRequestedMsg) (tea.Model, t
 
 func (m Model) onEffortPicked(msg effortPickedMsg) (tea.Model, tea.Cmd) {
 	v := string(msg)
+	wasMastermind := m.mastermind
 	if err := m.side().SetThinking(v); err != nil {
 		m.lastErr = err.Error()
 		m.state = StateError
 		return m, nil
 	}
-	m.thinking = v
-	m.effortPane.SetCurrent(v)
+	// SetThinking canonicalized m.thinking and set m.mastermind already; mirror
+	// the current row in the picker. mastermind shows as its own row.
+	cur := m.thinking
+	if m.mastermind {
+		cur = "mastermind"
+	}
+	m.effortPane.SetCurrent(cur)
+	// only on the off→on transition: arm exactly one glow loop and warn that
+	// every turn now churns a hive. Re-picking mastermind while already on it
+	// must not stack a second tick loop.
+	if m.mastermind && !wasMastermind {
+		m.warning = "mastermind: every turn now spawns a hive — slower, higher quality, more tokens"
+		m.warningExpires = time.Now().Add(warningTTL)
+		return m, tea.Batch(glowTickCmd(), warningFadeCmd())
+	}
 	return m, nil
 }

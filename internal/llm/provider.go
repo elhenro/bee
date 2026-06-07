@@ -40,6 +40,10 @@ type Request struct {
 	// Thinking selects the extended-reasoning budget for providers that
 	// support it. Off means omit the field entirely.
 	Thinking Thinking
+	// ChatTemplateKwargs overrides/merges with the provider's static
+	// chat_template_kwargs for this request. Used to flip Qwen3's
+	// enable_thinking switch per-turn from the effort level. Nil = no override.
+	ChatTemplateKwargs map[string]any
 }
 
 // Thinking enumerates the supported extended-reasoning levels. Adapters map
@@ -150,4 +154,11 @@ const (
 type Usage struct {
 	InputTokens  int
 	OutputTokens int
+	// CachedTokens is the cached prompt-token count, when the provider reports
+	// it. Zero otherwise — most providers omit it.
+	CachedTokens int
+	// CostUSD is the provider-reported actual spend for this turn, when the
+	// service returns it (some routed aggregators do). Zero when unreported;
+	// callers then fall back to a static price-table estimate.
+	CostUSD float64
 }

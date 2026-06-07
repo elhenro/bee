@@ -46,7 +46,8 @@ func isWedgedTurn(err error) bool {
 	return errors.Is(err, loop.ErrTwoStrike) ||
 		errors.Is(err, loop.ErrPerToolFailureCap) ||
 		errors.Is(err, loop.ErrFormatStrike) ||
-		errors.Is(err, loop.ErrRepeatStream)
+		errors.Is(err, loop.ErrRepeatStream) ||
+		errors.Is(err, loop.ErrEmptyCompletion)
 }
 
 // parseGoalMessage detects a "/goal …" headless request and returns the

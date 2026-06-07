@@ -50,10 +50,19 @@ type StreamFunctionDelta struct {
 }
 
 // StreamUsage is the optional usage block, often only on the final chunk.
+//
+// Cost is the actual spend in account credits, returned by routed aggregators
+// when the request opts in (see ChatRequest.Usage). Absent on strict endpoints,
+// so it stays zero there. PromptTokensDetails carries a cached-prompt count
+// when reported.
 type StreamUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int     `json:"prompt_tokens"`
+	CompletionTokens    int     `json:"completion_tokens"`
+	TotalTokens         int     `json:"total_tokens"`
+	Cost                float64 `json:"cost"`
+	PromptTokensDetails *struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details,omitempty"`
 }
 
 // ParseChunk decodes one SSE `data:` JSON line. The literal "[DONE]" marker

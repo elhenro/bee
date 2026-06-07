@@ -73,6 +73,19 @@ func loaderTickCmd() tea.Cmd {
 	return tea.Tick(loaderTickInterval, func(time.Time) tea.Msg { return loaderTickMsg{} })
 }
 
+// glowTickMsg drives the mastermind rainbow-input animation. Unlike the loader
+// tick it runs at idle too — it self-rearms for as long as m.mastermind is set
+// (see onGlowTick) and dies on its own once the tier is switched off.
+type glowTickMsg struct{}
+
+// glowTickInterval paces the rainbow hue sweep. 120ms matches the loader so the
+// redraw cost stays invisible; the full-hue cycle lands around 7s.
+const glowTickInterval = 120 * time.Millisecond
+
+func glowTickCmd() tea.Cmd {
+	return tea.Tick(glowTickInterval, func(time.Time) tea.Msg { return glowTickMsg{} })
+}
+
 // costTickMsg drives the post-turn cost flash animation. Self-rearms while
 // costFlashFrame < costFlashUntil; dies on its own once the flash completes.
 type costTickMsg struct{}
@@ -140,6 +153,7 @@ type (
 	openTreeMsg      struct{}
 	openPaletteMsg   struct{}
 	openCostMsg      struct{}
+	openUsageMsg     struct{}
 	openLoginMsg     struct{}
 	openResumeMsg    struct{}
 	openEffortMsg    struct{}

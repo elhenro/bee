@@ -3,35 +3,76 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/elhenro/bee/internal/llm"
 )
 
 // SetThinking mutates the reasoning-effort level. Accepts the same strings
-// as llm.ParseThinking (off|low|medium|high|max, "med" alias for medium);
-// unknown values are rejected so silent typos don't downgrade to "off".
+// as llm.ParseThinking (off|low|medium|high|max, "med" alias for medium) plus
+// "mastermind" — the top tier, which isn't a reasoning budget but an
+// orchestration mode (pins thinking to max + spawns a hive per turn). Unknown
+// values are rejected so silent typos don't downgrade to "off".
 func (s *tuiSide) SetThinking(level string) error {
 	if s.m == nil {
 		return errors.New("effort: no tui state")
 	}
+	if strings.EqualFold(strings.TrimSpace(level), "mastermind") {
+		return s.setMastermind(true)
+	}
 	trimmed := level
 	canonical := llm.ParseThinking(level)
 	if canonical == llm.ThinkingOff && trimmed != "" && trimmed != "off" {
-		return fmt.Errorf("unknown effort %q (want auto|off|low|medium|high|max)", level)
+		return fmt.Errorf("unknown effort %q (want auto|off|low|medium|high|max|mastermind)", level)
 	}
 	s.m.thinking = string(canonical)
 	if s.m.eng != nil {
 		s.m.eng.Cfg.Thinking = string(canonical)
 	}
+	// leaving for a plain tier switches the hive off.
+	if s.m.mastermind {
+		if err := s.setMastermind(false); err != nil {
+			return err
+		}
+	}
 	return PersistSetting("", "thinking", string(canonical))
 }
 
-// GetThinking returns the current reasoning-effort level as a string.
+// setMastermind flips the hive flag and persists it. Enabling also pins
+// reasoning to max so the planner/workers get the full budget; disabling
+// leaves the current thinking level untouched.
+func (s *tuiSide) setMastermind(on bool) error {
+	s.m.mastermind = on
+	if s.m.eng != nil {
+		s.m.eng.Cfg.Mastermind = on
+	}
+	if on {
+		s.m.thinking = string(llm.ThinkingMax)
+		if s.m.eng != nil {
+			s.m.eng.Cfg.Thinking = string(llm.ThinkingMax)
+		}
+		if err := PersistSetting("", "thinking", string(llm.ThinkingMax)); err != nil {
+			return err
+		}
+	}
+	return PersistSetting("", "mastermind", on)
+}
+
+// GetThinking returns the current reasoning-effort level as a string —
+// "mastermind" when the top tier is active, else the raw thinking level.
 func (s *tuiSide) GetThinking() string {
 	if s.m == nil {
 		return string(llm.ThinkingOff)
 	}
+	if s.m.mastermind {
+		return "mastermind"
+	}
 	return s.m.thinking
+}
+
+// GetMastermind reports whether the mastermind hive tier is active.
+func (s *tuiSide) GetMastermind() bool {
+	return s.m != nil && s.m.mastermind
 }
 
 // OpenEffortPicker flips a sentinel that Model.Update consumes to display

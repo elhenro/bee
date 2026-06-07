@@ -41,6 +41,7 @@ func runHeadlessReal(args []string) {
 	model := fs.String("model", "", "override config default_model")
 	providerName := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|workspace-write-net|danger-full-access)")
+	safe := fs.Bool("safe", false, "shorthand for --sandbox workspace-write: confine writes to cwd+tmp, block network")
 	skillName := fs.String("skill", "", "run a skill as the user message (prompt-kind only in Wave 2)")
 	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high|max (default: from config)")
 	effort := fs.String("effort", "", "alias for --thinking: auto|off|low|medium|high|max")
@@ -108,7 +109,7 @@ func runHeadlessReal(args []string) {
 		cfg.Compaction.Enabled = false
 		cfg.Memory.Enabled = false
 	}
-	applyOverrides(&cfg, *model, *providerName, *sandboxScope)
+	applyOverrides(&cfg, *model, *providerName, resolveSafe(*sandboxScope, *safe))
 	// --effort is an alias for --thinking. Global `bee --effort` (stripped
 	// in main.go) lands in BEE_EFFORT and is consumed here as the lowest-
 	// priority source; explicit subcommand flags override env.
@@ -281,6 +282,11 @@ func runHeadlessReal(args []string) {
 		// repetition loop → model wedged emitting the same text until cut.
 		// same wedge family — signals "switch model or rephrase prompt".
 		if errors.Is(err, loop.ErrRepeatStream) {
+			os.Exit(7)
+		}
+		// empty-output loop → model returned whitespace-only turns. same wedge
+		// family — signals "switch model" (often a broken thinking template).
+		if errors.Is(err, loop.ErrEmptyCompletion) {
 			os.Exit(7)
 		}
 		// escalate → another distinct code so the user/CI knows the model

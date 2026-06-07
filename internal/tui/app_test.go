@@ -10,6 +10,7 @@ import (
 
 	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/caveman"
+	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -760,6 +761,103 @@ func TestModel_FlushDuringIntro_PushesBannerAndMessages(t *testing.T) {
 	}
 	if m.printedCount != len(m.messages) {
 		t.Fatalf("flush should advance printedCount; got %d want %d", m.printedCount, len(m.messages))
+	}
+}
+
+// After a real compaction the engine returns a much shorter message slice.
+// onCompactDone swaps it into m.messages but must also re-anchor printedCount;
+// otherwise flush() sees printedCount > len(messages), silently re-anchors, and
+// the "(/compact done ...)" summary line is never emitted to scrollback.
+// Regression: summary swallowed whenever compaction shrank the message count.
+func TestModel_CompactDone_FlushesSummaryAfterShrink(t *testing.T) {
+	m := newTestModel(t)
+	m.introActive = false
+	m.introDone = false
+	m.compacting = true
+	// long, fully-printed scrollback (10 msgs already flushed).
+	m.messages = nil
+	for i := 0; i < 10; i++ {
+		m.messages = append(m.messages, types.Message{
+			Role:    types.RoleUser,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: "old"}},
+		})
+	}
+	m.printedCount = len(m.messages)
+
+	// engine compacted down to summary + tail (5 msgs).
+	var compacted []types.Message
+	for i := 0; i < 5; i++ {
+		compacted = append(compacted, types.Message{
+			Role:    types.RoleUser,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: "new"}},
+		})
+	}
+	stats := loop.CompactStats{BeforeMsgs: 10, AfterMsgs: 5, BeforeTokens: 5000, AfterTokens: 1000, Duration: time.Second}
+
+	newM, cmd := m.Update(compactDoneMsg{msgs: compacted, stats: stats})
+	m = newM.(Model)
+
+	last := m.messages[len(m.messages)-1]
+	if !strings.Contains(last.Content[0].Text, "/compact done") {
+		t.Fatalf("last message should be the compact-done summary; got %q", last.Content[0].Text)
+	}
+	if cmd == nil {
+		t.Fatal("compact-done summary swallowed: flush returned nil (printedCount left past end of shrunken slice)")
+	}
+	if m.printedCount != len(m.messages) {
+		t.Fatalf("printedCount should advance to len after flush; got %d want %d", m.printedCount, len(m.messages))
+	}
+}
+
+// The reported scenario: a plain submit typed mid-compact is queued, then the
+// compact finishes. The drain branch must still flush the "(/compact done …)"
+// summary before submitting the queued text — same printedCount re-anchor bug,
+// exercised through the queue path.
+func TestModel_CompactDone_QueuedSubmit_StillFlushesSummary(t *testing.T) {
+	m := newTestModel(t)
+	m.introActive = false
+	m.introDone = false
+	m.compacting = true
+	m.queuedMidCompact = "continue"
+	m.messages = nil
+	for i := 0; i < 10; i++ {
+		m.messages = append(m.messages, types.Message{
+			Role:    types.RoleUser,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: "old"}},
+		})
+	}
+	m.printedCount = len(m.messages)
+
+	var compacted []types.Message
+	for i := 0; i < 5; i++ {
+		compacted = append(compacted, types.Message{
+			Role:    types.RoleUser,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: "new"}},
+		})
+	}
+	stats := loop.CompactStats{BeforeMsgs: 10, AfterMsgs: 5, BeforeTokens: 5000, AfterTokens: 1000, Duration: time.Second}
+
+	newM, _ := m.Update(compactDoneMsg{msgs: compacted, stats: stats})
+	m = newM.(Model)
+
+	// locate the summary; it must sit BELOW printedCount, i.e. already flushed.
+	summaryIdx := -1
+	for i, msg := range m.messages {
+		if len(msg.Content) > 0 && strings.Contains(msg.Content[0].Text, "/compact done") {
+			summaryIdx = i
+		}
+	}
+	if summaryIdx < 0 {
+		t.Fatal("compact-done summary missing from messages")
+	}
+	if summaryIdx >= m.printedCount {
+		t.Fatalf("summary at %d not flushed (printedCount=%d) — swallowed in queue drain", summaryIdx, m.printedCount)
+	}
+	if m.queuedMidCompact != "" {
+		t.Fatalf("queue should be drained; got %q", m.queuedMidCompact)
+	}
+	if m.state != StateStreaming {
+		t.Fatalf("queued submit should have fired (state=StateStreaming); got %v", m.state)
 	}
 }
 

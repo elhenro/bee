@@ -6,7 +6,12 @@
 // inlined so we don't take a charmtone dependency.
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"math"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Layered neutrals — borrowed from charmtone, mirrored for light mode so
 // the same role (subtle/body/highlight) stays consistent across themes.
@@ -177,4 +182,39 @@ func DefaultStyles() Styles {
 		// reads as one prominent quoted block, no bg highlight needed.
 		UserBody: lipgloss.NewStyle().Foreground(accentYou).Bold(true),
 	}
+}
+
+// rainbowColorForFrame maps an animation frame to a fully-saturated rainbow
+// color, sweeping the whole hue wheel about every 7s at the glow-tick cadence.
+// Drives the mastermind input glow. Truecolor hex — lipgloss renders 24-bit
+// where the terminal supports it and degrades gracefully where it doesn't.
+func rainbowColorForFrame(frame int) lipgloss.Color {
+	const steps = 60 // frames per full hue cycle (~7.2s at 120ms)
+	idx := ((frame % steps) + steps) % steps
+	hue := float64(idx) / float64(steps) * 360.0
+	r, g, b := hsvToRGB(hue, 0.85, 1.0)
+	return lipgloss.Color(fmt.Sprintf("#%02X%02X%02X", r, g, b))
+}
+
+// hsvToRGB converts h∈[0,360), s,v∈[0,1] to 8-bit RGB components.
+func hsvToRGB(h, s, v float64) (uint8, uint8, uint8) {
+	c := v * s
+	x := c * (1 - math.Abs(math.Mod(h/60.0, 2)-1))
+	off := v - c
+	var r, g, b float64
+	switch {
+	case h < 60:
+		r, g, b = c, x, 0
+	case h < 120:
+		r, g, b = x, c, 0
+	case h < 180:
+		r, g, b = 0, c, x
+	case h < 240:
+		r, g, b = 0, x, c
+	case h < 300:
+		r, g, b = x, 0, c
+	default:
+		r, g, b = c, 0, x
+	}
+	return uint8((r + off) * 255), uint8((g + off) * 255), uint8((b + off) * 255)
 }
