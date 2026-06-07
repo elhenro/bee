@@ -57,6 +57,36 @@ func TestSetRole(t *testing.T) {
 	}
 }
 
+// TestSetThinking verifies pinning the reasoning budget mirrors into the
+// engine config, canonicalizes aliases, and rejects unknown levels.
+func TestSetThinking(t *testing.T) {
+	t.Setenv("BEE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
+	eng := &loop.Engine{Cfg: config.Defaults()}
+	s := &tuiSide{m: &Model{eng: eng}}
+
+	if err := s.SetThinking("high"); err != nil {
+		t.Fatalf("SetThinking(high): %v", err)
+	}
+	if s.GetThinking() != "high" {
+		t.Errorf("GetThinking = %q, want high", s.GetThinking())
+	}
+	if eng.Cfg.Thinking != "high" {
+		t.Errorf("eng.Cfg.Thinking = %q, want high", eng.Cfg.Thinking)
+	}
+
+	if err := s.SetThinking("med"); err != nil { // alias → medium
+		t.Fatalf("SetThinking(med): %v", err)
+	}
+	if eng.Cfg.Thinking != "medium" {
+		t.Errorf("eng.Cfg.Thinking = %q, want medium", eng.Cfg.Thinking)
+	}
+
+	if err := s.SetThinking("bogus"); err == nil {
+		t.Error("SetThinking(bogus) should reject an unknown level")
+	}
+}
+
 // TestSetYolo flips the auto-approve toggle independent of role.
 func TestSetYolo(t *testing.T) {
 	t.Setenv("BEE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
