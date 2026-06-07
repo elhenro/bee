@@ -34,7 +34,7 @@ func init() {
 //
 //	go build -ldflags="-X main.version=$TAG -X main.commit=$SHA"
 var (
-	version = "0.1.0"
+	version = "0.1.1"
 	commit  = "dev"
 )
 
