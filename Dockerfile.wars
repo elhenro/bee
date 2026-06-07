@@ -1,0 +1,21 @@
+# bee-wars combatant image. One symmetric image runs both roles via the
+# wars-agent supervisor: a defender service guarding /opt/vault and an attacker
+# loop probing the opponent. Meant to run ONLY on an isolated arena network
+# against one consenting opponent — never against real infrastructure.
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -o /out/bee ./cmd/bee
+
+FROM alpine:3.20
+# attacker toolkit: HTTP, port scan, raw sockets, DNS
+RUN apk add --no-cache curl nmap netcat-openbsd bind-tools busybox-extras \
+ && adduser -D -u 10001 bee
+COPY --from=build /out/bee /usr/local/bin/bee
+# HOME on tmpfs so bee's config/sessions write under a --read-only rootfs
+ENV HOME=/tmp
+USER bee
+# the referee injects the secret into /opt/vault at run time (never a layer)
+# and sets BEE_WARS_OPPONENT / OPENAI_BASE_URL / BEE_MODEL via -e.
+ENTRYPOINT ["bee"]
+CMD ["wars-agent"]
