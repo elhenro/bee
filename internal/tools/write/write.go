@@ -71,7 +71,10 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}, nil
 	}
 
-	abs, rel, rootAbs, ok := tools.ResolveInRoot(t.root, path)
+	// ResolveMaybe contains the write to the workspace root only under a confined
+	// scope (non-empty root); in danger-full-access (empty root) it resolves the
+	// path absolute and accepts it, preserving bee's default "write anywhere".
+	abs, rel, rootAbs, ok := tools.ResolveMaybe(t.root, path)
 	if !ok {
 		return tools.Result{
 			Content: fmt.Sprintf("path %q escapes workspace root %q (resolved %q). use a path relative to workspace root, or under %s.",

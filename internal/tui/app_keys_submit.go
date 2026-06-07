@@ -267,6 +267,9 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	// fresh token-stream loader: zero the live output counters and roll a new
 	// procedural seed so this generation's particle layout is distinct.
 	m.turnOutChars = 0
+	if m.costs != nil {
+		m.turnStartOutput = m.costs.Total().Output
+	}
 	m.loaderRate = 0
 	m.loaderSampleChars = 0
 	m.loaderSeed = time.Now().UnixNano()

@@ -24,6 +24,7 @@ type ConsoleMsg struct {
 type Session struct {
 	chromePath string
 	headless   bool
+	confined   bool // when true, restrict navigation to public http/https hosts
 
 	mu        sync.Mutex
 	allocCtx  context.Context

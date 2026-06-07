@@ -181,7 +181,11 @@ func devCacheDirs() []string {
 		filepath.Join(home, ".rustup"),
 		filepath.Join(home, ".gradle", "caches"),
 		filepath.Join(home, ".m2"),
-		filepath.Join(home, ".bee"),
+		// NOTE: ~/.bee is intentionally NOT writable here. It holds bee's own
+		// trust config (config.toml), skills, and waggle stores; letting a
+		// sandboxed model command write it would let the agent disable its own
+		// approval gate / sandbox on the next run. bee's own state writes run in
+		// the unsandboxed bee process, so they're unaffected.
 		filepath.Join(home, "Downloads"),
 	}
 	if gc := strings.TrimSpace(os.Getenv("GOCACHE")); gc != "" {

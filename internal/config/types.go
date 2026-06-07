@@ -102,6 +102,13 @@ type Config struct {
 	// hive. Set false to force the hive on every queen turn.
 	MastermindTriage bool `toml:"mastermind_triage"`
 
+	// MastermindParallel runs mutating workers concurrently, each in its own
+	// git worktree, merging their changes back to the working tree as they
+	// finish. Read-only workers always run in parallel in the shared tree.
+	// When false (or outside a git repo) mutating workers serialize so they
+	// never race the shared tree. Defaults() seeds true.
+	MastermindParallel bool `toml:"mastermind_parallel"`
+
 	// Verbose unlocks full tool-output rendering in the TUI (compact one-line
 	// preview otherwise). Toggle via /settings; persists across launches.
 	Verbose bool `toml:"verbose"`

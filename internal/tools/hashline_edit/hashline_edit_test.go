@@ -36,7 +36,11 @@ func anchor(content string, lineNum int) string {
 
 func runTool(t *testing.T, in map[string]any) (string, bool) {
 	t.Helper()
-	res, err := New().Run(context.Background(), in)
+	root := "."
+	if p, ok := in["path"].(string); ok {
+		root = filepath.Dir(p)
+	}
+	res, err := New(root).Run(context.Background(), in)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
@@ -282,7 +286,7 @@ func TestAnchorIsThreeCharTag(t *testing.T) {
 	// pre-flight a known-bad 2-char tag at the same line: parsePos must
 	// reject the legacy shape outright.
 	bad := pos[:hash+1] + pos[hash+1:hash+3]
-	res, _ := New().Run(context.Background(), map[string]any{
+	res, _ := New(filepath.Dir(path)).Run(context.Background(), map[string]any{
 		"path": path,
 		"edits": []any{
 			map[string]any{"pos": bad, "op": "replace", "lines": []any{"x"}},
@@ -300,7 +304,7 @@ func TestHashlineEdit_FilterNilAllowsAll(t *testing.T) {
 	content := "alpha\nbeta\n"
 	path := writeFile(t, content)
 	pos := anchor(content, 1)
-	res, err := NewWithFilter(nil).Run(context.Background(), map[string]any{
+	res, err := NewWithFilter(filepath.Dir(path), nil).Run(context.Background(), map[string]any{
 		"path": path,
 		"edits": []any{
 			map[string]any{"pos": pos, "op": "replace", "lines": []any{"ALPHA"}},
@@ -319,7 +323,7 @@ func TestHashlineEdit_FilterAllowsMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	pos := anchor(content, 1)
-	tool := NewWithFilter(regexp.MustCompile(`\.md$`))
+	tool := NewWithFilter(dir, regexp.MustCompile(`\.md$`))
 	res, _ := tool.Run(context.Background(), map[string]any{
 		"path": path,
 		"edits": []any{
@@ -343,7 +347,7 @@ func TestHashlineEdit_FilterRejectsMiss(t *testing.T) {
 		t.Fatal(err)
 	}
 	pos := anchor(content, 1)
-	tool := NewWithFilter(regexp.MustCompile(`\.md$`))
+	tool := NewWithFilter(dir, regexp.MustCompile(`\.md$`))
 	res, _ := tool.Run(context.Background(), map[string]any{
 		"path": path,
 		"edits": []any{

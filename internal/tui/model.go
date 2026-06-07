@@ -274,6 +274,11 @@ type Model struct {
 	// lands at turn end via the cost flash, so the strip shows honest live
 	// throughput without fabricating token math.
 	turnOutChars int
+	// turnStartOutput snapshots the cost tracker's cumulative output tokens at
+	// submit. In queen/hive mode the work runs on sub-engines, so no main-loop
+	// deltas bump turnOutChars and the live "↓" would read 0; the cost-tracker
+	// delta since this baseline gives the real output figure instead.
+	turnStartOutput int
 	// loaderSeed varies the procedural particle layout per turn. Rolled on
 	// submit so each generation looks distinct.
 	loaderSeed int64

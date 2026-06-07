@@ -162,6 +162,22 @@ func (e *Engine) replayExec(ctx context.Context, script string) (string, error) 
 	return content, nil
 }
 
+// sanitizeToolInput drops underscore-prefixed keys from model-supplied tool
+// input. Those keys are internal channels set only by trusted wrappers
+// (_orig_command from the sandbox wrap) or the arg parser (_parse_error); a
+// model must never set one, or it could desync the shell safety classifier
+// (display vs executed command). Returns a fresh map.
+func sanitizeToolInput(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		if strings.HasPrefix(k, "_") {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
 func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult, error) {
 	if e.Tools == nil {
 		return types.ToolResult{UseID: u.ID, Content: "no tools registered", IsError: true}, nil
@@ -187,7 +203,12 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if err := tools.ValidateInput(t.Spec(), u.Input); err != nil {
 		return types.ToolResult{UseID: u.ID, Content: err.Error(), IsError: true}, nil
 	}
-	input := u.Input
+	// strip model-supplied internal-channel keys (underscore-prefixed) before
+	// dispatch. these are reserved for trusted wrappers (e.g. _orig_command set
+	// by wrapShellInput); a model that sets one itself could spoof the shell
+	// safety classifier into vetting a decoy while a different command runs.
+	// the parse-error channels (_parse_error/_raw_args) are consumed above.
+	input := sanitizeToolInput(u.Input)
 	if u.Name == "bash" {
 		input = wrapShellInput(input, e.Cfg.Sandbox, e.Cwd)
 	}

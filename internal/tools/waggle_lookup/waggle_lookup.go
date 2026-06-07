@@ -73,6 +73,21 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	return t.follow(ctx, name, in)
 }
 
+// validWaggleName reports whether name is a safe single-segment store key:
+// non-empty and free of path separators or dots, so name+".md" can only resolve
+// inside the store directory.
+func validWaggleName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if r == '/' || r == '\\' || r == '.' {
+			return false
+		}
+	}
+	return true
+}
+
 // list renders the library across stores, ranked by estimated tokens saved.
 func (t *Tool) list() string {
 	type row struct {
@@ -102,6 +117,12 @@ func (t *Tool) list() string {
 // follow finds the named waggle in any store and runs it through skillexec,
 // which re-checks safety, parses args POSIX-style, and caps output.
 func (t *Tool) follow(ctx context.Context, name string, in map[string]any) (tools.Result, error) {
+	// name indexes a file under the store dir (name+".md"); reject anything that
+	// could escape it (/, \, .) so a crafted name can't load an arbitrary .md
+	// from outside the project/user store and run it through skillexec.
+	if !validWaggleName(name) {
+		return tools.Result{Content: fmt.Sprintf("invalid waggle name %q", name), IsError: true}, nil
+	}
 	for _, s := range t.stores {
 		if !s.Exists(name) {
 			continue

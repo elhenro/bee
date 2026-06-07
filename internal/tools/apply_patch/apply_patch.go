@@ -18,6 +18,7 @@ import (
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
 	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/safety"
 	"github.com/elhenro/bee/internal/tools"
 )
 
@@ -25,19 +26,21 @@ const toolName = "apply_patch"
 
 // Tool is the apply_patch tool.
 type Tool struct {
+	root   string
 	pathRe *regexp.Regexp
 }
 
-// New returns a fresh apply_patch tool.
-func New() tools.Tool { return NewWithFilter(nil) }
+// New returns an apply_patch tool rooted at root (the workspace). Every patch
+// target is contained to root.
+func New(root string) tools.Tool { return NewWithFilter(root, nil) }
 
 // NewWithFilter constructs the apply_patch tool with an optional path regex.
-// When pathRe is nil, all paths are allowed (existing behavior).
-// When pathRe is non-nil, the whole batch is rejected if ANY file path in
-// the patch fails the match — no file is touched on rejection. Paths are
-// matched relative to the current working directory when possible.
-func NewWithFilter(pathRe *regexp.Regexp) tools.Tool {
-	return &Tool{pathRe: pathRe}
+// When pathRe is nil, all in-root paths are allowed. When non-nil, the whole
+// batch is rejected if ANY file path in the patch fails the match. Either way,
+// any target that escapes root (absolute or via ..) is refused and no file is
+// touched.
+func NewWithFilter(root string, pathRe *regexp.Regexp) tools.Tool {
+	return &Tool{root: root, pathRe: pathRe}
 }
 
 // Spec advertises the tool to the model.
@@ -107,6 +110,32 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		f.NewName = stripDiffPrefix(f.NewName)
 	}
 
+	// under a confined scope, contain every patch target to the workspace root
+	// and reject sensitive targets BEFORE touching disk. stripDiffPrefix passes
+	// absolute paths through and never strips "..", so without this a header like
+	// `+++ b/../../.ssh/authorized_keys` would write outside the tree. Rewrite
+	// each name to its absolute form so plan/commit stay consistent. In danger-
+	// full-access (empty root) ResolveMaybe is a passthrough and CheckWritable is
+	// skipped — patch anywhere.
+	for _, f := range files {
+		for _, np := range []*string{&f.OldName, &f.NewName} {
+			name := *np
+			if name == "" || name == "/dev/null" {
+				continue
+			}
+			abs, _, rootAbs, ok := tools.ResolveMaybe(t.root, name)
+			if !ok {
+				return tools.Result{Content: fmt.Sprintf("patch path %q escapes workspace root %q; refused (no files changed)", name, rootAbs), IsError: true}, nil
+			}
+			if t.root != "" {
+				if err := safety.CheckWritable(abs); err != nil {
+					return tools.Result{Content: fmt.Sprintf("patch path %q refused: %v (no files changed)", name, err), IsError: true}, nil
+				}
+			}
+			*np = abs
+		}
+	}
+
 	if t.pathRe != nil {
 		cwd, _ := os.Getwd()
 		for _, f := range files {
@@ -123,113 +152,125 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		}
 	}
 
-	changes := make([]fileChange, 0, len(files))
+	// plan all changes in memory first; commit only once every file validates,
+	// so a mid-batch failure (e.g. context mismatch on the 3rd file) leaves the
+	// tree untouched instead of half-patched.
+	plans := make([]plannedChange, 0, len(files))
 	for _, f := range files {
 		if err := ctx.Err(); err != nil {
 			return tools.Result{Content: err.Error(), IsError: true}, err
 		}
-		ch, err := applyOne(f)
+		p, err := planOne(f)
 		if err != nil {
 			return tools.Result{
-				Content: fmt.Sprintf("apply failed for %s: %v", fileLabel(f), err),
+				Content: fmt.Sprintf("apply failed for %s: %v (no files changed)", fileLabel(f), err),
 				IsError: true,
 			}, nil
 		}
-		changes = append(changes, ch)
+		plans = append(plans, p)
+	}
+	changes := make([]fileChange, 0, len(plans))
+	for i, p := range plans {
+		if err := commit(p); err != nil {
+			return tools.Result{
+				Content: fmt.Sprintf("apply failed writing %s: %v (%d/%d already written)", p.path, err, i, len(plans)),
+				IsError: true,
+			}, nil
+		}
+		changes = append(changes, fileChange{path: tools.RelTo(t.root, p.path), kind: p.kind, added: p.added, removed: p.removed})
 	}
 
 	return tools.Result{Content: summarize(changes)}, nil
 }
 
-// applyOne handles a single parsed File entry.
-func applyOne(f *gitdiff.File) (fileChange, error) {
-	if f.IsBinary {
-		return fileChange{}, errors.New("binary patches not supported")
-	}
+// plannedChange is a fully-computed file mutation held in memory until every
+// file in the batch validates, so a mid-batch failure can't leave a partially
+// applied tree (all-or-nothing).
+type plannedChange struct {
+	path    string
+	kind    string // "create", "modify", "delete"
+	data    []byte // bytes to write for create/modify
+	mode    os.FileMode
+	added   int
+	removed int
+}
 
+// planOne validates one parsed File and computes its result WITHOUT writing to
+// disk. Reads are allowed (modify needs current content); no mutation happens
+// here so the caller can abort the whole batch before any commit.
+func planOne(f *gitdiff.File) (plannedChange, error) {
+	if f.IsBinary {
+		return plannedChange{}, errors.New("binary patches not supported")
+	}
 	switch {
 	case f.IsDelete:
-		return applyDelete(f)
-	case f.IsNew:
-		return applyCreate(f)
-	default:
-		return applyModify(f)
-	}
-}
-
-func applyDelete(f *gitdiff.File) (fileChange, error) {
-	path := f.OldName
-	if path == "" {
-		return fileChange{}, errors.New("delete patch missing old name")
-	}
-	if err := os.Remove(path); err != nil {
-		return fileChange{}, err
-	}
-	removed := countLines(f, lineRemoved)
-	return fileChange{path: path, kind: "delete", removed: removed}, nil
-}
-
-func applyCreate(f *gitdiff.File) (fileChange, error) {
-	path := f.NewName
-	if path == "" {
-		return fileChange{}, errors.New("create patch missing new name")
-	}
-	if _, err := os.Stat(path); err == nil {
-		return fileChange{}, fmt.Errorf("create patch but %s already exists", path)
-	}
-	if dir := filepath.Dir(path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fileChange{}, err
+		path := f.OldName
+		if path == "" {
+			return plannedChange{}, errors.New("delete patch missing old name")
 		}
+		if _, err := os.Stat(path); err != nil {
+			return plannedChange{}, err
+		}
+		return plannedChange{path: path, kind: "delete", removed: countLines(f, lineRemoved)}, nil
+	case f.IsNew:
+		path := f.NewName
+		if path == "" {
+			return plannedChange{}, errors.New("create patch missing new name")
+		}
+		if _, err := os.Stat(path); err == nil {
+			return plannedChange{}, fmt.Errorf("create patch but %s already exists", path)
+		}
+		var buf bytes.Buffer
+		if err := gitdiff.Apply(&buf, bytes.NewReader(nil), f); err != nil {
+			return plannedChange{}, err
+		}
+		// ignore the patch-supplied mode: a model-controlled file mode could set
+		// over-permissive bits. New files get a fixed safe mode.
+		return plannedChange{path: path, kind: "create", data: buf.Bytes(), mode: 0o644, added: countLines(f, lineAdded)}, nil
+	default:
+		path := f.NewName
+		if path == "" {
+			path = f.OldName
+		}
+		if path == "" {
+			return plannedChange{}, errors.New("modify patch missing file name")
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return plannedChange{}, err
+		}
+		var buf bytes.Buffer
+		if err := gitdiff.Apply(&buf, bytes.NewReader(src), f); err != nil {
+			return plannedChange{}, err
+		}
+		// reject empty result on modify; require explicit deletion semantics
+		if buf.Len() == 0 && !f.IsDelete {
+			return plannedChange{}, fmt.Errorf("modify patch for %s produced empty file; use deleted file mode to remove", path)
+		}
+		// preserve original file mode; fall back to 0o644 if stat fails
+		mode := os.FileMode(0o644)
+		if info, err := os.Stat(path); err == nil {
+			mode = info.Mode().Perm()
+		}
+		return plannedChange{path: path, kind: "modify", data: buf.Bytes(), mode: mode, added: countLines(f, lineAdded), removed: countLines(f, lineRemoved)}, nil
 	}
-	var buf bytes.Buffer
-	if err := gitdiff.Apply(&buf, bytes.NewReader(nil), f); err != nil {
-		return fileChange{}, err
-	}
-	mode := f.NewMode
-	if mode == 0 {
-		mode = 0o644
-	}
-	if err := os.WriteFile(path, buf.Bytes(), mode); err != nil {
-		return fileChange{}, err
-	}
-	return fileChange{path: path, kind: "create", added: countLines(f, lineAdded)}, nil
 }
 
-func applyModify(f *gitdiff.File) (fileChange, error) {
-	path := f.NewName
-	if path == "" {
-		path = f.OldName
+// commit writes one planned change to disk.
+func commit(p plannedChange) error {
+	switch p.kind {
+	case "delete":
+		return os.Remove(p.path)
+	case "create":
+		if dir := filepath.Dir(p.path); dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+		}
+		return os.WriteFile(p.path, p.data, p.mode)
+	default: // modify
+		return os.WriteFile(p.path, p.data, p.mode)
 	}
-	if path == "" {
-		return fileChange{}, errors.New("modify patch missing file name")
-	}
-	src, err := os.ReadFile(path)
-	if err != nil {
-		return fileChange{}, err
-	}
-	var buf bytes.Buffer
-	if err := gitdiff.Apply(&buf, bytes.NewReader(src), f); err != nil {
-		return fileChange{}, err
-	}
-	// reject empty result on modify; require explicit deletion semantics
-	if buf.Len() == 0 && !f.IsDelete {
-		return fileChange{}, fmt.Errorf("modify patch for %s produced empty file; use deleted file mode to remove", path)
-	}
-	// preserve original file mode; fall back to 0o644 if stat fails
-	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	}
-	if err := os.WriteFile(path, buf.Bytes(), mode); err != nil {
-		return fileChange{}, err
-	}
-	return fileChange{
-		path:    path,
-		kind:    "modify",
-		added:   countLines(f, lineAdded),
-		removed: countLines(f, lineRemoved),
-	}, nil
 }
 
 type lineKind int

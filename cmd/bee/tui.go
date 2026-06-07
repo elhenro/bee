@@ -24,6 +24,7 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
+	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/skillexec"
 	"github.com/elhenro/bee/internal/tui"
 	"github.com/elhenro/bee/internal/types"
@@ -260,6 +261,18 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		e.Memory = newKnowledgeAdapter(newProv, e.Cfg)
 		e.Tools = newReg
 		return nil
+	}
+
+	// tools-for-cwd closure: queen mode calls this to root an isolated worker
+	// engine at its own git worktree so file tools target the worktree instead
+	// of the shared cwd. Same builder as Rebuild, just parameterized on path.
+	eng.ToolsForCwd = func(wcwd string) (*tools.Registry, error) {
+		r, err := buildToolsAsker(wcwd, eng.Cfg, eng.Provider, storeDir, app, tuiAsker)
+		if err != nil {
+			return nil, err
+		}
+		skillexec.RegisterExecSkills(r, skillReg.List())
+		return r, nil
 	}
 
 	// Startup intro animation is non-blocking: tui.RunWithCommandsAndKeyMap

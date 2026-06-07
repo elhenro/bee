@@ -13,6 +13,7 @@ import (
 	"github.com/elhenro/bee/internal/ask"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/sandbox"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/apply_patch"
 	"github.com/elhenro/bee/internal/tools/ask_user"
@@ -178,8 +179,21 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
 
-	// Initialize web_fetch tool
-	webFetch, err := web_fetch.New(web_fetch.DefaultConfig())
+	// scope gate: file tools confine to the workspace + block secret paths only
+	// under a confined sandbox scope (--safe, zzz, spawned agents). The default
+	// danger-full-access leaves them unrestricted ("do anything"). containRoot is
+	// the workspace root when confined, "" (no containment) otherwise.
+	confined := sandbox.Scope(cfg.Sandbox.Scope).Confines()
+	containRoot := cwd
+	if !confined {
+		containRoot = ""
+	}
+
+	// Initialize web_fetch tool. Confined drives the SSRF guard: localhost/LAN
+	// reachable under danger-full-access, blocked under a confined scope.
+	wfCfg := web_fetch.DefaultConfig()
+	wfCfg.Confined = confined
+	webFetch, err := web_fetch.New(wfCfg)
 	if err != nil {
 		// Silently skip if disabled
 		webFetch = nil
@@ -194,13 +208,13 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 
 	all := []tools.Tool{
 		newShellTool(app, cfg),
-		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),
-		grep.NewWithMax(cwd, prof.GrepMaxMatches),
-		find.New(cwd),
-		ls.New(cwd),
-		write.New(cwd),
-		edit_diff.New(cwd),
-		hashline_edit.New(),
+		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines, confined),
+		grep.NewWithMax(containRoot, prof.GrepMaxMatches),
+		find.New(containRoot),
+		ls.New(containRoot),
+		write.New(containRoot),
+		edit_diff.New(containRoot),
+		hashline_edit.New(containRoot),
 		// godoc lets tiny models verify Go APIs before calling them, killing
 		// phantom-function hallucinations at source.
 		godoc.New(cwd),
@@ -216,7 +230,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	}
 	// apply_patch dropped on tiny — small models mis-emit unified diffs.
 	if !prof.SkipApplyPatch {
-		all = append(all, apply_patch.New())
+		all = append(all, apply_patch.New(containRoot))
 	}
 	if cfg.Memory.Enabled && storeDir != "" {
 		topK := cfg.Memory.TopK
@@ -227,7 +241,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	}
 	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
-	all = appendBrowserTools(all, cfg)
+	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
@@ -277,7 +291,7 @@ func appendUserTools(all []tools.Tool, ut []config.UserTool) []tools.Tool {
 // enabled and a Chrome/Chromium binary is found. Silent no-op otherwise so
 // sessions without the opt-in see no extra surface. screenshot is added only
 // when [browser.vision] model is set (handled inside browser.New).
-func appendBrowserTools(all []tools.Tool, cfg config.Config) []tools.Tool {
+func appendBrowserTools(all []tools.Tool, cfg config.Config, confined bool) []tools.Tool {
 	if !cfg.Browser.Enabled {
 		return all
 	}
@@ -290,6 +304,7 @@ func appendBrowserTools(all []tools.Tool, cfg config.Config) []tools.Tool {
 		Headless:       cfg.Browser.Headless,
 		VisionModel:    cfg.Browser.Vision.Model,
 		VisionEndpoint: cfg.Browser.Vision.Endpoint,
+		Confined:       confined,
 	})...)
 }
 
@@ -314,19 +329,29 @@ func buildToolsFiltered(cwd string, cfg config.Config, writeRe *regexp.Regexp, p
 func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *regexp.Regexp, prov llm.Provider, storeDir string, app approval.Approver) (*tools.Registry, error) {
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
+
+	// scope gate, identical to buildToolsWithApprover. writeRe (the
+	// --write-path-re regex filter) is orthogonal and still applies when set;
+	// only workspace containment + secret blocking follow the sandbox scope.
+	confined := sandbox.Scope(cfg.Sandbox.Scope).Confines()
+	containRoot := cwd
+	if !confined {
+		containRoot = ""
+	}
+
 	all := []tools.Tool{
 		newShellTool(app, cfg),
-		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines),
-		grep.NewWithMax(cwd, prof.GrepMaxMatches),
-		find.New(cwd),
-		ls.New(cwd),
-		write.NewWithFilter(cwd, writeRe),
-		edit_diff.NewWithFilter(cwd, writeRe),
-		hashline_edit.NewWithFilter(writeRe),
+		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines, confined),
+		grep.NewWithMax(containRoot, prof.GrepMaxMatches),
+		find.New(containRoot),
+		ls.New(containRoot),
+		write.NewWithFilter(containRoot, writeRe),
+		edit_diff.NewWithFilter(containRoot, writeRe),
+		hashline_edit.NewWithFilter(containRoot, writeRe),
 		escalate.New(),
 	}
 	if !prof.SkipApplyPatch {
-		all = append(all, apply_patch.NewWithFilter(writeRe))
+		all = append(all, apply_patch.NewWithFilter(containRoot, writeRe))
 	}
 	if cfg.Memory.Enabled && storeDir != "" {
 		topK := cfg.Memory.TopK
@@ -337,7 +362,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	}
 	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
-	all = appendBrowserTools(all, cfg)
+	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {

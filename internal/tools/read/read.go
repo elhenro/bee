@@ -41,22 +41,26 @@ type Tool struct {
 	cache        map[string]*cacheEntry
 	defaultLines int
 	maxLines     int
+	confine      bool // when true, apply CheckReadable secret-path blocking
 }
 
 // New returns a fresh read tool with package-default limits (2000 default,
-// 10000 max). Used by non-tiny profiles.
-func New() tools.Tool { return NewWithLimits(defaultLimit, maxLimit) }
+// 10000 max) and secret-path blocking on. Used by non-tiny profiles.
+func New() tools.Tool { return NewWithLimits(defaultLimit, maxLimit, true) }
 
 // NewWithLimits returns a read tool with custom default/max line caps. Tiny
 // profile passes 100/500 so one read can't torch a 4-8k local-model context.
-func NewWithLimits(def, max int) tools.Tool {
+// confine gates the CheckReadable secret-path guard: true under a confined
+// sandbox scope, false under danger-full-access where read may open any file
+// (including .git/.ssh), matching bee's default "read anything".
+func NewWithLimits(def, max int, confine bool) tools.Tool {
 	if def <= 0 {
 		def = defaultLimit
 	}
 	if max <= 0 {
 		max = maxLimit
 	}
-	return &Tool{cache: make(map[string]*cacheEntry), defaultLines: def, maxLines: max}
+	return &Tool{cache: make(map[string]*cacheEntry), defaultLines: def, maxLines: max, confine: confine}
 }
 
 // Spec advertises the tool to the model. defaultLines/maxLines values are
@@ -115,16 +119,19 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	if !ok || path == "" {
 		return tools.Result{Content: "missing or empty 'path' field", IsError: true}, nil
 	}
-	// resolve symlinks before safety check so a symlink can't bypass the
-	// lexical secret-file rules by pointing at e.g. ~/.ssh/id_rsa. broken
-	// symlinks fall through to the original path so the stat below reports
-	// the real error.
-	checkPath := path
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		checkPath = resolved
-	}
-	if err := safety.CheckReadable(checkPath); err != nil {
-		return tools.Result{Content: err.Error(), IsError: true}, nil
+	// under a confined scope, refuse secret-shaped files. resolve symlinks first
+	// so a symlink can't bypass the lexical secret-file rules by pointing at e.g.
+	// ~/.ssh/id_rsa; broken symlinks fall through to the original path so the
+	// stat below reports the real error. danger-full-access skips this entirely
+	// so the model can read .git, dotfiles, etc.
+	if t.confine {
+		checkPath := path
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			checkPath = resolved
+		}
+		if err := safety.CheckReadable(checkPath); err != nil {
+			return tools.Result{Content: err.Error(), IsError: true}, nil
+		}
 	}
 
 	info, err := os.Stat(path)

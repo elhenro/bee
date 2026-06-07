@@ -26,7 +26,7 @@ func runInDir(t *testing.T) string {
 }
 
 func TestCreateNewFile(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	patch := `diff --git a/hello.txt b/hello.txt
 new file mode 100644
 --- /dev/null
@@ -35,7 +35,7 @@ new file mode 100644
 +hello
 +world
 `
-	tool := New()
+	tool := New(dir)
 	res, err := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ new file mode 100644
 }
 
 func TestModifyExistingFile(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	if err := os.WriteFile("a.txt", []byte("one\ntwo\nthree\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestModifyExistingFile(t *testing.T) {
 +TWO
  three
 `
-	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	res, err := New(dir).Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestModifyExistingFile(t *testing.T) {
 }
 
 func TestMultiFilePatch(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	if err := os.WriteFile("x.txt", []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +y
 `
-	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	res, err := New(dir).Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ new file mode 100644
 }
 
 func TestContextMismatchFails(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	if err := os.WriteFile("a.txt", []byte("actual\nother\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestContextMismatchFails(t *testing.T) {
 +changed
  other
 `
-	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	res, err := New(dir).Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestContextMismatchFails(t *testing.T) {
 }
 
 func TestDeleteFile(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	if err := os.WriteFile("gone.txt", []byte("a\nb\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ deleted file mode 100644
 -a
 -b
 `
-	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	res, err := New(dir).Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,14 +180,15 @@ deleted file mode 100644
 }
 
 func TestEmptyPatchRejected(t *testing.T) {
-	res, _ := New().Run(context.Background(), map[string]any{"patch": ""})
+	dir := t.TempDir()
+	res, _ := New(dir).Run(context.Background(), map[string]any{"patch": ""})
 	if !res.IsError {
 		t.Fatal("expected error for empty patch")
 	}
 }
 
 func TestCreateInSubdir(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	patch := `diff --git a/sub/dir/n.txt b/sub/dir/n.txt
 new file mode 100644
 --- /dev/null
@@ -195,7 +196,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +nested
 `
-	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	res, err := New(dir).Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +213,8 @@ new file mode 100644
 }
 
 func TestSpec(t *testing.T) {
-	s := New().Spec()
+	dir := t.TempDir()
+	s := New(dir).Spec()
 	if s.Name != "apply_patch" {
 		t.Fatalf("wrong name: %s", s.Name)
 	}
@@ -222,7 +224,7 @@ func TestSpec(t *testing.T) {
 }
 
 func TestApplyPatch_FilterNilAllowsAll(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	patch := `diff --git a/foo.go b/foo.go
 new file mode 100644
 --- /dev/null
@@ -230,7 +232,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +package x
 `
-	tool := NewWithFilter(nil)
+	tool := NewWithFilter(dir,nil)
 	res, _ := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if res.IsError {
 		t.Fatalf("nil filter must allow: %s", res.Content)
@@ -241,7 +243,7 @@ new file mode 100644
 }
 
 func TestApplyPatch_FilterAllowsMatch(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	patch := `diff --git a/notes.md b/notes.md
 new file mode 100644
 --- /dev/null
@@ -249,7 +251,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +hi
 `
-	tool := NewWithFilter(regexp.MustCompile(`\.md$`))
+	tool := NewWithFilter(dir,regexp.MustCompile(`\.md$`))
 	res, _ := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if res.IsError {
 		t.Fatalf("md path must pass: %s", res.Content)
@@ -257,7 +259,7 @@ new file mode 100644
 }
 
 func TestApplyPatch_FilterRejectsMiss(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	patch := `diff --git a/foo.go b/foo.go
 new file mode 100644
 --- /dev/null
@@ -265,7 +267,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +package x
 `
-	tool := NewWithFilter(regexp.MustCompile(`\.md$`))
+	tool := NewWithFilter(dir,regexp.MustCompile(`\.md$`))
 	res, _ := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if !res.IsError {
 		t.Fatalf("want IsError for non-md path")
@@ -279,13 +281,13 @@ new file mode 100644
 }
 
 func TestApplyPatch_RepairsHunkCount(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	if err := os.WriteFile("a.txt", []byte("a\nb\nc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// intentionally wrong @@ -1,3 +1,3 @@ (correct would be -1,3 +1,4)
 	bad := "--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n a\n+X\n b\n c\n"
-	r, err := New().Run(context.Background(), map[string]any{"patch": bad})
+	r, err := New(dir).Run(context.Background(), map[string]any{"patch": bad})
 	if err != nil || r.IsError {
 		t.Fatalf("repair failed: %v %s", err, r.Content)
 	}
@@ -296,13 +298,13 @@ func TestApplyPatch_RepairsHunkCount(t *testing.T) {
 }
 
 func TestApplyPatch_StripsAPrefix(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	if err := os.WriteFile("hello.go", []byte("hi\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// bare diff with a/ b/ prefixes but no "diff --git" header
 	patch := "--- a/hello.go\n+++ b/hello.go\n@@ -1 +1 @@\n-hi\n+bye\n"
-	r, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	r, err := New(dir).Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil || r.IsError {
 		t.Fatalf("apply: %v %s", err, r.Content)
 	}
@@ -313,13 +315,13 @@ func TestApplyPatch_StripsAPrefix(t *testing.T) {
 }
 
 func TestApplyPatch_EmptyResultRejected(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	if err := os.WriteFile("keep.txt", []byte("only\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// patch removes all lines but lacks "deleted file mode" header
 	patch := "--- a/keep.txt\n+++ b/keep.txt\n@@ -1 +0,0 @@\n-only\n"
-	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	res, err := New(dir).Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +341,7 @@ func TestApplyPatch_PreservesMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("windows has no executable bit")
 	}
-	runInDir(t)
+	dir := runInDir(t)
 	if err := os.WriteFile("run.sh", []byte("echo old\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +352,7 @@ func TestApplyPatch_PreservesMode(t *testing.T) {
 -echo old
 +echo new
 `
-	res, err := New().Run(context.Background(), map[string]any{"patch": patch})
+	res, err := New(dir).Run(context.Background(), map[string]any{"patch": patch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +371,7 @@ func TestApplyPatch_PreservesMode(t *testing.T) {
 // when any file in a multi-file patch fails the filter, the entire batch
 // is rejected before any write happens.
 func TestApplyPatch_FilterRejectsBatchAtomically(t *testing.T) {
-	runInDir(t)
+	dir := runInDir(t)
 	patch := `diff --git a/ok.md b/ok.md
 new file mode 100644
 --- /dev/null
@@ -383,7 +385,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +nope
 `
-	tool := NewWithFilter(regexp.MustCompile(`\.md$`))
+	tool := NewWithFilter(dir,regexp.MustCompile(`\.md$`))
 	res, _ := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if !res.IsError {
 		t.Fatalf("want IsError for mixed batch")
@@ -395,4 +397,25 @@ new file mode 100644
 		t.Errorf("bad.go must NOT exist: %v", err)
 	}
 	_ = filepath.Separator
+}
+
+// TestApplyPatch_RejectsTraversal: a patch whose target escapes the workspace
+// root (via ../) must be refused and write nothing outside the tree.
+func TestApplyPatch_RejectsTraversal(t *testing.T) {
+	dir := runInDir(t)
+	outside := filepath.Join(filepath.Dir(dir), "pwned.txt")
+	patch := `diff --git a/../pwned.txt b/../pwned.txt
+new file mode 100644
+--- /dev/null
++++ b/../pwned.txt
+@@ -0,0 +1 @@
++pwned
+`
+	res, _ := New(dir).Run(context.Background(), map[string]any{"patch": patch})
+	if !res.IsError {
+		t.Fatalf("traversal patch must be refused, got: %s", res.Content)
+	}
+	if _, err := os.Stat(outside); !os.IsNotExist(err) {
+		t.Fatalf("file written outside workspace root: %s", outside)
+	}
 }

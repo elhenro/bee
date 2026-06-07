@@ -223,3 +223,29 @@ func TestNewPool_MinClamps(t *testing.T) {
 		t.Errorf("NewPool(-3) MaxConcurrency = %d, want 1", got)
 	}
 }
+
+// TestQueen_NoConcurrentSameWorker is the regression for the dispatch race:
+// when the plan has more sub-tasks than workers, round-robin reuses each worker
+// engine, and a worker engine must never be driven by two goroutines at once
+// (its per-run state isn't concurrency-safe). Give 2 workers 6 tasks and assert
+// neither is ever in flight more than once. Run under -race for full coverage.
+func TestQueen_NoConcurrentSameWorker(t *testing.T) {
+	planner := &scriptedRunner{outputs: []string{
+		`["t1","t2","t3","t4","t5","t6"]`,
+		"summary",
+	}}
+	var in0, max0, in1, max1 int32
+	w0 := &stubRunner{final: "a", delay: 15 * time.Millisecond, inflight: &in0, maxSeen: &max0}
+	w1 := &stubRunner{final: "b", delay: 15 * time.Millisecond, inflight: &in1, maxSeen: &max1}
+
+	q := NewQueen(planner, []Runner{w0, w1})
+	if _, err := q.Run(context.Background(), "task"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := atomic.LoadInt32(&max0); got > 1 {
+		t.Errorf("worker 0 driven concurrently: maxSeen=%d", got)
+	}
+	if got := atomic.LoadInt32(&max1); got > 1 {
+		t.Errorf("worker 1 driven concurrently: maxSeen=%d", got)
+	}
+}

@@ -80,3 +80,30 @@ func TestPathIsPrefix_RootContainsSelfButNotSibling(t *testing.T) {
 		t.Error("/x/001/sub must be inside /x/001")
 	}
 }
+
+func TestResolveMaybe_Confined(t *testing.T) {
+	// non-empty root behaves like ResolveInRoot: in-root ok, escape rejected.
+	root := t.TempDir()
+	if _, _, _, ok := ResolveMaybe(root, "sub/file.txt"); !ok {
+		t.Errorf("in-root path rejected under confined root")
+	}
+	if _, _, _, ok := ResolveMaybe(root, "/etc/passwd"); ok {
+		t.Errorf("absolute escape accepted under confined root")
+	}
+}
+
+func TestResolveMaybe_Unconfined(t *testing.T) {
+	// empty root = danger-full-access passthrough: any path is accepted and
+	// returned absolute (the no-containment branch the scope gate relies on).
+	abs, _, _, ok := ResolveMaybe("", "/etc/passwd")
+	if !ok {
+		t.Fatalf("unconfined ResolveMaybe rejected an absolute path")
+	}
+	if abs != "/etc/passwd" {
+		t.Errorf("abs = %q, want /etc/passwd", abs)
+	}
+	// a relative path resolves against cwd, still accepted.
+	if _, _, _, ok := ResolveMaybe("", "../../somewhere/else"); !ok {
+		t.Errorf("unconfined ResolveMaybe rejected a relative escape")
+	}
+}

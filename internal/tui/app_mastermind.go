@@ -12,7 +12,22 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/elhenro/bee/internal/worktree"
 )
+
+// lockedRunner serializes a worker that mutates the shared working tree: it
+// holds mu for the whole Run so two shared-tree writers never race. Used as the
+// fallback when worktree isolation is unavailable (not a git repo / disabled).
+type lockedRunner struct {
+	r  hive.Runner
+	mu *sync.Mutex
+}
+
+func (l lockedRunner) Run(ctx context.Context, msg string) (loop.RunResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.r.Run(ctx, msg)
+}
 
 // runMastermind drives one mastermind turn: instead of a single engine Run, it
 // spawns a sub-agent hive (planner + workers + reviewer + verifier) off the
@@ -30,11 +45,12 @@ import (
 // turnDoneMsg carries the full transcript; live messages carry stable IDs so the
 // final replace de-dupes against what already rendered.
 //
-// Workers run sequentially (Queen.MaxParallel = 1): they share the parent's one
-// tool registry rooted at cwd, so parallel writers would race. The quality win
-// here is the decomposition + critic verify, not wall-clock — which is also what
-// lifts small/local models, where parallelism wouldn't help anyway. Parallel
-// workers on isolated worktrees (the `swarm --isolated` path) is a follow-up.
+// Workers run in parallel (up to MastermindWorkers at once) via Queen.WorkerFor:
+// read-only roles run in the shared tree with mutating tools stripped, mutating
+// roles each get their own git worktree and merge back as they finish, so
+// concurrent writers never race. Without a git repo (or with MastermindParallel
+// off) mutating workers serialize on the shared tree instead. Each worker streams
+// its activity into scrollback live, so the run shows what every bee is doing.
 func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan struct{}, content []types.ContentBlock, history, prior []types.Message) tea.Cmd {
 	planner := m.eng
 	warn := m.warnCh
@@ -106,11 +122,16 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 
 		// spawnHive clone: reuse the parent's provider/tools/skills, fresh
 		// session, and share the session cost tracker so the top-bar token meter
-		// keeps moving while the hive churns.
+		// keeps moving while the hive churns. Each sub-engine streams its
+		// assistant/tool messages into the shared live channel so the whole run
+		// — planner, every worker, reviewers — renders live in scrollback
+		// instead of an opaque spinner. The curated phase cards (plan, per-worker
+		// summary, review) still land on top via emit.
 		spawn := func(label string) (*loop.Engine, *session.Rollout, error) {
 			eng, sess, err := hive.SpawnWorker(planner, label)
 			if err == nil {
 				eng.Costs = planner.Costs
+				eng.LiveMsgCh = live
 			}
 			return eng, sess, err
 		}
@@ -143,14 +164,61 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		sessions = append(sessions, plannerSess)
 		plannerEng.InitialMessages = history
 
-		workers := make([]hive.Runner, 0, workerCount)
-		for i := 0; i < workerCount; i++ {
-			w, sess, werr := spawn(fmt.Sprintf("worker-%d", i))
-			if werr != nil {
-				return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: worker %d: %w", i, werr)}
+		// isolate: run mutating workers concurrently, each in its own git
+		// worktree, merging changes back as they finish. Needs the tools-for-cwd
+		// builder (to root a worker at its worktree) and a git repo (worktree
+		// create). When unavailable, mutating workers serialize on the shared
+		// tree instead (treeMu) so they never race.
+		isolate := planner.Cfg.MastermindParallel && planner.ToolsForCwd != nil
+		var treeMu sync.Mutex
+
+		// workerFor spawns a dedicated engine per sub-task. Read-only roles run
+		// in the shared tree (mutating tools stripped) in parallel; mutating
+		// roles get an isolated worktree (or the serialized shared tree). Every
+		// worker streams its activity live into scrollback via the shared live
+		// channel so the user sees what each one does, not just a spinner.
+		workerFor := func(idx int, st hive.SubTask) (hive.Runner, func(error), error) {
+			eng, sess, err := spawn(fmt.Sprintf("worker-%d", idx))
+			if err != nil {
+				return nil, nil, err
 			}
+			mu.Lock()
 			sessions = append(sessions, sess)
-			workers = append(workers, w)
+			mu.Unlock()
+
+			if st.Role.ReadOnly() {
+				if eng.Tools != nil {
+					eng.Tools = eng.Tools.Without("write", "edit", "apply_patch", "hashline_edit", "knowledge_write", "bash")
+				}
+				return eng, nil, nil
+			}
+
+			if isolate {
+				if wt, werr := worktree.Create(planner.Cwd, fmt.Sprintf("queen-w%d", idx)); werr == nil {
+					if reg, rerr := planner.ToolsForCwd(wt.Path); rerr == nil {
+						eng.Tools = reg
+						eng.Cwd = wt.Path
+						done := func(runErr error) {
+							defer func() { _ = wt.Cleanup() }()
+							if runErr != nil {
+								return // failed worker: drop its tree
+							}
+							treeMu.Lock()
+							defer treeMu.Unlock()
+							if merr := wt.MergeBack(); merr != nil {
+								notify(fmt.Sprintf("hive: worker %d merge conflict — changes dropped", idx+1))
+							}
+						}
+						return eng, done, nil
+					}
+					_ = wt.Cleanup()
+				}
+				notify(fmt.Sprintf("hive: worker %d — worktree unavailable, serializing", idx+1))
+			}
+
+			// no isolation: serialize mutating workers on the shared tree so they
+			// never race (still parallel with read-only scouts).
+			return lockedRunner{r: eng, mu: &treeMu}, nil, nil
 		}
 
 		// review gate: the queen scores three dimensions (correctness,
@@ -200,17 +268,23 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 			curFindings = curFindings[:0]
 		}
 
-		q := hive.NewQueen(plannerEng, workers)
+		q := hive.NewQueen(plannerEng, nil)
 		q.Reviewers = reviewers
 		q.Verifier = verifier
-		q.MaxParallel = 1 // sequential — shared cwd tool registry, see doc above
+		q.WorkerFor = workerFor
+		q.MaxParallel = workerCount // cap concurrent workers; isolation keeps them safe
+		// sub-task count drives the worker N/M readout: set from the plan in
+		// OnPlan so the denominator is the real sub-task count, not the parallel
+		// cap — else a 5-task plan with a cap of 3 prints "worker 5/3".
+		planCount := workerCount
 		q.Hooks = hive.Hooks{
 			OnPlan: func(p []hive.SubTask) {
+				planCount = len(p)
 				notify(fmt.Sprintf("hive: planned %d sub-tasks", len(p)))
 				emit(formatPlan(p))
 			},
 			OnWorkerStart: func(i int, st hive.SubTask) {
-				notify(fmt.Sprintf("hive: worker %d/%d — %s", i+1, len(workers), st.Role))
+				notify(fmt.Sprintf("hive: worker %d/%d — %s", i+1, planCount, st.Role))
 			},
 			OnWorkerDone: func(i int, r hive.Result) { emit(formatWorker(i, r)) },
 			OnReview: func(dim string, claims []string) {

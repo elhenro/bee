@@ -79,3 +79,51 @@ func TestCreate_NotARepo(t *testing.T) {
 		t.Fatalf("expected error in non-repo dir")
 	}
 }
+
+func TestMergeBack_AppliesChangesToSource(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repo := initRepo(t)
+	wt, err := Create(repo, "merge-w")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer wt.Cleanup()
+
+	// new file + edit to an existing file inside the worktree.
+	if err := os.WriteFile(filepath.Join(wt.Path, "new.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt.Path, "README.md"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := wt.MergeBack(); err != nil {
+		t.Fatalf("MergeBack: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(repo, "new.txt"))
+	if err != nil || string(got) != "hello" {
+		t.Fatalf("new.txt in source = %q, err=%v; want %q", got, err, "hello")
+	}
+	got, err = os.ReadFile(filepath.Join(repo, "README.md"))
+	if err != nil || string(got) != "changed" {
+		t.Fatalf("README.md in source = %q, err=%v; want %q", got, err, "changed")
+	}
+}
+
+func TestMergeBack_NoChangesIsNoop(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repo := initRepo(t)
+	wt, err := Create(repo, "noop-w")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer wt.Cleanup()
+	if err := wt.MergeBack(); err != nil {
+		t.Fatalf("MergeBack on clean worktree = %v, want nil", err)
+	}
+}

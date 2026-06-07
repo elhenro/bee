@@ -13,53 +13,53 @@ func TestHTMLToMarkdown(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "simple paragraph",
-			html: `<html><body><p>Hello World</p></body></html>`,
+			name:     "simple paragraph",
+			html:     `<html><body><p>Hello World</p></body></html>`,
 			expected: "Hello World",
 		},
 		{
-			name: "headings",
-			html: `<html><body><h1>Title</h1><h2>Subtitle</h2></body></html>`,
+			name:     "headings",
+			html:     `<html><body><h1>Title</h1><h2>Subtitle</h2></body></html>`,
 			expected: "# Title\n\n## Subtitle",
 		},
 		{
-			name: "links",
-			html: `<html><body><a href="https://example.com">Link Text</a></body></html>`,
+			name:     "links",
+			html:     `<html><body><a href="https://example.com">Link Text</a></body></html>`,
 			expected: "[Link Text](https://example.com)",
 		},
 		{
-			name: "bold and italic",
-			html: `<html><body><strong>Bold</strong> <em>Italic</em></body></html>`,
+			name:     "bold and italic",
+			html:     `<html><body><strong>Bold</strong> <em>Italic</em></body></html>`,
 			expected: "**Bold** *Italic*",
 		},
 		{
-			name: "skip script",
-			html: `<html><body><script>alert('hi')</script><p>Content</p></body></html>`,
+			name:     "skip script",
+			html:     `<html><body><script>alert('hi')</script><p>Content</p></body></html>`,
 			expected: "Content",
 		},
 		{
-			name: "skip style",
-			html: `<html><body><style>body{color:red}</style><p>Content</p></body></html>`,
+			name:     "skip style",
+			html:     `<html><body><style>body{color:red}</style><p>Content</p></body></html>`,
 			expected: "Content",
 		},
 		{
-			name: "lists",
-			html: `<html><body><ul><li>Item 1</li><li>Item 2</li></ul></body></html>`,
+			name:     "lists",
+			html:     `<html><body><ul><li>Item 1</li><li>Item 2</li></ul></body></html>`,
 			expected: "- Item 1\n- Item 2",
 		},
 		{
-			name: "images",
-			html: `<html><body><img src="https://example.com/img.png" alt="Alt Text"></body></html>`,
+			name:     "images",
+			html:     `<html><body><img src="https://example.com/img.png" alt="Alt Text"></body></html>`,
 			expected: "![Alt Text](https://example.com/img.png)",
 		},
 		{
-			name: "code blocks",
-			html: `<html><body><pre><code>console.log('hi')</code></pre></body></html>`,
+			name:     "code blocks",
+			html:     `<html><body><pre><code>console.log('hi')</code></pre></body></html>`,
 			expected: "```console.log('hi')```",
 		},
 		{
-			name: "blockquote",
-			html: `<html><body><blockquote>Quoted text</blockquote></body></html>`,
+			name:     "blockquote",
+			html:     `<html><body><blockquote>Quoted text</blockquote></body></html>`,
 			expected: "> Quoted text",
 		},
 	}
@@ -224,21 +224,29 @@ func TestNormalizeString(t *testing.T) {
 
 func TestFetchURL(t *testing.T) {
 	// Test with invalid URL
-	_, err := FetchURL("not-a-url", DefaultDomainPolicy())
+	_, err := FetchURL("not-a-url", DefaultDomainPolicy(), true)
 	if err == nil {
 		t.Error("expected error for invalid URL")
 	}
 
-	// Test with blocked domain
-	_, err = FetchURL("https://localhost/test", DefaultDomainPolicy())
+	// Confined scope: localhost resolves to loopback → SSRF guard blocks it.
+	_, err = FetchURL("https://localhost/test", DefaultDomainPolicy(), true)
 	if err == nil {
-		t.Error("expected error for blocked domain")
+		t.Error("expected SSRF block for loopback host under confined scope")
+	}
+
+	// danger-full-access (confined=false): the SSRF guard is off, so localhost
+	// is reachable. We expect a connection error to the closed port, never the
+	// blocked-IP guard.
+	_, err = FetchURL("http://127.0.0.1:1/", DefaultDomainPolicy(), false)
+	if err != nil && strings.Contains(err.Error(), "blocked IP") {
+		t.Errorf("unconfined fetch must not hit the SSRF guard: %v", err)
 	}
 
 	// Test with allowed domain (will likely fail to connect, but that's ok)
 	_, err = FetchURL("https://example.com", &DomainPolicy{
 		Allow: []string{"example.com"},
-	})
+	}, true)
 	// We expect either success or connection error, but not domain policy error
 	if err != nil && strings.Contains(err.Error(), "not allowed") {
 		t.Errorf("unexpected domain policy error: %v", err)

@@ -134,3 +134,21 @@ func ResolveInRoot(root, path string) (abs, rel, rootAbs string, ok bool) {
 	}
 	return abs, rel, rootAbs, true
 }
+
+// ResolveMaybe is ResolveInRoot when root is non-empty (a confined sandbox
+// scope) and a no-containment passthrough when root is "" (the default
+// danger-full-access scope, where file tools may touch any path). In the
+// passthrough case the path is home-expanded and made absolute but never
+// rejected, so the tool builder can flip every file tool between
+// workspace-confined and unrestricted with a single empty-vs-cwd root and no
+// per-tool flag.
+func ResolveMaybe(root, path string) (abs, rel, rootAbs string, ok bool) {
+	if root != "" {
+		return ResolveInRoot(root, path)
+	}
+	abs = expandHome(path)
+	if a, err := filepath.Abs(abs); err == nil {
+		abs = a
+	}
+	return abs, path, "", true
+}

@@ -102,7 +102,9 @@ func AddLifetime(in, out int) {
 	if err != nil {
 		return
 	}
-	tmp := lifePath + ".tmp"
+	// per-pid temp so two bee processes don't clobber each other's temp file
+	// mid-write (rename is atomic, but a shared temp name is not).
+	tmp := fmt.Sprintf("%s.tmp.%d", lifePath, os.Getpid())
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return
 	}

@@ -154,8 +154,17 @@ func (s *Server) Start() (net.Listener, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	host := LANIP()
+	addr := ln.Addr().(*net.TCPAddr)
+	port := addr.Port
+	// when bound to a specific interface (loopback, the default), advertise that
+	// address; only fall back to the LAN IP for an all-interfaces (--lan) bind.
+	host := ""
+	if addr.IP != nil && !addr.IP.IsUnspecified() {
+		host = addr.IP.String()
+	}
+	if host == "" {
+		host = LANIP()
+	}
 	if host == "" {
 		host = "localhost"
 	}

@@ -3,6 +3,8 @@ package browser
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 
 	"github.com/chromedp/chromedp"
@@ -11,12 +13,52 @@ import (
 	"github.com/elhenro/bee/internal/tools"
 )
 
+// validateNavURL restricts model-driven navigation to http/https on public
+// hosts. Without it the model controls scheme and host, so browser_open could
+// read file:// (credentials, dir listings), hit cloud metadata (169.254/16), or
+// reach internal services — none of which web_fetch's guards cover here.
+func validateNavURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("invalid url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("refused: only http/https URLs allowed (got scheme %q)", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("refused: URL has no host")
+	}
+	blocked := func(ip net.IP) bool {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast()
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if blocked(ip) {
+			return fmt.Errorf("refused: host is a blocked IP %s", ip)
+		}
+		return nil
+	}
+	if ips, err := net.LookupIP(host); err == nil {
+		for _, ip := range ips {
+			if blocked(ip) {
+				return fmt.Errorf("refused: %s resolves to blocked IP %s", host, ip)
+			}
+		}
+	}
+	return nil
+}
+
 // Options configures the tool set.
 type Options struct {
 	ChromePath     string
 	Headless       bool
 	VisionModel    string
 	VisionEndpoint string
+	// Confined restricts model-driven navigation to public http/https hosts.
+	// Set under a confined sandbox scope; under danger-full-access it stays
+	// false so the model can open file://, localhost, and LAN URLs (e.g. a local
+	// dev server) — matching bee's default "open anything".
+	Confined bool
 }
 
 // Tool is one browser tool bound to a shared session.
@@ -45,6 +87,7 @@ func (t Tool) Run2(ctx context.Context, in map[string]any) tools.Result {
 // included only when VisionModel is set.
 func New(opt Options) []tools.Tool {
 	sess := NewSession(opt.ChromePath, opt.Headless)
+	sess.confined = opt.Confined
 	defs := []Tool{
 		{name: "browser_open", desc: "Open a URL in the browser and return the page title plus an accessibility snapshot. Input: {\"url\": string}.", sess: sess, run: runOpen},
 		{name: "browser_snapshot", desc: "Return the current page's accessibility snapshot (interactive elements with refs).", sess: sess, run: runSnapshot},
@@ -72,6 +115,13 @@ func runOpen(ctx context.Context, s *Session, in map[string]any) tools.Result {
 	url, _ := in["url"].(string)
 	if strings.TrimSpace(url) == "" {
 		return tools.Result{Content: "missing or empty 'url'", IsError: true}
+	}
+	// confined scope restricts to public http/https hosts (blocks file://,
+	// metadata, loopback, LAN). danger-full-access navigates anywhere.
+	if s.confined {
+		if err := validateNavURL(url); err != nil {
+			return tools.Result{Content: err.Error(), IsError: true}
+		}
 	}
 	var title string
 	if err := s.run(ctx, chromedp.Navigate(url), chromedp.Title(&title)); err != nil {

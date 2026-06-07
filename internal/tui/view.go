@@ -116,12 +116,19 @@ func (m Model) renderLive(maxRows int) string {
 		// tokens come from the cost tracker's last real event (context sent);
 		// output is the live char count this turn.
 		in := 0
+		out := m.turnOutChars
 		if m.costs != nil {
 			in = m.costs.LastInput()
+			// queen/hive mode runs on sub-engines, so no main-loop deltas bump
+			// turnOutChars — fall back to the cost-tracker output accrued this
+			// turn so the "↓" figure isn't stuck at 0.
+			if d := m.costs.Total().Output - m.turnStartOutput; d > out {
+				out = d
+			}
 		}
 		m.stream.SetLoaderStats(LoaderStats{
 			InTokens: in,
-			OutChars: m.turnOutChars,
+			OutChars: out,
 			Rate:     m.loaderRate,
 			Seed:     m.loaderSeed,
 			Duration: m.turnElapsed(),

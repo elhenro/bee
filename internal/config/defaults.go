@@ -63,6 +63,7 @@ func Defaults() Config {
 		MastermindWorkers:   3,
 		MastermindReviewers: 1,
 		MastermindTriage:    true,
+		MastermindParallel:  true,
 		Verbose:             false,
 		ShowThoughts:        true,
 		ShowNudges:          true,

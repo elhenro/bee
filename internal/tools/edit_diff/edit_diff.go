@@ -72,6 +72,15 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if path == "" {
 		return tools.Result{Content: "missing path", IsError: true}, nil
 	}
+	// contain edits to the workspace root under a confined scope: resolve
+	// symlinks on both sides and reject any path (absolute or via ..) that
+	// escapes. In danger-full-access (empty root) ResolveMaybe is a passthrough,
+	// preserving bee's default "edit anywhere".
+	abs, _, rootAbs, ok := tools.ResolveMaybe(t.root, path)
+	if !ok {
+		return tools.Result{Content: fmt.Sprintf("path %q escapes workspace root %q", path, rootAbs), IsError: true}, nil
+	}
+	path = abs
 	old, ok := in["old"].(string)
 	if !ok || old == "" {
 		return tools.Result{Content: "missing old", IsError: true}, nil

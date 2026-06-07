@@ -193,6 +193,25 @@ func (r Role) AllowedTools() []string {
 	return out
 }
 
+// ReadOnly reports whether the role's tool allowlist mutates nothing — no
+// write/edit/apply_patch and no shell. Read-only roles (sage, forager, critic,
+// …) are safe to run concurrently in the shared working tree, so they skip
+// worktree isolation. Unknown roles are treated as mutating (the safe default:
+// isolate rather than risk a shared-tree race).
+func (r Role) ReadOnly() bool {
+	s, ok := specs[r]
+	if !ok {
+		return false
+	}
+	for _, t := range s.tools {
+		switch t {
+		case tBash, tWrite, tEdit, tApplyPatch:
+			return false
+		}
+	}
+	return true
+}
+
 // Temperature returns the recommended sampling temperature for the role.
 func (r Role) Temperature() float64 {
 	if s, ok := specs[r]; ok {

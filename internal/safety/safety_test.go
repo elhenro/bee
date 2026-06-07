@@ -17,6 +17,7 @@ func TestRedact_KnownPatterns(t *testing.T) {
 		{"jwt", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c said", "<REDACTED:jwt>"},
 		{"bearer", "Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123", "<REDACTED:bearer>"},
 		{"stripe", "sk_live_abcdefghijklmnopqrstuvwx tail", "<REDACTED:stripe-key>"},
+		{"pem", "key:\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXkBc2VjcmV0\n-----END OPENSSH PRIVATE KEY-----\ndone", "<REDACTED:pem-private-key>"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -95,7 +95,10 @@ func runZzz(args []string) {
 		}
 	}
 
-	cfg, prov, app, skillReg, err := buildZzzDeps(*model, *provider, resolveSafe(*sandboxScope, *safe), *thinking, *effort, *cavemanLvl, *yes || *yolo)
+	// zzz runs unattended, so it confines to the workspace by default (--safe).
+	// An explicit --sandbox/--safe still wins; --sandbox danger-full-access opts
+	// back into unrestricted access.
+	cfg, prov, app, skillReg, err := buildZzzDeps(*model, *provider, resolveSafeDefault(*sandboxScope, *safe, "workspace-write"), *thinking, *effort, *cavemanLvl, *yes || *yolo)
 	if err != nil {
 		fatalf("zzz: setup: %v", err)
 	}

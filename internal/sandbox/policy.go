@@ -26,6 +26,20 @@ const (
 	DangerFullAccess Scope = "danger-full-access"
 )
 
+// Confines reports whether this scope restricts the file tools to the
+// workspace and blocks secret-path reads. Only danger-full-access (and the
+// empty/unset zero value) run unconfined — bee's default "do anything"
+// posture, where file tools accept any path. Every other scope confines, to
+// match the OS sandbox already applied to shell commands under that scope.
+func (s Scope) Confines() bool {
+	switch s {
+	case "", DangerFullAccess:
+		return false
+	default:
+		return true
+	}
+}
+
 // ApprovalMode is the agent-loop policy for escalation prompts.
 type ApprovalMode string
 

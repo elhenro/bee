@@ -3,6 +3,7 @@ package waggle
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -59,7 +60,23 @@ func (s *Store) Write(name, md string) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(s.dir, name+".md"), []byte(md), 0o644)
+	return writeFileAtomic(filepath.Join(s.dir, name+".md"), []byte(md), 0o644)
+}
+
+// writeFileAtomic writes to a per-pid temp file then renames it into place: a
+// concurrent reader never sees a half-written file, a crash mid-write can't
+// leave a torn one, and the pid suffix keeps two processes writing the same
+// target from clobbering each other's temp.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := fmt.Sprintf("%s.tmp.%d", path, os.Getpid())
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // beeHome resolves ~/.bee, overridable via BEE_HOME for hermetic tests. Mirrors

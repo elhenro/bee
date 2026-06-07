@@ -47,6 +47,17 @@ func resolveSafe(sandboxScope string, safe bool) string {
 	return sandboxScope
 }
 
+// resolveSafeDefault is resolveSafe but falls back to def when the user gave
+// neither --sandbox nor --safe. Unattended surfaces (zzz, spawned agents) pass
+// "workspace-write" so they confine by default; an explicit --sandbox (incl.
+// danger-full-access) or --safe still wins.
+func resolveSafeDefault(sandboxScope string, safe bool, def string) string {
+	if s := resolveSafe(sandboxScope, safe); s != "" {
+		return s
+	}
+	return def
+}
+
 func applyOverrides(cfg *config.Config, model, provName, sandboxScope string) {
 	if model != "" {
 		cfg.DefaultModel = model

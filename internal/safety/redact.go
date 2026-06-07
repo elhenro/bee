@@ -22,6 +22,8 @@ var patterns = []pattern{
 	{"stripe-key", regexp.MustCompile(`\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{24,}\b`)},
 	{"jwt", regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)},
 	{"bearer", regexp.MustCompile(`\bBearer\s+[A-Za-z0-9._-]{20,}`)},
+	// PEM private key block (RSA/EC/OPENSSH/PGP) — redact the whole armored body
+	{"pem-private-key", regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`)},
 	// env-assign: matches NAME=value, NAME="value", NAME='value', or NAME: value.
 	// alternation in the value group avoids RE2's lack of backrefs for quote matching.
 	{"env-assign", regexp.MustCompile(`(?i)\b((?:[A-Z][A-Z0-9_]*)?(?:API[_-]?KEY|SECRET(?:[_-]?KEY)?|ACCESS[_-]?TOKEN|AUTH[_-]?TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET)[A-Z0-9_]*)\s*[:=]\s*(?:"[^"\n]+"|'[^'\n]+'|[^\s"';|&]+)`)},

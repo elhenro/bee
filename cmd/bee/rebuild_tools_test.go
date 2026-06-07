@@ -57,7 +57,7 @@ func hasBrowserTool(names []string) bool {
 func buildToolsForTest(t *testing.T, cfg config.Config) (*tools.Registry, error) {
 	t.Helper()
 	reg := tools.NewRegistry()
-	for _, tl := range appendBrowserTools(nil, cfg) {
+	for _, tl := range appendBrowserTools(nil, cfg, false) {
 		if err := reg.Register(tl); err != nil {
 			return nil, err
 		}

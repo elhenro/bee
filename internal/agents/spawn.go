@@ -105,7 +105,10 @@ func Spawn(opts SpawnOpts) (SpawnResult, error) {
 		return SpawnResult{}, fmt.Errorf("open log: %w", err)
 	}
 
-	args := []string{"run", "--headless", "--bg-loop", "--session", id, "--yes"}
+	// spawned agents run unattended + auto-approve (--yes), so they confine to
+	// the workspace by default (--safe → workspace-write): file tools stay
+	// in-tree, secret paths are blocked, and the OS sandbox confines shell.
+	args := []string{"run", "--headless", "--bg-loop", "--session", id, "--yes", "--safe"}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
 	}

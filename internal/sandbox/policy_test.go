@@ -75,3 +75,23 @@ func TestScopeAndApprovalConsts(t *testing.T) {
 		t.Errorf("OnRequest = %q", OnRequest)
 	}
 }
+
+func TestScopeConfines(t *testing.T) {
+	// danger-full-access and the unset zero value run unconfined; every other
+	// scope confines the file tools.
+	cases := []struct {
+		scope Scope
+		want  bool
+	}{
+		{DangerFullAccess, false},
+		{"", false},
+		{ReadOnly, true},
+		{WorkspaceWrite, true},
+		{WorkspaceWriteNet, true},
+	}
+	for _, c := range cases {
+		if got := c.scope.Confines(); got != c.want {
+			t.Errorf("Scope(%q).Confines() = %v, want %v", c.scope, got, c.want)
+		}
+	}
+}

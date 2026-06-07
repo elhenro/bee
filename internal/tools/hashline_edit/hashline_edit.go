@@ -28,19 +28,20 @@ const toolName = "hashline_edit"
 
 // Tool is the hashline_edit tool.
 type Tool struct {
+	root   string
 	pathRe *regexp.Regexp
 }
 
-// New returns a fresh hashline_edit tool.
-func New() tools.Tool { return NewWithFilter(nil) }
+// New returns a hashline_edit tool rooted at root (the workspace). Edits are
+// contained to root.
+func New(root string) tools.Tool { return NewWithFilter(root, nil) }
 
 // NewWithFilter constructs the hashline_edit tool with an optional path regex.
-// When pathRe is nil, all paths are allowed (existing behavior).
-// When pathRe is non-nil, edits to paths that do NOT match are rejected with
-// a clear error and the file is left untouched. Paths are matched relative
-// to the current working directory when possible.
-func NewWithFilter(pathRe *regexp.Regexp) tools.Tool {
-	return &Tool{pathRe: pathRe}
+// When pathRe is nil, all in-root paths are allowed. When non-nil, edits to
+// paths that do NOT match are rejected and the file is left untouched. Either
+// way, paths that escape root are refused.
+func NewWithFilter(root string, pathRe *regexp.Regexp) tools.Tool {
+	return &Tool{root: root, pathRe: pathRe}
 }
 
 // Spec advertises the tool to the model.
@@ -109,6 +110,14 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if path == "" {
 		return tools.Result{Content: "missing path", IsError: true}, nil
 	}
+	// contain edits to the workspace root (symlink-resolved) under a confined
+	// scope; reject absolute or ../ paths that escape it. In danger-full-access
+	// (empty root) ResolveMaybe is a passthrough — edit anywhere.
+	abs, _, rootAbs, ok := tools.ResolveMaybe(t.root, path)
+	if !ok {
+		return tools.Result{Content: fmt.Sprintf("path %q escapes workspace root %q", path, rootAbs), IsError: true}, nil
+	}
+	path = abs
 	rawEdits, ok := in["edits"].([]any)
 	if !ok || len(rawEdits) == 0 {
 		return tools.Result{Content: "missing or empty edits", IsError: true}, nil

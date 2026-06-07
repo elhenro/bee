@@ -14,6 +14,7 @@
 package worktree
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -49,6 +50,37 @@ func (w *Worktree) Cleanup() error {
 		return fmt.Errorf("git worktree remove: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	return rmErr
+}
+
+// MergeBack applies every change made inside the worktree onto the source
+// repo's working tree. It stages the worktree (so new/untracked files appear),
+// diffs against HEAD, and applies that patch in repoRoot with a 3-way merge.
+// Returns nil when the worktree made no changes. A non-nil error means the
+// patch did not apply cleanly (conflicting edits in the source tree) — the
+// caller decides whether to drop the worker.
+//
+// Not safe to call concurrently for two worktrees over the same repo: the
+// caller must serialize merges (git index is per-repo).
+func (w *Worktree) MergeBack() error {
+	if w == nil || w.Path == "" {
+		return nil
+	}
+	if out, err := exec.Command("git", "-C", w.Path, "add", "-A").CombinedOutput(); err != nil {
+		return fmt.Errorf("git add: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	patch, err := exec.Command("git", "-C", w.Path, "diff", "--cached", "--binary", "HEAD").Output()
+	if err != nil {
+		return fmt.Errorf("git diff: %w", err)
+	}
+	if len(strings.TrimSpace(string(patch))) == 0 {
+		return nil // worker changed nothing
+	}
+	cmd := exec.Command("git", "-C", w.repoRoot, "apply", "--3way", "--whitespace=nowarn")
+	cmd.Stdin = bytes.NewReader(patch)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git apply: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // Create allocates a new worktree rooted under the repo's standard

@@ -3,6 +3,7 @@ package find
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,6 +81,25 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	root, _ := in["path"].(string)
 	if root == "" {
 		root = t.root
+	}
+	// confined scope (non-empty t.root): contain enumeration to the workspace
+	// root so a model path can't escape it (e.g. path:~ to inventory the home
+	// dir). danger-full-access (empty t.root): enumerate anywhere, default cwd.
+	if t.root != "" {
+		absRoot, _, rootAbs, ok := tools.ResolveInRoot(t.root, root)
+		if !ok {
+			return tools.Result{Content: fmt.Sprintf("path %q escapes workspace root %q", root, rootAbs), IsError: true}, nil
+		}
+		root = absRoot
+	} else {
+		if root == "" {
+			if wd, err := os.Getwd(); err == nil {
+				root = wd
+			}
+		}
+		if a, err := filepath.Abs(root); err == nil {
+			root = a
+		}
 	}
 
 	var out []string

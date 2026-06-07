@@ -47,7 +47,9 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if lookup == "" {
 		lookup = t.root
 	}
-	abs, _, rootAbs, ok := tools.ResolveInRoot(t.root, lookup)
+	// confined scope contains the listing to the workspace root; danger-full-
+	// access (empty root) lists any directory.
+	abs, _, rootAbs, ok := tools.ResolveMaybe(t.root, lookup)
 	if !ok {
 		return tools.Result{
 			Content: fmt.Sprintf("path %q escapes workspace root %q (resolved %q). use a path relative to workspace root, or under %s.",

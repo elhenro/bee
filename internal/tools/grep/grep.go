@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/safety"
 	"github.com/elhenro/bee/internal/tools"
 )
 
@@ -112,6 +113,26 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if root == "" {
 		root = t.root
 	}
+	// confined scope (non-empty t.root): contain the search to the workspace
+	// root so a model path can't escape it (e.g. path:~/.ssh) and exfiltrate
+	// file contents. danger-full-access (empty t.root): search anywhere,
+	// defaulting to cwd.
+	if t.root != "" {
+		absRoot, _, rootAbs, ok := tools.ResolveInRoot(t.root, root)
+		if !ok {
+			return tools.Result{Content: fmt.Sprintf("path %q escapes workspace root %q", root, rootAbs), IsError: true}, nil
+		}
+		root = absRoot
+	} else {
+		if root == "" {
+			if wd, err := os.Getwd(); err == nil {
+				root = wd
+			}
+		}
+		if a, err := filepath.Abs(root); err == nil {
+			root = a
+		}
+	}
 	glob, _ := in["glob"].(string)
 	ctxLines := tools.IntArg(in, "context", 0)
 	if ctxLines < 0 {
@@ -141,6 +162,12 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 			return nil
 		}
 		if glob != "" && !matchGlob(glob, p) {
+			return nil
+		}
+		// under a confined scope, skip secret-shaped files (id_rsa, .env,
+		// credentials…) so search can't return their contents — matches the read
+		// tool's CheckReadable guard. danger-full-access reads them like read does.
+		if t.root != "" && safety.CheckReadable(p) != nil {
 			return nil
 		}
 		f, err := os.Open(p)

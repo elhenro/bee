@@ -62,15 +62,18 @@ func (p *GeminiProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/models/" + req.Model + ":streamGenerateContent?alt=sse"
-	if p.cfg.APIKey != "" {
-		url += "&key=" + p.cfg.APIKey
-	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
+	// key via header, never the URL query: a *url.Error from a transport failure
+	// embeds the full URL (Go redacts userinfo, not query params), which would
+	// leak the key into error output and transcripts.
+	if p.cfg.APIKey != "" {
+		httpReq.Header.Set("x-goog-api-key", p.cfg.APIKey)
+	}
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {

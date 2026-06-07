@@ -23,8 +23,10 @@ type LedgerEntry struct {
 }
 
 // Ledger is an append-only reuse log for one scope, persisted as JSONL beside
-// that scope's skills dir. Appends are serialized so concurrent replays in one
-// session can't interleave a line.
+// that scope's skills dir. The mutex serializes appends within a single Ledger
+// instance; across instances/processes (each hive worker builds its own over
+// the shared path) line integrity relies on O_APPEND atomicity for the short
+// single-line writes, not on the mutex.
 type Ledger struct {
 	mu   sync.Mutex
 	path string
@@ -92,7 +94,9 @@ func CompactLedger(path string, keep map[string]bool) error {
 		buf.Write(l)
 		buf.WriteByte('\n')
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	// atomic temp+rename: a concurrent Append (O_APPEND) or reader never sees a
+	// torn/truncated ledger mid-rewrite.
+	return writeFileAtomic(path, buf.Bytes(), 0o644)
 }
 
 // Stat is a waggle's aggregated reuse: how many times it was followed and the

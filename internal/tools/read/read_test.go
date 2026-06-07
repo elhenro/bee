@@ -367,7 +367,7 @@ func TestRun_HashlineIgnoredForDir(t *testing.T) {
 func TestSpec_LimitDescriptionShowsActualBounds(t *testing.T) {
 	// tiny profile limits — description must reflect them so the model
 	// knows it can pass `limit: 500` rather than chunked-reading.
-	tool := NewWithLimits(100, 500)
+	tool := NewWithLimits(100, 500, true)
 	props, _ := tool.Spec().Schema["properties"].(map[string]any)
 	limitProp, _ := props["limit"].(map[string]any)
 	desc, _ := limitProp["description"].(string)
@@ -390,5 +390,34 @@ func TestSpec_LimitDescriptionPackageDefaults(t *testing.T) {
 	}
 	if !strings.Contains(desc, "up to 10000") {
 		t.Errorf("expected max 10000 in limit desc, got: %q", desc)
+	}
+}
+
+func TestRead_ScopeGatesSecretPaths(t *testing.T) {
+	// the .git read that wedged the model: confined scope refuses it, default
+	// danger-full-access (confine=false) reads it like any other file.
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	head := filepath.Join(gitDir, "HEAD")
+	if err := os.WriteFile(head, []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	confined := NewWithLimits(0, 0, true)
+	res, _ := confined.Run(context.Background(), map[string]any{"path": head})
+	if !res.IsError {
+		t.Errorf("confined read of .git/HEAD should be refused, got: %q", res.Content)
+	}
+
+	danger := NewWithLimits(0, 0, false)
+	res, err := danger.Run(context.Background(), map[string]any{"path": head})
+	if err != nil || res.IsError {
+		t.Fatalf("danger-scope read of .git/HEAD should succeed, got err=%v content=%q", err, res.Content)
+	}
+	if !strings.Contains(res.Content, "refs/heads/main") {
+		t.Errorf("expected HEAD contents, got: %q", res.Content)
 	}
 }

@@ -29,6 +29,7 @@ import (
 func runRemoteControl(args []string) {
 	fs := flag.NewFlagSet("remote-control", flag.ContinueOnError)
 	port := fs.Int("port", 0, "listen port (0 = OS-assigned)")
+	lan := fs.Bool("lan", false, "bind all interfaces to expose on the LAN (default: loopback only). The bearer token rides in a cleartext-HTTP URL, so only expose on a trusted network.")
 	yes := fs.Bool("yes", false, "acknowledge LAN clients can run tools locally on this machine")
 	model := fs.String("model", "", "override config default_model")
 	providerName := fs.String("provider", "", "override config default_provider")
@@ -100,16 +101,34 @@ func runRemoteControl(args []string) {
 	}
 
 	adapter := &remoteEngine{eng: eng}
-	srv := remote.New(adapter, remote.Options{Addr: fmt.Sprintf(":%d", *port), Title: "bee", Log: os.Stdout})
+	// bind loopback by default — the capability token travels in a cleartext
+	// HTTP URL, so an all-interfaces bind exposes it to anyone on the LAN.
+	// --lan opts into the wider bind.
+	bindHost := "127.0.0.1"
+	if *lan {
+		bindHost = ""
+	}
+	srv := remote.New(adapter, remote.Options{Addr: fmt.Sprintf("%s:%d", bindHost, *port), Title: "bee", Log: os.Stdout})
 	ln, url, err := srv.Start()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee remote-control: start: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Fprintf(os.Stdout, "\n  open from another device:\n  %s\n\n", url)
-	if qr, err := remote.RenderQR(url); err == nil {
-		fmt.Fprint(os.Stdout, qr)
+	if *lan {
+		// LAN bind: the URL carries a routable host, so another device can reach
+		// it — print it with a scannable QR.
+		fmt.Fprintf(os.Stdout, "\n  open from another device:\n  %s\n\n", url)
+		if qr, err := remote.RenderQR(url); err == nil {
+			fmt.Fprint(os.Stdout, qr)
+			fmt.Fprintln(os.Stdout)
+		}
+	} else {
+		// loopback bind (default): the URL is local-only, so don't claim it works
+		// from another device or render a useless QR. Point at --lan instead.
+		fmt.Fprintf(os.Stdout, "\n  local URL (loopback only):\n  %s\n\n", url)
+		fmt.Fprintln(os.Stdout, "  to drive this from another device (phone, tablet), re-run with --lan.")
+		fmt.Fprintln(os.Stdout, "  the access token rides in a cleartext HTTP URL — only expose on a trusted network.")
 		fmt.Fprintln(os.Stdout)
 	}
 	fmt.Fprintln(os.Stdout, "  press Ctrl+C to stop")

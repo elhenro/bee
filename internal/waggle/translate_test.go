@@ -49,10 +49,11 @@ func TestShellCommand_Find(t *testing.T) {
 	}
 }
 
-func TestShellCommand_BashVerbatim(t *testing.T) {
-	got, ok := shellCommand(0, Call{Tool: "bash", Args: map[string]string{"command": "echo hi"}}, noParams)
-	if !ok || got != "echo hi" {
-		t.Fatalf("got %q ok=%v", got, ok)
+func TestShellCommand_BashNotTranslatable(t *testing.T) {
+	// bash steps must never translate to a replayable command: a route loaded
+	// from disk could otherwise auto-fire arbitrary shell without approval.
+	if got, ok := shellCommand(0, Call{Tool: "bash", Args: map[string]string{"command": "echo hi"}}, noParams); ok {
+		t.Fatalf("bash step must not be translatable, got %q", got)
 	}
 }
 

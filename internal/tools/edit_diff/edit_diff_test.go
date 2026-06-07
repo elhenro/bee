@@ -271,3 +271,33 @@ func TestEditDiff_FilterRejectsMiss(t *testing.T) {
 		t.Errorf("file must be untouched on rejection, got %q", data)
 	}
 }
+
+func TestEditDiff_ScopeGatesContainment(t *testing.T) {
+	// confined (non-empty root) refuses an edit that escapes the workspace;
+	// danger-full-access (empty root) edits the out-of-tree file.
+	workspace := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("keep ME keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	confined := New(workspace)
+	res, _ := confined.Run(context.Background(), map[string]any{
+		"path": outside, "old": "ME", "new": "YOU",
+	})
+	if !res.IsError {
+		t.Errorf("confined edit of out-of-root path should be refused, got: %q", res.Content)
+	}
+
+	danger := New("") // empty root = danger-full-access passthrough
+	res, err := danger.Run(context.Background(), map[string]any{
+		"path": outside, "old": "ME", "new": "YOU",
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("danger-scope edit should succeed, got err=%v content=%q", err, res.Content)
+	}
+	got, _ := os.ReadFile(outside)
+	if string(got) != "keep YOU keep" {
+		t.Errorf("file not edited under danger scope: %q", got)
+	}
+}

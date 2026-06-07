@@ -2,6 +2,7 @@ package web_fetch
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -14,14 +15,20 @@ import (
 	"golang.org/x/net/html"
 )
 
+// isBlockedIP reports whether an IP is in a range the fetcher must never reach
+// (loopback, private, unspecified, link-local — e.g. cloud metadata 169.254/16).
+func isBlockedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast()
+}
+
 // CacheEntry stores fetched content with metadata
 type CacheEntry struct {
-	Bytes      int
-	Code       int
-	CodeText   string
+	Bytes       int
+	Code        int
+	CodeText    string
 	ContentType string
-	Content    string
-	ExpiresAt  time.Time
+	Content     string
+	ExpiresAt   time.Time
 }
 
 // Cache implements a simple LRU cache with TTL
@@ -47,17 +54,17 @@ func NewCache(ttl time.Duration, maxLen int) *Cache {
 func (c *Cache) Get(key string) (*CacheEntry, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	entry, exists := c.items[key]
 	if !exists {
 		return nil, false
 	}
-	
+
 	// Check if entry has expired
 	if time.Now().After(entry.ExpiresAt) {
 		return nil, false
 	}
-	
+
 	return entry, true
 }
 
@@ -65,20 +72,20 @@ func (c *Cache) Get(key string) (*CacheEntry, bool) {
 func (c *Cache) Set(key string, entry *CacheEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	// If key already exists, update it
 	if _, exists := c.items[key]; exists {
 		c.items[key] = entry
 		return
 	}
-	
+
 	// If cache is full, remove the oldest entry
 	if len(c.order) >= c.maxLen {
 		oldest := c.order[0]
 		delete(c.items, oldest)
 		c.order = c.order[1:]
 	}
-	
+
 	c.items[key] = entry
 	c.order = append(c.order, key)
 }
@@ -87,7 +94,7 @@ func (c *Cache) Set(key string, entry *CacheEntry) {
 func (c *Cache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	c.items = make(map[string]*CacheEntry)
 	c.order = make([]string, 0)
 }
@@ -110,7 +117,7 @@ func (p *DomainPolicy) IsAllowed(domain string) bool {
 			}
 		}
 	}
-	
+
 	// If allow list is not empty, check it
 	if len(p.Allow) > 0 {
 		for _, allowed := range p.Allow {
@@ -120,7 +127,7 @@ func (p *DomainPolicy) IsAllowed(domain string) bool {
 		}
 		return false
 	}
-	
+
 	// If no allow list, allow all (unless blocked)
 	return true
 }
@@ -147,8 +154,10 @@ type FetchResult struct {
 // MaxContentLen caps body read at 2x this value via io.LimitReader.
 const MaxContentLen = 50000
 
-// FetchURL fetches content from a URL and converts it to markdown.
-func FetchURL(rawURL string, policy *DomainPolicy) (*FetchResult, error) {
+// FetchURL fetches content from a URL and converts it to markdown. confined
+// enables the SSRF guard (reject loopback/private/metadata hosts); under
+// danger-full-access it is false and any reachable host is allowed.
+func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult, error) {
 	start := time.Now()
 
 	// Parse and validate URL
@@ -157,20 +166,24 @@ func FetchURL(rawURL string, policy *DomainPolicy) (*FetchResult, error) {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// Fast hostname blocklist pre-check
+	// Fast hostname blocklist pre-check (user allow/block lists, both scopes)
 	host := parsedURL.Hostname()
 	if policy != nil && !policy.IsAllowed(host) {
 		return nil, fmt.Errorf("domain %s is not allowed", host)
 	}
 
-	// DNS resolution check: reject private/loopback/unspecified/link-local IPs
-	addrs, err := net.LookupIP(host)
-	if err != nil {
-		return nil, fmt.Errorf("DNS lookup failed for %s: %w", host, err)
-	}
-	for _, ip := range addrs {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
-			return nil, fmt.Errorf("host %s resolves to blocked IP %s", host, ip)
+	// SSRF guard (confined scope only): reject hosts that resolve to private/
+	// loopback/unspecified/link-local IPs. danger-full-access skips it so the
+	// model can reach localhost/LAN, just as it could via shell curl.
+	if confined {
+		addrs, err := net.LookupIP(host)
+		if err != nil {
+			return nil, fmt.Errorf("DNS lookup failed for %s: %w", host, err)
+		}
+		for _, ip := range addrs {
+			if isBlockedIP(ip) {
+				return nil, fmt.Errorf("host %s resolves to blocked IP %s", host, ip)
+			}
 		}
 	}
 
@@ -187,14 +200,67 @@ func FetchURL(rawURL string, policy *DomainPolicy) (*FetchResult, error) {
 		}, nil
 	}
 
-	// Build HTTP client with timeout and redirect cap
+	// default dialer. Under a confined scope, wrap it in a guard that validates
+	// the connection IP on EVERY dial (initial request and each redirect hop)
+	// and pins the connection to the validated address. This closes two SSRF
+	// bypasses the one-shot pre-check above can't: a redirect to a private/
+	// metadata host, and DNS rebinding (validate-then-reconnect re-resolution) —
+	// the connection only ever lands on an IP we just checked. danger-full-access
+	// uses the plain dialer so localhost/LAN is reachable.
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	dialContext := dialer.DialContext
+	if confined {
+		dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			h, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, h)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if isBlockedIP(ip.IP) {
+					return nil, fmt.Errorf("refused: %s resolves to blocked IP %s", h, ip.IP)
+				}
+			}
+			var lastErr error
+			for _, ip := range ips {
+				conn, derr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+				if derr == nil {
+					return conn, nil
+				}
+				lastErr = derr
+			}
+			if lastErr == nil {
+				lastErr = fmt.Errorf("no usable address for %s", h)
+			}
+			return nil, lastErr
+		}
+	}
+
+	// Build HTTP client with timeout, redirect cap, and per-hop host re-check.
 	client := &http.Client{
 		Timeout: 20 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("too many redirects (>%d)", 5)
 			}
+			// the initial allow/block policy check only covered the first host;
+			// re-apply it to every redirect target.
+			if policy != nil && !policy.IsAllowed(req.URL.Hostname()) {
+				return fmt.Errorf("redirect to disallowed domain %s", req.URL.Hostname())
+			}
 			return nil
+		},
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           dialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
 		},
 	}
 
@@ -255,7 +321,7 @@ func htmlToMarkdown(htmlContent []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to parse HTML: %w", err)
 	}
-	
+
 	var buf bytes.Buffer
 	// Start from the body element (skip html/head wrappers)
 	body := findBody(doc)
@@ -264,7 +330,7 @@ func htmlToMarkdown(htmlContent []byte) (string, error) {
 			renderNode(c, &buf)
 		}
 	}
-	
+
 	// Clean up excessive whitespace while preserving markdown structure
 	result := normalizeMarkdown(buf.String())
 	return result, nil
@@ -289,7 +355,7 @@ func renderNode(n *html.Node, w io.Writer) {
 	if n.Type == html.ElementNode && (n.Data == "script" || n.Data == "style") {
 		return
 	}
-	
+
 	// Handle text nodes
 	if n.Type == html.TextNode {
 		text := strings.TrimSpace(n.Data)
@@ -301,7 +367,7 @@ func renderNode(n *html.Node, w io.Writer) {
 		}
 		return
 	}
-	
+
 	// Handle element nodes
 	if n.Type == html.ElementNode {
 		// Render children first
@@ -310,7 +376,7 @@ func renderNode(n *html.Node, w io.Writer) {
 			renderNode(c, &childrenContent)
 		}
 		childText := childrenContent.String()
-		
+
 		switch n.Data {
 		case "h1":
 			io.WriteString(w, "\n\n# ")
@@ -434,7 +500,7 @@ func getAttr(n *html.Node, key string) string {
 func normalizeMarkdown(s string) string {
 	// Trim leading/trailing whitespace
 	s = strings.TrimSpace(s)
-	
+
 	// Collapse multiple blank lines to at most one blank line
 	// A blank line is two consecutive newlines
 	var buf bytes.Buffer

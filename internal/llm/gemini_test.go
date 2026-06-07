@@ -250,11 +250,13 @@ func TestGeminiStream_ErrorStatus(t *testing.T) {
 	}
 }
 
-func TestGeminiURL_KeyAppendedWhenPresent(t *testing.T) {
-	// capture the path the provider hits so we can verify the key is appended.
-	var gotURL string
+func TestGeminiKeyInHeaderNotURL(t *testing.T) {
+	// the key must travel as a header, never in the URL query — a *url.Error from
+	// a transport failure would otherwise leak it into error output/transcripts.
+	var gotURL, gotKey string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotURL = r.URL.RequestURI()
+		gotKey = r.Header.Get("x-goog-api-key")
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
 		fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"\"}],\"role\":\"model\"},\"finishReason\":\"STOP\"}]}\n\n")
@@ -275,8 +277,11 @@ func TestGeminiURL_KeyAppendedWhenPresent(t *testing.T) {
 	if !strings.Contains(gotURL, "alt=sse") {
 		t.Errorf("missing alt=sse: %s", gotURL)
 	}
-	if !strings.Contains(gotURL, "key=secret") {
-		t.Errorf("missing key param: %s", gotURL)
+	if strings.Contains(gotURL, "secret") || strings.Contains(gotURL, "key=") {
+		t.Errorf("key must NOT be in URL: %s", gotURL)
+	}
+	if gotKey != "secret" {
+		t.Errorf("key must be in x-goog-api-key header, got %q", gotKey)
 	}
 }
 

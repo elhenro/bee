@@ -26,14 +26,11 @@ func shellCommand(step int, c Call, paramTok func(step int, key string) string) 
 	}
 	switch c.Tool {
 	case "bash":
-		if paramTok(step, "command") != "" {
-			return "", false
-		}
-		cmd := strings.TrimSpace(c.Args["command"])
-		if cmd == "" {
-			return "", false
-		}
-		return cmd, true
+		// never translate a recorded bash step into a replayable command: a route
+		// loaded from disk could otherwise carry an arbitrary shell command that
+		// auto-fires without approval. Mined routes exclude bash (it's mutating),
+		// so dropping this loses nothing legitimate.
+		return "", false
 	case "search": // bee's grep tool is registered as "search"
 		if _, ok := c.Args["pattern"]; !ok {
 			return "", false

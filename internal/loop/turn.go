@@ -97,6 +97,13 @@ type Engine struct {
 	// construction. nil = no live switching (headless, hive workers).
 	Rebuild func(*Engine) error
 
+	// ToolsForCwd, when non-nil, builds a fresh tool registry rooted at a given
+	// directory. Queen mode uses it to point an isolated worker engine at its
+	// own git worktree so file tools (read/write/grep) target the worktree, not
+	// the shared cwd. nil = no isolation available (workers stay on the shared
+	// tree). Set by the TUI/CLI where the registry builder lives.
+	ToolsForCwd func(cwd string) (*tools.Registry, error)
+
 	// OnceAllowTools force-allows plan-only tools (e.g. ask_user) for the next
 	// Run, regardless of the active role. A prompt skill sets it from its
 	// frontmatter `tools` list so /plan can ask the user even from worker.

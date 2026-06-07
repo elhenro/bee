@@ -90,6 +90,14 @@ type Queen struct {
 	Verifier         Runner
 	ReviewDimensions []ReviewDimension // 0 => DefaultReviewDimensions()
 	MaxParallel      int               // 0 => len(Workers)
+	// WorkerFor, when non-nil, supersedes the fixed Workers pool: dispatch calls
+	// it once per sub-task to obtain a dedicated Runner (its own engine, often
+	// rooted in an isolated worktree). The returned done func runs after that
+	// sub-task finishes, with its error, so the caller can merge an isolated
+	// tree back (or discard a failed one) and release resources. Because each
+	// sub-task gets its own Runner, dispatch runs them concurrently up to
+	// MaxParallel with no per-engine locking.
+	WorkerFor func(idx int, sub SubTask) (r Runner, done func(err error), err error)
 	// Hooks observes progress for a live UI. Zero value = no observation.
 	Hooks Hooks
 }
@@ -113,7 +121,7 @@ func (q *Queen) Run(ctx context.Context, task string) (QueenResult, error) {
 	if q.Planner == nil {
 		return QueenResult{}, errors.New("queen: planner is nil")
 	}
-	if len(q.Workers) == 0 {
+	if len(q.Workers) == 0 && q.WorkerFor == nil {
 		return QueenResult{}, errors.New("queen: no workers")
 	}
 
@@ -193,19 +201,29 @@ func (q *Queen) decompose(ctx context.Context, task string) ([]SubTask, error) {
 // in that worker's Result.Err and the run proceeds. A hard error is returned
 // only when the parent ctx is cancelled.
 func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) {
+	if q.WorkerFor != nil {
+		return q.dispatchFactory(ctx, plan)
+	}
 	results := make([]Result, len(plan))
 	parallel := q.MaxParallel
 	if parallel <= 0 || parallel > len(q.Workers) {
 		parallel = len(q.Workers)
 	}
 	sem := make(chan struct{}, parallel)
+	// a worker engine is not safe to drive concurrently (RunWithContentDisplay
+	// resets/writes unsynchronized per-run state, incl. maps → concurrent map
+	// write panic). When the plan has more sub-tasks than workers, round-robin
+	// reuses engines, so serialize the calls that map to each one. The semaphore
+	// alone caps only TOTAL concurrency, not per-engine.
+	locks := make([]sync.Mutex, len(q.Workers))
 
 	var wg sync.WaitGroup
 
 	for i, sub := range plan {
-		worker := q.Workers[i%len(q.Workers)]
+		widx := i % len(q.Workers)
+		worker := q.Workers[widx]
 		wg.Add(1)
-		go func(idx int, w Runner, st SubTask) {
+		go func(idx, widx int, w Runner, st SubTask) {
 			defer wg.Done()
 			select {
 			case sem <- struct{}{}:
@@ -219,6 +237,8 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 				return
 			}
 			defer func() { <-sem }()
+			locks[widx].Lock()
+			defer locks[widx].Unlock()
 
 			q.Hooks.workerStart(idx, st)
 			started := time.Now().UTC()
@@ -238,11 +258,73 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 			}
 			results[idx] = r
 			q.Hooks.workerDone(idx, r)
-		}(i, worker, sub)
+		}(i, widx, worker, sub)
 	}
 
 	wg.Wait()
 	// only ctx cancellation aborts; individual worker errors ride in Result.Err.
+	if ctx.Err() != nil {
+		return results, ctx.Err()
+	}
+	return results, nil
+}
+
+// dispatchFactory is the WorkerFor path: each sub-task gets its own Runner from
+// the factory, so they run concurrently up to MaxParallel with no per-engine
+// lock. The factory's done func runs after each sub-task (merge-back / cleanup)
+// and receives the worker's error so a failed run's isolated tree is discarded.
+func (q *Queen) dispatchFactory(ctx context.Context, plan []SubTask) ([]Result, error) {
+	results := make([]Result, len(plan))
+	parallel := q.MaxParallel
+	if parallel <= 0 {
+		parallel = len(plan)
+	}
+	sem := make(chan struct{}, parallel)
+	var wg sync.WaitGroup
+
+	for i, sub := range plan {
+		wg.Add(1)
+		go func(idx int, st SubTask) {
+			defer wg.Done()
+			base := Result{
+				WorkerID: fmt.Sprintf("w%d", idx),
+				Name:     fmt.Sprintf("worker-%d", idx),
+				Task:     st.Task,
+			}
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				base.Err = ctx.Err()
+				results[idx] = base
+				return
+			}
+			defer func() { <-sem }()
+
+			runner, done, err := q.WorkerFor(idx, st)
+			if err != nil {
+				base.Err = fmt.Errorf("spawn worker: %w", err)
+				results[idx] = base
+				return
+			}
+
+			q.Hooks.workerStart(idx, st)
+			base.Started = time.Now().UTC()
+			out, runErr := runner.Run(ctx, st.Task)
+			base.Ended = time.Now().UTC()
+			if runErr != nil {
+				base.Err = runErr
+			} else {
+				base.Final = out.FinalText
+			}
+			if done != nil {
+				done(runErr) // merge-back / cleanup; failed runs are discarded
+			}
+			results[idx] = base
+			q.Hooks.workerDone(idx, base)
+		}(i, sub)
+	}
+
+	wg.Wait()
 	if ctx.Err() != nil {
 		return results, ctx.Err()
 	}

@@ -13,6 +13,10 @@ set -eu
 REPO="elhenro/bee"
 INSTALL_DIR="${BEE_INSTALL_DIR:-/usr/local/bin}"
 BIN_NAME="bee"
+# set to 1 once a downloaded binary's checksum matches the published SHA256SUMS.
+# gates the macOS quarantine strip so an unverified download can't silently
+# bypass Gatekeeper.
+VERIFIED=0
 
 log() { printf "bee-install: %s\n" "$*"; }
 err() { printf "bee-install: error: %s\n" "$*" >&2; exit 1; }
@@ -48,6 +52,35 @@ need_sudo() {
     fi
 }
 
+# verify_checksum confirms the downloaded binary matches the SHA256SUMS
+# published with the release. Returns 0 on match, 1 on MISMATCH (caller must
+# abort), 2 when no SHA256SUMS is published or no sha256 tool is available
+# (caller warns: unverified).
+verify_checksum() {
+    dest=$1
+    os=$2
+    arch=$3
+    sums_url="https://github.com/${REPO}/releases/latest/download/SHA256SUMS"
+    sums=""
+    if has_cmd curl; then
+        sums=$(curl -fsSL "$sums_url" 2>/dev/null) || sums=""
+    elif has_cmd wget; then
+        sums=$(wget -qO- "$sums_url" 2>/dev/null) || sums=""
+    fi
+    [ -n "$sums" ] || return 2
+    want=$(printf "%s\n" "$sums" | grep "bee-${os}-${arch}" | awk '{print $1}' | head -n1)
+    [ -n "$want" ] || return 2
+    if has_cmd sha256sum; then
+        got=$(sha256sum "$dest" | awk '{print $1}')
+    elif has_cmd shasum; then
+        got=$(shasum -a 256 "$dest" | awk '{print $1}')
+    else
+        return 2
+    fi
+    [ "$got" = "$want" ] && return 0
+    return 1
+}
+
 download_binary() {
     os=$1
     arch=$2
@@ -66,6 +99,18 @@ download_binary() {
         err "need curl or wget to download release"
     fi
     chmod +x "$dest"
+    # verify integrity before we ever run or install the binary
+    if verify_checksum "$dest" "$os" "$arch"; then
+        log "checksum verified against SHA256SUMS"
+        VERIFIED=1
+    else
+        rc=$?
+        if [ "$rc" -eq 1 ]; then
+            err "checksum mismatch for $url — refusing to install (possible tampering)"
+        fi
+        log "WARNING: release has no SHA256SUMS (or no sha256 tool); installing UNVERIFIED binary"
+        VERIFIED=0
+    fi
     return 0
 }
 
@@ -111,7 +156,12 @@ macos_fixup() {
     sudo_cmd=$2
     [ "$(detect_os)" = darwin ] || return 0
     has_cmd codesign || return 0
-    $sudo_cmd xattr -d com.apple.quarantine "$target" 2>/dev/null || true
+    # only clear the download quarantine when the binary's checksum was verified;
+    # stripping it on an UNVERIFIED download would silently defeat Gatekeeper.
+    if [ "${VERIFIED:-0}" = "1" ]; then
+        $sudo_cmd xattr -d com.apple.quarantine "$target" 2>/dev/null || true
+    fi
+    # ad-hoc re-sign fixes the cdhash mismatch after an in-place overwrite.
     $sudo_cmd codesign -f -s - "$target" >/dev/null 2>&1 || true
 }
 

@@ -116,8 +116,20 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	if err := safety.CheckShellCommand(displayCmd); err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
+	// defense in depth: also vet the command that will actually execute, so a
+	// display/exec mismatch (a spoofed _orig_command slipping past input
+	// sanitization, or a wrapper bug) can never downgrade the hardline check.
+	if cmdStr != displayCmd {
+		if err := safety.CheckShellCommand(cmdStr); err != nil {
+			return tools.Result{Content: err.Error(), IsError: true}, nil
+		}
+	}
 	if t.approver != nil {
-		if key, desc, hit := safety.DetectDangerous(displayCmd); hit {
+		key, desc, hit := safety.DetectDangerous(displayCmd)
+		if !hit && cmdStr != displayCmd {
+			key, desc, hit = safety.DetectDangerous(cmdStr)
+		}
+		if hit {
 			d, err := t.approver.Request(ctx, displayCmd, key, desc)
 			if err != nil {
 				return tools.Result{Content: fmt.Sprintf("approval error: %v", err), IsError: true}, nil

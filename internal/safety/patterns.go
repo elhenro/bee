@@ -55,14 +55,30 @@ var dangerousPatterns = []DangerousPattern{
 
 	// chmod +x then exec (two-step bypass)
 	{regexp.MustCompile(`\bchmod\s+\+x\b.*[;&|]+\s*\./`), "chmod-exec", "chmod +x followed by execution"},
+
+	// persistence: writes that auto-run on next shell/login, or that rewrite
+	// bee's own trust config (config.toml under ~/.bee)
+	{regexp.MustCompile(`>>?\s*["']?(~|\$HOME|\$\{HOME\})/\.(zshrc|bashrc|bash_profile|bash_login|profile|zprofile|zshenv)\b`), "write-shell-rc", "write to a shell startup file"},
+	{regexp.MustCompile(`>>?\s*["']?(~|\$HOME|\$\{HOME\})/\.bee/`), "write-bee-config", "write to bee's own config/state directory"},
+	{regexp.MustCompile(`(LaunchAgents|LaunchDaemons)/|\blaunchctl\s+(load|bootstrap|enable)\b`), "launch-agent", "install/enable a launch agent"},
+	{regexp.MustCompile(`\bcrontab\b`), "crontab", "modify cron jobs"},
+
+	// remote code via git inline config (core.pager/alias/fsmonitor run commands)
+	{regexp.MustCompile(`\bgit\s+(-c|--config-env)\b`), "git-config-inject", "git with inline -c config (can execute commands)"},
+
+	// data exfiltration: upload a local file to a remote endpoint
+	{regexp.MustCompile(`\b(curl|wget)\b[^|]*\s(--data(-binary|-raw|-urlencode)?|-d|--upload-file|-T)\b[^|]*@`), "curl-upload-file", "upload a local file via curl/wget"},
+	{regexp.MustCompile(`\bscp\b\s+\S+\s+\S+:`), "scp-remote", "copy a file to a remote host via scp"},
 }
 
 // DetectDangerous returns the first matching pattern key + description, or
 // empty strings + false when the command matches no dangerous pattern.
 func DetectDangerous(cmd string) (key, desc string, matched bool) {
-	for _, p := range dangerousPatterns {
-		if p.Re.MatchString(cmd) {
-			return p.Key, p.Desc, true
+	for _, c := range matchForms(cmd) {
+		for _, p := range dangerousPatterns {
+			if p.Re.MatchString(c) {
+				return p.Key, p.Desc, true
+			}
 		}
 	}
 	return "", "", false
