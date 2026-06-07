@@ -31,6 +31,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/shell"
 	"github.com/elhenro/bee/internal/tools/tool_lookup"
 	"github.com/elhenro/bee/internal/tools/usertool"
+	"github.com/elhenro/bee/internal/tools/waggle_lookup"
 	"github.com/elhenro/bee/internal/tools/web_fetch"
 	"github.com/elhenro/bee/internal/tools/web_search"
 	"github.com/elhenro/bee/internal/tools/write"
@@ -85,6 +86,30 @@ func scopedRoutes(s *waggle.Store, scope waggle.Scope) []waggle.Route {
 		rs[i].Scope = scope
 	}
 	return rs
+}
+
+// appendWaggleLookup registers the procedure-memory lookup tool iff the library
+// holds at least one waggle. One manifest slot exposes the whole library on
+// demand, so a cold install (no waggles yet) pays nothing and the cost never
+// grows with library size.
+func appendWaggleLookup(all []tools.Tool, cwd string) []tools.Tool {
+	proj, _ := waggle.ProjectStore(cwd)
+	user, _ := waggle.UserStore()
+	if waggleLibraryEmpty(proj) && waggleLibraryEmpty(user) {
+		return all
+	}
+	if t := waggle_lookup.New(proj, user); t != nil {
+		all = append(all, t)
+	}
+	return all
+}
+
+func waggleLibraryEmpty(s *waggle.Store) bool {
+	if s == nil {
+		return true
+	}
+	metas, _ := waggle.List(s)
+	return len(metas) == 0
 }
 
 // filterTools narrows reg to the comma-separated list of tool names.
@@ -231,6 +256,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
 	all = appendBrowserTools(all, cfg)
+	all = appendWaggleLookup(all, cwd)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue
@@ -340,6 +366,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	all = appendCodegraphTool(all, cwd)
 	all = appendUserTools(all, cfg.UserTools)
 	all = appendBrowserTools(all, cfg)
+	all = appendWaggleLookup(all, cwd)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue

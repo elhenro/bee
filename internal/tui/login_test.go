@@ -53,12 +53,13 @@ func (s *loginSideStub) SaveAPIKey(p, k string) error {
 }
 func (s *loginSideStub) LoginStatus() []commands.ProviderAuth          { return s.statuses }
 func (s *loginSideStub) OpenLogin() error                              { return nil }
-func (s *loginSideStub) OpenTutorial() error                          { return nil }
+func (s *loginSideStub) OpenTutorial() error                           { return nil }
 func (s *loginSideStub) OpenResume() error                             { return nil }
 func (s *loginSideStub) SetRole(string) error                          { return nil }
 func (s *loginSideStub) GetRole() string                               { return "worker" }
 func (s *loginSideStub) SetThinking(string) error                      { return nil }
 func (s *loginSideStub) GetThinking() string                           { return "auto" }
+func (s *loginSideStub) OpenEffortPicker() error                       { return nil }
 func (s *loginSideStub) SetYolo(bool) error                            { return nil }
 func (s *loginSideStub) GetYolo() bool                                 { return false }
 func (s *loginSideStub) OpenRolePicker() error                         { return nil }

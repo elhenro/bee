@@ -119,7 +119,8 @@ func (f *fakeSide) SetThinking(level string) error {
 	f.thinking = level
 	return nil
 }
-func (f *fakeSide) GetThinking() string { return f.thinking }
+func (f *fakeSide) GetThinking() string     { return f.thinking }
+func (f *fakeSide) OpenEffortPicker() error { return errors.New("no picker") }
 func (f *fakeSide) SetYolo(on bool) error {
 	f.yolo = on
 	return nil
