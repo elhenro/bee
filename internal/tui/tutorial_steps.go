@@ -33,26 +33,26 @@ func tutorialSteps() []tutorialStep {
 		},
 		{
 			title:  "tool calls & approval",
-			user:   "list the go files in this project",
-			stream: "On it — I'll search the project with the bash tool.",
+			user:   "what's in this project?",
+			stream: "Let me take a look with the bash tool.",
 			extra: []types.Message{
 				tutEphemeral(types.RoleAssistant, types.ContentBlock{
 					Type: types.BlockToolUse,
 					Use: &types.ToolUse{
 						ID:    "tutorial_bash_1",
 						Name:  "bash",
-						Input: map[string]any{"command": "ls **/*.go | head"},
+						Input: map[string]any{"command": "ls"},
 					},
 				}),
 				tutEphemeral(types.RoleTool, types.ContentBlock{
 					Type: types.BlockToolResult,
 					Result: &types.ToolResult{
 						UseID:   "tutorial_bash_1",
-						Content: "cmd/bee/run.go\ninternal/tui/app.go\ninternal/loop/turn.go\ninternal/config/load.go",
+						Content: "README.md   src/   tests/   docs/",
 					},
 				}),
 			},
-			coach: "bee uses tools (bash, read, edit, …) to do real work — you just saw a bash call and its result.\nRisky actions pause for approval: enter allows, esc denies. Toggle auto-approve with alt+y.",
+			coach: "bee uses tools (bash, read, edit, …) to do real work — you just saw a bash call and its result. (This is a sample listing, not your real files.)\nRisky actions pause for approval: enter allows, esc denies. Toggle auto-approve with alt+y.",
 		},
 		{
 			title:  "roles",
