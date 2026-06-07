@@ -27,3 +27,8 @@ bench/finetune/.venv/
 
 # local-only research, plans, scratch
 private/
+
+# website generated
+website/.wrangler/
+website/dist/
+website/website
