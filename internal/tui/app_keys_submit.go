@@ -272,6 +272,7 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	}
 	m.loaderRate = 0
 	m.loaderSampleChars = 0
+	m.loaderSampleAt = time.Time{}
 	m.loaderRateTokS = 0
 	m.loaderSeed = time.Now().UnixNano()
 	// stamp turn start; clear last duration so the timer chip switches from

@@ -65,6 +65,47 @@ func TestCompact_PreservesTail(t *testing.T) {
 	}
 }
 
+func mkToolUse(id string) types.Message {
+	return types.Message{
+		Role:    types.RoleAssistant,
+		Content: []types.ContentBlock{{Type: types.BlockToolUse, Use: &types.ToolUse{ID: id, Name: "read"}}},
+	}
+}
+
+func mkToolResult(id string) types.Message {
+	return types.Message{
+		Role:    types.RoleTool,
+		Content: []types.ContentBlock{{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: id, Content: "ok"}}},
+	}
+}
+
+// preserved tail must never open on an orphaned tool result: its assistant
+// tool_use would be dropped into the summary, producing a role:"tool" wire
+// message with no preceding tool_calls (provider 400: "A tool message must
+// follow an assistant or tool message").
+func TestCompact_BoundaryNeverSplitsToolPair(t *testing.T) {
+	p := &compactStubProvider{summary: "SUMMARY"}
+	// default cut = len-4 = 4 lands ON the tool_result. its tool_use sits at
+	// index 3; without the walk-back the result is orphaned into the tail.
+	msgs := []types.Message{
+		mkMsg(types.RoleUser, "1"),
+		mkMsg(types.RoleAssistant, "2"),
+		mkMsg(types.RoleUser, "3"),
+		mkToolUse("call-1"),    // index 3
+		mkToolResult("call-1"), // index 4  <- naive cut starts here (orphan)
+		mkMsg(types.RoleUser, "5"),
+		mkMsg(types.RoleAssistant, "6"),
+		mkMsg(types.RoleUser, "7"),
+	}
+	out, _, err := Compact(context.Background(), p, "stub", msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasToolResult(out[1]) {
+		t.Fatalf("preserved tail opens on orphan tool result: %+v", out[1].Content[0])
+	}
+}
+
 func TestCompact_NoChangeWhenSmall(t *testing.T) {
 	p := &compactStubProvider{summary: "X"}
 	msgs := []types.Message{

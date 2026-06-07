@@ -165,7 +165,17 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	// current speed. chars→tokens via a rough divisor; cumulative averaging
 	// would otherwise spike on the first frame and bleed down for the rest
 	// of the turn.
-	instTokS := (float64(d) / loaderTickInterval.Seconds()) / charsPerToken
+	now := time.Now()
+	elapsed := loaderTickInterval.Seconds()
+	if !m.loaderSampleAt.IsZero() {
+		// real elapsed, not the nominal tick — a lagged tick dividing a
+		// char burst by 120ms would report a rate far above actual.
+		if e := now.Sub(m.loaderSampleAt).Seconds(); e > 0 {
+			elapsed = e
+		}
+	}
+	m.loaderSampleAt = now
+	instTokS := (float64(d) / elapsed) / charsPerToken
 	const emaAlpha = 0.25
 	m.loaderRateTokS = emaAlpha*instTokS + (1-emaAlpha)*m.loaderRateTokS
 	return m, loaderTickCmd()

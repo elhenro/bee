@@ -286,6 +286,11 @@ type Model struct {
 	// particle density. loaderSampleChars holds the prior sample point.
 	loaderRate        int
 	loaderSampleChars int
+	// loaderSampleAt is wall-clock of the prior throughput sample. Used to
+	// divide by real elapsed time instead of the nominal tick interval —
+	// ticks lag under render load, and dividing a burst by the fixed 120ms
+	// would inflate the rate.
+	loaderSampleAt time.Time
 	// loaderRateTokS is the EMA-smoothed generation throughput in tok/s shown
 	// in the readout. Windowed (not a cumulative turn average) so it tracks
 	// current speed instead of spiking on the first frame and decaying slowly.

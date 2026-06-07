@@ -45,6 +45,20 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 		return msgs, stats, nil
 	}
 	cut := len(msgs) - PreserveTail
+	// never start the preserved tail on an orphaned tool result: a message
+	// carrying tool_result blocks wire-translates to a role:"tool" message,
+	// which the provider rejects unless the assistant tool_use that issued it
+	// precedes it. walk the boundary back so the pair stays together.
+	for cut > 0 && hasToolResult(msgs[cut]) {
+		cut--
+	}
+	if cut <= 0 {
+		// whole older slice is one tool exchange; nothing safe to summarize.
+		stats.AfterMsgs = stats.BeforeMsgs
+		stats.AfterTokens = stats.BeforeTokens
+		stats.Duration = time.Since(start)
+		return msgs, stats, nil
+	}
 	older := msgs[:cut]
 	preserved := msgs[cut:]
 
@@ -89,6 +103,18 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	stats.AfterTokens = totalTokens(out)
 	stats.Duration = time.Since(start)
 	return out, stats, nil
+}
+
+// hasToolResult reports whether m carries any tool_result block. Such a message
+// becomes a standalone role:"tool" wire message that is only valid when the
+// assistant tool_use it answers immediately precedes it.
+func hasToolResult(m types.Message) bool {
+	for _, c := range m.Content {
+		if c.Type == types.BlockToolResult {
+			return true
+		}
+	}
+	return false
 }
 
 // totalTokens sums estimateMessageTokens across a slice. Same heuristic the

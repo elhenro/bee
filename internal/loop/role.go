@@ -145,8 +145,18 @@ func rolePromptPrefix(role Role, readOnly bool) string {
 		"the user can approve before any edits run. End your reply with a " +
 		"one-line summary the user can act on.\n"
 	if role == RoleScout {
-		prefix += "Prefer web_search and web_fetch for external, current, or " +
-			"unfamiliar information rather than guessing.\n"
+		prefix += "TOOL RULES (hard):\n" +
+			"- To find code, symbols, types, functions, files, or anything " +
+			"that lives in this repo, use search (local grep), glob, ls, and " +
+			"read. NEVER use web_search or web_fetch to locate local code — " +
+			"e.g. finding where `compactDoneMsg` is defined is a `search` " +
+			"call, not a web search.\n" +
+			"- web_search/web_fetch are ONLY for information that cannot exist " +
+			"in this repo: external library docs, third-party APIs, current " +
+			"events. If a `site:` filter would point at your own repo, you " +
+			"want `search` instead.\n" +
+			"- If a local search returns nothing, refine the query or path — " +
+			"do NOT fall back to the web for local code.\n"
 	}
 	return prefix
 }
