@@ -171,7 +171,10 @@ func devCacheDirs() []string {
 		filepath.Join(home, "Library", "Caches"),
 		// some CLIs (wrangler) write logs/state under Preferences, not Caches.
 		filepath.Join(home, "Library", "Preferences"),
-		filepath.Join(home, "go", "pkg", "mod"),
+		// whole ~/go tree: pkg/mod, pkg/sumdb (checksum-db cache), bin. Scoping
+		// to pkg/mod alone breaks `go mod tidy`, which writes the sumdb latest
+		// marker under pkg/sumdb and fails with EPERM.
+		filepath.Join(home, "go"),
 		filepath.Join(home, ".cache"),
 		filepath.Join(home, ".npm"),
 		filepath.Join(home, ".cargo", "registry"),
@@ -179,6 +182,7 @@ func devCacheDirs() []string {
 		filepath.Join(home, ".gradle", "caches"),
 		filepath.Join(home, ".m2"),
 		filepath.Join(home, ".bee"),
+		filepath.Join(home, "Downloads"),
 	}
 	if gc := strings.TrimSpace(os.Getenv("GOCACHE")); gc != "" {
 		dirs = append(dirs, gc)
