@@ -55,7 +55,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 	planner := m.eng
 	warn := m.warnCh
 	live := m.liveMsgCh
-	task := hiveTaskFromContent(content)
+	task := hiveTaskWithContext(content, history)
 
 	workerCount := planner.Cfg.MastermindWorkers
 	if workerCount < 1 {

@@ -229,6 +229,23 @@ func TestFetchURL(t *testing.T) {
 		t.Error("expected error for invalid URL")
 	}
 
+	// Non-http schemes are rejected in every scope, confined or not. file:// is
+	// the local-file-read vector; it has no host so the SSRF guard never sees it.
+	for _, confined := range []bool{true, false} {
+		for _, u := range []string{
+			"file:///etc/passwd",
+			"file:///Users/henryschober/web/bee/.git/index",
+			"ftp://example.com/x",
+			"gopher://example.com/",
+			"data:text/plain,hi",
+		} {
+			_, err := FetchURL(u, DefaultDomainPolicy(), confined)
+			if err == nil || !strings.Contains(err.Error(), "unsupported URL scheme") {
+				t.Errorf("expected scheme rejection for %q (confined=%v), got %v", u, confined, err)
+			}
+		}
+	}
+
 	// Confined scope: localhost resolves to loopback → SSRF guard blocks it.
 	_, err = FetchURL("https://localhost/test", DefaultDomainPolicy(), true)
 	if err == nil {

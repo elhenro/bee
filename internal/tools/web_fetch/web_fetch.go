@@ -166,6 +166,16 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 
+	// Only http/https. Reject file://, ftp://, gopher://, data:// etc — these
+	// read local files or hit non-web services and are SSRF/local-disclosure
+	// vectors. Enforced in every scope (the SSRF IP guard below is confined-only,
+	// but file:// has no host to resolve so it must be blocked unconditionally).
+	switch parsedURL.Scheme {
+	case "http", "https":
+	default:
+		return nil, fmt.Errorf("unsupported URL scheme %q: only http and https allowed", parsedURL.Scheme)
+	}
+
 	// Fast hostname blocklist pre-check (user allow/block lists, both scopes)
 	host := parsedURL.Hostname()
 	if policy != nil && !policy.IsAllowed(host) {

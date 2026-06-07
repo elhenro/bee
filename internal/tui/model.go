@@ -286,6 +286,10 @@ type Model struct {
 	// particle density. loaderSampleChars holds the prior sample point.
 	loaderRate        int
 	loaderSampleChars int
+	// loaderRateTokS is the EMA-smoothed generation throughput in tok/s shown
+	// in the readout. Windowed (not a cumulative turn average) so it tracks
+	// current speed instead of spiking on the first frame and decaying slowly.
+	loaderRateTokS float64
 
 	// turnStartedAt is wall-clock when the current turn left submit(). Zero
 	// when no turn in flight. Top-bar timer reads time.Since on every tick

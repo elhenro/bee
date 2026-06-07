@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 	"unicode/utf8"
 )
 
@@ -21,8 +20,11 @@ type LoaderStats struct {
 	InTokens int
 	OutChars int
 	Rate     int
+	// RateTokS is the EMA-smoothed generation throughput in tok/s for the
+	// readout. Windowed, so it reflects current speed rather than the turn's
+	// cumulative average.
+	RateTokS float64
 	Seed     int64
-	Duration time.Duration
 	// figure visibility toggles (/settings). Default true; when all three
 	// are off the readout collapses to empty and only the stream shows.
 	ShowIn   bool
@@ -89,7 +91,7 @@ func formatLoaderReadout(stats LoaderStats, budget int) string {
 		parts = append(parts, "↓ "+fmtTokens(stats.OutChars))
 	}
 	if stats.ShowRate {
-		if rate := formatTokRate(stats.OutChars, stats.Duration); rate != "" {
+		if rate := formatTokRate(stats.RateTokS); rate != "" {
 			parts = append(parts, rate)
 		}
 	}
@@ -103,15 +105,18 @@ func formatLoaderReadout(stats LoaderStats, budget int) string {
 	return ""
 }
 
-// formatTokRate returns average generation throughput as "<n>tok/s" over the
-// turn. Empty when there's no elapsed time yet (avoids div-by-zero and a
-// meaningless spike on the first frame). out is the cumulative output count.
-func formatTokRate(out int, d time.Duration) string {
-	if d <= 0 || out <= 0 {
+// charsPerToken is the rough chars-per-token divisor used to turn the live
+// char count into a tok/s estimate. ~4 fits typical English/code; exact
+// tokenization isn't available mid-stream.
+const charsPerToken = 4.0
+
+// formatTokRate renders the smoothed throughput as "<n>tok/s". Empty below 1
+// tok/s so an idle gap shows nothing rather than "0tok/s".
+func formatTokRate(tokS float64) string {
+	if tokS < 1 {
 		return ""
 	}
-	rate := float64(out) / d.Seconds()
-	return fmt.Sprintf("%stok/s", fmtTokens(int(rate)))
+	return fmt.Sprintf("%stok/s", fmtTokens(int(tokS)))
 }
 
 // lcg is a tiny deterministic generator so seeded layouts reproduce exactly

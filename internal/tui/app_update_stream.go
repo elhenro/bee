@@ -155,12 +155,19 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	m.loaderFrame++
 	// sample output throughput once per tick — drives particle density. Clamp
 	// to 0 so a partial reset on a tool boundary never yields a negative rate.
-	if d := m.turnOutChars - m.loaderSampleChars; d > 0 {
-		m.loaderRate = d
-	} else {
-		m.loaderRate = 0
+	d := m.turnOutChars - m.loaderSampleChars
+	if d < 0 {
+		d = 0
 	}
+	m.loaderRate = d
 	m.loaderSampleChars = m.turnOutChars
+	// smooth instantaneous throughput into an EMA so the readout tracks
+	// current speed. chars→tokens via a rough divisor; cumulative averaging
+	// would otherwise spike on the first frame and bleed down for the rest
+	// of the turn.
+	instTokS := (float64(d) / loaderTickInterval.Seconds()) / charsPerToken
+	const emaAlpha = 0.25
+	m.loaderRateTokS = emaAlpha*instTokS + (1-emaAlpha)*m.loaderRateTokS
 	return m, loaderTickCmd()
 }
 
