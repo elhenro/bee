@@ -12,6 +12,16 @@ Guidance for agents (and humans) working on this repository. Read this **before*
 
 Other load-bearing choices: `apply_patch` collapses write/edit/multi-edit on capable models (tiny profile swaps it out for `write`+`edit`+`hashline_edit`); codex-style two-axis sandbox; frontmatter knowledge store with lazy top-K selection; textmode wrapper that emits XML-style tool calls for local models that ignore `tool_calls`.
 
+## Local LLMs
+
+`bee` is designed to work well with local LLMs. Key features:
+
+- **Text mode** (`ToolFormat="xml"` in profile): injects an XML-style tool advert into the system prompt and parses `<tool>{...}</tool>` envelopes out of the assistant content stream. Designed for tiny/local models that ignore `tool_calls`.
+- **Profile auto-detection**: local providers (`ollama`/`lmstudio`) always resolve to the `tiny` profile.
+- **Caveman rules**: prompt-injection compression rules (`rules/{full,lite,ultra}.md`) that compress bee's responses without affecting user input.
+- **Stub provider**: `BEE_TEST_PROVIDER=stub` for offline development and testing.
+- **4k-context friendly**: the whole system is designed to run on a 4k-context local Ollama as well as frontier APIs.
+
 ## Commands
 
 ```sh

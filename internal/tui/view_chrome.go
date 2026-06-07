@@ -69,9 +69,14 @@ func (m Model) renderTopBar() string {
 	if badge := m.renderModeBadge(); badge != "" {
 		right += badge + "  "
 	}
-	// hide the effort chip for models that can't act on it — a non-thinking
-	// model (qwen3-coder, plain instruct) showing "t:medium" is misleading.
-	if m.showEffort && m.thinking != "" && m.thinking != "off" && llm.ThinkingApplies(m.model) {
+	// mastermind is orchestration, not a reasoning budget, so its chip shows
+	// regardless of whether the model honors thinking — "t:master" instead of
+	// the pinned "t:max" underneath.
+	if m.showEffort && m.mastermind {
+		right += m.styles.Dim.Render("t:master") + " "
+	} else if m.showEffort && m.thinking != "" && m.thinking != "off" && llm.ThinkingApplies(m.model) {
+		// hide the effort chip for models that can't act on it — a non-thinking
+		// model (qwen3-coder, plain instruct) showing "t:medium" is misleading.
 		right += m.styles.Dim.Render("t:"+m.thinking) + " "
 	}
 	pad := m.width - lipgloss.Width(left) - lipgloss.Width(right)

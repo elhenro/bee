@@ -64,6 +64,9 @@ const indexHTML = `<!DOCTYPE html>
     --border: #333;
     --shadow: 0 1px 3px rgba(0,0,0,0.3);
   }
+  [data-theme="dark"] .bee-art {
+    text-shadow: 0 0 30px rgba(245, 214, 86, 0.25);
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -107,15 +110,25 @@ const indexHTML = `<!DOCTYPE html>
     text-align: center;
     margin-bottom: 4rem;
   }
-  .bee {
-    font-size: 4rem;
-    display: block;
-    margin-bottom: 1rem;
-    animation: float 3s ease-in-out infinite;
+  .bee-art {
+    display: inline-block;
+    margin: 0 auto 1.5rem;
+    text-align: left;
+    padding: 0 1rem;
+    font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+    font-size: 0.55rem;
+    line-height: 1.25;
+    color: var(--accent);
+    animation: float 6s ease-in-out infinite;
+    text-shadow: 0 0 20px rgba(245, 214, 86, 0.15);
+  }
+  .bee-art-inner {
+    white-space: pre;
+    text-align: left;
   }
   @keyframes float {
     0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
+    50% { transform: translateY(-6px); }
   }
   h1 {
     font-size: 2.5rem;
@@ -299,7 +312,7 @@ const indexHTML = `<!DOCTYPE html>
   }
   @media (max-width: 480px) {
     h1 { font-size: 2rem; }
-    .bee { font-size: 3rem; }
+    .bee-art { font-size: 0.45rem; }
     .container { padding: 1.5rem 1rem; }
   }
 </style>
@@ -313,7 +326,28 @@ const indexHTML = `<!DOCTYPE html>
 
   <main>
     <div class="hero">
-      <span class="bee">🐝</span>
+      <pre class="bee-art"><span class="bee-art-inner">                    Ie                á”
+                     (ÆÆ           ÌÆÆ­
+                        ÆÆ        ÆÓ
+  jÆÆÆÞ             ÆÆ    ÆÆÆä1ÆÆè    ÆÆ              ;‹
+  ’„‹ ÆÆ=ÆÆ          Æ    BÆÆÆÆÆÆ    ÆW          ÆÆÆÆÆì»Í~
+   îÍ  ?RÆAÆÆÆÆM     ÍÆ  ÆÆ  ‹Ò ÆÆ  ÆÆ       ÆÆÆ‰ ñ    ¯ç–
+    «¤’  Æ  å„ «ÆÆÆ    Æ ÆÆÆÆÆÆÆÆÆ ÆÖ    ÆÆÆ®õwÆ ÆP í–¯ª
+      íÉ%  +  ¼º  ÛÞÆÆ  Y  üÆÆÆå‚ Æ   ÆÆÆÆ  ;Ø  ú   ïº:
+         oÑQÆÆÆÆÆØÉÝÅBÆÆÆÆÇ-BEE-ÆÆÆÆÆÆÆÑ  xŸÁÆÆz®ç†
+         ¾Ÿ}sÆÆÞâÆÆÆÆÆÆÆÊÆ-AGENT-7Ëà          ’ÆðF
+                   ˜      ÇÆÆÆÆÆØZ    ¾ÆÑÆQË§¼÷
+                      ÆÆÆÆ ôXÆÆã“sÇÆÆÑ
+                   ÆÆÆ    #ÆÄiSœÆÆ    ÆÆÆ
+                 ÆÆ  ÆÆTòHÆÆÆÆÆÆÆÆXiÆÆÆ  ÆÆ
+               ÆÆ  ÆÆÍ  l=¡5ÇÇS9¾yï×  —Æ  FÆ
+             ÆÆ   ÆÆ   ¨ÆÆÆÆÆÆÆÆÆÆÆÆ}  ÆÆ   ÆÆ
+            Æ4   3Æ²   »ÇÇoàÇSL…¹ ÇÇ    ÆÆ    Æ¦
+                 ÆÆ     GÆÆÆÆÆÆÆÆÆÆÒ7   ËÆ
+                 Æ¯      ÆÆæëÚšYJQÄÇ     Æ
+                1Æ       çØÆÆÆÆÆÆÆÇ      Æ6
+               ÆÆ          §ËÆÆÆé         Æ³
+             –ÆÆ                           Æ</span></pre>
       <h1>bee</h1>
       <p class="tagline">a minimal coding agent harness</p>
       <p class="fun-fact">"I'm not a bot. I'm a bee. There's a difference."</p>
@@ -336,7 +370,7 @@ const indexHTML = `<!DOCTYPE html>
       <div class="install-box">
         <code onclick="copy(this)">curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh</code>
         <p class="install-hint">or: <code style="display:inline;padding:0.2rem 0.5rem;" onclick="copy(this)">go install github.com/elhenro/bee/cmd/bee@latest</code></p>
-        <p class="install-hint" style="margin-top:0.5rem;">then: <code style="display:inline;padding:0.2rem 0.5rem;" onclick="copy(this)">export OPENROUTER_API_KEY=sk-... && bee</code></p>
+        <p class="install-hint" style="margin-top:0.75rem;">then run <code style="display:inline;padding:0.2rem 0.5rem;" onclick="copy(this)">bee</code>, type <code style="display:inline;padding:0.2rem 0.5rem;">/model</code>, choose MLX, Ollama, OpenRouter, etc. and pick a model. Local or hosted, your choice.</p>
       </div>
     </div>
 
@@ -363,18 +397,56 @@ const indexHTML = `<!DOCTYPE html>
     </div>
 
     <div class="section">
+      <h2>Local LLMs</h2>
+      <p style="color:var(--muted);font-size:0.95rem;margin-bottom:1rem;">
+        bee is built to work well with <a href="https://ollama.com" style="color:var(--accent-dark);font-weight:600;">Ollama</a> and <a href="https://github.com/ml-explore/mlx" style="color:var(--accent-dark);font-weight:600;">MLX</a> so you can run locally on your own hardware and keep full control. No API keys, no rate limits, no data leaving your machine.
+      </p>
+      <p style="color:var(--muted);font-size:0.95rem;margin-bottom:1rem;">
+        On macOS, <a href="https://github.com/ml-explore/mlx" style="color:var(--accent-dark);font-weight:600;">MLX</a> works best. Native Apple Silicon acceleration with prompt caching keeps things fast and memory-efficient.
+      </p>
+      <p style="color:var(--muted);font-size:0.95rem;margin-bottom:1rem;">
+        I run <strong>Huihui-Qwen3.6-35B-A3B-Claude-4.7-Opus-abliterated-mlx-8bit</strong> (34.32 GB) very reliably on a MacBook M3 Max 64 GB, with <strong>Qwen3-VL-4B-Instruct-MLX-4bit</strong> (2.90 GB) for vision support. bee handles vision automatically for models that only do text.
+      </p>
+      <p style="color:var(--muted);font-size:0.95rem;margin-bottom:1rem;">
+        Settings for the Huihui-Qwen model: temperature <strong>0.7</strong>, top-p <strong>0.85</strong>, top-k <strong>20</strong>, KV-cache quantization <strong>8-bit</strong>.
+      </p>
+      <p style="color:var(--muted);font-size:0.95rem;margin-bottom:1rem;">
+        Other models that work well:
+      </p>
+      <div class="features">
+        <div class="feature">
+          <span class="text"><strong>gemma-4-12B-it-4bit</strong> — 10.26 GB</span>
+        </div>
+        <div class="feature">
+          <span class="text"><strong>gemma-4-12B-it-8bit</strong> — 11.87 GB</span>
+        </div>
+        <div class="feature">
+          <span class="text"><strong>gemma-4-12B-it-assistant-bf16</strong> — 837 MB</span>
+        </div>
+        <div class="feature">
+          <span class="text"><strong>Qwen3-Coder-Next-4bit</strong> — 41.78 GB</span>
+        </div>
+        <div class="feature">
+          <span class="text"><strong>Qwen3.6-27B-8bit</strong> — 9.02 GB</span>
+        </div>
+        <div class="feature">
+          <span class="text"><strong>Qwen3.6-35B-A3B-4bit</strong> — 19.03 GB</span>
+        </div>
+        <div class="feature">
+          <span class="text"><strong>Qwen3.6-35B-A3B-8bit</strong> — 29.68 GB</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
       <h2>Get involved</h2>
       <div class="links">
         <a href="https://github.com/elhenro/bee">
-          <span class="icon">🐙</span>
+          <svg class="icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
           <span>GitHub</span>
         </a>
-        <a href="https://pkg.go.dev/github.com/elhenro/bee">
-          <span class="icon">📖</span>
-          <span>Documentation</span>
-        </a>
         <a href="https://github.com/elhenro/bee/releases">
-          <span class="icon">🚀</span>
+          <svg class="icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 19.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM5.5 7.5A2.5 2.5 0 1 1 8 10 2.5 2.5 0 0 1 5.5 7.5zm6.758 1.07a4.5 4.5 0 1 1 6.364 6.364 4.485 4.485 0 0 1-2.717.978 4.5 4.5 0 0 1-3.647-1.842l-2.567 2.566a1 1 0 1 1-1.414-1.414l2.566-2.567A4.5 4.5 0 0 1 12.258 8.57zM18.5 7.5a2.5 2.5 0 1 1-2.5 2.5 2.5 2.5 0 0 1 2.5-2.5z"/></svg>
           <span>Releases</span>
         </a>
       </div>
