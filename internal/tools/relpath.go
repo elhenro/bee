@@ -64,12 +64,23 @@ func resolveSymlinks(path string) string {
 // filepath.Rel may return a path with / separators, and may omit the
 // separator between ".." and the trailing component, e.g. "..tmp").
 func pathIsInside(absPath, rootPath string) bool {
-	rel, err := filepath.Rel(rootPath, absPath)
-	if err != nil {
-		return false
+	return pathIsPrefix(absPath, rootPath)
+}
+
+// pathIsPrefix checks whether rootPath is a prefix of absPath using
+// filepath.Clean to handle Windows path quirks (e.g. leading / on
+// Windows resolves to cwd-relative, so we must compare against the
+// cleaned absolute paths).
+func pathIsPrefix(absPath, rootPath string) bool {
+	absPath = filepath.Clean(absPath)
+	rootPath = filepath.Clean(rootPath)
+	if rootPath == "." {
+		return true
 	}
-	rel = filepath.Clean(rel)
-	return rel == "." || !strings.HasPrefix(rel, "..")
+	// Normalize separators for comparison
+	absPath = filepath.ToSlash(absPath)
+	rootPath = filepath.ToSlash(rootPath)
+	return strings.HasPrefix(absPath, rootPath) || strings.HasPrefix(absPath, rootPath+"/")
 }
 
 // ResolveInRoot resolves path against workspace root and verifies containment.

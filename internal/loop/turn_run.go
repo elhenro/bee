@@ -217,7 +217,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	unlimited := maxIter <= 0
 	tokenBudget, stallCap := computeBudgetCaps(e.Cfg)
 	for i := 0; unlimited || i < maxIter; i++ {
-		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget, stallCap); err != nil {
+		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget, stallCap, mode); err != nil {
 			return res, err
 		}
 		// mid-turn steering: drain pending user input into a synthetic
@@ -407,7 +407,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		blocks, repeatErr := observeRepeats(e, toolUses, toolResults, blocks)
 		blocks = observeDuplicateWrites(e, toolUses, toolResults, blocks)
 		blocks = observeEditNoVerify(e, toolUses, toolResults, blocks)
-		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget)
+		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget, mode)
 		toolMsg := types.Message{
 			ID:       newID(),
 			ParentID: assistantMsg.ID,
