@@ -80,7 +80,12 @@ func pathIsPrefix(absPath, rootPath string) bool {
 	// Normalize separators for comparison
 	absPath = filepath.ToSlash(absPath)
 	rootPath = filepath.ToSlash(rootPath)
-	return strings.HasPrefix(absPath, rootPath) || strings.HasPrefix(absPath, rootPath+"/")
+	// Trailing separator ensures /tmp resolves outside the root
+	// (e.g. C:\...\001 is NOT a prefix of C:\...\001\tmp when root has trailing /).
+	if !strings.HasSuffix(rootPath, "/") {
+		rootPath += "/"
+	}
+	return strings.HasPrefix(absPath, rootPath)
 }
 
 // ResolveInRoot resolves path against workspace root and verifies containment.
