@@ -370,7 +370,7 @@ const indexHTML = `<!DOCTYPE html>
       <div class="install-box">
         <code onclick="copy(this)">curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh</code>
         <p class="install-hint">or: <code style="display:inline;padding:0.2rem 0.5rem;" onclick="copy(this)">go install github.com/elhenro/bee/cmd/bee@latest</code></p>
-        <p class="install-hint" style="margin-top:0.75rem;">then run <code style="display:inline;padding:0.2rem 0.5rem;" onclick="copy(this)">bee</code>, type <code style="display:inline;padding:0.2rem 0.5rem;">/model</code>, choose MLX, Ollama, OpenRouter, etc. and pick a model. Local or hosted, your choice.</p>
+        <p class="install-hint" style="margin-top:0.75rem;">then run <code style="display:inline;padding:0.2rem 0.5rem;" onclick="copy(this)">bee</code>, type <code style="display:inline;padding:0.2rem 0.5rem;">/model</code>, choose oMLX, Ollama, OpenRouter, etc. and pick a model. Local or hosted, your choice.</p>
       </div>
     </div>
 
@@ -399,10 +399,10 @@ const indexHTML = `<!DOCTYPE html>
     <div class="section">
       <h2>Local LLMs</h2>
       <p style="color:var(--muted);font-size:0.95rem;margin-bottom:1rem;">
-        bee is built to work well with <a href="https://ollama.com" style="color:var(--accent-dark);font-weight:600;">Ollama</a> and <a href="https://github.com/ml-explore/mlx" style="color:var(--accent-dark);font-weight:600;">MLX</a> so you can run locally on your own hardware and keep full control. No API keys, no rate limits, no data leaving your machine.
+        bee is built to work well with <a href="https://ollama.com" style="color:var(--accent-dark);font-weight:600;">Ollama</a> and <a href="https://github.com/jundot/omlx" style="color:var(--accent-dark);font-weight:600;">oMLX</a> so you can run locally on your own hardware and keep full control. No API keys, no rate limits, no data leaving your machine.
       </p>
       <p style="color:var(--muted);font-size:0.95rem;margin-bottom:1rem;">
-        On macOS, <a href="https://github.com/ml-explore/mlx" style="color:var(--accent-dark);font-weight:600;">MLX</a> works best. Native Apple Silicon acceleration with prompt caching keeps things fast and memory-efficient.
+        On macOS, <a href="https://github.com/jundot/omlx" style="color:var(--accent-dark);font-weight:600;">oMLX</a> works best. Native Apple Silicon acceleration with prompt caching keeps things fast and memory-efficient.
       </p>
       <p style="color:var(--muted);font-size:0.95rem;margin-bottom:1rem;">
         I run <strong>Huihui-Qwen3.6-35B-A3B-Claude-4.7-Opus-abliterated-mlx-8bit</strong> (34.32 GB) very reliably on a MacBook M3 Max 64 GB, with <strong>Qwen3-VL-4B-Instruct-MLX-4bit</strong> (2.90 GB) for vision support. bee handles vision automatically for models that only do text.
