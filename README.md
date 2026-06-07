@@ -1,4 +1,16 @@
-# 🐝 bee
+
+```
+    .-.
+   (o o)
+   | O |
+   | O |
+   |   |
+   /| |\
+  / | | \
+ ~  ~  ~  ~
+```
+
+# bee
 
 [![CI](https://github.com/elhenro/bee/actions/workflows/ci.yml/badge.svg)](https://github.com/elhenro/bee/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/elhenro/bee.svg)](https://pkg.go.dev/github.com/elhenro/bee)
