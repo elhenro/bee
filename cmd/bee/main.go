@@ -133,7 +133,7 @@ func usage() {
 
 usage:
   bee                       start interactive TUI session
-  bee back <session-id>     resume a prior TUI session by id (or 'latest')
+  bee back [session-id]     resume a TUI session by id (defaults to latest)
   bee run [flags] <msg>     run one task headless, stream stdout, exit
   bee -p   [flags] <msg>    alias for 'bee run' (print mode, for scripts/pipes)
   bee fan  [flags] <task>   fan out N parallel bees over a workload
@@ -277,12 +277,11 @@ func runHeadless(args []string) {
 }
 
 func back(args []string) {
-	if len(args) < 1 || args[0] == "" {
-		fmt.Fprintln(os.Stderr, "bee back: missing <session-id>")
-		fmt.Fprintln(os.Stderr, "usage: bee back <session-id>")
-		os.Exit(2)
+	// no id = resume most recent session
+	id := "latest"
+	if len(args) >= 1 && args[0] != "" {
+		id = args[0]
 	}
-	id := args[0]
 	if id == "latest" || id == "l" {
 		sessions, err := session.List()
 		if err != nil {
