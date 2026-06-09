@@ -133,48 +133,78 @@ func parseEnvelope(s string) (tool string, args map[string]any, say string, ok b
 		}
 	}
 	say, _ = obj["say"].(string)
+	// "done" is the terminal branch; "say" stays accepted for the combined
+	// tool+note shape and for degraded servers emitting the legacy form.
+	if d, _ := obj["done"].(string); d != "" && say == "" {
+		say = d
+	}
 	if tool == "" && say == "" {
 		return "", nil, "", false
 	}
 	return tool, args, say, true
 }
 
-// buildUnionSchema renders the response_format schema: one branch per tool
-// plus the say branch. Single-value "enum" pins the tool name (more widely
-// supported by grammar compilers than "const"). Tool order is preserved from
-// req.Tools so the request body stays byte-stable across turns for a fixed
-// toolset — KV-cache prefix hits depend on it.
+// buildUnionSchema renders the response_format schema: a "done" terminal
+// branch plus one tool branch with the tool name pinned by enum and args left
+// as a plain object. Tool order is preserved from req.Tools so the request
+// body stays byte-stable across turns — KV-cache prefix hits depend on it.
+//
+// Two shapes here are empirical, isolated by live replay-bisecting against a
+// sparse-MoE thinking build (full request held constant, schema swapped):
+//   - terminal is "done", not bare "say": models narrate into an open say
+//     slot ("Creating hello.txt...") and end the run having done nothing,
+//     repeating the announcement even after a nudge.
+//   - args are deliberately UNTYPED: embedding each tool's strict arg schema
+//     (nested required, minLength) flipped the same model from a correct
+//     tool call to a done-claim with identical prompts. The grammar pins
+//     JSON-ness and the tool name; arg keys are validated post-hoc by the
+//     tool layer, which also hints near-miss names.
 func buildUnionSchema(tools []ToolSpec) map[string]any {
-	branches := make([]any, 0, len(tools)+1)
-	branches = append(branches, map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"say": map[string]any{"type": "string"},
-		},
-		"required":             []string{"say"},
-		"additionalProperties": false,
-	})
+	names := make([]string, 0, len(tools))
 	for _, t := range tools {
-		argSchema := any(t.Schema)
-		if len(t.Schema) == 0 {
-			argSchema = map[string]any{"type": "object"}
-		}
-		// optional "say" on tool branches: a say-only turn ends the loop, so
-		// without it the model must choose between acknowledging and acting —
-		// small models then narrate progress instead of making it. say+tool
-		// keeps the think-aloud-then-act shape native tool_calls allow.
-		branches = append(branches, map[string]any{
+		names = append(names, t.Name)
+	}
+	return map[string]any{"anyOf": []any{
+		map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"say":  map[string]any{"type": "string"},
-				"tool": map[string]any{"enum": []string{t.Name}},
-				"args": argSchema,
+				"done": map[string]any{"type": "string"},
 			},
-			"required":             []string{"tool", "args"},
+			"required":             []string{"done"},
 			"additionalProperties": false,
-		})
-	}
-	return map[string]any{"anyOf": branches}
+		},
+		// optional "say" keeps the think-aloud-then-act shape native
+		// tool_calls allow; a say note rides along with the call.
+		jmToolBranch{
+			Type: "object",
+			Properties: jmToolProps{
+				Say:  map[string]any{"type": "string"},
+				Tool: map[string]any{"enum": names},
+				Args: map[string]any{"type": "object"},
+			},
+			Required:             []string{"tool", "args"},
+			AdditionalProperties: false,
+		},
+	}}
+}
+
+// jmToolBranch / jmToolProps pin the wire-side key order of the tool branch.
+// xgrammar compiles object properties in DECLARED order and only permits that
+// order at sampling time; Go maps marshal alphabetically, which put "args"
+// before "tool" and forced every tool call to open with {"args": — a live
+// sparse-MoE build fled to the done branch instead of fighting that prefix.
+// Structs marshal in field order: say, tool, args.
+type jmToolBranch struct {
+	Type                 string      `json:"type"`
+	Properties           jmToolProps `json:"properties"`
+	Required             []string    `json:"required"`
+	AdditionalProperties bool        `json:"additionalProperties"`
+}
+
+type jmToolProps struct {
+	Say  map[string]any `json:"say"`
+	Tool map[string]any `json:"tool"`
+	Args map[string]any `json:"args"`
 }
 
 // buildJSONInstruction renders the prompt-side half of the mode: the grammar
@@ -186,8 +216,9 @@ func buildJSONInstruction(tools []ToolSpec) string {
 	b.WriteString("## Tools (json format)\n")
 	b.WriteString("Respond with EXACTLY one JSON object per turn:\n")
 	b.WriteString("- {\"tool\":\"<name>\",\"args\":{...}} runs a tool. args use the EXACT parameter names below. Optional \"say\" alongside for a short status note.\n")
-	b.WriteString("- {\"say\":\"<text>\"} alone ENDS your turn. Use only for the final answer or a question to the user.\n")
-	b.WriteString("Work happens ONLY through tool calls. Saying you changed something does not change it.\n\n")
+	b.WriteString("- {\"done\":\"<final answer>\"} ENDS the task. Emit only when the work is fully done, or to ask the user a blocking question.\n")
+	b.WriteString("Never announce what you are about to do. Either do it now ({\"tool\":...}) or finish ({\"done\":...}).\n")
+	b.WriteString("Work happens ONLY through tool calls. Claiming a change without a tool call does not make it.\n\n")
 	b.WriteString("Available tools:\n")
 	for _, t := range tools {
 		desc := t.PromptSnippet
@@ -203,6 +234,6 @@ func buildJSONInstruction(tools []ToolSpec) string {
 		b.WriteString(desc)
 		b.WriteString("\n")
 	}
-	b.WriteString("\nMulti-step task: call a tool every turn until done, then finish with {\"say\":...}. No prose outside the JSON object.\n")
+	b.WriteString("\nMulti-step task: call a tool every turn until done, then finish with {\"done\":...}. No prose outside the JSON object.\n")
 	return b.String()
 }
