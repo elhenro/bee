@@ -25,6 +25,7 @@ type Observation struct {
 	RepeatCount                 int  // how many times this exact Sig has fired this Run
 	ConsecutiveSameToolFailures int  // streak of failures on the same tool name (any args)
 	ConsecutiveSameSigFailures  int  // streak of failures on the same (tool,args) sig
+	SameResultCount             int  // successful calls of this Sig returning byte-identical output
 	IsTwoStrike                 bool // same Sig failed twice in a row → nudge (no longer bails)
 }
 
@@ -36,6 +37,11 @@ type repeatTracker struct {
 	failByTool map[string]int
 	// fail-streak by (tool,args) sig; resets on success or different sig.
 	failBySig int
+	// per-sig count of successful calls returning byte-identical output, and
+	// the last output hash seen. fuels the identical-read-loop guard: a read
+	// repeated with the same bytes back teaches the model nothing.
+	sameResult map[ToolCallSignature]int
+	lastResult map[ToolCallSignature]string
 	// last signature seen and whether it failed. used for two-strike detect.
 	lastSig    ToolCallSignature
 	lastFailed bool
@@ -46,18 +52,33 @@ func newRepeatTracker() *repeatTracker {
 	return &repeatTracker{
 		sigCounts:  map[ToolCallSignature]int{},
 		failByTool: map[string]int{},
+		sameResult: map[ToolCallSignature]int{},
+		lastResult: map[ToolCallSignature]string{},
 	}
 }
 
 // Observe records one tool call and returns aggregates. Safe to call with
-// any ToolUse; never errors.
+// any ToolUse; never errors. Result-blind shorthand for ObserveWithResult.
 func (t *repeatTracker) Observe(u types.ToolUse, isErr bool) Observation {
+	return t.ObserveWithResult(u, isErr, "")
+}
+
+// ObserveWithResult is Observe with the result-content hash, enabling the
+// identical-output streak. Empty hash skips that tracking.
+func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultHash string) Observation {
 	sig := signatureFor(u)
 	t.sigCounts[sig]++
 	if isErr {
 		t.failByTool[u.Name]++
+		t.sameResult[sig] = 0
 	} else {
 		t.failByTool[u.Name] = 0
+		if resultHash != "" && t.lastResult[sig] == resultHash {
+			t.sameResult[sig]++
+		} else if resultHash != "" {
+			t.sameResult[sig] = 1
+			t.lastResult[sig] = resultHash
+		}
 	}
 	twoStrike := false
 	if t.hasLast && t.lastFailed && isErr && t.lastSig == sig {
@@ -79,8 +100,18 @@ func (t *repeatTracker) Observe(u types.ToolUse, isErr bool) Observation {
 		RepeatCount:                 t.sigCounts[sig],
 		ConsecutiveSameToolFailures: t.failByTool[u.Name],
 		ConsecutiveSameSigFailures:  t.failBySig,
+		SameResultCount:             t.sameResult[sig],
 		IsTwoStrike:                 twoStrike,
 	}
+}
+
+// hashResult fingerprints a tool result body for the identical-output streak.
+func hashResult(content string) string {
+	if content == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:8])
 }
 
 // signatureFor builds a stable Sig. ArgsHash = sha256 of key-sorted JSON of

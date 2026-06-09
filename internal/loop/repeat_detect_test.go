@@ -119,3 +119,26 @@ func TestTracker_RepeatCount(t *testing.T) {
 		}
 	}
 }
+
+// SameResultCount climbs only for successful calls of the same sig returning
+// the same output hash; a different result or an error resets it.
+func TestTracker_SameResultStreak(t *testing.T) {
+	tr := newRepeatTracker()
+	u := types.ToolUse{ID: "1", Name: "read", Input: map[string]any{"path": "x"}}
+	for i := 1; i <= 3; i++ {
+		obs := tr.ObserveWithResult(u, false, "hashA")
+		if obs.SameResultCount != i {
+			t.Fatalf("iter %d: want same-result=%d, got %d", i, i, obs.SameResultCount)
+		}
+	}
+	if obs := tr.ObserveWithResult(u, false, "hashB"); obs.SameResultCount != 1 {
+		t.Fatalf("new output must reset streak to 1, got %d", obs.SameResultCount)
+	}
+	if obs := tr.ObserveWithResult(u, true, "hashB"); obs.SameResultCount != 0 {
+		t.Fatalf("error must zero the streak, got %d", obs.SameResultCount)
+	}
+	// result-blind Observe never feeds the streak.
+	if obs := tr.Observe(u, false); obs.SameResultCount != 0 {
+		t.Fatalf("empty hash must not count, got %d", obs.SameResultCount)
+	}
+}

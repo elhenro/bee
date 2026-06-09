@@ -178,6 +178,7 @@ type Engine struct {
 	nudgedRepeat      bool
 	nudgedPerToolFail bool
 	nudgedTwoStrike   bool
+	nudgedSameResult  bool
 	// lastTurnLooped flags that the just-finished stream was cut mid-repetition
 	// so the turn loop injects a corrective nudge instead of treating the
 	// partial text as a clean finish. read and cleared each iteration.

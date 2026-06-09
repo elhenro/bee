@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,8 +12,8 @@ import (
 	"time"
 
 	"github.com/elhenro/bee/internal/config"
-	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/knowledge"
+	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -843,14 +844,17 @@ func TestRun_TokenBudgetAutoRecovery(t *testing.T) {
 
 // TestRun_StallCap drives the read-only stall cap: provider keeps calling
 // `read` (non-mutator) so noMutationStreak grows. Loop must bail before
-// the iter cap.
+// the iter cap. Output varies per call so the identical-output guard
+// (which fires earlier, with its own test) stays out of the way.
 func TestRun_StallCap(t *testing.T) {
 	reg := tools.NewRegistry()
+	n := 0
 	_ = reg.Register(&stubTool{
 		name: "read",
 		desc: "x",
 		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
-			return tools.Result{Content: "ok"}, nil
+			n++
+			return tools.Result{Content: fmt.Sprintf("ok %d", n)}, nil
 		},
 	})
 	p := &stubProvider{scripts: [][]llm.Event{

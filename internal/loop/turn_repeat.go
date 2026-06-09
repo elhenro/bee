@@ -16,6 +16,11 @@ const (
 	perToolFailBailAt  = 8 // same tool name failed N times in a row → hard bail
 	sigFailHardBailAt  = 5 // same (tool,args) failed N times in a row → hard bail
 	formatStrikeAt     = 3 // consecutive malformed envelopes → FormatStrikeError
+	// identical read-only call returning byte-identical output: nudge, then
+	// bail. distinct from RepeatCount (which tolerates successful repeats as
+	// re-verification) — same bytes back means nothing was re-verified.
+	sameResultNudgeAt = 3
+	sameResultBailAt  = 8
 )
 
 // observeRepeats walks the just-finished tool dispatch, feeds each result
@@ -37,7 +42,7 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 	}
 	for _, u := range uses {
 		r := resByID[u.ID]
-		obs := e.repeats.Observe(u, r.IsError)
+		obs := e.repeats.ObserveWithResult(u, r.IsError, hashResult(r.Content))
 
 		// hard bail: same (tool,args) failed N times in a row OR same tool name
 		// failed K times in a row. give the model rope (nudges first), but stop
@@ -85,6 +90,24 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 			blocks = prependWarningToToolResult(blocks, w)
 			e.nudgedPerToolFail = true
 			emitRepeatEvent(e, u, "per_tool_fail", obs)
+		}
+		// identical-output loop on read-only tools: the same read with the
+		// same bytes back teaches the model nothing — observed burning 2M+
+		// tokens re-reading one slice between no-op edits. mutators are
+		// excluded: re-running bash (tests/build) legitimately repeats, and
+		// no-op edit shapes error at the tool layer.
+		if !mutatorTools[u.Name] && !r.IsError {
+			if obs.SameResultCount >= sameResultBailAt {
+				emitRepeatEvent(e, u, "hard_bail_same_result", obs)
+				return blocks, &TwoStrikeError{Use: u, Class: "identical-read-loop"}
+			}
+			if !e.nudgedSameResult && obs.SameResultCount >= sameResultNudgeAt {
+				w := fmt.Sprintf("[repeat] %s returned IDENTICAL output %dx — you already have this information. "+
+					"act on it: make your edit, or finish.\n\n", u.Name, obs.SameResultCount)
+				blocks = prependWarningToToolResult(blocks, w)
+				e.nudgedSameResult = true
+				emitRepeatEvent(e, u, "same_result", obs)
+			}
 		}
 	}
 	return blocks, nil

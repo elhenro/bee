@@ -341,3 +341,26 @@ func TestEditDiff_ScopeGatesContainment(t *testing.T) {
 		t.Errorf("file not edited under danger scope: %q", got)
 	}
 }
+
+// old == new is a guaranteed no-op: must error with guidance instead of a
+// quiet "no change" that lets small models loop on an already-applied edit.
+func TestEditDiff_IdenticalOldNewErrors(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(p, []byte("same text\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool := New(dir)
+	res, err := tool.Run(context.Background(), map[string]any{
+		"path": p, "old": "same text", "new": "same text",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatalf("identical old/new must be an error, got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "IDENTICAL") {
+		t.Fatalf("error must explain the no-op: %s", res.Content)
+	}
+}

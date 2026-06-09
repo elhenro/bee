@@ -89,6 +89,14 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if !ok || newStr == "" {
 		return tools.Result{Content: "new must be non-empty; use a separate tool for deletion", IsError: true}, nil
 	}
+	// old == new is a guaranteed no-op. error loudly instead of a quiet
+	// "no change": small models re-emit the same insert-edit after it already
+	// landed (old = the text they just added) and a non-error result lets
+	// them loop on it for the rest of the run.
+	if old == newStr {
+		return tools.Result{Content: "old and new are IDENTICAL — this edit can change nothing. " +
+			"if this text is already in the file, the change is already applied: verify with read, then move on or finish.", IsError: true}, nil
+	}
 	occ := tools.IntArg(in, "occurrence", 1)
 	if occ < 1 {
 		return tools.Result{Content: "occurrence must be >= 1", IsError: true}, nil

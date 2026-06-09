@@ -56,6 +56,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	e.repeats = newRepeatTracker()
 	e.nudgedRepeat = false
 	e.nudgedPerToolFail = false
+	e.nudgedSameResult = false
 	e.nudgedTwoStrike = false
 	e.lastTurnLooped = false
 	e.loopCutStreak = 0
