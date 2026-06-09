@@ -42,6 +42,13 @@ func TestJSONMode_StripsToolsSetsSchemaInjectsInstruction(t *testing.T) {
 	if !strings.Contains(string(b1), `"enum":["bash"]`) {
 		t.Fatalf("bash branch missing enum pin: %s", b1)
 	}
+	// tool branches carry optional say (ack-then-act); required stays tool+args.
+	if !strings.Contains(string(b1), `"say":{"type":"string"}`) {
+		t.Fatalf("bash branch missing optional say: %s", b1)
+	}
+	if !strings.Contains(string(b1), `"required":["tool","args"]`) {
+		t.Fatalf("say must not be required on tool branch: %s", b1)
+	}
 	if !strings.Contains(inner.gotReq.System, "be brief") {
 		t.Fatalf("existing system prompt dropped: %s", inner.gotReq.System)
 	}
@@ -99,6 +106,22 @@ func TestJSONMode_ParsesSayEnvelope(t *testing.T) {
 	}
 	if text != "all tests pass" {
 		t.Fatalf("say text mangled: %q", text)
+	}
+}
+
+func TestJSONMode_ParsesCombinedSayAndTool(t *testing.T) {
+	inner := &fakeProvider{events: []Event{
+		{Type: EventTextDelta, Delta: `{"say":"checking tests","tool":"bash","args":{"command":"go test"}}`},
+		{Type: EventDone, StopReason: "stop"},
+	}}
+	p := NewJSONMode(inner)
+	ch, _ := p.Stream(context.Background(), Request{Tools: jmTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "bash" {
+		t.Fatalf("combined envelope lost the tool call: %v", tools)
+	}
+	if text != "checking tests" {
+		t.Fatalf("combined envelope lost the say note: %q", text)
 	}
 }
 

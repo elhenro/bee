@@ -467,6 +467,18 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 				res.Messages = append(res.Messages, *nudge)
 				continue
 			}
+			// say-only stop guard: first turn, no tool call, task-looking
+			// request — push once instead of ending the Run with nothing done.
+			// i == 0 bounds it to one nudge per Run by construction.
+			if i == 0 && !readOnly && !detectDoneSignal(finalText) {
+				if nudge := sayOnlyStopNudge(e, assistantMsg, userText); nudge != nil {
+					if err := e.appendMessage(ctx, *nudge); err != nil {
+						return res, err
+					}
+					res.Messages = append(res.Messages, *nudge)
+					continue
+				}
+			}
 			return res, nil
 		}
 		// any successful tool dispatch resets the format-slip streak; the model

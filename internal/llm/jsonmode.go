@@ -86,15 +86,16 @@ func (p *JSONModeProvider) relay(in <-chan Event, out chan<- Event) {
 		}
 	}
 	if name, args, say, ok := parseEnvelope(buf.String()); ok {
+		// say first so the status note precedes the tool card in transcripts.
+		if say != "" {
+			out <- Event{Type: EventTextDelta, Delta: say}
+		}
 		if name != "" {
 			out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
 				ID:    "call_" + uuid.NewString(),
 				Name:  name,
 				Input: args,
 			}}
-		}
-		if say != "" {
-			out <- Event{Type: EventTextDelta, Delta: say}
 		}
 	} else if text := strings.TrimSpace(buf.String()); text != "" {
 		out <- Event{Type: EventTextDelta, Delta: text}
@@ -108,8 +109,8 @@ func (p *JSONModeProvider) relay(in <-chan Event, out chan<- Event) {
 
 // parseEnvelope decodes the first JSON object in s and maps it to the union
 // shape. Liberal on input: trailing text after the object is ignored (grammar
-// servers may pad whitespace), and a combined {"tool":...,"say":...} object —
-// impossible under the schema but cheap to tolerate — yields both.
+// servers may pad whitespace). A combined {"say":...,"tool":...} object is
+// the ack-then-act shape and yields both.
 func parseEnvelope(s string) (tool string, args map[string]any, say string, ok bool) {
 	s = strings.TrimSpace(s)
 	// some templates wrap output in markdown fences despite instructions.
@@ -158,9 +159,14 @@ func buildUnionSchema(tools []ToolSpec) map[string]any {
 		if len(t.Schema) == 0 {
 			argSchema = map[string]any{"type": "object"}
 		}
+		// optional "say" on tool branches: a say-only turn ends the loop, so
+		// without it the model must choose between acknowledging and acting —
+		// small models then narrate progress instead of making it. say+tool
+		// keeps the think-aloud-then-act shape native tool_calls allow.
 		branches = append(branches, map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"say":  map[string]any{"type": "string"},
 				"tool": map[string]any{"enum": []string{t.Name}},
 				"args": argSchema,
 			},
@@ -179,8 +185,9 @@ func buildJSONInstruction(tools []ToolSpec) string {
 	var b strings.Builder
 	b.WriteString("## Tools (json format)\n")
 	b.WriteString("Respond with EXACTLY one JSON object per turn:\n")
-	b.WriteString("- act: {\"tool\":\"<name>\",\"args\":{...}}  (args use the EXACT parameter names below)\n")
-	b.WriteString("- answer or finish: {\"say\":\"<text>\"}\n\n")
+	b.WriteString("- {\"tool\":\"<name>\",\"args\":{...}} runs a tool. args use the EXACT parameter names below. Optional \"say\" alongside for a short status note.\n")
+	b.WriteString("- {\"say\":\"<text>\"} alone ENDS your turn. Use only for the final answer or a question to the user.\n")
+	b.WriteString("Work happens ONLY through tool calls. Saying you changed something does not change it.\n\n")
 	b.WriteString("Available tools:\n")
 	for _, t := range tools {
 		desc := t.PromptSnippet
@@ -196,6 +203,6 @@ func buildJSONInstruction(tools []ToolSpec) string {
 		b.WriteString(desc)
 		b.WriteString("\n")
 	}
-	b.WriteString("\nOne action per turn. No prose outside the JSON object.\n")
+	b.WriteString("\nMulti-step task: call a tool every turn until done, then finish with {\"say\":...}. No prose outside the JSON object.\n")
 	return b.String()
 }

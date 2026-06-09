@@ -19,12 +19,12 @@ const formatNudgeMax = 2
 // fits; caller should return.
 //
 // Two failure modes covered:
-//   1. thinking-only — provider streamed reasoning then stopped without text
-//      or tool_use. fires at most once per Run.
-//   2. format slip — model emitted a tool-call attempt as prose (XML-ish tag
-//      or JSON envelope) but the parser didn't recognize it. fires up to
-//      formatNudgeMax times with escalating wording and a concrete example
-//      built from the tool name the model actually tried.
+//  1. thinking-only — provider streamed reasoning then stopped without text
+//     or tool_use. fires at most once per Run.
+//  2. format slip — model emitted a tool-call attempt as prose (XML-ish tag
+//     or JSON envelope) but the parser didn't recognize it. fires up to
+//     formatNudgeMax times with escalating wording and a concrete example
+//     built from the tool name the model actually tried.
 func attemptRecoveryNudge(e *Engine, assistantMsg types.Message, finalText string, toolUses []types.ToolUse, specs []llm.ToolSpec) *types.Message {
 	if len(toolUses) > 0 || detectDoneSignal(finalText) {
 		return nil
@@ -49,6 +49,45 @@ func attemptRecoveryNudge(e *Engine, assistantMsg types.Message, finalText strin
 		Time:     time.Now().UTC(),
 	}
 	return &nudge
+}
+
+// sayOnlyStopNudge returns a synthetic user message when the FIRST turn of a
+// Run ends with no tool call on a request that looks like work. Grammar-json
+// models answer actionable requests with a single say turn (ack or echo of
+// the request) and the loop would end having done nothing — seen with sparse
+// MoE thinking builds. One explicit push per Run; a repeat say-only turn
+// after the nudge is accepted as the model's real answer.
+func sayOnlyStopNudge(e *Engine, assistantMsg types.Message, userText string) *types.Message {
+	if !strings.HasSuffix(e.Provider.Name(), "+jsonmode") || !looksActionable(userText) {
+		return nil
+	}
+	nudge := types.Message{
+		ID:       newID(),
+		ParentID: assistantMsg.ID,
+		Role:     types.RoleUser,
+		Content: []types.ContentBlock{{Type: types.BlockText, Text: "[nudge] your turn ended with no tool call but the request needs work. " +
+			"do it now: start with a tool (read/ls/bash), one call per turn, until done. do not describe or restate the task."}},
+		Time: time.Now().UTC(),
+	}
+	return &nudge
+}
+
+// looksActionable is a cheap mutation-verb heuristic for the say-only stop
+// guard. The posture classifier covers this on hosted providers but is
+// skipped for local ones (round-trip too expensive), so this keeps chat
+// turns ("hi", "what are you doing?") from paying a useless nudge.
+func looksActionable(userText string) bool {
+	low := strings.ToLower(userText)
+	for _, verb := range []string{
+		"add ", "fix", "implement", "create", "update", "remove", "delete",
+		"refactor", "write ", "build", "make ", "change", "rename", "install",
+		"setup", "set up", "run ", "test ", "debug",
+	} {
+		if strings.Contains(low, verb) {
+			return true
+		}
+	}
+	return false
 }
 
 // buildFormatNudge composes the format-correction message. Uses the actual
