@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -112,12 +114,44 @@ func (m Model) renderWarning() string {
 	return bee + " " + body
 }
 
-// gitBranch returns the current branch name when cwd lives inside a git repo.
-// Walks up looking for .git (handles worktree pointer files too) and reads
-// HEAD. Returns the branch name from "ref: refs/heads/<name>", or a 7-char
-// short sha when HEAD is detached. Empty string when cwd is not in a repo.
-// Cheap enough to call per-render: two small file reads at most.
+type gitBranchEntry struct {
+	branch string
+	at     time.Time
+}
+
+var (
+	gitBranchMu    sync.Mutex
+	gitBranchCache = map[string]gitBranchEntry{}
+)
+
+// gitBranchTTL bounds how stale the cached branch label may get. renderTopBar
+// runs at the stream frame rate (~120Hz); re-statting .git/HEAD every frame is
+// pure syscall overhead for a label that almost never changes mid-turn.
+const gitBranchTTL = 5 * time.Second
+
+// gitBranch returns the current branch for cwd, refreshing at most once per
+// gitBranchTTL. See gitBranchUncached for the actual repo walk.
 func gitBranch(cwd string) string {
+	now := time.Now()
+	gitBranchMu.Lock()
+	if e, ok := gitBranchCache[cwd]; ok && now.Sub(e.at) < gitBranchTTL {
+		br := e.branch
+		gitBranchMu.Unlock()
+		return br
+	}
+	gitBranchMu.Unlock()
+	br := gitBranchUncached(cwd)
+	gitBranchMu.Lock()
+	gitBranchCache[cwd] = gitBranchEntry{branch: br, at: now}
+	gitBranchMu.Unlock()
+	return br
+}
+
+// gitBranchUncached returns the current branch name when cwd lives inside a git
+// repo. Walks up looking for .git (handles worktree pointer files too) and
+// reads HEAD. Returns the branch name from "ref: refs/heads/<name>", or a
+// 7-char short sha when HEAD is detached. Empty string when cwd is not in a repo.
+func gitBranchUncached(cwd string) string {
 	if cwd == "" {
 		return ""
 	}

@@ -20,15 +20,27 @@ import (
 // content can be sizable; 8 MiB is a safe ceiling.
 const maxLineBytes = 8 * 1024 * 1024
 
+// syncEveryN and syncEveryDur bound how long writes stay un-fsynced. The line
+// bytes are written to the file on every Append (so a reader sees them and the
+// OS page cache holds them); only the expensive fsync is batched. Durability
+// against power loss degrades to at most syncEveryDur — or one turn, since the
+// loop Flushes at each turn boundary and Close flushes on exit.
+const (
+	syncEveryN   = 8
+	syncEveryDur = 100 * time.Millisecond
+)
+
 // Rollout is an append-only JSONL writer for one session.
-// Single open handle, sync-on-append. Not safe for cross-process use; callers
+// Single open handle, batched fsync. Not safe for cross-process use; callers
 // are expected to own the session.
 type Rollout struct {
 	id   string
 	path string
 
-	mu sync.Mutex
-	f  *os.File
+	mu       sync.Mutex
+	f        *os.File
+	unsynced int       // writes since the last fsync
+	lastSync time.Time // wall clock of the last fsync
 }
 
 // Open opens (or creates) the rollout file for session id.
@@ -56,9 +68,11 @@ func (r *Rollout) ID() string { return r.id }
 // Path returns the on-disk file path.
 func (r *Rollout) FilePath() string { return r.path }
 
-// Append writes one message as a single JSON line, then fsyncs.
-// Context is honored only for cancellation before the write begins;
-// stdlib file I/O is uninterruptible mid-call.
+// Append writes one message as a single JSON line. The write lands immediately;
+// the fsync is batched (every syncEveryN writes or syncEveryDur), which keeps a
+// per-message fsync off the turn hot path — on slow disks that fsync often
+// dominated wall-clock for tool-heavy local loops. Context is honored only for
+// cancellation before the write begins; stdlib file I/O is uninterruptible.
 func (r *Rollout) Append(ctx context.Context, msg types.Message) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -76,15 +90,48 @@ func (r *Rollout) Append(ctx context.Context, msg types.Message) error {
 	if _, err := r.f.Write(b); err != nil {
 		return err
 	}
-	return r.f.Sync()
+	r.unsynced++
+	now := time.Now()
+	if r.lastSync.IsZero() {
+		r.lastSync = now
+	}
+	if r.unsynced >= syncEveryN || now.Sub(r.lastSync) >= syncEveryDur {
+		return r.syncLocked(now)
+	}
+	return nil
 }
 
-// Close releases the file handle.
+// Flush forces any buffered writes to disk. The loop calls it at each turn
+// boundary so a completed turn is durable; no-op when nothing is pending.
+func (r *Rollout) Flush() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.f == nil || r.unsynced == 0 {
+		return nil
+	}
+	return r.syncLocked(time.Now())
+}
+
+// syncLocked fsyncs and resets the batch counters. Caller holds r.mu.
+func (r *Rollout) syncLocked(now time.Time) error {
+	if err := r.f.Sync(); err != nil {
+		return err
+	}
+	r.unsynced = 0
+	r.lastSync = now
+	return nil
+}
+
+// Close flushes pending writes, then releases the file handle.
 func (r *Rollout) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.f == nil {
 		return nil
+	}
+	if r.unsynced > 0 {
+		_ = r.f.Sync()
+		r.unsynced = 0
 	}
 	err := r.f.Close()
 	r.f = nil

@@ -96,7 +96,7 @@ func (p *ClaudeProvider) toolAdverts(req Request) []wire.ToolAdvert {
 func (p *ClaudeProvider) do(ctx context.Context, req Request) (*http.Response, error) {
 	tools := p.toolAdverts(req)
 	body, err := json.Marshal(wire.BuildAnthropicMessagesRequest(
-		req.Model, req.System, req.Messages, tools,
+		req.Model, req.System, req.SystemDynamic, req.Messages, tools,
 		req.MaxTokens, req.Temperature, req.Stream,
 		ThinkingBudget(req.Thinking),
 	))

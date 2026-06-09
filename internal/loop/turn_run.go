@@ -30,6 +30,11 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	if e.Stdout == nil {
 		e.Stdout = os.Stdout
 	}
+	// flush the batched rollout fsync at the turn boundary so a completed Run is
+	// durable even though per-message Append no longer fsyncs (see Rollout.Flush).
+	if e.Sessions != nil {
+		defer func() { _ = e.Sessions.Flush() }()
+	}
 	// reset per-Run state so context warnings dedupe inside one Run only.
 	e.lastInputTokens = 0
 	e.warnedContext = false
@@ -169,17 +174,20 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// reuse cached system prompt when the inputs fingerprint matches. saves
 	// the Assemble + budget-trim work on every Run when nothing changed.
 	cacheKey := sysPromptCacheKey(e.Cfg, role, readOnly, specs, skillManifest, recs, ctxFiles)
-	var sys string
+	var sys, sysDynamic string
 	if e.sysPromptCache.key == cacheKey && cacheKey != "" {
 		sys = e.sysPromptCache.value
+		sysDynamic = e.sysPromptCache.dynamic
 	} else {
-		sys = prompt.Assemble(e.Cfg, specs, skillManifest, recs, ctxFiles)
+		sys, sysDynamic = prompt.AssembleWithDynamic(e.Cfg, specs, skillManifest, recs, ctxFiles)
+		// rolePromptPrefix prepends, so the dynamic memory tail stays the suffix.
 		if prefix := rolePromptPrefix(role, readOnly); prefix != "" {
 			sys = prefix + "\n" + sys
 		}
 		if cacheKey != "" {
 			e.sysPromptCache.key = cacheKey
 			e.sysPromptCache.value = sys
+			e.sysPromptCache.dynamic = sysDynamic
 		}
 	}
 
@@ -311,6 +319,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		req := llm.Request{
 			Model:              e.Cfg.DefaultModel,
 			System:             reqSys,
+			SystemDynamic:      sysDynamic,
 			Messages:           e.applyVisionFallback(ctx, dropEphemeral(res.Messages)),
 			Tools:              specs,
 			Stream:             true,

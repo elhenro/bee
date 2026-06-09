@@ -44,6 +44,24 @@ func Assemble(
 	selectedRecords []knowledge.Record,
 	ctxFiles []ContextFile,
 ) string {
+	full, _ := AssembleWithDynamic(cfg, regToolSpecs, skillManifest, selectedRecords, ctxFiles)
+	return full
+}
+
+// AssembleWithDynamic is Assemble that also returns the volatile memory tail as
+// a separate string. The memory section is the only part that changes turn over
+// turn (top-k is re-queried against the user's latest message), so callers can
+// hand the wire layer a stable static prefix + this dynamic tail and place the
+// prompt-cache breakpoint at the boundary — keeping the expensive static prefix
+// cached even when memory changes. dynamic is "" when there is no memory section
+// (then the whole prompt is static). full always ends with dynamic when non-empty.
+func AssembleWithDynamic(
+	cfg config.Config,
+	regToolSpecs []llm.ToolSpec,
+	skillManifest string,
+	selectedRecords []knowledge.Record,
+	ctxFiles []ContextFile,
+) (full, dynamic string) {
 	prof := config.ActiveProfile(cfg)
 	level, _ := caveman.ParseLevel(cfg.Caveman)
 
@@ -61,7 +79,7 @@ func Assemble(
 
 	budget := prof.SystemPromptBudget
 	if budget <= 0 {
-		return out
+		return out, memSection
 	}
 
 	// trim under budget: records tail-first, then skills, then ctx files tail-first.
@@ -83,7 +101,9 @@ func Assemble(
 		log.Printf("prompt: assembled %d tokens > budget %d (model=%s profile=%s)",
 			EstimateTokens(out), budget, cfg.DefaultModel, cfg.Profile)
 	}
-	return out
+	// memSection is the last joined part and carries no trailing newline, so out
+	// ends with it exactly — the wire layer splits on this suffix.
+	return out, memSection
 }
 
 // EstimateTokens is a rough char/4 heuristic — fine for budget checks.

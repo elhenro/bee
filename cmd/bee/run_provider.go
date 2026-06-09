@@ -70,6 +70,11 @@ func applyOverrides(cfg *config.Config, model, provName, sandboxScope string) {
 	}
 }
 
+// localContextProbeTimeout bounds the one-time startup probe of a local
+// server's context window. Generous because a loaded server can be slow, but
+// a closed port fails fast on dial well before this.
+const localContextProbeTimeout = 12 * time.Second
+
 func buildProvider(cfg config.Config) (llm.Provider, error) {
 	inner, err := buildProviderInner(cfg)
 	if err != nil {
@@ -82,18 +87,20 @@ func buildProvider(cfg config.Config) (llm.Provider, error) {
 		inner = llm.NewTextMode(inner, llm.TextModeOptions{})
 	}
 	// prewarm: local providers don't expose context_length on /v1/models, so
-	// the loop's budget falls back to a useless 4*SystemPromptBudget. Fire a
-	// best-effort /api/show probe in the background and stash the answer in
-	// the context cache so contextBudget reflects reality from turn one.
+	// the loop's budget falls back to a useless 4*SystemPromptBudget. Probe
+	// /api/show synchronously (a closed port fails fast on dial; a running
+	// server answers in well under a second) so contextBudget — and the
+	// ToolOutputTokens / SystemPromptBudget scaling in ScaleProfileForContext —
+	// reflect reality from turn one instead of after the probe loses the race.
 	if config.IsLocalProvider(cfg.DefaultProvider) {
 		if pc, ok := cfg.Providers[cfg.DefaultProvider]; ok && pc.BaseURL != "" {
-			go func(baseURL, modelID string) {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if n, err := llm.ProbeOllamaContext(ctx, http.DefaultClient, baseURL, modelID); err == nil && n > 0 {
-					llm.RememberContextLength(modelID, n)
-				}
-			}(pc.BaseURL, cfg.DefaultModel)
+			ctx, cancel := context.WithTimeout(context.Background(), localContextProbeTimeout)
+			if n, err := llm.ProbeOllamaContext(ctx, http.DefaultClient, pc.BaseURL, cfg.DefaultModel); err == nil && n > 0 {
+				llm.RememberContextLength(cfg.DefaultModel, n)
+			} else if err != nil {
+				fmt.Fprintf(os.Stderr, "bee: local context probe failed (%v); using fallback budget\n", err)
+			}
+			cancel()
 		}
 	}
 	return inner, nil
@@ -129,6 +136,8 @@ func buildProviderInner(cfg config.Config) (llm.Provider, error) {
 			EnvKey:             prov.EnvKey,
 			ChatTemplateKwargs: prov.ChatTemplateKwargs,
 			ReportsCost:        prov.ReportsCost,
+			KeepAlive:          prov.KeepAlive,
+			PromptCache:        prov.SupportsPromptCache,
 		}), nil
 	case "gemini":
 		key := cfg.APIKey

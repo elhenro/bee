@@ -975,7 +975,11 @@ func parseJSONToolCall(body string, known map[string]bool, canonical map[string]
 		case map[string]any:
 			args = a
 		case string:
-			_ = json.Unmarshal([]byte(a), &args)
+			if err := json.Unmarshal([]byte(a), &args); err != nil {
+				// don't dispatch on empty/mangled args silently — surface a
+				// _parse_error so the tool layer nudges the model to re-emit.
+				args = map[string]any{"_parse_error": fmt.Sprintf("invalid JSON arguments: %s", truncate(a, 200)), "_raw_args": a}
+			}
 		}
 		return parsedCall{Name: canonical[low], Input: args}, true
 	}
@@ -1010,6 +1014,10 @@ func argsFromRaw(raw map[string]any, nameKey string) map[string]any {
 		var v map[string]any
 		if err := json.Unmarshal([]byte(as), &v); err == nil {
 			return v
+		} else {
+			// args were meant as a JSON string but didn't parse — surface a
+			// _parse_error instead of falling through to empty/mangled inline args.
+			return map[string]any{"_parse_error": fmt.Sprintf("invalid JSON arguments: %s", truncate(as, 200)), "_raw_args": as}
 		}
 	}
 	out := make(map[string]any, len(raw))

@@ -245,6 +245,14 @@ type ProviderConfig struct {
 	// return actual per-call spend in the usage block. Set only for routed
 	// aggregators that return real cost; strict endpoints reject the field.
 	ReportsCost bool `toml:"reports_cost"`
+	// KeepAlive sets Ollama's `keep_alive` (e.g. "15m") so the model stays
+	// resident between turns instead of unloading after the idle timeout. Empty
+	// = omit; only meaningful for local providers that unload (Ollama).
+	KeepAlive string `toml:"keep_alive"`
+	// SupportsPromptCache opts the provider into ephemeral cache_control
+	// breakpoints on the system prefix. On by default for OpenRouter; off for
+	// strict endpoints that reject the content-parts system message.
+	SupportsPromptCache bool `toml:"supports_prompt_cache"`
 }
 
 // OAuthConfig configures a generic OAuth 2.0 PKCE flow for a provider. bee

@@ -44,9 +44,11 @@ func TestNonZeroExit(t *testing.T) {
 }
 
 func TestLargeOutputTruncated(t *testing.T) {
-	// emit ~30 KB
+	// emit ~120 KB of filler then a sentinel at the very end. The fix keeps the
+	// head AND tail of oversized output so the error block at the end of a long
+	// log survives — head-only truncation would drop the sentinel.
 	res, err := New().Run(context.Background(), map[string]any{
-		"command": "head -c 30000 /dev/zero | tr '\\0' x",
+		"command": "head -c 120000 /dev/zero | tr '\\0' x; printf TAIL_SENTINEL",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -54,12 +56,16 @@ func TestLargeOutputTruncated(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
 	}
-	if !strings.Contains(res.Content, "[…truncated]") {
-		t.Fatalf("missing truncate marker in %d-byte output", len(res.Content))
+	if !strings.Contains(res.Content, "truncated middle") {
+		t.Fatalf("missing head-tail truncate marker in %d-byte output", len(res.Content))
 	}
-	// must not exceed cap + marker
-	if len(res.Content) > maxOutputBytes+len(truncMarker)+1 {
-		t.Fatalf("output exceeds cap: %d", len(res.Content))
+	// the tail (where errors live) must survive the cut.
+	if !strings.Contains(res.Content, "TAIL_SENTINEL") {
+		t.Fatalf("tail dropped by truncation: error block at end of log would be lost")
+	}
+	// must be materially smaller than the full body.
+	if len(res.Content) >= 120000 {
+		t.Fatalf("output not truncated: %d bytes", len(res.Content))
 	}
 }
 

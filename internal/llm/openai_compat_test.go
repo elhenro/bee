@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -329,6 +330,62 @@ func TestOpenAICompat_ChatTemplateKwargsMerge(t *testing.T) {
 		wr := p.buildWireRequest(Request{Model: "qwen3-235b"})
 		if wr.ChatTemplateKwargs != nil {
 			t.Errorf("expected nil chat_template_kwargs, got %v", wr.ChatTemplateKwargs)
+		}
+	})
+}
+
+// keep_alive is set only when the provider configures it (local Ollama) and
+// must be omitted otherwise so strict endpoints never reject the unknown field.
+func TestOpenAICompat_KeepAliveGated(t *testing.T) {
+	t.Run("set when configured", func(t *testing.T) {
+		p := NewOpenAICompat(OpenAICompatConfig{KeepAlive: "15m"})
+		wr := p.buildWireRequest(Request{Model: "llama3.1:8b"})
+		if wr.KeepAlive != "15m" {
+			t.Errorf("keep_alive: want 15m, got %q", wr.KeepAlive)
+		}
+		b, _ := json.Marshal(wr)
+		if !strings.Contains(string(b), `"keep_alive":"15m"`) {
+			t.Errorf("keep_alive missing from wire body: %s", b)
+		}
+	})
+	t.Run("omitted when empty", func(t *testing.T) {
+		p := NewOpenAICompat(OpenAICompatConfig{})
+		wr := p.buildWireRequest(Request{Model: "gpt-4o-mini"})
+		if wr.KeepAlive != "" {
+			t.Errorf("keep_alive: want empty, got %q", wr.KeepAlive)
+		}
+		b, _ := json.Marshal(wr)
+		if strings.Contains(string(b), "keep_alive") {
+			t.Errorf("keep_alive leaked into wire body: %s", b)
+		}
+	})
+}
+
+// prompt cache: when enabled, the system message becomes content-parts with a
+// cache_control breakpoint on the static prefix; the dynamic memory tail is a
+// separate uncached part. When disabled, the system stays a plain string.
+func TestOpenAICompat_PromptCacheGated(t *testing.T) {
+	static := "you are bee\n\n## Tools\n- read\n\n## Memory\n"
+	dynamic := "<memory>finding</memory>"
+	t.Run("enabled splits and caches the static prefix", func(t *testing.T) {
+		p := NewOpenAICompat(OpenAICompatConfig{PromptCache: true})
+		wr := p.buildWireRequest(Request{Model: "anthropic/claude-sonnet-4-5", System: static + dynamic, SystemDynamic: dynamic})
+		b, _ := json.Marshal(wr)
+		s := string(b)
+		if !strings.Contains(s, `"cache_control":{"type":"ephemeral"}`) {
+			t.Fatalf("expected ephemeral cache_control on system: %s", s)
+		}
+		// the dynamic memory tail must appear without its own breakpoint.
+		if n := strings.Count(s, `"cache_control"`); n != 1 {
+			t.Errorf("want exactly 1 system breakpoint, got %d", n)
+		}
+	})
+	t.Run("disabled leaves a plain string system", func(t *testing.T) {
+		p := NewOpenAICompat(OpenAICompatConfig{})
+		wr := p.buildWireRequest(Request{Model: "gpt-4o-mini", System: static + dynamic, SystemDynamic: dynamic})
+		b, _ := json.Marshal(wr)
+		if strings.Contains(string(b), "cache_control") {
+			t.Errorf("cache_control leaked when PromptCache off: %s", b)
 		}
 	})
 }

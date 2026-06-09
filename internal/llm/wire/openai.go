@@ -41,6 +41,10 @@ type ChatRequest struct {
 	// reject unknown body fields, so it is gated (set only when the provider
 	// advertises the capability) rather than always emitted.
 	Usage *UsageRequest `json:"usage,omitempty"`
+	// KeepAlive is Ollama's extension controlling how long the model stays
+	// resident after a request (e.g. "15m"). Omitted when empty; only set for
+	// local providers that understand it, so strict endpoints never see it.
+	KeepAlive string `json:"keep_alive,omitempty"`
 }
 
 // StreamOptions matches OpenAI's stream_options envelope. Only include_usage
@@ -65,6 +69,39 @@ type ChatMessage struct {
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	Name       string     `json:"name,omitempty"`
+}
+
+// ChatContentPart is one typed part of a message content array. Used to attach
+// a prompt-cache breakpoint to a text part (OpenRouter / Anthropic-via-router
+// honor cache_control on content parts, mirroring Anthropic's native API).
+type ChatContentPart struct {
+	Type         string              `json:"type"`
+	Text         string              `json:"text,omitempty"`
+	CacheControl *OpenAICacheControl `json:"cache_control,omitempty"`
+}
+
+// OpenAICacheControl marks a content part as an ephemeral prompt-cache
+// breakpoint (same shape as Anthropic's cache_control).
+type OpenAICacheControl struct {
+	Type string `json:"type"`
+}
+
+// SplitCachedSystem renders a system prompt as content parts with a cache
+// breakpoint on the STATIC prefix. When dynamic is a non-empty suffix of system,
+// the static head is cached and the volatile tail (memory) is a separate
+// uncached part, so the prefix stays cached even as memory changes. Otherwise
+// the whole system is one cached part.
+func SplitCachedSystem(system, dynamic string) []ChatContentPart {
+	if dynamic != "" && dynamic != system && strings.HasSuffix(system, dynamic) {
+		static := strings.TrimSuffix(system, dynamic)
+		return []ChatContentPart{
+			{Type: "text", Text: static, CacheControl: &OpenAICacheControl{Type: "ephemeral"}},
+			{Type: "text", Text: dynamic},
+		}
+	}
+	return []ChatContentPart{
+		{Type: "text", Text: system, CacheControl: &OpenAICacheControl{Type: "ephemeral"}},
+	}
 }
 
 // ToolCall is OpenAI's tool_use envelope.

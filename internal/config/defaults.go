@@ -97,6 +97,8 @@ func Defaults() Config {
 				// routed aggregator returns real per-call credits in the usage
 				// block when asked; opt in so /usage shows actual spend.
 				ReportsCost: true,
+				// OpenRouter honors ephemeral cache_control on the system prefix.
+				SupportsPromptCache: true,
 			},
 			"openai": {
 				BaseURL:      "https://api.openai.com/v1",
@@ -121,6 +123,9 @@ func Defaults() Config {
 				WireAPI:      "chat",
 				EnvKey:       "",
 				DefaultModel: "llama3.1:8b",
+				// keep the model resident between turns so the next turn skips a
+				// 2-10s reload before first token (ollama unloads after ~5m idle).
+				KeepAlive: "15m",
 			},
 			// omlx: local MLX inference server for Apple Silicon
 			// (github.com/jundot/omlx). OpenAI-compatible at

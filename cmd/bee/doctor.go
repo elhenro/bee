@@ -60,6 +60,7 @@ func runDoctor(args []string) {
 	cfgChecks, cfg := checkConfigLoaded()
 	rep.Checks = append(rep.Checks, cfgChecks...)
 	rep.Checks = append(rep.Checks, checkOllama(cfg)...)
+	rep.Checks = append(rep.Checks, checkLocalServers(cfg)...)
 
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)

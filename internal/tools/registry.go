@@ -27,8 +27,9 @@ type Result struct {
 
 // Registry maps tool name -> Tool. Safe for concurrent reads after build.
 type Registry struct {
-	mu    sync.RWMutex
-	tools map[string]Tool
+	mu         sync.RWMutex
+	tools      map[string]Tool
+	specsCache []llm.ToolSpec // sorted snapshot; nil = stale, rebuilt on next Specs
 }
 
 func NewRegistry() *Registry {
@@ -43,6 +44,7 @@ func (r *Registry) Register(t Tool) error {
 		return fmt.Errorf("tool %q already registered", name)
 	}
 	r.tools[name] = t
+	r.specsCache = nil // invalidate sorted snapshot
 	return nil
 }
 
@@ -93,13 +95,29 @@ func (r *Registry) Names() []string {
 // The sort guarantees a stable order across calls and process runs — critical
 // for KV-cache prefix hits on the system prompt's tool manifest, which would
 // otherwise reshuffle on every turn (Go map iteration is randomized).
+//
+// The sorted slice is cached and only rebuilt after a Register, so the per-turn
+// O(N log N) sort runs once per session instead of on every turn. Callers get a
+// fresh copy each call; the pipeline downstream only ever reads or rebuilds into
+// new slices (never mutates a ToolSpec in place), so the snapshot stays clean.
 func (r *Registry) Specs() []llm.ToolSpec {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]llm.ToolSpec, 0, len(r.tools))
-	for _, t := range r.tools {
-		out = append(out, t.Spec())
+	if r.specsCache != nil {
+		out := append([]llm.ToolSpec(nil), r.specsCache...)
+		r.mu.RUnlock()
+		return out
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
+	r.mu.RUnlock()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.specsCache == nil {
+		built := make([]llm.ToolSpec, 0, len(r.tools))
+		for _, t := range r.tools {
+			built = append(built, t.Spec())
+		}
+		sort.Slice(built, func(i, j int) bool { return built[i].Name < built[j].Name })
+		r.specsCache = built
+	}
+	return append([]llm.ToolSpec(nil), r.specsCache...)
 }

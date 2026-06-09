@@ -208,10 +208,12 @@ type Engine struct {
 	// lands in the transcript. nil = no escalation in flight.
 	escalateErr *escalate.Error
 	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
-	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints.
+	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints. dynamic is
+	// the volatile memory tail of value (for the prompt-cache breakpoint split).
 	sysPromptCache struct {
-		key   string
-		value string
+		key     string
+		value   string
+		dynamic string
 	}
 	// profileScaled tracks whether the tiny-profile budget was already widened
 	// for the active model's context window. Sticky: scaling is idempotent

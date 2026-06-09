@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuildAnthropicMessages_System(t *testing.T) {
-	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "be brief", nil, nil, 0, 0, false, 0)
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "be brief", "", nil, nil, 0, 0, false, 0)
 	if len(req.System) != 1 {
 		t.Fatalf("want 1 system block, got %d", len(req.System))
 	}
@@ -21,8 +21,39 @@ func TestBuildAnthropicMessages_System(t *testing.T) {
 	}
 }
 
+func TestBuildAnthropicMessages_SystemDynamicSplit(t *testing.T) {
+	static := "you are bee\n\n## Tools\n- read\n\n## Memory\n"
+	dynamic := "<memory>recent finding</memory>"
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", static+dynamic, dynamic, nil, nil, 0, 0, false, 0)
+	if len(req.System) != 2 {
+		t.Fatalf("want 2 system blocks (static+dynamic), got %d", len(req.System))
+	}
+	if req.System[0].Text != static || req.System[0].CacheControl == nil {
+		t.Errorf("static block should carry cache_control: %+v", req.System[0])
+	}
+	if req.System[1].Text != dynamic || req.System[1].CacheControl != nil {
+		t.Errorf("dynamic block must NOT be cached: %+v", req.System[1])
+	}
+	// total breakpoints must stay within Anthropic's limit of 4.
+	b, _ := json.Marshal(req)
+	if n := strings.Count(string(b), `"cache_control"`); n > 4 {
+		t.Errorf("too many cache breakpoints: %d", n)
+	}
+}
+
+// when systemDynamic isn't a suffix of system, fall back to one cached block.
+func TestBuildAnthropicMessages_SystemDynamicNonSuffix(t *testing.T) {
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "static body then a qwen hint", "memory-not-at-tail", nil, nil, 0, 0, false, 0)
+	if len(req.System) != 1 {
+		t.Fatalf("non-suffix dynamic should leave 1 cached block, got %d", len(req.System))
+	}
+	if req.System[0].CacheControl == nil {
+		t.Error("the single system block should be cached")
+	}
+}
+
 func TestBuildAnthropicMessages_EmptySystemOmitted(t *testing.T) {
-	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", nil, nil, 0, 0, false, 0)
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", "", nil, nil, 0, 0, false, 0)
 	if len(req.System) != 0 {
 		t.Fatalf("empty system should produce 0 blocks, got %d", len(req.System))
 	}
@@ -41,7 +72,7 @@ func TestBuildAnthropicMessages_ToolRoundtrip(t *testing.T) {
 			UseID: "u1", Content: "file.go\n",
 		}}}},
 	}
-	req := BuildAnthropicMessagesRequest("m", "", msgs, nil, 0, 0, true, 0)
+	req := BuildAnthropicMessagesRequest("m", "", "", msgs, nil, 0, 0, true, 0)
 	if len(req.Messages) != 3 {
 		t.Fatalf("want 3 messages (user → assistant → user-tool), got %d: %+v", len(req.Messages), req.Messages)
 	}
@@ -66,7 +97,7 @@ func TestBuildAnthropicMessages_RollingHistoryCacheBreakpoints(t *testing.T) {
 		{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockText, Text: "reply"}}},
 		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "second"}}},
 	}
-	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "sys", msgs, nil, 0, 0, true, 0)
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "sys", "", msgs, nil, 0, 0, true, 0)
 	if len(req.Messages) != 3 {
 		t.Fatalf("want 3 messages, got %d", len(req.Messages))
 	}
@@ -95,7 +126,7 @@ func TestBuildAnthropicMessages_SingleMessageBreakpoint(t *testing.T) {
 	msgs := []types.Message{
 		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "only"}}},
 	}
-	req := BuildAnthropicMessagesRequest("m", "", msgs, nil, 0, 0, true, 0)
+	req := BuildAnthropicMessagesRequest("m", "", "", msgs, nil, 0, 0, true, 0)
 	if len(req.Messages) != 1 {
 		t.Fatalf("want 1 message, got %d", len(req.Messages))
 	}
@@ -113,7 +144,7 @@ func TestBuildAnthropicMessages_StrictAlternation(t *testing.T) {
 		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "b"}}},
 		{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockText, Text: "ok"}}},
 	}
-	req := BuildAnthropicMessagesRequest("m", "", msgs, nil, 0, 0, false, 0)
+	req := BuildAnthropicMessagesRequest("m", "", "", msgs, nil, 0, 0, false, 0)
 	if len(req.Messages) != 2 {
 		t.Fatalf("want 2 merged messages, got %d: %+v", len(req.Messages), req.Messages)
 	}
@@ -124,7 +155,7 @@ func TestBuildAnthropicMessages_StrictAlternation(t *testing.T) {
 
 func TestBuildAnthropicMessages_ToolAdvert(t *testing.T) {
 	tools := []ToolAdvert{{Name: "shell", Description: "run shell", Schema: map[string]any{"type": "object"}}}
-	req := BuildAnthropicMessagesRequest("m", "", nil, tools, 0, 0, false, 0)
+	req := BuildAnthropicMessagesRequest("m", "", "", nil, tools, 0, 0, false, 0)
 	if len(req.Tools) != 1 || req.Tools[0].Name != "shell" {
 		t.Fatalf("tools missing/wrong: %+v", req.Tools)
 	}
@@ -140,7 +171,7 @@ func TestBuildAnthropicMessages_ToolNamesPassThrough(t *testing.T) {
 		{Name: "read", Schema: map[string]any{"type": "object"}},
 		{Name: "memory_search", Schema: map[string]any{"type": "object"}},
 	}
-	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", nil, tools, 0, 0, false, 0)
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", "", nil, tools, 0, 0, false, 0)
 	if req.Tools[0].Name != "shell" || req.Tools[1].Name != "read" || req.Tools[2].Name != "memory_search" {
 		t.Errorf("tool names should pass through unchanged, got %q / %q / %q",
 			req.Tools[0].Name, req.Tools[1].Name, req.Tools[2].Name)
@@ -148,7 +179,7 @@ func TestBuildAnthropicMessages_ToolNamesPassThrough(t *testing.T) {
 }
 
 func TestBuildAnthropicMessages_ThinkingBudget(t *testing.T) {
-	req := BuildAnthropicMessagesRequest("m", "", nil, nil, 0, 0, false, 4096)
+	req := BuildAnthropicMessagesRequest("m", "", "", nil, nil, 0, 0, false, 4096)
 	if req.Thinking == nil || req.Thinking.BudgetTokens != 4096 {
 		t.Fatalf("thinking budget not set: %+v", req.Thinking)
 	}
@@ -160,7 +191,7 @@ func TestBuildAnthropicMessages_ThinkingBudget(t *testing.T) {
 func TestBuildAnthropicMessages_AdaptiveThinking(t *testing.T) {
 	// Sonnet 4.6 / Opus 4.6+ must use adaptive thinking (no budget_tokens).
 	for _, m := range []string{"claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4-6"} {
-		req := BuildAnthropicMessagesRequest(m, "", nil, nil, 0, 0, false, 4096)
+		req := BuildAnthropicMessagesRequest(m, "", "", nil, nil, 0, 0, false, 4096)
 		if req.Thinking == nil || req.Thinking.Type != "adaptive" {
 			t.Errorf("%s: want adaptive thinking, got %+v", m, req.Thinking)
 		}
@@ -169,19 +200,19 @@ func TestBuildAnthropicMessages_AdaptiveThinking(t *testing.T) {
 		}
 	}
 	// Older Sonnet 4.5 stays on type=enabled.
-	req := BuildAnthropicMessagesRequest("claude-sonnet-4-5", "", nil, nil, 0, 0, false, 4096)
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-5", "", "", nil, nil, 0, 0, false, 4096)
 	if req.Thinking.Type != "enabled" {
 		t.Errorf("sonnet-4-5 should keep type=enabled, got %q", req.Thinking.Type)
 	}
 }
 
 func TestBuildAnthropicMessages_TemperatureDroppedWhenThinking(t *testing.T) {
-	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", nil, nil, 0, 0.7, false, 4096)
+	req := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", "", nil, nil, 0, 0.7, false, 4096)
 	if req.Temperature != nil {
 		t.Errorf("temperature must be omitted when thinking is on, got %v", *req.Temperature)
 	}
 	// without thinking, temperature should pass through.
-	req = BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", nil, nil, 0, 0.7, false, 0)
+	req = BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", "", nil, nil, 0, 0.7, false, 0)
 	if req.Temperature == nil || *req.Temperature != 0.7 {
 		t.Errorf("temperature should pass when thinking is off, got %v", req.Temperature)
 	}
@@ -196,13 +227,13 @@ func TestBuildAnthropicMessages_MaxTokensModelAware(t *testing.T) {
 		"unknown-model":     4096,
 	}
 	for m, want := range cases {
-		got := BuildAnthropicMessagesRequest(m, "", nil, nil, 0, 0, false, 0).MaxTokens
+		got := BuildAnthropicMessagesRequest(m, "", "", nil, nil, 0, 0, false, 0).MaxTokens
 		if got != want {
 			t.Errorf("%s max_tokens = %d, want %d", m, got, want)
 		}
 	}
 	// explicit override always wins.
-	got := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", nil, nil, 999, 0, false, 0).MaxTokens
+	got := BuildAnthropicMessagesRequest("claude-sonnet-4-6", "", "", nil, nil, 999, 0, false, 0).MaxTokens
 	if got != 999 {
 		t.Errorf("override ignored: %d", got)
 	}
@@ -268,7 +299,7 @@ func TestBuildAnthropicMessages_JSONShape(t *testing.T) {
 	msgs := []types.Message{
 		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "hi"}}},
 	}
-	req := BuildAnthropicMessagesRequest("claude-haiku-4-5", "rules", msgs, nil, 1024, 0, true, 0)
+	req := BuildAnthropicMessagesRequest("claude-haiku-4-5", "rules", "", msgs, nil, 1024, 0, true, 0)
 	raw, err := json.Marshal(req)
 	if err != nil {
 		t.Fatal(err)

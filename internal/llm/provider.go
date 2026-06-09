@@ -23,12 +23,18 @@ type Provider interface {
 // Request is the agent-owned shape of a chat call. Adapters translate to the
 // provider's wire format.
 type Request struct {
-	Model       string
-	System      string
-	Messages    []types.Message
-	Tools       []ToolSpec
-	MaxTokens   int
-	Temperature float64
+	Model  string
+	System string
+	// SystemDynamic, when a non-empty suffix of System, marks the volatile tail
+	// of the system prompt (the per-turn memory section). Cache-aware wire layers
+	// place the prompt-cache breakpoint at the static/dynamic boundary so the
+	// stable prefix stays cached even when memory changes. Empty = the whole
+	// system is treated as cacheable (default; byte-identical to prior behavior).
+	SystemDynamic string
+	Messages      []types.Message
+	Tools         []ToolSpec
+	MaxTokens     int
+	Temperature   float64
 	// TopP pins nucleus sampling. 0 = use provider default (omit on wire).
 	// Set by the active profile (tiny pins 0.8 for 4-bit MoE).
 	TopP float64

@@ -17,6 +17,11 @@ import (
 	"github.com/elhenro/bee/internal/waggle"
 )
 
+// hardResultCapTokens is the universal context-safety floor for a single tool
+// result (chars/4 heuristic; ~100k chars). Far above any profile's per-tool
+// cap so it only catches results that bypassed runOne's truncation.
+const hardResultCapTokens = 25_000
+
 // safeParallelTools lists read-only tools that can run concurrently within
 // one turn. Mutators (shell, apply_patch, edit_diff, hashline_edit, write)
 // stay serial to preserve happens-before and avoid sandbox contention.
@@ -59,6 +64,17 @@ func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]typ
 	}
 	flush()
 	e.replayFollow(ctx, uses, results)
+	// universal context-safety floor: independent of the per-tool caps applied
+	// in runOne, no single result (a Go-level error body, replay-appended route
+	// output, or a tool whose name carries no per-tool limit) may balloon the
+	// transcript and evict turn history on a tiny-context model. head-tail so
+	// an error block at the tail survives. ~100k chars, well above any profile
+	// cap so it only bites the paths that bypassed runOne's truncation.
+	for i := range results {
+		if capped, did := tools.TruncateHeadTailWithLimit("", results[i].Content, hardResultCapTokens, -1); did {
+			results[i].Content = capped
+		}
+	}
 	for _, r := range results {
 		if e.JSONEmitter != nil {
 			e.JSONEmitter.Emit(jsonmode.Event{

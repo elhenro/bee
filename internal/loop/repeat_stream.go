@@ -9,8 +9,10 @@ import "strings"
 // buffer and cut the stream once the tail is unmistakably periodic.
 const (
 	// loopScanWindow caps how many trailing bytes the detector inspects, so the
-	// check stays cheap even on a long but legitimate response.
-	loopScanWindow = 8192
+	// check stays cheap even on a long but legitimate response. 16k so a loop
+	// that begins after a long correct preamble (local 32k models nearing
+	// max_tokens) is still caught before the window scrolls past its start.
+	loopScanWindow = 16384
 	// loopScanStride runs the detector once per this many new output bytes
 	// instead of on every delta — amortizes the cost to near zero.
 	loopScanStride = 512

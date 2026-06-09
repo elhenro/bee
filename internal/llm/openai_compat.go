@@ -44,6 +44,16 @@ type OpenAICompatConfig struct {
 	// in the usage block. Off by default; strict endpoints would reject the
 	// extra field, so only set it for services that return real per-call cost.
 	ReportsCost bool
+	// KeepAlive sets Ollama's `keep_alive` body field (e.g. "15m") so the model
+	// stays resident between turns instead of unloading after the server's idle
+	// timeout — the next turn then skips a 2-10s reload before first token.
+	// Empty = omit (default for hosted providers and MLX, which stay resident).
+	KeepAlive string
+	// PromptCache opts the provider into emitting ephemeral cache_control
+	// breakpoints on the system prefix (content-parts form). Only routers that
+	// honor it (OpenRouter) should enable this; strict endpoints reject the
+	// content-parts system message, and local servers cache by prefix anyway.
+	PromptCache bool
 }
 
 // OpenAICompatProvider implements Provider against an OpenAI-compatible API.
@@ -256,6 +266,25 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 			eff = string(ThinkingHigh)
 		}
 		wr.ReasoningEffort = eff
+	}
+	// keep local models warm between turns. gated so hosted/strict endpoints
+	// never see the Ollama-specific field.
+	if p.cfg.KeepAlive != "" {
+		wr.KeepAlive = p.cfg.KeepAlive
+	}
+	// prompt-cache breakpoint on the static system prefix. gated to routers that
+	// honor cache_control (OpenRouter); the static/dynamic split keeps the prefix
+	// cached even when memory changes (see Request.SystemDynamic).
+	if p.cfg.PromptCache {
+		for i := range wr.Messages {
+			if wr.Messages[i].Role != "system" {
+				continue
+			}
+			if s, ok := wr.Messages[i].Content.(string); ok && s != "" {
+				wr.Messages[i].Content = wire.SplitCachedSystem(s, req.SystemDynamic)
+			}
+			break
+		}
 	}
 	if len(p.cfg.ChatTemplateKwargs) > 0 || len(req.ChatTemplateKwargs) > 0 {
 		merged := make(map[string]any, len(p.cfg.ChatTemplateKwargs)+len(req.ChatTemplateKwargs))

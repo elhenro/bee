@@ -97,6 +97,43 @@ func TestRollout_AppendReadList(t *testing.T) {
 	}
 }
 
+// batched fsync must not buffer in userspace: every Append writes the line
+// immediately, so a reader sees all messages before Close or an explicit Flush.
+func TestRollout_ReadVisibleBeforeClose(t *testing.T) {
+	withTempSessionsDir(t)
+	sid := uuid.NewString()
+	r, err := Open(sid)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer r.Close()
+	ctx := context.Background()
+	for i, m := range []types.Message{
+		mkMsg("a", "", types.RoleUser, "1"),
+		mkMsg("b", "a", types.RoleAssistant, "2"),
+		mkMsg("c", "b", types.RoleUser, "3"),
+	} {
+		if err := r.Append(ctx, m); err != nil {
+			t.Fatalf("Append %d: %v", i, err)
+		}
+	}
+	// no Close yet — reader should still see all three lines.
+	got, err := Read(sid)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("pre-flush Read len: got %d want 3", len(got))
+	}
+	// Flush is safe to call and idempotent.
+	if err := r.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if err := r.Flush(); err != nil {
+		t.Fatalf("Flush (idempotent): %v", err)
+	}
+}
+
 func TestRollout_AppendAfterClose(t *testing.T) {
 	withTempSessionsDir(t)
 	r, err := Open(uuid.NewString())

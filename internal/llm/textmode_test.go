@@ -349,6 +349,32 @@ func TestTextMode_ParsesJSONShape_OpenAIFunction(t *testing.T) {
 	}
 }
 
+// arguments is a JSON string that fails to parse: surface a _parse_error
+// instead of dispatching the tool on empty/mangled args (no model feedback).
+func TestTextMode_BadArgumentsStringSurfacesParseError(t *testing.T) {
+	cases := map[string]string{
+		"openai-function": `{"type":"function","function":{"name":"shell","arguments":"{not valid json"}}`,
+		"name-arguments":  `{"name":"write","arguments":"{bad"}`,
+	}
+	for label, payload := range cases {
+		t.Run(label, func(t *testing.T) {
+			inner := &fakeProvider{events: []Event{
+				{Type: EventTextDelta, Delta: payload},
+				{Type: EventDone},
+			}}
+			p := NewTextMode(inner, TextModeOptions{})
+			ch, _ := p.Stream(context.Background(), Request{Tools: newKnownTools()})
+			tools, _, _ := collect(ch)
+			if len(tools) != 1 {
+				t.Fatalf("expected one call, got %+v", tools)
+			}
+			if pe, _ := tools[0].Input["_parse_error"].(string); pe == "" {
+				t.Fatalf("expected _parse_error marker, got args %+v", tools[0].Input)
+			}
+		})
+	}
+}
+
 // JSON inside a ```json fence — strip the fence with the block.
 func TestTextMode_ParsesJSONShape_InsideCodeFence(t *testing.T) {
 	inner := &fakeProvider{

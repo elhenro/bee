@@ -25,8 +25,6 @@ import (
 const (
 	toolName       = "bash"
 	defaultTimeout = 30 * time.Second
-	maxOutputBytes = 20 * 1024
-	truncMarker    = "\n[…truncated]"
 )
 
 // Options configures shell behavior beyond approval gating.
@@ -291,11 +289,13 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// truncate keeps both the head and tail of oversized output so the actionable
+// error block at the END of a long test/build log survives the cut — errors
+// live at the tail, and head-only truncation here used to discard them before
+// the loop's per-profile head-tail pass could preserve them. Routes through the
+// canonical bash head-tail+spill helper (full body persisted to the spill dir).
 func truncate(b []byte) string {
-	if len(b) <= maxOutputBytes {
-		return string(b)
-	}
-	return string(b[:maxOutputBytes]) + truncMarker
+	return tools.TruncateForTool("bash", string(b))
 }
 
 func toInt(v any) (int, error) {

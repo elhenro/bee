@@ -99,19 +99,31 @@ type AnthropicTool struct {
 // BuildAnthropicMessagesRequest converts the internal Request shape into the
 // Messages-API body. API-key only — no identity header injection, no tool
 // renaming, no ephemeral caching.
-func BuildAnthropicMessagesRequest(model, system string, messages []types.Message, tools []ToolAdvert, maxTokens int, temperature float64, stream bool, thinkingBudget int) AnthropicMessagesRequest {
+func BuildAnthropicMessagesRequest(model, system, systemDynamic string, messages []types.Message, tools []ToolAdvert, maxTokens int, temperature float64, stream bool, thinkingBudget int) AnthropicMessagesRequest {
 	req := AnthropicMessagesRequest{
 		Model:     model,
 		MaxTokens: anthropicMaxTokens(model, maxTokens),
 		Stream:    stream,
 	}
 	if system != "" {
-		// mark system as a prompt-cache breakpoint so repeat prefixes hit cache
-		req.System = append(req.System, AnthropicSysBlock{
-			Type:         "text",
-			Text:         system,
-			CacheControl: &AnthropicCacheCtl{Type: "ephemeral"},
-		})
+		// Split off the volatile memory tail (systemDynamic) so the cache
+		// breakpoint sits on the STATIC prefix — it then stays cached even when
+		// memory changes turn over turn. When systemDynamic isn't a suffix
+		// (empty, or a Qwen3 hint was appended after it), fall back to caching
+		// the whole system as one block — byte-identical to prior behavior.
+		if systemDynamic != "" && systemDynamic != system && strings.HasSuffix(system, systemDynamic) {
+			static := strings.TrimSuffix(system, systemDynamic)
+			req.System = append(req.System,
+				AnthropicSysBlock{Type: "text", Text: static, CacheControl: &AnthropicCacheCtl{Type: "ephemeral"}},
+				AnthropicSysBlock{Type: "text", Text: systemDynamic},
+			)
+		} else {
+			req.System = append(req.System, AnthropicSysBlock{
+				Type:         "text",
+				Text:         system,
+				CacheControl: &AnthropicCacheCtl{Type: "ephemeral"},
+			})
+		}
 	}
 
 	thinkingActive := false
