@@ -395,6 +395,26 @@ func TestOpenAICompat_ResponseFormatGated(t *testing.T) {
 	})
 }
 
+// a 400 mentioning response_format strips the constraint; unrelated 400s and
+// other codes never do.
+func TestIsNoResponseFormatError(t *testing.T) {
+	cases := []struct {
+		code int
+		body string
+		want bool
+	}{
+		{400, `{"error":{"message":"response_format is not supported"}}`, true},
+		{400, `{"error":"unknown field json_schema"}`, true},
+		{400, `{"error":"model does not support tools"}`, false},
+		{500, `{"error":"response_format broke"}`, false},
+	}
+	for _, c := range cases {
+		if got := isNoResponseFormatError(c.code, []byte(c.body)); got != c.want {
+			t.Errorf("code=%d body=%q: want %v, got %v", c.code, c.body, c.want, got)
+		}
+	}
+}
+
 // keep_alive is set only when the provider configures it (local Ollama) and
 // must be omitted otherwise so strict endpoints never reject the unknown field.
 func TestOpenAICompat_KeepAliveGated(t *testing.T) {

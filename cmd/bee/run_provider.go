@@ -75,18 +75,33 @@ func applyOverrides(cfg *config.Config, model, provName, sandboxScope string) {
 // a closed port fails fast on dial well before this.
 const localContextProbeTimeout = 12 * time.Second
 
+// resolveToolFormat maps the profile's ToolFormat to the effective mode.
+// "" = auto: local providers default to "json" — every server bee labels
+// local (ollama, llama.cpp, lmstudio, vllm, localai, omlx) compiles
+// response_format json_schema to a sampling constraint in current versions,
+// and openai_compat degrades gracefully (drops the constraint, keeps the
+// JSON instruction) when an older build rejects the field. Hosted providers
+// keep native tool_calls on auto. "native" forces native everywhere.
+func resolveToolFormat(cfg config.Config) string {
+	tf := config.ActiveProfile(cfg).ToolFormat
+	if tf == "" && config.IsLocalProvider(cfg.DefaultProvider) {
+		return "json"
+	}
+	return tf
+}
+
 func buildProvider(cfg config.Config) (llm.Provider, error) {
 	inner, err := buildProviderInner(cfg)
 	if err != nil {
 		return nil, err
 	}
-	// XML/text-mode wrap: active profile opts in via ToolFormat="xml". Useful
-	// for small local models that ignore native tool_calls (llama3.1:8b,
-	// gemma3, phi3). Default "" keeps native tool calls.
-	// ToolFormat="json" routes tool calls through grammar-constrained JSON
-	// (response_format json_schema) — malformed calls become impossible on
-	// servers that compile the schema to a sampling constraint.
-	switch config.ActiveProfile(cfg).ToolFormat {
+	// tool-format wrap. "xml" = TextModeProvider (text advert + tag parsing,
+	// for models that ignore native tool_calls). "json" = JSONModeProvider:
+	// grammar-constrained JSON via response_format json_schema — malformed
+	// calls become impossible on servers that compile the schema to a
+	// sampling constraint. "" auto-resolves (json on local providers);
+	// "native" forces the native tool_calls channel.
+	switch resolveToolFormat(cfg) {
 	case "xml":
 		inner = llm.NewTextMode(inner, llm.TextModeOptions{})
 	case "json":

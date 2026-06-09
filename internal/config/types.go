@@ -297,13 +297,14 @@ type Profile struct {
 	Caveman                  string `toml:"caveman"`
 	MaxIterations            int    `toml:"max_iterations"`              // iter cap override; 0 → inherit cfg.MaxIterations; negative → unlimited
 	NoMutationStallThreshold int    `toml:"no_mutation_stall_threshold"` // streak threshold for stall warning; 0 → off (opt-in)
-	// ToolFormat selects how tools are advertised. "" = native tool_calls
-	// channel (default); "xml" = wrap inner provider with TextModeProvider
-	// to inject a text-mode advert + parse `<name>{...}</name>` from the
-	// assistant stream. "json" = wrap with JSONModeProvider: tool calls go
-	// through grammar-constrained JSON (response_format json_schema), so on
-	// grammar-capable servers (ollama ≥0.5, llama.cpp, MLX/xgrammar) a
-	// malformed call is impossible. Opt-in for local/tiny models.
+	// ToolFormat selects how tools are advertised. "" = auto: local providers
+	// resolve to "json", hosted providers to native tool_calls. "json" = wrap
+	// with JSONModeProvider: tool calls go through grammar-constrained JSON
+	// (response_format json_schema), so on grammar-capable servers (ollama
+	// ≥0.5, llama.cpp, MLX/xgrammar) a malformed call is impossible; servers
+	// that reject the field degrade to prompt-instructed JSON. "xml" = wrap
+	// with TextModeProvider (text advert + `<name>{...}</name>` parsing).
+	// "native" forces the native tool_calls channel everywhere.
 	ToolFormat string `toml:"tool_format"`
 	// ToolOutputTokens caps a single tool-result payload in token estimates
 	// (chars/4). 0 → fall back to per-tool default in internal/tools. Tiny

@@ -70,6 +70,11 @@ type OpenAICompatProvider struct {
 	// observed, future requests for that model skip tools without paying the
 	// failed-attempt round-trip.
 	noTools sync.Map // model string -> struct{}
+	// noRespFormat caches models whose server rejected response_format
+	// (pre-grammar builds, strict proxies). The constraint is dropped and
+	// remembered; jsonmode then runs prompt-instructed JSON without the
+	// sampling guarantee instead of failing the turn.
+	noRespFormat sync.Map // model string -> struct{}
 }
 
 // NewOpenAICompat builds a provider. Missing fields get sensible defaults.
@@ -178,6 +183,18 @@ func isNoToolSupportError(code int, body []byte) bool {
 		strings.Contains(s, "model does not support tool")
 }
 
+// isNoResponseFormatError detects a 400 caused by the response_format field
+// (server predates structured output or a strict proxy rejects unknown
+// fields). Anchored on the field name so unrelated 400s never strip the
+// constraint.
+func isNoResponseFormatError(code int, body []byte) bool {
+	if code != 400 {
+		return false
+	}
+	s := strings.ToLower(string(body))
+	return strings.Contains(s, "response_format") || strings.Contains(s, "json_schema")
+}
+
 // Name returns the configured display name.
 func (p *OpenAICompatProvider) Name() string { return p.cfg.Name }
 
@@ -192,6 +209,9 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 	wireReq := p.buildWireRequest(req)
 	if _, banned := p.noTools.Load(req.Model); banned {
 		wireReq.Tools = nil
+	}
+	if _, banned := p.noRespFormat.Load(req.Model); banned {
+		wireReq.ResponseFormat = nil
 	}
 	body, err := json.Marshal(wireReq)
 	if err != nil {
@@ -247,6 +267,21 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 			if len(wireReq.Tools) > 0 && isNoToolSupportError(r.StatusCode, raw) {
 				p.noTools.Store(req.Model, struct{}{})
 				wireReq.Tools = nil
+				nb, merr := json.Marshal(wireReq)
+				if merr != nil {
+					return nil, fmt.Errorf("marshal request: %w", merr)
+				}
+				body = nb
+				lastErr = fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, string(raw))
+				lastWasRate = false
+				continue
+			}
+			// pre-grammar servers reject response_format. drop the constraint,
+			// remember the model, rebuild, retry — jsonmode degrades to
+			// prompt-instructed JSON instead of failing the turn.
+			if wireReq.ResponseFormat != nil && isNoResponseFormatError(r.StatusCode, raw) {
+				p.noRespFormat.Store(req.Model, struct{}{})
+				wireReq.ResponseFormat = nil
 				nb, merr := json.Marshal(wireReq)
 				if merr != nil {
 					return nil, fmt.Errorf("marshal request: %w", merr)
