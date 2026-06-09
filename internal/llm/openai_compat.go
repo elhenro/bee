@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -278,8 +279,11 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 			}
 			// pre-grammar servers reject response_format. drop the constraint,
 			// remember the model, rebuild, retry — jsonmode degrades to
-			// prompt-instructed JSON instead of failing the turn.
+			// prompt-instructed JSON instead of failing the turn. warn once:
+			// the noRespFormat store guarantees this branch runs at most once
+			// per model, so the stderr line can't repeat.
 			if wireReq.ResponseFormat != nil && isNoResponseFormatError(r.StatusCode, raw) {
+				fmt.Fprintf(os.Stderr, "bee: %s rejected response_format for %s; json tool mode continues without grammar enforcement\n", p.cfg.Name, req.Model)
 				p.noRespFormat.Store(req.Model, struct{}{})
 				wireReq.ResponseFormat = nil
 				nb, merr := json.Marshal(wireReq)

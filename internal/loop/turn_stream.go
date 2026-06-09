@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -62,6 +63,16 @@ func (e *Engine) warnf(format string, args ...any) {
 	case e.WarnCh <- fmt.Sprintf(format, args...):
 	default:
 	}
+}
+
+// noticef is warnf with a headless fallback: when no WarnCh consumer is wired
+// (bee run, zzz), the notice goes to stderr instead of being dropped.
+func (e *Engine) noticef(format string, args ...any) {
+	if e != nil && e.WarnCh != nil {
+		e.warnf(format, args...)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "bee: "+format+"\n", args...)
 }
 
 // streamAttempt runs one Provider.Stream pass into the supplied buffers.

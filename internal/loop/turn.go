@@ -210,6 +210,9 @@ type Engine struct {
 	// card is the per-Run state card when the active profile opts in
 	// (state_card = true). nil = transcript mode (default). See statecard.go.
 	card *stateCard
+	// jsonModeNoticeShown dedupes the one-time "json tool mode active"
+	// confirmation per session. Deliberately NOT reset per Run.
+	jsonModeNoticeShown bool
 	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
 	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints. dynamic is
 	// the volatile memory tail of value (for the prompt-cache breakpoint split).

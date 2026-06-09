@@ -473,6 +473,13 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// proved it can produce a parseable envelope this turn.
 		e.formatSlipStreak = 0
 
+		// one-time confirmation that constrained json tool mode is live: the
+		// first parsed call proves the grammar pipeline works end to end.
+		if !e.jsonModeNoticeShown && strings.HasSuffix(e.Provider.Name(), "+jsonmode") {
+			e.jsonModeNoticeShown = true
+			e.noticef("json tool mode active · first tool call parsed clean")
+		}
+
 		// dispatch tools (read-only ones run in parallel, mutators serial)
 		toolResults, err := e.dispatchTools(ctx, toolUses)
 		if err != nil {
