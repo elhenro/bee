@@ -50,6 +50,25 @@ type ChatRequest struct {
 	// even when the model can do far more. Omitted when zero; only set for local
 	// ollama-shaped servers, so strict endpoints never see it.
 	NumCtx int `json:"num_ctx,omitempty"`
+	// ResponseFormat requests structured output. Grammar-capable servers
+	// (ollama ≥0.5, llama.cpp, MLX servers with xgrammar) compile the schema
+	// to a sampling constraint, so the completion is valid by construction.
+	// Omitted when nil.
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+}
+
+// ResponseFormat is OpenAI's structured-output envelope. Type is
+// "json_schema" (with JSONSchema set) or "json_object" (schema-free).
+type ResponseFormat struct {
+	Type       string          `json:"type"`
+	JSONSchema *JSONSchemaSpec `json:"json_schema,omitempty"`
+}
+
+// JSONSchemaSpec names a schema for response_format type "json_schema".
+type JSONSchemaSpec struct {
+	Name   string         `json:"name"`
+	Strict bool           `json:"strict,omitempty"`
+	Schema map[string]any `json:"schema"`
 }
 
 // StreamOptions matches OpenAI's stream_options envelope. Only include_usage

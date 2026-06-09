@@ -300,7 +300,10 @@ type Profile struct {
 	// ToolFormat selects how tools are advertised. "" = native tool_calls
 	// channel (default); "xml" = wrap inner provider with TextModeProvider
 	// to inject a text-mode advert + parse `<name>{...}</name>` from the
-	// assistant stream. Opt-in for local/tiny models that ignore tool_calls.
+	// assistant stream. "json" = wrap with JSONModeProvider: tool calls go
+	// through grammar-constrained JSON (response_format json_schema), so on
+	// grammar-capable servers (ollama ≥0.5, llama.cpp, MLX/xgrammar) a
+	// malformed call is impossible. Opt-in for local/tiny models.
 	ToolFormat string `toml:"tool_format"`
 	// ToolOutputTokens caps a single tool-result payload in token estimates
 	// (chars/4). 0 → fall back to per-tool default in internal/tools. Tiny
@@ -328,6 +331,13 @@ type Profile struct {
 	// so the side-LLM recap round-trip doesn't double turn latency on slow
 	// local runs.
 	ShowRecap *bool `toml:"show_recap"`
+	// StateCard replaces the rolling transcript in each LLM request with a
+	// harness-maintained state card (goal, files touched, recent actions,
+	// last error) plus the last few raw messages. Request size stays near
+	// constant regardless of run length — no compaction cliff on 4-8k local
+	// windows, and auto-compact is skipped while active. The on-disk session
+	// keeps the full history. Opt-in.
+	StateCard bool `toml:"state_card"`
 
 	// Safety carries per-profile calibration applied on top of the global
 	// sandbox + approval config. Tiny profile defaults to requiring the user

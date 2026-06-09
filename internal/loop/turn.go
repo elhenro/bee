@@ -207,6 +207,9 @@ type Engine struct {
 	// dispatchTools can return ErrEscalate after the synthetic tool_result
 	// lands in the transcript. nil = no escalation in flight.
 	escalateErr *escalate.Error
+	// card is the per-Run state card when the active profile opts in
+	// (state_card = true). nil = transcript mode (default). See statecard.go.
+	card *stateCard
 	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
 	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints. dynamic is
 	// the volatile memory tail of value (for the prompt-cache breakpoint split).

@@ -200,7 +200,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// pre-compact: free budget BEFORE appending the new user turn so the
 	// upcoming request has headroom. uses lastInputTokens from the prior
 	// run when available; otherwise falls back to estimator over sys+history.
-	if e.Cfg.Compaction.Enabled {
+	if e.compactionEnabled() {
 		budget := contextBudget(e.Cfg)
 		if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
 			if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
@@ -225,6 +225,15 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		return res, err
 	}
 	res.Messages = append(res.Messages, userMessage)
+
+	// state card mode: per-Run card replaces the rolling transcript on the
+	// wire (see statecard.go). reset every Run so the goal tracks the latest
+	// user ask; the session transcript itself is untouched.
+	if config.ActiveProfile(e.Cfg).StateCard {
+		e.card = newStateCard(userText)
+	} else {
+		e.card = nil
+	}
 
 	// resolve the per-Run iteration ceiling. 0 (or negative) = unlimited: the
 	// loop runs until a real guard fires (token budget or read-only stall).
@@ -268,7 +277,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// are also accounted for. Prefer the provider's last reported input
 		// token count (most accurate, works for every wire format that
 		// surfaces usage); fall back to the estimator on the first turn.
-		if e.Cfg.Compaction.Enabled {
+		if e.compactionEnabled() {
 			budget := contextBudget(e.Cfg)
 			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
 				if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
@@ -316,11 +325,15 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// suppression requested when effort resolved to off on a model that
 		// nominally reasons. drives the post-turn compliance check below.
 		e.thinkingSuppressRequested = resolvedThinking == llm.ThinkingOff && llm.ThinkingApplies(e.Cfg.DefaultModel)
+		wireMsgs := dropEphemeral(res.Messages)
+		if e.card != nil {
+			wireMsgs = e.card.view(wireMsgs)
+		}
 		req := llm.Request{
 			Model:              e.Cfg.DefaultModel,
 			System:             reqSys,
 			SystemDynamic:      sysDynamic,
-			Messages:           e.applyVisionFallback(ctx, dropEphemeral(res.Messages)),
+			Messages:           e.applyVisionFallback(ctx, wireMsgs),
 			Tools:              specs,
 			Stream:             true,
 			Temperature:        prof.Temperature,
@@ -459,6 +472,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		toolResults, err := e.dispatchTools(ctx, toolUses)
 		if err != nil {
 			return res, err
+		}
+		if e.card != nil {
+			e.card.observe(toolUses, toolResults)
 		}
 		// track mutation cadence for stall detection
 		mutated := false

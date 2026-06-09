@@ -331,6 +331,14 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 			break
 		}
 	}
+	// constrained output: jsonmode (and any future caller) sets ResponseSchema
+	// to force the completion shape at sampling time on grammar-capable servers.
+	if req.ResponseSchema != nil {
+		wr.ResponseFormat = &wire.ResponseFormat{
+			Type:       "json_schema",
+			JSONSchema: &wire.JSONSchemaSpec{Name: "response", Strict: true, Schema: req.ResponseSchema},
+		}
+	}
 	if len(p.cfg.ChatTemplateKwargs) > 0 || len(req.ChatTemplateKwargs) > 0 {
 		merged := make(map[string]any, len(p.cfg.ChatTemplateKwargs)+len(req.ChatTemplateKwargs))
 		for k, v := range p.cfg.ChatTemplateKwargs {

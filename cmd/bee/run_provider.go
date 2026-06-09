@@ -83,8 +83,14 @@ func buildProvider(cfg config.Config) (llm.Provider, error) {
 	// XML/text-mode wrap: active profile opts in via ToolFormat="xml". Useful
 	// for small local models that ignore native tool_calls (llama3.1:8b,
 	// gemma3, phi3). Default "" keeps native tool calls.
-	if config.ActiveProfile(cfg).ToolFormat == "xml" {
+	// ToolFormat="json" routes tool calls through grammar-constrained JSON
+	// (response_format json_schema) — malformed calls become impossible on
+	// servers that compile the schema to a sampling constraint.
+	switch config.ActiveProfile(cfg).ToolFormat {
+	case "xml":
 		inner = llm.NewTextMode(inner, llm.TextModeOptions{})
+	case "json":
+		inner = llm.NewJSONMode(inner)
 	}
 	// prewarm: local providers don't expose context_length on /v1/models, so
 	// the loop's budget falls back to a useless 4*SystemPromptBudget. Probe

@@ -50,6 +50,11 @@ type Request struct {
 	// chat_template_kwargs for this request. Used to flip Qwen3's
 	// enable_thinking switch per-turn from the effort level. Nil = no override.
 	ChatTemplateKwargs map[string]any
+	// ResponseSchema, when non-nil, asks the provider to constrain output to
+	// this JSON Schema (wire: response_format json_schema). Grammar-capable
+	// local servers enforce it at sampling time, so the completion is valid
+	// JSON by construction. Nil = free text (default).
+	ResponseSchema map[string]any
 }
 
 // Thinking enumerates the supported extended-reasoning levels. Adapters map

@@ -371,6 +371,30 @@ func TestOpenAICompat_ChatTemplateKwargsMerge(t *testing.T) {
 	})
 }
 
+// response_format is emitted only when the request carries a ResponseSchema
+// (jsonmode) and omitted otherwise so unconstrained calls stay byte-identical.
+func TestOpenAICompat_ResponseFormatGated(t *testing.T) {
+	t.Run("set when schema present", func(t *testing.T) {
+		p := NewOpenAICompat(OpenAICompatConfig{})
+		wr := p.buildWireRequest(Request{Model: "qwen3:8b", ResponseSchema: map[string]any{"anyOf": []any{}}})
+		if wr.ResponseFormat == nil || wr.ResponseFormat.Type != "json_schema" {
+			t.Fatalf("response_format: want json_schema, got %+v", wr.ResponseFormat)
+		}
+		b, _ := json.Marshal(wr)
+		if !strings.Contains(string(b), `"response_format":{"type":"json_schema","json_schema":{"name":"response","strict":true,"schema":{"anyOf":[]}}}`) {
+			t.Errorf("response_format wire shape wrong: %s", b)
+		}
+	})
+	t.Run("omitted when nil", func(t *testing.T) {
+		p := NewOpenAICompat(OpenAICompatConfig{})
+		wr := p.buildWireRequest(Request{Model: "gpt-4o-mini"})
+		b, _ := json.Marshal(wr)
+		if strings.Contains(string(b), "response_format") {
+			t.Errorf("response_format leaked into wire body: %s", b)
+		}
+	})
+}
+
 // keep_alive is set only when the provider configures it (local Ollama) and
 // must be omitted otherwise so strict endpoints never reject the unknown field.
 func TestOpenAICompat_KeepAliveGated(t *testing.T) {
