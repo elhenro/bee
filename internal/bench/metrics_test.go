@@ -37,3 +37,18 @@ func TestMetricsFromMessages(t *testing.T) {
 		t.Error("stoppedClean should propagate")
 	}
 }
+
+// meanWallMillis averages per-task wall-clock across the suite so a tuner can
+// see latency wins (cache, keep-warm) the score blends can't show.
+func TestMeanWallMillis(t *testing.T) {
+	tasks := []TaskResult{
+		{Metrics: RunMetrics{WallMillis: 1000}},
+		{Metrics: RunMetrics{WallMillis: 3000}},
+	}
+	if got := meanWallMillis(tasks); got != 2000 {
+		t.Errorf("mean wall: want 2000, got %d", got)
+	}
+	if got := meanWallMillis(nil); got != 0 {
+		t.Errorf("empty suite: want 0, got %d", got)
+	}
+}

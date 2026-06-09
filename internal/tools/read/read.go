@@ -23,6 +23,9 @@ const (
 	maxLimit        = 10000
 	maxTail         = 10000
 	binarySniffSize = 4096
+	// directory-listing caps: tiny profile vs everyone else.
+	dirEntriesTiny    = 200
+	dirEntriesDefault = 1000
 )
 
 // cacheEntry marks a read already served this session, keyed by file identity
@@ -140,7 +143,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	}
 
 	if info.IsDir() {
-		out, err := listDir(path)
+		out, err := listDir(path, t.dirEntryCap())
 		if err != nil {
 			return tools.Result{Content: err.Error(), IsError: true}, nil
 		}
@@ -232,7 +235,17 @@ func readFile(path string, offset, limit, tail int, hashline bool) (string, erro
 	return readSlice(f, path, offset, limit, hashline)
 }
 
-func listDir(path string) (string, error) {
+// dirEntryCap bounds how many directory entries a single read returns. A tiny
+// profile (low maxLines) gets a tighter cap so `read .` on node_modules/.git
+// can't flood a 4-8k local context; richer profiles get headroom.
+func (t *Tool) dirEntryCap() int {
+	if t.maxLines > 0 && t.maxLines <= 500 {
+		return dirEntriesTiny
+	}
+	return dirEntriesDefault
+}
+
+func listDir(path string, max int) (string, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return "", fmt.Errorf("readdir %s: %w", path, err)
@@ -245,12 +258,28 @@ func listDir(path string) (string, error) {
 		}
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	// dirs first, then alpha — so when truncated the navigation targets survive.
+	sort.Slice(names, func(i, j int) bool {
+		di := strings.HasSuffix(names[i], "/")
+		dj := strings.HasSuffix(names[j], "/")
+		if di != dj {
+			return di
+		}
+		return names[i] < names[j]
+	})
+	truncated := 0
+	if max > 0 && len(names) > max {
+		truncated = len(names) - max
+		names = names[:max]
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s:\n", filepath.Clean(path))
 	for _, n := range names {
 		b.WriteString(n)
 		b.WriteByte('\n')
+	}
+	if truncated > 0 {
+		fmt.Fprintf(&b, "(%d more entries not shown; narrow with a subpath or use grep/find)\n", truncated)
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
 }

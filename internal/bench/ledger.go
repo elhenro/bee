@@ -22,6 +22,7 @@ type LedgerRecord struct {
 	Success          float64 `json:"success"`
 	Format           float64 `json:"format"`
 	Efficiency       float64 `json:"efficiency"`
+	WallMeanMillis   int64   `json:"wall_mean_millis,omitempty"`
 	HoldoutAggregate float64 `json:"holdout_aggregate,omitempty"`
 	ResultsJSON      string  `json:"results_json"`
 }

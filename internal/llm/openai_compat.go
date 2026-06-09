@@ -49,6 +49,11 @@ type OpenAICompatConfig struct {
 	// timeout — the next turn then skips a 2-10s reload before first token.
 	// Empty = omit (default for hosted providers and MLX, which stay resident).
 	KeepAlive string
+	// NumCtx sets Ollama's runtime context window (num_ctx). >0 = explicit
+	// operator override sent verbatim. 0 = auto: when KeepAlive marks this an
+	// ollama-shaped server, allocate the probed window clamped to maxLocalNumCtx
+	// so a small GPU isn't pushed to OOM by a 128k architectural max.
+	NumCtx int
 	// PromptCache opts the provider into emitting ephemeral cache_control
 	// breakpoints on the system prefix (content-parts form). Only routers that
 	// honor it (OpenRouter) should enable this; strict endpoints reject the
@@ -88,6 +93,40 @@ const (
 	retryBaseDelay       = 800 * time.Millisecond
 	retryMinDelay        = 200 * time.Millisecond
 )
+
+// num_ctx auto-allocation bounds for ollama-shaped servers.
+const (
+	// ollamaDefaultNumCtx is ollama's built-in default. Below this there is
+	// nothing to gain from sending the field.
+	ollamaDefaultNumCtx = 4096
+	// maxLocalNumCtx caps the auto value so a 128k architectural max doesn't
+	// preallocate a KV cache that OOMs a small GPU (e.g. an 8GB Mac running a
+	// 7-8B model). ~16k is a safe out-of-box headroom; operators wanting more
+	// set an explicit num_ctx in provider config.
+	maxLocalNumCtx = 16384
+)
+
+// resolveNumCtx decides the num_ctx to send. An explicit per-provider value
+// wins for any provider. Otherwise auto-allocation fires only for ollama-shaped
+// servers (those we keep warm) — MLX/vllm manage context server-side and may
+// reject the field — clamping the probed window to maxLocalNumCtx. Returns 0
+// to omit the field.
+func (p *OpenAICompatProvider) resolveNumCtx(model string) int {
+	if p.cfg.NumCtx > 0 {
+		return p.cfg.NumCtx
+	}
+	if p.cfg.KeepAlive == "" {
+		return 0
+	}
+	probed := ContextWindow(model)
+	if probed <= ollamaDefaultNumCtx {
+		return 0
+	}
+	if probed > maxLocalNumCtx {
+		return maxLocalNumCtx
+	}
+	return probed
+}
 
 // retryRand drives the backoff jitter. seeded once per process. jitter does
 // not need cryptographic randomness, only crowd-spreading.
@@ -271,6 +310,12 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 	// never see the Ollama-specific field.
 	if p.cfg.KeepAlive != "" {
 		wr.KeepAlive = p.cfg.KeepAlive
+	}
+	// allocate the real context window on ollama-shaped servers. otherwise it
+	// runs at the 4096 default and truncates the prompt head the loop budgeted
+	// for. gated like keep_alive so hosted/strict endpoints never see the field.
+	if n := p.resolveNumCtx(req.Model); n > 0 {
+		wr.NumCtx = n
 	}
 	// prompt-cache breakpoint on the static system prefix. gated to routers that
 	// honor cache_control (OpenRouter); the static/dynamic split keeps the prefix

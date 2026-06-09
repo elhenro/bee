@@ -78,6 +78,37 @@ func TestListDirectory(t *testing.T) {
 	}
 }
 
+// a tiny-profile read of a big directory must cap entries (keeping dirs, which
+// sort first) and tell the model how many were elided — so `read .` on a huge
+// tree can't flood a 4-8k local context.
+func TestListDirectoryCappedTiny(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "zsub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < dirEntriesTiny+50; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%04d.txt", i)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// tiny profile passes maxLines=500 -> dirEntriesTiny cap.
+	tool := NewWithLimits(100, 500, false)
+	res, err := tool.Run(context.Background(), map[string]any{"path": dir})
+	if err != nil || res.IsError {
+		t.Fatalf("run: err=%v content=%s", err, res.Content)
+	}
+	if !strings.Contains(res.Content, "more entries not shown") {
+		t.Errorf("expected truncation footer, got:\n%s", res.Content[:min(400, len(res.Content))])
+	}
+	if !strings.Contains(res.Content, "zsub/") {
+		t.Errorf("dirs sort first and must survive the cap, missing zsub/")
+	}
+	lines := strings.Count(res.Content, "\n")
+	if lines > dirEntriesTiny+4 { // header + cap + footer, small slack
+		t.Errorf("listing not capped: %d lines", lines)
+	}
+}
+
 func TestMissingFile(t *testing.T) {
 	res, _ := New().Run(context.Background(), map[string]any{"path": "/nope/nothing/here"})
 	if !res.IsError {

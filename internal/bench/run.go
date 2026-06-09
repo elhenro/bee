@@ -65,6 +65,7 @@ type SuiteResult struct {
 	Runs             int          `json:"runs"`
 	Aggregate        float64      `json:"aggregate"`
 	MeanSpread       float64      `json:"mean_spread,omitempty"`
+	WallMeanMillis   int64        `json:"wall_mean_millis,omitempty"`
 	DimMeans         Dims         `json:"dim_means"`
 	Tasks            []TaskResult `json:"tasks"`
 	HoldoutAggregate float64      `json:"holdout_aggregate,omitempty"`
@@ -93,6 +94,7 @@ func RunSuite(ctx context.Context, tasks []Task, opt Options) (SuiteResult, erro
 		res.Tasks = append(res.Tasks, tr)
 	}
 	res.Aggregate, res.MeanSpread, res.DimMeans = aggregate(res.Tasks)
+	res.WallMeanMillis = meanWallMillis(res.Tasks)
 	opt.logf("suite done: aggregate %.1f in %s", res.Aggregate, time.Since(suiteStart).Round(time.Second))
 	return res, nil
 }
@@ -108,6 +110,7 @@ func runTask(ctx context.Context, t Task, opt Options, taskNum, taskTotal int) T
 	}
 	sumScore := rep.Score
 	sumSuc, sumFmt, sumEff := rep.Dims.Success, rep.Dims.Format, rep.Dims.Efficiency
+	sumWall := rep.Metrics.WallMillis
 	min, max := rep.Score, rep.Score
 	succ := boolToInt(rep.Succeeded)
 	samples := []float64{rep.Score}
@@ -118,6 +121,7 @@ func runTask(ctx context.Context, t Task, opt Options, taskNum, taskTotal int) T
 		sumSuc += r.Dims.Success
 		sumFmt += r.Dims.Format
 		sumEff += r.Dims.Efficiency
+		sumWall += r.Metrics.WallMillis
 		succ += boolToInt(r.Succeeded)
 		if r.Score < min {
 			min = r.Score
@@ -132,6 +136,7 @@ func runTask(ctx context.Context, t Task, opt Options, taskNum, taskTotal int) T
 	n := float64(opt.Runs)
 	rep.Score = sumScore / n
 	rep.Dims = Dims{Success: sumSuc / n, Format: sumFmt / n, Efficiency: sumEff / n}
+	rep.Metrics.WallMillis = sumWall / int64(opt.Runs)
 	rep.Spread = max - min
 	rep.Samples = samples
 	rep.Succeeded = 2*succ >= opt.Runs // at least half the runs passed (ties count as success)
@@ -186,6 +191,11 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx, taskNum, task
 		succeeded = stoppedClean // judge verdict surfaced by the goal loop
 	}
 
+	// capture wall-clock before any rounding so cold-start deltas survive (the
+	// log line below rounds to whole seconds, which would quantize them away).
+	wall := time.Since(runStart)
+	m.WallMillis = wall.Milliseconds()
+
 	tr.Dims, tr.Score = Score(t.Budget, m, succeeded, opt.Weights)
 	tr.Succeeded = succeeded
 	tr.Metrics = m
@@ -201,7 +211,7 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx, taskNum, task
 		_ = saveRollout(sessDir, opt.RolloutDir, opt.Label, t.ID, runIdx)
 	}
 
-	dur := time.Since(runStart).Round(time.Second)
+	dur := wall.Round(time.Second)
 	note := ""
 	if ctx.Err() == nil && runErr != nil && dur >= opt.Timeout {
 		note = " TIMEOUT"
@@ -321,6 +331,19 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// meanWallMillis averages per-task wall-clock across the suite. Per-task values
+// are already mean-folded over repeats, so this is the suite-wide mean.
+func meanWallMillis(tasks []TaskResult) int64 {
+	if len(tasks) == 0 {
+		return 0
+	}
+	var sum int64
+	for _, t := range tasks {
+		sum += t.Metrics.WallMillis
+	}
+	return sum / int64(len(tasks))
 }
 
 func aggregate(tasks []TaskResult) (float64, float64, Dims) {

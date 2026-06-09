@@ -114,7 +114,14 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	hits := allIndex(src, old)
 	count := len(hits)
 	if count == 0 {
-		return tools.Result{Content: fmt.Sprintf("old not found in %s", path), IsError: true}, nil
+		msg := fmt.Sprintf("old not found in %s", path)
+		// dominant small-model miss is a whitespace/indentation near-miss. point
+		// at the line that matches modulo whitespace so the model re-reads and
+		// copies exact indentation instead of re-emitting the same bad old.
+		if ln, ok := nearMissLine(src, old); ok {
+			msg += fmt.Sprintf("; a whitespace-only variant matches near line %d — re-read it and copy the exact indentation (tabs vs spaces) into old", ln)
+		}
+		return tools.Result{Content: msg, IsError: true}, nil
 	}
 	if expected > 0 && expected != count {
 		return tools.Result{Content: fmt.Sprintf("count guard: expected %d occurrence(s) of old in %s, found %d", expected, path, count), IsError: true}, nil
@@ -142,6 +149,42 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	}
 
 	return tools.Result{Content: echo(path, out, spans, len(targets), count)}, nil
+}
+
+// nearMissLine reports the 1-based line where old matches src modulo per-line
+// leading+trailing whitespace, or (0,false) when no such variant exists. Strips
+// both ends so the tabs-vs-spaces indentation miss (the common one) is caught,
+// not just trailing-space/CRLF. Requires at least one non-blank old line so a
+// whitespace-only old can't spuriously match a blank line.
+func nearMissLine(src, old string) (int, bool) {
+	want := strings.Split(strings.TrimSuffix(old, "\n"), "\n")
+	for i := range want {
+		want[i] = strings.TrimSpace(strings.ReplaceAll(want[i], "\r", ""))
+	}
+	nonBlank := false
+	for _, w := range want {
+		if w != "" {
+			nonBlank = true
+			break
+		}
+	}
+	if !nonBlank {
+		return 0, false
+	}
+	lines := strings.Split(src, "\n")
+	for i := 0; i+len(want) <= len(lines); i++ {
+		match := true
+		for j := range want {
+			if strings.TrimSpace(strings.ReplaceAll(lines[i+j], "\r", "")) != want[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return i + 1, true
+		}
+	}
+	return 0, false
 }
 
 // allIndex returns the byte offsets of every non-overlapping match of sub

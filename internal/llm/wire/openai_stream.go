@@ -10,6 +10,19 @@ type StreamChunk struct {
 	ID      string         `json:"id"`
 	Choices []StreamChoice `json:"choices"`
 	Usage   *StreamUsage   `json:"usage"`
+	// Error carries an in-band error some servers emit after a 200 OK: the SSE
+	// opens, then a single `data: {"error":{...}}` lands on context overflow or
+	// a mid-stream backend failure. The pre-stream retry loop never sees these
+	// (status was 200), so without surfacing it the turn ends as a silent empty
+	// completion. Caller converts a non-empty message to an error event.
+	Error *StreamError `json:"error,omitempty"`
+}
+
+// StreamError is the in-band error object. Code is any since servers send it as
+// either a string ("context_length_exceeded") or an int.
+type StreamError struct {
+	Message string `json:"message"`
+	Code    any    `json:"code,omitempty"`
 }
 
 // StreamChoice is one alternative completion within a chunk. OpenAI commonly

@@ -70,6 +70,46 @@ func TestEditDiff_NotFound(t *testing.T) {
 	}
 }
 
+// a whitespace/indentation near-miss must point the model at the matching line
+// instead of a bare "old not found", so it re-reads rather than re-emits.
+func TestEditDiff_NearMissWhitespaceHint(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.go")
+	// file uses a tab indent; old below uses spaces — exact find misses.
+	if err := os.WriteFile(p, []byte("func main() {\n\treturn nil\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := New(dir)
+	res, _ := e.Run(context.Background(), map[string]any{
+		"path": p, "old": "    return nil", "new": "    return err",
+	})
+	if !res.IsError {
+		t.Fatal("want IsError on whitespace near-miss")
+	}
+	if !strings.Contains(res.Content, "whitespace-only variant matches near line 2") {
+		t.Errorf("want near-miss hint pointing at line 2, got: %q", res.Content)
+	}
+}
+
+// a genuinely-absent old gets no near-miss hint (no false steer).
+func TestEditDiff_NotFoundNoHint(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(p, []byte("hello world\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := New(dir)
+	res, _ := e.Run(context.Background(), map[string]any{
+		"path": p, "old": "totally absent", "new": "x",
+	})
+	if !res.IsError {
+		t.Fatal("want IsError")
+	}
+	if strings.Contains(res.Content, "whitespace-only variant") {
+		t.Errorf("should not hint when no variant exists, got: %q", res.Content)
+	}
+}
+
 func TestEditDiff_OccurrenceTooHigh(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "a.txt")

@@ -128,6 +128,12 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 		if chunk == nil {
 			continue
 		}
+		// in-band error after a 200 OK (context overflow / backend failure). turn
+		// the silent empty completion into a real diagnostic the model can see.
+		if chunk.Error != nil && chunk.Error.Message != "" {
+			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s stream error: %s", p.cfg.Name, chunk.Error.Message)}
+			return
+		}
 
 		if chunk.Usage != nil {
 			usage = chunk.Usage

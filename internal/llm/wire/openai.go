@@ -45,6 +45,11 @@ type ChatRequest struct {
 	// resident after a request (e.g. "15m"). Omitted when empty; only set for
 	// local providers that understand it, so strict endpoints never see it.
 	KeepAlive string `json:"keep_alive,omitempty"`
+	// NumCtx is Ollama's extension setting the runtime context window. Without
+	// it ollama runs at its 4096 default and silently truncates the prompt head
+	// even when the model can do far more. Omitted when zero; only set for local
+	// ollama-shaped servers, so strict endpoints never see it.
+	NumCtx int `json:"num_ctx,omitempty"`
 }
 
 // StreamOptions matches OpenAI's stream_options envelope. Only include_usage

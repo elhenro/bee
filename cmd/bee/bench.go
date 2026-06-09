@@ -108,6 +108,7 @@ func runBench(args []string) {
 		Success:          res.DimMeans.Success,
 		Format:           res.DimMeans.Format,
 		Efficiency:       res.DimMeans.Efficiency,
+		WallMeanMillis:   res.WallMeanMillis,
 		HoldoutAggregate: res.HoldoutAggregate,
 		ResultsJSON:      path,
 	}); err != nil {

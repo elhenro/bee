@@ -155,6 +155,43 @@ func TestOpenAICompat_StreamingWithToolCall(t *testing.T) {
 	}
 }
 
+// an in-band error chunk after a 200 OK (context overflow / backend failure)
+// must surface as EventError, not a silent empty completion.
+func TestOpenAICompat_InBandStreamError(t *testing.T) {
+	chunks := []string{
+		`data: {"id":"a","choices":[{"index":0,"delta":{"role":"assistant","content":"thinking"}}]}`,
+		`data: {"error":{"message":"This endpoint's maximum context length is 8192 tokens","code":"context_length_exceeded"}}`,
+		`data: [DONE]`,
+	}
+	p, _ := newTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		for _, c := range chunks {
+			fmt.Fprint(w, c+"\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+	ch, err := p.Stream(context.Background(), Request{Model: "m", Stream: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := drain(t, ch, 2*time.Second)
+	var gotErr *Event
+	for i := range events {
+		if events[i].Type == EventError {
+			gotErr = &events[i]
+		}
+	}
+	if gotErr == nil {
+		t.Fatalf("expected EventError from in-band error chunk; got %+v", events)
+	}
+	if !strings.Contains(gotErr.Err.Error(), "maximum context length") {
+		t.Errorf("error should carry the server message, got: %v", gotErr.Err)
+	}
+}
+
 func TestOpenAICompat_ContextCancelMidStream(t *testing.T) {
 	// server writes one chunk, then holds the connection until told to release
 	release := make(chan struct{})
@@ -386,6 +423,64 @@ func TestOpenAICompat_PromptCacheGated(t *testing.T) {
 		b, _ := json.Marshal(wr)
 		if strings.Contains(string(b), "cache_control") {
 			t.Errorf("cache_control leaked when PromptCache off: %s", b)
+		}
+	})
+}
+
+// num_ctx: auto-allocates the probed window (clamped) for ollama-shaped servers
+// (KeepAlive set), honors an explicit override for any provider, and stays off
+// for hosted providers and when the probe found nothing worth raising.
+func TestOpenAICompat_NumCtxGated(t *testing.T) {
+	const model = "test-numctx-model"
+	t.Run("auto clamps a large probed window", func(t *testing.T) {
+		ResetLiveContextLengths()
+		defer ResetLiveContextLengths()
+		RememberContextLength(model, 131072)
+		p := NewOpenAICompat(OpenAICompatConfig{KeepAlive: "15m"})
+		wr := p.buildWireRequest(Request{Model: model})
+		if wr.NumCtx != maxLocalNumCtx {
+			t.Errorf("num_ctx: want clamp %d, got %d", maxLocalNumCtx, wr.NumCtx)
+		}
+	})
+	t.Run("auto uses a small probed window verbatim", func(t *testing.T) {
+		ResetLiveContextLengths()
+		defer ResetLiveContextLengths()
+		RememberContextLength(model, 8192)
+		p := NewOpenAICompat(OpenAICompatConfig{KeepAlive: "15m"})
+		wr := p.buildWireRequest(Request{Model: model})
+		if wr.NumCtx != 8192 {
+			t.Errorf("num_ctx: want 8192, got %d", wr.NumCtx)
+		}
+	})
+	t.Run("explicit override wins even without KeepAlive", func(t *testing.T) {
+		p := NewOpenAICompat(OpenAICompatConfig{NumCtx: 65536})
+		wr := p.buildWireRequest(Request{Model: model})
+		if wr.NumCtx != 65536 {
+			t.Errorf("num_ctx: want explicit 65536, got %d", wr.NumCtx)
+		}
+	})
+	t.Run("omitted for hosted provider", func(t *testing.T) {
+		ResetLiveContextLengths()
+		defer ResetLiveContextLengths()
+		RememberContextLength(model, 131072)
+		p := NewOpenAICompat(OpenAICompatConfig{})
+		wr := p.buildWireRequest(Request{Model: model})
+		if wr.NumCtx != 0 {
+			t.Errorf("num_ctx: want 0 for hosted, got %d", wr.NumCtx)
+		}
+		b, _ := json.Marshal(wr)
+		if strings.Contains(string(b), "num_ctx") {
+			t.Errorf("num_ctx leaked into hosted wire body: %s", b)
+		}
+	})
+	t.Run("omitted when probe found nothing to raise", func(t *testing.T) {
+		ResetLiveContextLengths()
+		defer ResetLiveContextLengths()
+		RememberContextLength(model, ollamaDefaultNumCtx)
+		p := NewOpenAICompat(OpenAICompatConfig{KeepAlive: "15m"})
+		wr := p.buildWireRequest(Request{Model: model})
+		if wr.NumCtx != 0 {
+			t.Errorf("num_ctx: want 0 when probe <= default, got %d", wr.NumCtx)
 		}
 	})
 }

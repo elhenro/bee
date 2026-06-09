@@ -47,6 +47,29 @@ func TestValidateInput_MissingRequired(t *testing.T) {
 	}
 }
 
+// when a required key is missing AND an unknown key is present, the validator
+// hints the likely intended name (cmd->command) so the model fixes it instead
+// of re-emitting the wrong key.
+func TestValidateInput_UnknownKeyHint(t *testing.T) {
+	spec := shellSpec()
+	err := ValidateInput(spec, map[string]any{"cmd": "ls"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `did you mean "command"`) {
+		t.Errorf("expected near-miss key hint, got %q", err.Error())
+	}
+}
+
+// an unknown key with NO missing-required must not trigger a hint (and must not
+// reject) — the key is simply tolerated as before.
+func TestValidateInput_UnknownKeyNoHintWhenComplete(t *testing.T) {
+	spec := shellSpec()
+	if err := ValidateInput(spec, map[string]any{"command": "ls", "extra": "x"}); err != nil {
+		t.Errorf("unknown key alongside a valid required set must not reject, got %v", err)
+	}
+}
+
 func TestValidateInput_EmptyRequired(t *testing.T) {
 	spec := shellSpec()
 	err := ValidateInput(spec, map[string]any{"command": "   "})

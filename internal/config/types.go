@@ -253,6 +253,10 @@ type ProviderConfig struct {
 	// breakpoints on the system prefix. On by default for OpenRouter; off for
 	// strict endpoints that reject the content-parts system message.
 	SupportsPromptCache bool `toml:"supports_prompt_cache"`
+	// NumCtx sets Ollama's runtime context window. >0 is sent verbatim (operator
+	// override). 0 lets bee auto-allocate the probed window (clamped) for
+	// ollama-shaped servers. Only meaningful for local providers.
+	NumCtx int `toml:"num_ctx"`
 }
 
 // OAuthConfig configures a generic OAuth 2.0 PKCE flow for a provider. bee

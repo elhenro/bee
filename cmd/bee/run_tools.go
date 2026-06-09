@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/ask"
 	"github.com/elhenro/bee/internal/config"
@@ -163,6 +165,13 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 	// command; hardline patterns still refuse upstream in the shell tool.
 	if autoYes || cfg.Yolo {
 		return approval.Static{Verdict: approval.AllowOnce}
+	}
+	// unattended run (cron/CI/pipe/</dev/null) without --yes: the CLI prompt
+	// reads EOF and maps to Deny, so the model gets "refused by user" and burns
+	// iterations with no operator-visible signal. warn once so the throttle is
+	// visible. keep the Cache wrapper — persistent allowlist grants still apply.
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintln(os.Stderr, "bee: stdin is not a terminal — dangerous-command prompts will auto-deny. pass --yes to auto-approve, or allowlist commands in config.")
 	}
 	cli := approval.NewCLI(os.Stdin, os.Stderr)
 	// profile-level RequireApprovalKeys bypass the session AllowSession cache:

@@ -153,7 +153,12 @@ func (s *tuiSide) OpenSession(id string) error {
 	if id == "" {
 		return errors.New("open session: empty id")
 	}
-	prior, err := session.Read(id)
+	// ReadResume (not Read) collapses at the last checkpoint, so resuming a
+	// compacted session doesn't re-seed the full raw history — that would ship
+	// the whole pre-compaction log to the model on the first turn (a multi-minute
+	// local prompt-processing hang + big token bill). Falls back to raw Read when
+	// no checkpoint exists, so non-compacted sessions are unchanged.
+	prior, err := session.ReadResume(id)
 	if err != nil {
 		return err
 	}
