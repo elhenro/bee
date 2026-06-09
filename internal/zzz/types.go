@@ -36,15 +36,18 @@ type Config struct {
 
 // Run is the persisted metadata for one overnight session.
 type Run struct {
-	ID              string    `json:"id"`
-	Objective       string    `json:"objective"`
-	Branch          string    `json:"branch"`
-	Worktree        string    `json:"worktree,omitempty"`
-	Mode            string    `json:"mode"` // "branch" | "current" | "worktree"
-	RepoRoot        string    `json:"repo_root"`
-	StartedAt       time.Time `json:"started_at"`
-	EndedAt         time.Time `json:"ended_at,omitempty"`
-	Status          string    `json:"status"` // "running" | "completed" | "failed" | "aborted"
+	ID        string    `json:"id"`
+	Objective string    `json:"objective"`
+	Branch    string    `json:"branch"`
+	Worktree  string    `json:"worktree,omitempty"`
+	Mode      string    `json:"mode"` // "branch" | "current" | "worktree"
+	RepoRoot  string    `json:"repo_root"`
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at,omitempty"`
+	Status    string    `json:"status"` // "running" | "completed" | "failed" | "aborted"
+	// PID of the driving bee process; refreshed on start and resume so gc can
+	// tell a crashed "running" run from a live one before reaping it.
+	PID             int       `json:"pid,omitempty"`
 	IterCount       int       `json:"iter_count"`
 	Tokens          TokenStat `json:"tokens"`
 	Commits         []string  `json:"commits"`

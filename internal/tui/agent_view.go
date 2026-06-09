@@ -211,29 +211,36 @@ func humanAgeShort(t time.Time) string {
 // agentTruncate clips s to n runes-ish with an ellipsis. Local helper to
 // avoid colliding with package-level truncate/wrap utilities in other files.
 func agentTruncate(s string, n int) string {
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return s[:n-1] + "…"
+	return string(r[:n-1]) + "…"
 }
 
+// agentWrap wraps on rune boundaries; byte indexing would split multi-byte
+// runes in non-ASCII task summaries and garble the pane.
 func agentWrap(s string, n int) string {
-	if n <= 10 || len(s) <= n {
+	r := []rune(s)
+	if n <= 10 || len(r) <= n {
 		return s
 	}
 	var b strings.Builder
-	for len(s) > n {
+	for len(r) > n {
 		cut := n
-		for cut > 0 && s[cut] != ' ' {
+		for cut > 0 && r[cut] != ' ' {
 			cut--
 		}
 		if cut == 0 {
 			cut = n
 		}
-		b.WriteString(s[:cut])
+		b.WriteString(string(r[:cut]))
 		b.WriteByte('\n')
-		s = strings.TrimLeft(s[cut:], " ")
+		for cut < len(r) && r[cut] == ' ' {
+			cut++
+		}
+		r = r[cut:]
 	}
-	b.WriteString(s)
+	b.WriteString(string(r))
 	return b.String()
 }

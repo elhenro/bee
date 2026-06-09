@@ -75,13 +75,17 @@ func InboxDrain(sessionID string, cursor int64) ([]Inbox, int64, error) {
 	advanced := cursor
 	for {
 		line, err := r.ReadBytes('\n')
-		if len(line) > 0 {
+		if complete := len(line) > 0 && line[len(line)-1] == '\n'; complete {
+			// advance past every complete line, parseable or not: a corrupt
+			// line must not wedge the cursor or misalign later offsets.
+			advanced += int64(len(line))
 			var m Inbox
 			if jerr := json.Unmarshal(line[:len(line)-1], &m); jerr == nil {
 				out = append(out, m)
-				advanced += int64(len(line))
 			}
 		}
+		// incomplete trailing line (no '\n' yet): cursor stays before it so
+		// the next drain rereads it once the writer finishes.
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break

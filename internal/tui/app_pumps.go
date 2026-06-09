@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -218,7 +219,29 @@ func (m Model) waitStream() tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return streamDeltaMsg{Delta: d}
+		// batch-drain whatever queued while Update was busy: one delta per
+		// Update cycle can't keep up with fast providers, the buffer fills,
+		// and the engine's non-blocking send starts dropping deltas (visible
+		// text gaps mid-stream).
+		return streamDeltaMsg{Delta: drainInto(d, ch)}
+	}
+}
+
+// drainInto appends every immediately-available delta to first without
+// blocking. Shared by the stream and think pumps.
+func drainInto(first string, ch chan string) string {
+	var b strings.Builder
+	b.WriteString(first)
+	for {
+		select {
+		case more, ok := <-ch:
+			if !ok {
+				return b.String()
+			}
+			b.WriteString(more)
+		default:
+			return b.String()
+		}
 	}
 }
 
@@ -235,7 +258,7 @@ func (m Model) waitThink() tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return thinkDeltaMsg{Delta: d}
+		return thinkDeltaMsg{Delta: drainInto(d, ch)}
 	}
 }
 

@@ -177,8 +177,13 @@ func mergeable(s bgreg.Status) bool {
 	if s.Branch == "" || s.WorktreePath == "" {
 		return false
 	}
-	if s.MergeState == bgreg.MergeStateMerged ||
-		s.MergeState == bgreg.MergeStateMerging {
+	if s.MergeState == bgreg.MergeStateMerged {
+		return false
+	}
+	// "merging" is in flight only while a live coordinator holds the merge
+	// lock. A crashed coordinator leaves the state behind forever otherwise;
+	// retrying is safe because rebase+ff-merge are idempotent.
+	if s.MergeState == bgreg.MergeStateMerging && mergeLockHeld() {
 		return false
 	}
 	// agent must have signalled done OR be in conflict (user requested retry)

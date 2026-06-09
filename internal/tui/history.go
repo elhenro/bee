@@ -225,9 +225,15 @@ func AppendHistory(text string) {
 	maybeTrim(p)
 }
 
-// maybeTrim shrinks the history file when it exceeds historyMax lines. Cheap
-// rewrite — we expect history to grow slowly so this rarely fires.
+// maybeTrim shrinks the history file when it exceeds historyMax lines.
+// Stat-gated: AppendHistory runs synchronously in the update loop, and a
+// full line scan per submit causes visible input lag once the file is big.
+// Below ~8 bytes/line the file can't meaningfully exceed historyMax, and
+// trim is best-effort housekeeping anyway.
 func maybeTrim(p string) {
+	if fi, err := os.Stat(p); err != nil || fi.Size() < int64(historyMax)*8 {
+		return
+	}
 	f, err := os.Open(p)
 	if err != nil {
 		return

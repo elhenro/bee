@@ -59,6 +59,12 @@ func bwrapArgs(p Policy) ([]string, error) {
 			"--bind", cwd, cwd,
 			"--chdir", cwd,
 		)
+		// dev-tool caches writable, mirroring the macOS profile: go/npm/cargo
+		// builds write to ~/.cache, ~/go, etc. and fail with EPERM under the
+		// read-only root otherwise. bind-try skips dirs that don't exist.
+		for _, d := range devCacheDirs() {
+			base = append(base, "--bind-try", d, d)
+		}
 		return base, nil
 	default:
 		return nil, fmt.Errorf("sandbox: unsupported scope %q", p.Scope)

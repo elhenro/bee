@@ -157,7 +157,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		cwd = v
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	shellBin, finalCmd := t.buildInvocation(cmdStr)
@@ -180,19 +180,11 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 			IsError: true,
 		}, nil
 	}
-	go func() {
-		select {
-		case <-time.After(timeout):
-			cancel()
-		case <-runCtx.Done():
-		}
-	}()
-
 	err = cmd.Wait()
 	output := truncate(buf.Bytes())
 
 	switch {
-	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
+	case errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
 		return tools.Result{
 			Content: fmt.Sprintf("timeout after %s\n%s", timeout, output),
 			IsError: true,

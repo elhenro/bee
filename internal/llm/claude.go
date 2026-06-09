@@ -185,7 +185,13 @@ func (p *ClaudeProvider) nonStreamLoop(resp *http.Response, out chan<- Event, to
 	}
 	done := Event{Type: EventDone, StopReason: body.StopReason}
 	if body.Usage != nil {
-		done.Usage = &Usage{InputTokens: body.Usage.InputTokens, OutputTokens: body.Usage.OutputTokens}
+		// fold cached tokens into InputTokens, same as the stream path: without
+		// this the auto-compact budget check undercounts once caching kicks in.
+		done.Usage = &Usage{
+			InputTokens:  body.Usage.InputTokens + body.Usage.CacheReadInputTokens + body.Usage.CacheCreationInputTokens,
+			OutputTokens: body.Usage.OutputTokens,
+			CachedTokens: body.Usage.CacheReadInputTokens,
+		}
 	}
 	out <- done
 }

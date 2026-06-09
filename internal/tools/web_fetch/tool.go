@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
@@ -103,9 +104,14 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		}, nil
 	}
 
-	// Truncate if too long
+	// Truncate if too long, backing off to a rune boundary so the cut never
+	// splits a UTF-8 sequence.
 	if t.config.MaxContentLen > 0 && len(result.Markdown) > t.config.MaxContentLen {
-		result.Markdown = result.Markdown[:t.config.MaxContentLen] + "\n\n[…truncated]"
+		cut := t.config.MaxContentLen
+		for cut > 0 && !utf8.RuneStart(result.Markdown[cut]) {
+			cut--
+		}
+		result.Markdown = result.Markdown[:cut] + "\n\n[…truncated]"
 	}
 
 	// Format result

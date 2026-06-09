@@ -60,6 +60,11 @@ func Prune(opts PruneOpts) PruneResult {
 			if now.Sub(stamp) < opts.StaleRunningAge {
 				continue
 			}
+			// a long-running but live driver is not stale — reaping it would
+			// fight the running process over meta.json until it exits.
+			if r.PID > 0 && processAlive(r.PID) {
+				continue
+			}
 			r.Status = StatusAborted
 			r.StopCause = "reaped by gc (stale running)"
 			r.EndedAt = now

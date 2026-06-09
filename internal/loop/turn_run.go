@@ -363,25 +363,30 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 
 		// stream was cut mid-repetition: nudge the model back on track, or bail
 		// after loopCutBailAt consecutive cuts (wedged in a token loop).
+		// when a tool call survived the cut, fall through: skipping dispatch
+		// would leave an orphaned tool_use in the transcript (assistant msg is
+		// already appended) and the wire rejects tool_use without tool_result.
 		if e.lastTurnLooped {
 			e.lastTurnLooped = false
-			e.loopCutStreak++
-			if e.loopCutStreak >= loopCutBailAt {
-				return res, &RepeatStreamError{Streak: e.loopCutStreak}
+			if len(toolUses) == 0 && !detectDoneSignal(finalText) {
+				e.loopCutStreak++
+				if e.loopCutStreak >= loopCutBailAt {
+					return res, &RepeatStreamError{Streak: e.loopCutStreak}
+				}
+				nudge := types.Message{
+					ID:       newID(),
+					ParentID: assistantMsg.ID,
+					Role:     types.RoleUser,
+					Content: []types.ContentBlock{{Type: types.BlockText, Text: "[nudge] your output got stuck repeating the same text and was cut off. " +
+						"stop repeating — call a tool to make progress or give a short final answer."}},
+					Time: time.Now().UTC(),
+				}
+				if err := e.appendMessage(ctx, nudge); err != nil {
+					return res, err
+				}
+				res.Messages = append(res.Messages, nudge)
+				continue
 			}
-			nudge := types.Message{
-				ID:       newID(),
-				ParentID: assistantMsg.ID,
-				Role:     types.RoleUser,
-				Content: []types.ContentBlock{{Type: types.BlockText, Text: "[nudge] your output got stuck repeating the same text and was cut off. " +
-					"stop repeating — call a tool to make progress or give a short final answer."}},
-				Time: time.Now().UTC(),
-			}
-			if err := e.appendMessage(ctx, nudge); err != nil {
-				return res, err
-			}
-			res.Messages = append(res.Messages, nudge)
-			continue
 		}
 		e.loopCutStreak = 0
 

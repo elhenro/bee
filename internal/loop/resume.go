@@ -3,6 +3,8 @@ package loop
 import (
 	"context"
 	"errors"
+
+	"github.com/elhenro/bee/internal/types"
 )
 
 // resume continuation messages. generic (no goal condition) so the same text
@@ -73,4 +75,37 @@ func ClassifyResume(err error, res RunResult) ResumeDecision {
 func ShouldResume(err error, res RunResult) (bool, string) {
 	d := ClassifyResume(err, res)
 	return d.Resume, d.Continuation
+}
+
+// StripDanglingToolUse sanitizes a message history before it is carried into
+// a resumed run. A turn that died mid-dispatch can end on an assistant
+// message whose tool_use blocks never got a tool_result; replaying that
+// history is a wire error on strict providers and bait for hallucinated
+// results on lenient ones. Drops the dangling tool_use blocks, and the whole
+// trailing message when nothing else remains in it.
+func StripDanglingToolUse(msgs []types.Message) []types.Message {
+	if len(msgs) == 0 {
+		return msgs
+	}
+	last := msgs[len(msgs)-1]
+	if last.Role != types.RoleAssistant {
+		return msgs
+	}
+	kept := make([]types.ContentBlock, 0, len(last.Content))
+	for _, b := range last.Content {
+		if b.Type == types.BlockToolUse {
+			continue
+		}
+		kept = append(kept, b)
+	}
+	if len(kept) == len(last.Content) {
+		return msgs
+	}
+	if len(kept) == 0 {
+		return msgs[:len(msgs)-1]
+	}
+	out := make([]types.Message, len(msgs))
+	copy(out, msgs)
+	out[len(out)-1].Content = kept
+	return out
 }

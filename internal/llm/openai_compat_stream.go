@@ -98,6 +98,11 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
+		// any received line is liveness — including ': keepalive' comments and
+		// blank separators some servers send during long reasoning phases.
+		// without this the watchdog trips on keepalive-only traffic.
+		bumpActivity()
+
 		select {
 		case <-ctx.Done():
 			out <- Event{Type: EventError, Err: ctx.Err()}

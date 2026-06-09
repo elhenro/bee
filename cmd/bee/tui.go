@@ -208,12 +208,14 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	// stream channel routes text deltas from the engine through bubbletea
 	// instead of letting them write to os.Stdout (which would corrupt the
 	// alt-screen). Buffered so brief consumer hiccups don't drop deltas.
-	streamCh := make(chan string, 64)
+	// sized so a fast provider can outrun a busy Update cycle without the
+	// engine's non-blocking send dropping deltas; the pump batch-drains.
+	streamCh := make(chan string, 512)
 	// thinkCh routes reasoning deltas from the engine through bubbletea so
 	// chain-of-thought renders live above the answer instead of arriving
 	// in one batch after streaming ends. Same buffer size as streamCh — a
 	// reasoning model can emit deltas just as fast as text.
-	thinkCh := make(chan string, 64)
+	thinkCh := make(chan string, 512)
 	// liveMsgCh surfaces each assistant/tool message as the loop appends it,
 	// so tool_use / tool_result cards render mid-Run instead of only at
 	// turnDoneMsg. Buffered to avoid stalling the loop during tool bursts.

@@ -317,6 +317,7 @@ func startRun(cfg zzz.Config) (*zzz.Run, error) {
 		RepoRoot:  root,
 		StartedAt: time.Now().UTC(),
 		Status:    zzz.StatusRunning,
+		PID:       os.Getpid(),
 	}
 	switch {
 	case cfg.Worktree:
@@ -399,6 +400,7 @@ func resumeRun(id string) (*zzz.Run, error) {
 		}
 	}
 	r.Status = zzz.StatusRunning
+	r.PID = os.Getpid() // refresh so gc sees the live driver, not the old one
 	if err := zzz.SaveMeta(r); err != nil {
 		return nil, fmt.Errorf("persist resume status: %w", err)
 	}

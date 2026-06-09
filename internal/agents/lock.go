@@ -56,3 +56,19 @@ func (l *MergeLock) Release() {
 	}
 	_ = os.Remove(l.path)
 }
+
+// mergeLockHeld reports whether a live process currently holds the merge
+// lock. Used to tell an in-flight merge apart from a stale "merging" state
+// left behind by a coordinator that crashed mid-merge.
+func mergeLockHeld() bool {
+	p, err := MergeLockPath()
+	if err != nil {
+		return false
+	}
+	body, err := os.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	pid, perr := strconv.Atoi(strings.TrimSpace(string(body)))
+	return perr == nil && pid > 0 && pidAlive(pid)
+}

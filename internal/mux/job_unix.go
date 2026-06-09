@@ -51,6 +51,13 @@ func supervise(pid int, ttyFd uintptr, cont bool) (bool, error) {
 	defer reclaim(ttyFd)
 
 	if cont {
+		// child may have died while parked: reap the zombie without blocking
+		// and skip the SIGCONT. The zombie pins the pid until we wait on it,
+		// so this can never signal an unrelated recycled pid.
+		var pre unix.WaitStatus
+		if n, _ := unix.Wait4(pid, &pre, unix.WNOHANG|unix.WUNTRACED, nil); n == pid && !pre.Stopped() {
+			return false, nil
+		}
 		_ = tcsetpgrp(ttyFd, pid)
 		if err := syscall.Kill(-pid, syscall.SIGCONT); err != nil {
 			return false, err

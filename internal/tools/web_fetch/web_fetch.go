@@ -99,7 +99,7 @@ func (c *Cache) Clear() {
 	c.order = make([]string, 0)
 }
 
-var cache = NewCache(15*time.Minute, 50*1024*1024) // 15min TTL, 50MB max
+var cache = NewCache(15*time.Minute, 50) // 15min TTL, 50-entry LRU
 
 // DomainPolicy controls which domains are allowed/blocked
 type DomainPolicy struct {

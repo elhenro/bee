@@ -293,7 +293,9 @@ func runHeadlessReal(args []string) {
 		}
 		fmt.Fprintf(os.Stderr, "bee: turn stopped (%s), auto-resuming %d/%d…\n",
 			d.Reason, attempt+1, cfg.Watchdog.Resumes())
-		eng.InitialMessages = res.Messages // carry context into the next attempt
+		// carry context into the next attempt, minus any tool_use left dangling
+		// by the aborted dispatch (replaying those is a wire error).
+		eng.InitialMessages = loop.StripDanglingToolUse(res.Messages)
 		msg = d.Continuation
 	}
 

@@ -165,7 +165,9 @@ func readFile(path string) ([]types.Message, error) {
 		}
 		var m types.Message
 		if err := json.Unmarshal(line, &m); err != nil {
-			return nil, err
+			// crash-truncated or corrupt line: skip it instead of failing the
+			// whole session. lines before and after still load.
+			continue
 		}
 		out = append(out, m)
 	}
@@ -225,7 +227,9 @@ func collapseAtCheckpoint(msgs []types.Message) []types.Message {
 	return out
 }
 
-// readFirstMessage reads only the first JSON line. Cheap for List().
+// readFirstMessage reads the first parseable JSON line. Cheap for List().
+// corrupt leading lines (crash artifacts) are skipped so one bad write does
+// not make the session invisible; io.EOF means no parseable line at all.
 func readFirstMessage(path string) (types.Message, error) {
 	var m types.Message
 	f, err := os.Open(path)
@@ -235,16 +239,19 @@ func readFirstMessage(path string) (types.Message, error) {
 	defer f.Close()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
-	if !sc.Scan() {
-		if err := sc.Err(); err != nil {
-			return m, err
+	for sc.Scan() {
+		line := sc.Bytes()
+		if len(line) == 0 {
+			continue
 		}
-		return m, io.EOF
+		if err := json.Unmarshal(line, &m); err == nil {
+			return m, nil
+		}
 	}
-	if err := json.Unmarshal(sc.Bytes(), &m); err != nil {
+	if err := sc.Err(); err != nil {
 		return m, err
 	}
-	return m, nil
+	return m, io.EOF
 }
 
 // List enumerates known sessions by scanning the sessions dir. Each session's
@@ -276,11 +283,9 @@ func List() ([]types.Session, error) {
 		p := filepath.Join(dir, name)
 		first, err := readFirstMessage(p)
 		if err != nil {
-			// empty or malformed file: skip but don't fail the whole listing
-			if errors.Is(err, io.EOF) {
-				continue
-			}
-			return nil, err
+			// empty, corrupt, or unreadable file: skip it but never fail the
+			// whole listing over one bad session file.
+			continue
 		}
 		s := types.Session{ID: id, Created: first.Time}
 		if s.Created.IsZero() {

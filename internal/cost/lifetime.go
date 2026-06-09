@@ -86,19 +86,37 @@ func AddLifetime(in, out int) {
 	lifeMu.Lock()
 	defer lifeMu.Unlock()
 	ensureLifetimeLoaded()
-	if in > 0 {
-		lifeData.Input += int64(in)
-	}
-	if out > 0 {
-		lifeData.Output += int64(out)
-	}
 	if lifePath == "" {
+		// no persistence target; keep the in-memory tally for the banner.
+		if in > 0 {
+			lifeData.Input += int64(in)
+		}
+		if out > 0 {
+			lifeData.Output += int64(out)
+		}
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(lifePath), 0o755); err != nil {
 		return
 	}
-	b, err := json.Marshal(lifeData)
+	// merge-on-write under a cross-process flock: concurrent bee processes
+	// (fan, swarm, parallel headless runs) each re-read the file before
+	// adding their delta, so nobody's counts get silently dropped by a
+	// last-writer-wins overwrite.
+	unlock := lockLifetimeFile(lifePath)
+	defer unlock()
+	var cur lifetimeFile
+	if b, err := os.ReadFile(lifePath); err == nil {
+		_ = json.Unmarshal(b, &cur)
+	}
+	if in > 0 {
+		cur.Input += int64(in)
+	}
+	if out > 0 {
+		cur.Output += int64(out)
+	}
+	lifeData = cur
+	b, err := json.Marshal(cur)
 	if err != nil {
 		return
 	}
