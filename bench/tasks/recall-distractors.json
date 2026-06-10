@@ -1,0 +1,13 @@
+{
+  "id": "recall-distractors",
+  "prompt": "the keys directory holds three credential files. find the api-key whose env is production and remember it. then delete the whole keys directory. then create done.txt containing exactly 'cleanup complete'. finally write ONLY the production api-key into a new file named answer.txt.",
+  "setup": "mkdir -p $SANDBOX/keys && printf 'service: alpha\\nenv: staging\\napi-key: AK-STG-4452-MOTH\\n' > $SANDBOX/keys/alpha.txt && printf 'service: beta\\nenv: production\\napi-key: AK-PRD-9913-IBIS\\n' > $SANDBOX/keys/beta.txt && printf 'service: gamma\\nenv: dev\\napi-key: AK-DEV-1175-NEWT\\n' > $SANDBOX/keys/gamma.txt",
+  "checks": [
+    {"kind": "grep", "file": "$SANDBOX/answer.txt", "pattern": "AK-PRD-9913-IBIS"},
+    {"kind": "cmd", "run": "! grep -Eq 'AK-STG-4452-MOTH|AK-DEV-1175-NEWT' $SANDBOX/answer.txt", "expect_exit": 0},
+    {"kind": "cmd", "run": "test ! -d $SANDBOX/keys", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/done.txt", "pattern": "cleanup complete"}
+  ],
+  "judge": "the production key (not the staging or dev decoys) is recalled into answer.txt after the source directory was destroyed and filler work done",
+  "budget": {"max_turns": 14}
+}

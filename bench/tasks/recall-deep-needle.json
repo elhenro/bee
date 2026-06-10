@@ -1,0 +1,11 @@
+{
+  "id": "recall-deep-needle",
+  "prompt": "build.log holds exactly one line starting with 'release-code:'. find it and write ONLY the code value (the part after the colon, trimmed) into a new file named answer.txt in the current directory.",
+  "setup": "awk 'BEGIN { for (i=1;i<=1200;i++) { if (i==42) print \"release-code-draft: QQQ-0000-DRAFT (superseded, do not use)\"; else if (i==873) print \"release-code: XKR-7741-BLUEFIN\"; else printf \"2026-06-10T%02d:%02d:%02dZ worker=%d job=%d status=ok\\n\", i%24, i%60, (i*7)%60, i%8, i } }' > $SANDBOX/build.log",
+  "checks": [
+    {"kind": "grep", "file": "$SANDBOX/answer.txt", "pattern": "XKR-7741-BLUEFIN"},
+    {"kind": "cmd", "run": "! grep -q 'QQQ-0000-DRAFT' $SANDBOX/answer.txt", "expect_exit": 0}
+  ],
+  "judge": "answer.txt holds the real release code from deep in the log, not the superseded draft code planted near the top",
+  "budget": {"max_turns": 8}
+}

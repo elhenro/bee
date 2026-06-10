@@ -1,0 +1,14 @@
+{
+  "id": "recall-across-filler",
+  "prompt": "do these steps in order: (1) read token.txt and remember the deploy token. (2) delete token.txt. (3) create five files step1.txt through step5.txt, each containing the matching number word (one, two, three, four, five). (4) write ONLY the deploy token into a new file named answer.txt.",
+  "setup": "printf 'deploy token: HXM-2289-GRANITE\\n' > $SANDBOX/token.txt",
+  "checks": [
+    {"kind": "grep", "file": "$SANDBOX/answer.txt", "pattern": "HXM-2289-GRANITE"},
+    {"kind": "cmd", "run": "test ! -f $SANDBOX/token.txt", "expect_exit": 0},
+    {"kind": "grep", "file": "$SANDBOX/step1.txt", "pattern": "one"},
+    {"kind": "grep", "file": "$SANDBOX/step3.txt", "pattern": "three"},
+    {"kind": "grep", "file": "$SANDBOX/step5.txt", "pattern": "five"}
+  ],
+  "judge": "the token read in step 1 survives the filler work and lands in answer.txt; source file is gone so the final write must come from transcript memory",
+  "budget": {"max_turns": 14}
+}
