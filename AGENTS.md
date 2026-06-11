@@ -105,7 +105,7 @@ Clean **types → provider → tools → loop → ui** stack. Internal packages 
   - **Config-defined**: `usertool` wraps `[[user_tools]]` entries from `~/.bee/config.toml` as model-callable subprocess tools.
   - **Common**: `truncate.go` caps tool-result payload at the profile's `ToolOutputTokens`; `relpath.go` keeps paths repo-relative; `argparse.go` normalizes mixed-shape inputs from different providers.
 
-  `buildToolsFiltered(cwd, writeRe)` in `cmd/bee/run_tools.go` threads a write-path regex into every mutation tool for confined runs. `Engine.Run` dispatches tools serially — there is no tool parallelism in v0.1.
+  `buildToolsFiltered(cwd, writeRe)` in `cmd/bee/run_tools.go` threads a write-path regex into every mutation tool for confined runs. `Engine.Run` dispatches a turn's read-only tools concurrently and runs mutators/shell serially as barriers (see `dispatchTools` in `internal/loop/turn_tools.go`): all in-flight reads complete before a mutator runs, and nothing new starts until it returns, preserving happens-before and avoiding sandbox contention.
 
 - **`internal/prompt/`** — assembles the per-turn system prompt: caveman rules + identity + tool manifest + skills + selected memories. Honors the active profile's `SystemPromptBudget` by truncating low-priority sections. `atexpand.go` resolves `@file` references; `context.go`/`context_warning.go` track approaching window limits.
 
@@ -164,7 +164,7 @@ Clean **types → provider → tools → loop → ui** stack. Internal packages 
 - **Pure Go, no CGo.** Single static binary on darwin/linux/windows. New deps must be CGo-free.
 - **≤300 lines per file.** Split if a file grows; see `wire/openai_stream.go` for an example split.
 - **Internal types own the wire boundary.** Add a new provider by writing an adapter under `internal/llm/` that translates to/from `types.Message`/`ToolUse`/`ToolResult`. Do not propagate provider SDK types into other packages.
-- **`Engine.Run` dispatches tools serially.** No tool parallelism in v0.1 — keep this in mind when adding tools that block.
+- **`Engine.Run` dispatches read-only tools concurrently, mutators serially.** A mutator/shell call is a barrier: in-flight reads drain before it runs, and nothing new starts until it returns (`dispatchTools` in `internal/loop/turn_tools.go`). A read-only tool that blocks delays only its own batch; a mutator that blocks stalls the whole turn — keep that in mind when adding one.
 - **No provider name-drops in code comments.** Describe behavior, not vendor ("OpenAI-compatible chat completions wire" beats "OpenAI / DeepSeek / Groq"). Vendor names are fine in user-facing strings and config defaults.
 - **Pre-set `lipgloss` dark background + glamour `WithStandardStyle("dark")`** before Bubbletea grabs stdin. See `cmd/bee/tui.go` for why (Ghostty/iTerm reply to OSC 11 queries with bytes that leak into the textinput in altscreen mode).
 - **TUI styles live in `internal/tui/style.go`.** Palette is a layered neutral scale (Oyster → Squid → Smoke → Ash → Butter foregrounds; Pepper → BBQ → Charcoal → Iron backgrounds) with a single honey accent (`#FFB000`). Borrowed from charmbracelet/charmtone but inlined to avoid the dep. Chrome stays dim; the bee glyph carries the accent.
@@ -193,6 +193,7 @@ Clean **types → provider → tools → loop → ui** stack. Internal packages 
 | `BEE_MODEL` | Override config `default_model`. |
 | `BEE_PROFILE` | Override config `profile` (`tiny`/`normal`/`large`/`auto`). |
 | `BEE_CAVEMAN` | Override caveman level. |
+| `BEE_STREAM_STALL_SECONDS` | Override the streaming idle-stall window (default 600s). `<=0` disables the watchdog. |
 | `BEE_TEST_PROVIDER` | `stub` for canned replies, `scripted` for fixture-driven runs. |
 | `BEE_TEST_SCRIPT` | Path to scripted fixture when `BEE_TEST_PROVIDER=scripted`. |
 | `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / ... | Provider keys; resolved from `EnvKey` on the active provider block. |
