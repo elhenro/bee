@@ -378,8 +378,9 @@ func TestRunMaxIterationsCap(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "max iterations") {
 		t.Errorf("expected max-iterations error, got %v", err)
 	}
-	if got := p.calls.Load(); got != int32(MaxIterations) {
-		t.Errorf("provider calls = %d want %d", got, MaxIterations)
+	// MaxIterations tool rounds + 1 tool-less wind-down summary call on cap.
+	if got := p.calls.Load(); got != int32(MaxIterations)+1 {
+		t.Errorf("provider calls = %d want %d", got, MaxIterations+1)
 	}
 }
 
@@ -623,6 +624,12 @@ func TestDetectDoneSignal(t *testing.T) {
 		{"", false},
 		{"not done", false},
 		{"<promise>working</promise>", false},
+		// token echoed inside a fenced code block (file read / pasted diff): no exit.
+		{"here is the file:\n```\n<promise>done</promise>\n```\nstill working", false},
+		// token buried mid-message, not the concluding line: no exit.
+		{"<promise>done</promise> means finished, but i still need to run tests", false},
+		// token on the final line after real work: exit.
+		{"ran the tests, all green.\n<promise>done</promise>", true},
 	}
 	for _, tc := range cases {
 		if got := detectDoneSignal(tc.in); got != tc.want {
@@ -747,8 +754,9 @@ func TestRun_MaxIter_TinyProfileOverrides(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "max iterations") {
 		t.Fatalf("expected max-iterations error, got %v", err)
 	}
-	if got := p.calls.Load(); got != 100 {
-		t.Errorf("tiny profile maxIter: provider calls = %d, want 100", got)
+	// 100 tool rounds + 1 wind-down summary call on cap.
+	if got := p.calls.Load(); got != 101 {
+		t.Errorf("tiny profile maxIter: provider calls = %d, want 101", got)
 	}
 }
 
@@ -773,8 +781,9 @@ func TestRun_MaxIter_NormalProfileFallsThrough(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "max iterations") {
 		t.Fatalf("expected max-iterations error, got %v", err)
 	}
-	if got := p.calls.Load(); got != 100 {
-		t.Errorf("normal profile maxIter: provider calls = %d, want 100 (cfg default)", got)
+	// 100 tool rounds + 1 wind-down summary call on cap.
+	if got := p.calls.Load(); got != 101 {
+		t.Errorf("normal profile maxIter: provider calls = %d, want 101 (cfg default)", got)
 	}
 }
 

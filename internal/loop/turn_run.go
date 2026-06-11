@@ -544,5 +544,8 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction, Options: esc.Options}
 		}
 	}
+	// graceful wind-down: one tool-less turn so the user gets a close-out
+	// summary rather than a bare cap error. best-effort, never blocks the exit.
+	e.finalSummaryOnCap(ctx, &res, sys, sysDynamic)
 	return res, &MaxIterationsError{Limit: maxIter}
 }

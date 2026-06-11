@@ -47,6 +47,13 @@ func (e *Engine) handleBudgetCaps(ctx context.Context, msgs *[]types.Message, cu
 	if !readOnly && e.noMutationStreak >= stallCap {
 		return fmt.Errorf("loop: %d read-only iters with no edits, stopping — type 'continue' to resume", e.noMutationStreak)
 	}
+	// read-only turns still need a backstop: with an unlimited iter cap and an
+	// unknown context window (tokenBudget<=0) a scout reading genuinely new
+	// files each turn has no ceiling at all. allow a generous research budget,
+	// then stop cleanly instead of running forever.
+	if readOnly && e.noMutationStreak >= 2*stallCap {
+		return fmt.Errorf("loop: %d read-only iters, stopping research run — type 'continue' to resume", e.noMutationStreak)
+	}
 	// token budget: cumulative input+output across iterations. only enforced
 	// when the model's context window is known so unknown-model runs aren't
 	// bounded by a fabricated number.

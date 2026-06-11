@@ -3,11 +3,18 @@ package loop
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/types"
 )
+
+// classifyTimeout bounds the per-turn posture side-call. Without it the
+// classifier inherits the full turn context (minutes on a slow provider) and a
+// hung side-call would burn the turn before the user's request even runs. On
+// timeout the call returns its safe default (act).
+const classifyTimeout = 8 * time.Second
 
 // Role gates engine behavior per Run. one axis the user cycles with shift+tab;
 // each role bundles tool surface + reasoning budget + orchestration.
@@ -169,6 +176,8 @@ func classifyPosture(ctx context.Context, p llm.Provider, model, userText string
 	if p == nil || strings.TrimSpace(userText) == "" {
 		return false
 	}
+	ctx, cancel := context.WithTimeout(ctx, classifyTimeout)
+	defer cancel()
 	req := llm.Request{
 		Model:  model,
 		System: classifySystem,
