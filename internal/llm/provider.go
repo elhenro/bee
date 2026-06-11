@@ -145,6 +145,7 @@ type ToolSpec struct {
 type Event struct {
 	Type     EventType
 	Delta    string         // for EventTextDelta
+	N        int            // for EventProgress: chars generated but withheld
 	ToolUse  *types.ToolUse // for EventToolUse
 	StopReason string       // for EventDone
 	Err      error          // for EventError
@@ -156,9 +157,14 @@ type EventType string
 const (
 	EventTextDelta     EventType = "text_delta"
 	EventThinkingDelta EventType = "thinking_delta"
-	EventToolUse       EventType = "tool_use"
-	EventDone          EventType = "done"
-	EventError         EventType = "error"
+	// EventProgress signals generation volume without content: buffered
+	// tool-call modes (jsonmode, textmode) withhold text deltas until parse,
+	// which starves the TUI's live output counter. N carries the withheld
+	// char count so the readout still tracks throughput.
+	EventProgress EventType = "progress"
+	EventToolUse  EventType = "tool_use"
+	EventDone     EventType = "done"
+	EventError    EventType = "error"
 )
 
 // Usage captures token accounting reported by the provider.

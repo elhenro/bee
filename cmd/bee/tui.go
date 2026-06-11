@@ -216,6 +216,9 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	// in one batch after streaming ends. Same buffer size as streamCh — a
 	// reasoning model can emit deltas just as fast as text.
 	thinkCh := make(chan string, 512)
+	// progressCh routes withheld-output char counts from buffered tool-call
+	// modes so the loader's ↓ figure moves even when no text deltas flow.
+	progressCh := make(chan int, 512)
 	// liveMsgCh surfaces each assistant/tool message as the loop appends it,
 	// so tool_use / tool_result cards render mid-Run instead of only at
 	// turnDoneMsg. Buffered to avoid stalling the loop during tool bursts.
@@ -238,6 +241,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		SteerCh:         make(chan string, 4),
 		StreamCh:        streamCh,
 		ThinkCh:         thinkCh,
+		ProgressCh:      progressCh,
 		LiveMsgCh:       liveMsgCh,
 		WarnCh:          warnCh,
 		Costs:           costs,

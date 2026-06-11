@@ -164,6 +164,13 @@ func (m Model) WithStreamCh(ch chan string) Model {
 	return m
 }
 
+// WithProgressCh wires a withheld-output count channel from the engine into
+// the TUI. Same channel must be set on Engine.ProgressCh so counts flow.
+func (m Model) WithProgressCh(ch chan int) Model {
+	m.progressCh = ch
+	return m
+}
+
 // WithThinkCh wires a reasoning-delta channel from the engine into the TUI
 // so chain-of-thought renders live during streaming. Same channel must be
 // set on Engine.ThinkCh so deltas flow.

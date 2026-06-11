@@ -33,6 +33,11 @@ type streamDeltaMsg struct{ Delta string }
 // into the bubbletea Update loop so reasoning renders live during a turn.
 type thinkDeltaMsg struct{ Delta string }
 
+// progressMsg carries the char count of withheld output from
+// Engine.ProgressCh — buffered tool-call modes generate text the user never
+// sees mid-stream, but the ↓ figure should still move.
+type progressMsg struct{ N int }
+
 // liveMsgMsg carries a freshly-persisted message from the engine into the
 // TUI so the scrollback updates the moment the loop appends an assistant
 // or tool message — instead of waiting for the whole Run to complete.
@@ -241,6 +246,32 @@ func drainInto(first string, ch chan string) string {
 			b.WriteString(more)
 		default:
 			return b.String()
+		}
+	}
+}
+
+// waitProgress blocks on the next withheld-output count. Same re-arming
+// pattern as waitStream; batch-drains queued counts into one msg.
+func (m Model) waitProgress() tea.Cmd {
+	if m.progressCh == nil {
+		return nil
+	}
+	ch := m.progressCh
+	return func() tea.Msg {
+		n, ok := <-ch
+		if !ok {
+			return nil
+		}
+		for {
+			select {
+			case more, ok := <-ch:
+				if !ok {
+					return progressMsg{N: n}
+				}
+				n += more
+			default:
+				return progressMsg{N: n}
+			}
 		}
 	}
 }

@@ -133,6 +133,8 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 		switch ev.Type {
 		case EventTextDelta:
 			buf.WriteString(ev.Delta)
+			// withheld content still counts as generation progress.
+			out <- Event{Type: EventProgress, N: len(ev.Delta)}
 			// only attempt early dispatch when a closing tag for ANY known
 			// tool is present — cheap substring scan, avoids invoking the
 			// full regex extractor on every token.

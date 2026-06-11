@@ -211,6 +211,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onStreamDelta(msg)
 	case thinkDeltaMsg:
 		return m.onThinkDelta(msg)
+	case progressMsg:
+		return m.onProgress(msg)
 	case liveMsgMsg:
 		return m.onLiveMsg(msg)
 	case warningMsg:

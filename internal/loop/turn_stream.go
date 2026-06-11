@@ -133,6 +133,16 @@ events:
 			} else {
 				_, _ = e.Stdout.Write([]byte(ev.Delta))
 			}
+		case llm.EventProgress:
+			// withheld-output liveness from buffered tool-call modes. Not
+			// content (no gotContent): the wrapper re-emits the parsed text
+			// at end-of-stream, and pre-content retry must stay replayable.
+			if e.ProgressCh != nil {
+				select {
+				case e.ProgressCh <- ev.N:
+				default:
+				}
+			}
 		case llm.EventToolUse:
 			if ev.ToolUse != nil {
 				*toolUses = append(*toolUses, *ev.ToolUse)

@@ -65,6 +65,11 @@ type Engine struct {
 	// for the whole thinking buffer to flush at end-of-stream. Sends are
 	// non-blocking — slow consumer drops deltas.
 	ThinkCh chan string
+	// ProgressCh, when non-nil, receives the char count of text the provider
+	// generated but withheld from StreamCh (buffered tool-call modes parse
+	// the whole body before emitting). Keeps the TUI's live output figure
+	// moving when no displayable deltas flow. Sends are non-blocking.
+	ProgressCh chan int
 	// LiveMsgCh, when non-nil, receives every assistant + tool message as
 	// it's persisted, so a UI can render tool_use / tool_result cards in
 	// real time instead of only after Run returns. User messages are NOT

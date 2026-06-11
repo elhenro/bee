@@ -152,6 +152,9 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 	if eng != nil && eng.ThinkCh != nil {
 		m = m.WithThinkCh(eng.ThinkCh)
 	}
+	if eng != nil && eng.ProgressCh != nil {
+		m = m.WithProgressCh(eng.ProgressCh)
+	}
 	if eng != nil && eng.LiveMsgCh != nil {
 		m = m.WithLiveMsgCh(eng.LiveMsgCh)
 	}

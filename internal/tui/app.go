@@ -83,6 +83,9 @@ func (m Model) Init() tea.Cmd {
 	if c := m.waitThink(); c != nil {
 		cmds = append(cmds, c)
 	}
+	if c := m.waitProgress(); c != nil {
+		cmds = append(cmds, c)
+	}
 	if c := m.waitLiveMsg(); c != nil {
 		cmds = append(cmds, c)
 	}

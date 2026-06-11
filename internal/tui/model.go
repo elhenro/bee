@@ -242,6 +242,10 @@ type Model struct {
 	// nil in tests; lifetime owned by the caller of WithStreamCh.
 	streamCh chan string
 
+	// progressCh receives withheld-output char counts via Engine.ProgressCh
+	// (buffered tool-call modes). Feeds turnOutChars when streamCh is silent.
+	progressCh chan int
+
 	// thinkCh receives chain-of-thought deltas from the engine via
 	// Engine.ThinkCh so reasoning renders live above the answer instead
 	// of dumping all at once when the stream ends.

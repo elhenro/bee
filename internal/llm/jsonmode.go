@@ -69,6 +69,8 @@ func (p *JSONModeProvider) relay(in <-chan Event, out chan<- Event) {
 		switch ev.Type {
 		case EventTextDelta:
 			buf.WriteString(ev.Delta)
+			// withheld content still counts as generation progress.
+			out <- Event{Type: EventProgress, N: len(ev.Delta)}
 		case EventThinkingDelta:
 			out <- ev
 		case EventToolUse:

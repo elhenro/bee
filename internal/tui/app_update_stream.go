@@ -25,6 +25,15 @@ func (m Model) onThinkDelta(msg thinkDeltaMsg) (tea.Model, tea.Cmd) {
 	return m, m.waitThink()
 }
 
+// onProgress accumulates withheld-output chars (buffered tool-call modes)
+// into turnOutChars so the ↓ figure and throughput readout stay live even
+// when no displayable text deltas flow.
+func (m Model) onProgress(msg progressMsg) (tea.Model, tea.Cmd) {
+	m.noteActivity()
+	m.turnOutChars += msg.N
+	return m, m.waitProgress()
+}
+
 func (m Model) onStreamDelta(msg streamDeltaMsg) (tea.Model, tea.Cmd) {
 	m.noteActivity()
 	// append to live partial. View() picks it up next render. The pump
