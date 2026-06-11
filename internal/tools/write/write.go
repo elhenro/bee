@@ -66,7 +66,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	// destroying the file. detect canonical patch headers and redirect.
 	if isDiffContent(content) {
 		return tools.Result{
-			Content: "refusing to write — content looks like a unified diff. Use the `edit` tool for targeted find/replace, or enable the large profile and use `apply_patch` for unified diffs. `write` overwrites the whole file with raw content.",
+			Content: "refusing to write — content looks like a unified diff, not file contents. Use the `edit` tool to apply a targeted change, or pass the full final file as raw text to `write` (no diff markers). `write` overwrites the whole file verbatim.",
 			IsError: true,
 		}, nil
 	}

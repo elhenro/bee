@@ -45,7 +45,8 @@ func NewWithFilter(root string, pathRe *regexp.Regexp) *Tool {
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
 		Name: toolName,
-		Description: "Replace literal 'old' with 'new' in a file. " +
+		Description: "Replace a literal (not regex) 'old' string with 'new' in a file. " +
+			"'old' must match the file byte-for-byte including indentation. " +
 			"Default replaces the 1st occurrence; set occurrence=N for the Nth, " +
 			"or replace_all=true for every match. Set count=K to refuse unless " +
 			"exactly K occurrences exist (catches stale assumptions). Result echoes " +
