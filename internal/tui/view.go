@@ -9,6 +9,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// centerPane is the shape every Ctrl-key modal pane shares: a nil-safe Open
+// gate and a sized View. View() consumes a slice of these so adding a pane is
+// one slice entry, not another if-branch.
+type centerPane interface {
+	Open() bool
+	View(width, height int) string
+}
+
 // View renders the live region only — top bar, streaming partial (if any),
 // error line (if any), input row, and key hints. Finalized messages live
 // in the terminal's native scrollback via tea.Println; we never repaint
@@ -70,26 +78,13 @@ func (m Model) View() string {
 	if m.rewind != nil && m.rewind.Open() {
 		return overlayCenter(frame, m.rewind.View(m.width, m.height), m.width)
 	}
-	if m.costPane != nil && m.costPane.Open() {
-		return overlayCenter(frame, m.costPane.View(m.width, m.height), m.width)
-	}
-	if m.usagePane != nil && m.usagePane.Open() {
-		return overlayCenter(frame, m.usagePane.View(m.width, m.height), m.width)
-	}
-	if m.loginPane != nil && m.loginPane.Open() {
-		return overlayCenter(frame, m.loginPane.View(m.width, m.height), m.width)
-	}
-	if m.rolePane != nil && m.rolePane.Open() {
-		return overlayCenter(frame, m.rolePane.View(m.width, m.height), m.width)
-	}
-	if m.effortPane != nil && m.effortPane.Open() {
-		return overlayCenter(frame, m.effortPane.View(m.width, m.height), m.width)
-	}
-	if m.settingsPane != nil && m.settingsPane.Open() {
-		return overlayCenter(frame, m.settingsPane.View(m.width, m.height), m.width)
-	}
-	if m.toolsPane != nil && m.toolsPane.Open() {
-		return overlayCenter(frame, m.toolsPane.View(m.width, m.height), m.width)
+	// centered modal panes share Open()+View(w,h); render the first open one.
+	// a nil *Pane stored in the interface stays safe — every Open() is
+	// nil-receiver guarded. add a pane by appending it here, not a new branch.
+	for _, p := range []centerPane{m.costPane, m.usagePane, m.loginPane, m.rolePane, m.effortPane, m.settingsPane, m.toolsPane} {
+		if p.Open() {
+			return overlayCenter(frame, p.View(m.width, m.height), m.width)
+		}
 	}
 	if m.agentView != nil && m.agentView.IsOpen() {
 		return overlayCenter(frame, m.agentView.Render(m.width, m.height), m.width)
