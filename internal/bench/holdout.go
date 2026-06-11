@@ -15,6 +15,19 @@ import (
 // said it cannot do the request instead of fabricating a result.
 const FinalMessageFile = ".bee_final_message"
 
+// taskWantsFinalMessage reports whether any check references the final-message
+// file. Only those tasks get it written: an unconditional write contaminates
+// negative greps over the whole sandbox (e.g. "no reference to the old name
+// may remain") with the model's own prose about that name.
+func taskWantsFinalMessage(t Task) bool {
+	for _, c := range t.Checks {
+		if strings.Contains(c.File, FinalMessageFile) || strings.Contains(c.Run, FinalMessageFile) {
+			return true
+		}
+	}
+	return false
+}
+
 // writeFinalMessage concatenates the text blocks of the last assistant message
 // and writes them into the sandbox. Best effort: a missing file simply fails
 // any grep check pointed at it, which is the correct verdict.

@@ -181,8 +181,11 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx, taskNum, task
 	m := MetricsFromMessages(msgs, stoppedClean)
 
 	// surface the final assistant text into the sandbox so abstain/refusal tasks
-	// can assert on it with the same grep machinery as any file check.
-	writeFinalMessage(sandbox, msgs)
+	// can assert on it with the same grep machinery as any file check. only when
+	// a check asks for it — see taskWantsFinalMessage.
+	if taskWantsFinalMessage(t) {
+		writeFinalMessage(sandbox, msgs)
+	}
 
 	var succeeded bool
 	if len(t.Checks) > 0 {
