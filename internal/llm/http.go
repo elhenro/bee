@@ -5,18 +5,34 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 )
 
 // streamStallTimeout aborts a streaming request when no SSE line has arrived
-// for this long. Tuned for slow reasoning models (kimi-k2.6, deepseek-v4,
-// glm-4.6 thinking): first-byte can legitimately take ~60s on long prompts,
-// but mid-stream gaps longer than 5min mean the provider is idle-holding.
+// for this long. Tuned for slow reasoning models: first-byte can legitimately
+// take ~60s on long prompts. The default is generous because some servers
+// buffer the whole reasoning trace server-side and emit nothing until it is
+// done — a 10-15min thinking phase then arrives as one burst, which a tight
+// window would false-positive as a stall.
 //
-// Total wall-clock is intentionally unbounded — a 10-minute reasoning trace
-// is legitimate. The watchdog only cares about *silence*.
-// Per-call override available via OpenAICompatConfig.StallTimeout.
-const streamStallTimeout = 5 * time.Minute
+// Total wall-clock is intentionally unbounded — a long reasoning trace is
+// legitimate. The watchdog only cares about *silence*. Override globally with
+// BEE_STREAM_STALL_SECONDS, or per-call via OpenAICompatConfig.StallTimeout.
+const streamStallTimeout = 10 * time.Minute
+
+// effectiveStallTimeout returns the default stall window, overridden by
+// BEE_STREAM_STALL_SECONDS when set to a positive integer. Anything <=0 there
+// disables the watchdog entirely (the no-op path in streamWatchdogWith).
+func effectiveStallTimeout() time.Duration {
+	if v := os.Getenv("BEE_STREAM_STALL_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return streamStallTimeout
+}
 
 // newStreamingClient builds an http.Client suitable for SSE.
 //
@@ -57,7 +73,7 @@ func newStreamingClient() *http.Client {
 // select on `stalled` then surfaces a clean error instead of the cryptic
 // "context deadline exceeded while reading body" from http.Client.Timeout.
 func streamWatchdog(ctx context.Context, body io.Closer) (bump func(), stalled <-chan struct{}, cancel func()) {
-	return streamWatchdogWith(ctx, body, streamStallTimeout)
+	return streamWatchdogWith(ctx, body, effectiveStallTimeout())
 }
 
 // streamWatchdogWith is streamWatchdog with a caller-supplied timeout. A

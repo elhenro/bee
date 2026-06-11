@@ -5,7 +5,6 @@
 package wire
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -249,14 +248,10 @@ func splitUser(blocks []types.ContentBlock) []ChatMessage {
 				text.WriteString(b.Text)
 			}
 		case types.BlockImage:
-			mt := b.MediaType
-			if mt == "" {
-				mt = "image/png"
-			}
 			parts = append(parts, map[string]any{
 				"type": "image_url",
 				"image_url": map[string]any{
-					"url": "data:" + mt + ";base64," + base64.StdEncoding.EncodeToString(b.Data),
+					"url": imageDataURL(b),
 				},
 			})
 		case types.BlockToolResult:

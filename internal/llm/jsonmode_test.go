@@ -185,6 +185,24 @@ func TestJSONMode_MalformedFallsBackToRawText(t *testing.T) {
 	}
 }
 
+func TestJSONMode_MalformedEnvelopeSurfacesParseError(t *testing.T) {
+	// truncated tool envelope (grammar server slipped format): the raw blob
+	// must become a _parse_error tool use, not leak as prose and stall.
+	inner := &fakeProvider{events: []Event{
+		{Type: EventTextDelta, Delta: `{"tool":"bash","args":{"command":"ls`},
+		{Type: EventDone, StopReason: "stop"},
+	}}
+	p := NewJSONMode(inner)
+	ch, _ := p.Stream(context.Background(), Request{Tools: jmTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "_parse_error" {
+		t.Fatalf("expected one _parse_error tool use, got tools=%v text=%q", tools, text)
+	}
+	if _, ok := tools[0].Input["_parse_error"]; !ok {
+		t.Fatalf("missing _parse_error hint: %v", tools[0].Input)
+	}
+}
+
 func TestJSONMode_UnionSchemaShape(t *testing.T) {
 	schema := buildUnionSchema([]ToolSpec{{Name: "noop"}})
 	b, _ := json.Marshal(schema)

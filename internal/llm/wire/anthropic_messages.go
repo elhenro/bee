@@ -12,7 +12,6 @@
 package wire
 
 import (
-	"encoding/base64"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -285,16 +284,12 @@ func translateAnthropicUserBlocks(blocks []types.ContentBlock) []AnthropicConten
 			if len(b.Data) == 0 {
 				continue
 			}
-			mt := b.MediaType
-			if mt == "" {
-				mt = "image/png"
-			}
 			out = append(out, AnthropicContentPart{
 				Type: "image",
 				Source: &AnthropicImageSource{
 					Type:      "base64",
-					MediaType: mt,
-					Data:      base64.StdEncoding.EncodeToString(b.Data),
+					MediaType: imageMediaType(b),
+					Data:      imageBase64(b),
 				},
 			})
 		case types.BlockToolResult:

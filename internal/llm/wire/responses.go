@@ -9,7 +9,6 @@
 package wire
 
 import (
-	"encoding/base64"
 	"encoding/json"
 
 	"github.com/elhenro/bee/internal/types"
@@ -145,13 +144,9 @@ func splitResponsesUser(blocks []types.ContentBlock) []ResponsesItem {
 			// Responses API images: input_image with a data URL or remote URL.
 			// We keep it simple — emit a text marker if data isn't a URL.
 			if len(b.Data) > 0 {
-				mt := b.MediaType
-				if mt == "" {
-					mt = "image/png"
-				}
 				parts = append(parts, ResponsesContent{
 					Type:     "input_image",
-					ImageURL: "data:" + mt + ";base64," + encodeBase64(b.Data),
+					ImageURL: imageDataURL(b),
 				})
 			}
 		case types.BlockToolResult:
@@ -212,8 +207,4 @@ func splitResponsesAssistant(blocks []types.ContentBlock) []ResponsesItem {
 		}}, items...)
 	}
 	return items
-}
-
-func encodeBase64(b []byte) string {
-	return base64.StdEncoding.EncodeToString(b)
 }

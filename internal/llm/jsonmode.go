@@ -100,7 +100,23 @@ func (p *JSONModeProvider) relay(in <-chan Event, out chan<- Event) {
 			}}
 		}
 	} else if text := strings.TrimSpace(buf.String()); text != "" {
-		out <- Event{Type: EventTextDelta, Delta: text}
+		// parse failed. if the text looks like an attempted envelope (a server
+		// that slipped grammar enforcement and emitted malformed JSON), surface
+		// a _parse_error tool use so the loop nudges the model with a concrete
+		// fix — parity with textmode, instead of leaking broken JSON as prose
+		// and stalling the turn.
+		if looksLikeJSONEnvelope(text) {
+			out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+				ID:   "call_" + uuid.NewString(),
+				Name: "_parse_error",
+				Input: map[string]any{
+					"_parse_error": "your JSON envelope could not be parsed. emit EXACTLY one object: {\"tool\":\"<name>\",\"args\":{...}} to act, or {\"done\":\"...\"} to finish. no prose, no markdown fences.",
+					"_raw_args":    truncateForNudge(text),
+				},
+			}}
+		} else {
+			out <- Event{Type: EventTextDelta, Delta: text}
+		}
 	}
 	if gotDone {
 		out <- done
@@ -144,6 +160,27 @@ func parseEnvelope(s string) (tool string, args map[string]any, say string, ok b
 		return "", nil, "", false
 	}
 	return tool, args, say, true
+}
+
+// looksLikeJSONEnvelope reports whether failed-to-parse text was a botched tool
+// envelope (truncated/malformed JSON) rather than plain prose. Keys are the
+// strong signal — a model talking about its plan in prose won't contain the
+// literal "tool"/"done"/"args" JSON keys next to an opening brace.
+func looksLikeJSONEnvelope(s string) bool {
+	if !strings.Contains(s, "{") {
+		return false
+	}
+	return strings.Contains(s, "\"tool\"") || strings.Contains(s, "\"done\"") || strings.Contains(s, "\"args\"")
+}
+
+// truncateForNudge caps the echoed raw fragment so a giant malformed blob
+// doesn't blow the nudge's token budget.
+func truncateForNudge(s string) string {
+	const max = 400
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
 }
 
 // buildUnionSchema renders the response_format schema: a "done" terminal
