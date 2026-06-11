@@ -392,6 +392,13 @@ type SandboxConfig struct {
 	CommandAllowlist []string `toml:"command_allowlist"`
 }
 
+// Confined reports whether an OS-confinement scope is active. The default
+// danger-full-access scope (and unset) is unconfined: restriction layers like
+// secret redaction gate on this so full-access runs see raw tool output.
+func (s SandboxConfig) Confined() bool {
+	return s.Scope != "" && s.Scope != "danger-full-access"
+}
+
 // ShellConfig controls how the bash tool launches commands. Default keeps
 // the hermetic `bash -c` shape (no rc files). UseUserRC=true sources the
 // user's interactive rc file before each command so aliases and functions

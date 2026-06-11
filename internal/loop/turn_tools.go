@@ -174,7 +174,10 @@ func (e *Engine) replayExec(ctx context.Context, script string) (string, error) 
 	if out.IsError {
 		return "", fmt.Errorf("replay step failed: %s", out.Content)
 	}
-	content := safety.Redact(out.Content)
+	content := out.Content
+	if e.Cfg.Sandbox.Confined() {
+		content = safety.Redact(content)
+	}
 	content, _ = tools.TruncateWithLimit("bash", content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
 	return content, nil
 }
@@ -240,9 +243,12 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if err != nil {
 		return types.ToolResult{}, err
 	}
-	// scrub obvious secrets before fold into model context. defense layer:
-	// shell stdout / read output can carry env files, key dumps, etc.
-	out.Content = safety.Redact(out.Content)
+	// scrub obvious secrets before fold into model context. confined scopes
+	// only: under danger-full-access the operator opted out of restriction
+	// layers, and redaction silently corrupts legitimate credential reads.
+	if e.Cfg.Sandbox.Confined() {
+		out.Content = safety.Redact(out.Content)
+	}
 	content, truncated := tools.TruncateWithLimit(u.Name, out.Content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
 	if truncated && e.JSONEmitter != nil {
 		e.JSONEmitter.Emit(jsonmode.Event{Type: "tool_truncated", Name: u.Name, UseID: u.ID})
