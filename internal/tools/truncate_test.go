@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 const trailerMarker = "(truncated: kept first"
@@ -111,6 +112,26 @@ func TestTruncate_SingleGiantLineHardCut(t *testing.T) {
 	head := out[:idx]
 	if len(head) != 40_000 {
 		t.Fatalf("expected hard cut at 40000 chars, got %d", len(head))
+	}
+}
+
+func TestTruncate_SingleGiantLineMultibyteStaysValidUTF8(t *testing.T) {
+	// one giant line of 3-byte runes, no newline: a raw byte cut at maxChars
+	// would land mid-rune. result must remain valid UTF-8.
+	in := strings.Repeat("世", 20_000) // 60k bytes, over webfetch 40k cap
+	out, ok := Truncate("webfetch", in)
+	if !ok {
+		t.Fatalf("expected truncation")
+	}
+	if !utf8.ValidString(out) {
+		t.Fatalf("truncated output is not valid UTF-8")
+	}
+	idx := strings.Index(out, "\n...\n")
+	if idx <= 0 {
+		t.Fatalf("trailer not found")
+	}
+	if !utf8.ValidString(out[:idx]) {
+		t.Fatalf("head is not valid UTF-8 (mid-rune cut)")
 	}
 }
 

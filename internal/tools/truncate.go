@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -127,9 +128,14 @@ func TruncateWithLimitSpill(toolName, content string, limitTokens int, spillDir 
 		return out, true
 	}
 	head := content[:maxChars]
-	// avoid splitting mid-line: trim back to the last newline in head
+	// avoid splitting mid-line: trim back to the last newline in head. when the
+	// output is one giant line (minified json, a long diff) there is no newline
+	// to snap to — back off the raw byte cut to a rune boundary so we never emit
+	// a partial UTF-8 sequence that breaks downstream encoding or model parse.
 	if idx := strings.LastIndexByte(head, '\n'); idx > 0 {
 		head = head[:idx]
+	} else {
+		head = trimPartialRune(head)
 	}
 	spillPath := writeSpill(spillDir, toolName, content)
 	var trailer string
@@ -178,6 +184,29 @@ func writeSpill(spillDir, toolName, body string) string {
 	return path
 }
 
+// trimPartialRune drops a trailing incomplete UTF-8 sequence left by a raw byte
+// cut. Backs off at most utf8.UTFMax bytes — a complete rune (including a real
+// U+FFFD, which decodes with size>1) stops the trim immediately.
+func trimPartialRune(s string) string {
+	for len(s) > 0 {
+		r, size := utf8.DecodeLastRuneInString(s)
+		if r != utf8.RuneError || size > 1 {
+			break
+		}
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+// advanceToRuneStart moves i forward to the next UTF-8 rune boundary so a tail
+// slice taken at a raw byte offset doesn't begin mid-sequence.
+func advanceToRuneStart(s string, i int) int {
+	for i < len(s) && !utf8.RuneStart(s[i]) {
+		i++
+	}
+	return i
+}
+
 // safeToolName strips path separators / spaces so an exotic tool name can't
 // break out of spillDir or produce ugly filenames.
 func safeToolName(s string) string {
@@ -220,13 +249,22 @@ func truncateHeadTailWithSpill(toolName, content string, limitTokens, tailChars 
 	if tailChars > maxTailChars {
 		tailChars = maxTailChars
 	}
+	// floor the head at half the budget so a large tail can never starve the
+	// initial context (the command + start of the log the model needs to read).
+	if tailChars > maxChars/2 {
+		tailChars = maxChars / 2
+	}
 	head := content[:maxChars-tailChars]
 	if idx := strings.LastIndexByte(head, '\n'); idx > 0 {
 		head = head[:idx]
+	} else {
+		head = trimPartialRune(head)
 	}
 	tailStart := total - tailChars
 	if nl := strings.Index(content[tailStart:], "\n"); nl >= 0 {
 		tailStart += nl
+	} else {
+		tailStart = advanceToRuneStart(content, tailStart)
 	}
 	tail := content[tailStart:]
 	skipped := total - len(head) - len(tail)
@@ -272,9 +310,12 @@ func TruncateHeadTailWithLimit(toolName, content string, limitTokens int, tailCh
 		tailChars = maxTailChars
 	}
 	head := content[:maxChars]
-	// avoid splitting mid-line: trim back to the last newline in head
+	// avoid splitting mid-line: trim back to the last newline in head; with no
+	// newline, back off to a rune boundary so we never emit a partial UTF-8 seq.
 	if idx := strings.LastIndexByte(head, '\n'); idx > 0 {
 		head = head[:idx]
+	} else {
+		head = trimPartialRune(head)
 	}
 	tailStart := strings.Index(content[len(content)-tailChars:], "\n")
 	if tailStart >= 0 {
@@ -282,7 +323,7 @@ func TruncateHeadTailWithLimit(toolName, content string, limitTokens int, tailCh
 	}
 	if tailStart < 0 {
 		// tail portion starts from beginning — no tail to show (pathological)
-		return content[:maxChars], true
+		return trimPartialRune(content[:maxChars]), true
 	}
 	tail := content[tailStart:]
 	skipped := total - len(head) - len(tail)
