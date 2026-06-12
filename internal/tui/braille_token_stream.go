@@ -35,6 +35,19 @@ type LoaderStats struct {
 // tokenStreamSpeed is the per-frame horizontal step (in px) of a particle.
 const tokenStreamSpeed = 2
 
+// smoothLoaderRateAlpha is the EMA weight for the per-tick char delta fed to
+// the braille loader as particle density. α=0.3 gives a ~3-tick rise time
+// — fast enough to still feel responsive, slow enough that a single provider
+// batch (or a reasoning→answer transition that just reset the rate) can
+// never balloon the particle count in one frame.
+const smoothLoaderRateAlpha = 0.3
+
+// smoothLoaderRate returns the next EMA value of the per-tick char delta.
+// Pure function so the smoothing itself is testable in isolation.
+func smoothLoaderRate(prev float64, delta int) float64 {
+	return prev*(1-smoothLoaderRateAlpha) + float64(delta)*smoothLoaderRateAlpha
+}
+
 // renderTokenStream paints the particle stream into a cells-wide braille row.
 // Particles flow left→right and wrap; count scales with throughput so an
 // idle wait drifts sparse and fast generation packs dense. seed-derived
@@ -46,12 +59,14 @@ func renderTokenStream(stats LoaderStats, frame, cells int) string {
 
 	// particle count: a sparse floor for the idle wait plus a throughput
 	// term. Capped at one bee per cell so wide rows don't smear solid.
-	n := 3 + stats.Rate/3
+	// Floor 5 keeps the loader from collapsing to a single dot on wide
+	// terminals; the throughput term still dominates as soon as tokens flow.
+	n := 5 + stats.Rate/3
 	if n > cells {
 		n = cells
 	}
-	if n < 3 {
-		n = 3
+	if n < 5 {
+		n = 5
 	}
 
 	rng := newLCG(stats.Seed)

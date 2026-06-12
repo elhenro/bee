@@ -271,6 +271,7 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 		m.turnStartOutput = m.costs.Total().Output
 	}
 	m.loaderRate = 0
+	m.loaderRateEMA = 0
 	m.loaderSampleChars = 0
 	m.loaderRateTokS = 0
 	m.loaderRateSamples = m.loaderRateSamples[:0]

@@ -294,9 +294,14 @@ type Model struct {
 	// loaderSeed varies the procedural particle layout per turn. Rolled on
 	// submit so each generation looks distinct.
 	loaderSeed int64
-	// loaderRate is chars produced since the previous loaderTick — drives
-	// particle density. loaderSampleChars holds the prior sample point.
+	// loaderRate is chars produced since the previous loaderTick — the raw
+	// per-tick delta, kept for the tok/s window and for the existing tests.
+	// loaderSampleChars holds the prior sample point. loaderRateEMA is the
+	// smoothed version actually fed to the braille loader as particle density;
+	// it caps the 1-tick flash when a provider batch lands in a single tick
+	// (and when hasThinkingBlock resets the rate between reasoning and answer).
 	loaderRate        int
+	loaderRateEMA     float64
 	loaderSampleChars int
 	// loaderRateSamples is a sliding 10s window of (time, chars) used to
 	// compute the displayed tok/s. Idle ticks push nothing, so the window

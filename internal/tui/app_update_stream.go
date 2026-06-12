@@ -93,6 +93,7 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	// cumulative ↓ figure also keeps including reasoning by design.
 	if hasThinkingBlock(msg.Msg) {
 		m.loaderRate = 0
+		m.loaderRateEMA = 0
 		m.loaderSampleChars = m.turnOutChars
 		m.loaderRateTokS = 0
 		m.loaderRateSamples = m.loaderRateSamples[:0]
@@ -194,6 +195,12 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 		d = 0
 	}
 	m.loaderRate = d
+	// EMA smooths the 1-tick flash when a provider flushes a large chunk
+	// into a single tick (or when hasThinkingBlock resets the rate between
+	// reasoning and answer). α=0.3 → ~3-tick rise time — fast enough to
+	// still feel responsive, slow enough to never balloon the particle
+	// count in a single frame.
+	m.loaderRateEMA = smoothLoaderRate(m.loaderRateEMA, d)
 	m.loaderSampleChars = m.turnOutChars
 	// sliding 10s window for the tok/s readout. Push a sample only when
 	// this tick actually produced chars, then drop anything older than 10s.

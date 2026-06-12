@@ -173,7 +173,10 @@ func (m Model) renderLive(maxRows int) string {
 		m.stream.SetLoaderStats(LoaderStats{
 			InTokens: in,
 			OutChars: out,
-			Rate:     m.loaderRate,
+			// smoothed rate — caps the 1-tick flash on first batch and on the
+			// reasoning→answer transition. Raw m.loaderRate is kept for the
+			// tok/s window; this one drives visible particle density.
+			Rate:     int(m.loaderRateEMA + 0.5),
 			RateTokS: m.loaderRateTokS,
 			Seed:     m.loaderSeed,
 			ShowIn:   m.showLoaderIn,

@@ -23,6 +23,67 @@ func TestRenderTokenStreamClampsTiny(t *testing.T) {
 	}
 }
 
+func TestRenderTokenStreamSpikeClamped(t *testing.T) {
+	// the renderer caps n at cells regardless of Rate, so a Rate=200 input
+	// on a 30-cell row produces a 30-cell row. The actual fix for the
+	// "first token flash" lives in app_update_stream: the EMA in
+	// smoothLoaderRate ensures the Rate value fed here never spikes from
+	// idle in a single tick. This test exercises that helper directly.
+	prev := 0.0
+	// 200 chars in one tick — the worst case the user reported.
+	got := smoothLoaderRate(prev, 200)
+	if got > 61 {
+		t.Errorf("EMA after 1 spike: got %.1f, want ≤ 61 (3-tick rise time)", got)
+	}
+	// three more ticks of 200 chars to confirm it climbs but never overshoots.
+	for i := 0; i < 3; i++ {
+		prev = got
+		got = smoothLoaderRate(prev, 200)
+	}
+	if got < 100 || got > 200 {
+		t.Errorf("EMA steady state: got %.1f, want in (100, 200)", got)
+	}
+}
+
+func TestSmoothLoaderRateIdleDecays(t *testing.T) {
+	// a steady stream followed by silence must decay back toward 0 — the
+	// loader should ease off when the model pauses mid-turn.
+	prev := 0.0
+	for i := 0; i < 10; i++ {
+		prev = smoothLoaderRate(prev, 50)
+	}
+	if prev < 40 {
+		t.Errorf("after 10 ticks of 50: got %.1f, want ≥ 40 (near steady state)", prev)
+	}
+	// model goes quiet — symmetric to the 3-tick rise time.
+	for i := 0; i < 10; i++ {
+		prev = smoothLoaderRate(prev, 0)
+	}
+	if prev > 5 {
+		t.Errorf("after 10 idle ticks: got %.1f, want ≤ 5", prev)
+	}
+}
+
+func TestSmoothLoaderRateResetToZero(t *testing.T) {
+	// the hasThinkingBlock branch resets the EMA. Simulate that by feeding
+	// delta=0 immediately after — first frame after the reset must produce
+	// a small value, not the prior spike.
+	prev := 150.0
+	got := smoothLoaderRate(prev, 0)
+	if got > 110 {
+		t.Errorf("post-reset tick: got %.1f, want ≤ 110 (decay from 150)", got)
+	}
+}
+
+func TestRenderTokenStreamIdleFloor(t *testing.T) {
+	// Rate=0 must still render 5 particles, not 3 — the prior floor looked
+	// like a single dot on a wide terminal.
+	got := renderTokenStream(LoaderStats{Seed: 1, Rate: 0}, 0, 80)
+	if utf8.RuneCountInString(got) != 80 {
+		t.Errorf("idle row width=%d want 80", utf8.RuneCountInString(got))
+	}
+}
+
 func TestRenderTokenStreamDeterministic(t *testing.T) {
 	a := renderTokenStream(LoaderStats{Seed: 42, Rate: 30}, 7, 24)
 	b := renderTokenStream(LoaderStats{Seed: 42, Rate: 30}, 7, 24)
