@@ -38,36 +38,60 @@ func liveBudget(termH int, parts ...string) int {
 }
 
 // contextPct returns the fraction of the active model's context window used
-// by the most recent turn's input. 0 when no costs tracked, no events yet,
-// or the model's window is unknown.
-func (m Model) contextPct() float64 {
+// by the most recent turn's input, plus a `known` flag. known is false when
+// no costs tracked, no events yet, or the model's window is unknown. Callers
+// surface the unknown case as a dim "?" so a missing ContextWindow entry
+// (e.g. a brand-new openrouter listing the API doesn't advertise) doesn't
+// silently render as 0% and pretend everything is fine.
+func (m Model) contextPct() (pct float64, known bool) {
 	if m.costs == nil {
-		return 0
+		return 0, false
 	}
 	in := m.costs.LastInput()
 	if in <= 0 {
-		return 0
+		return 0, false
 	}
 	cap := llm.ContextWindow(m.model)
 	if cap <= 0 {
-		return 0
+		// known=false: the model id isn't in the hardcoded table and the
+		// provider's /v1/models didn't surface a context_length. Callers
+		// detect "user has used context but we don't know how much" by
+		// checking costs.LastInput() > 0 alongside known==false.
+		return 0, false
 	}
-	return float64(in) / float64(cap)
+	return float64(in) / float64(cap), true
+}
+
+// hasInputTokens reports whether the most recent turn has any input tokens
+// recorded. Lets the context hex/bar distinguish "unknown because fresh"
+// (silent) from "unknown because model isn't in the table" (show "?").
+func (m Model) hasInputTokens() bool {
+	return m.costs != nil && m.costs.LastInput() > 0
 }
 
 // renderContextHex draws the pie-style fill indicator. A 🐝 emoji with
 // colour tier escalates with fill so a glance tells
-// you "fresh" vs "almost full". Percent label appears once anything's used.
-// you "fresh" vs "almost full". Percent label appears once anything's used.
+// you "fresh" vs "almost full". Percent label appears once anything's used,
+// or a "?" when the model id isn't in the known-windows table (otherwise
+// 0% would be indistinguishable from a genuinely-empty context).
 func (m Model) renderContextHex() string {
 	if !m.showBee && !m.showContextPct {
 		return ""
 	}
-	pct := m.contextPct()
+	pct, known := m.contextPct()
+	// not-yet-meaningful (no events recorded): show the bee chip only.
+	// Distinguishing this from "known=false but user has used context"
+	// prevents a 0%-on-fresh-start from looking like an unknown-window bug.
+	if !known && !m.hasInputTokens() {
+		if m.showBee {
+			return lipgloss.NewStyle().Foreground(fgSquid).Render("🐝")
+		}
+		return ""
+	}
 	var fg lipgloss.TerminalColor
 	bold := false
 	switch {
-	case pct < 0.01:
+	case !known, pct < 0.01:
 		fg = fgSquid
 	case pct < 0.50:
 		fg = accentBee
@@ -85,14 +109,19 @@ func (m Model) renderContextHex() string {
 	if m.showBee {
 		out = style.Render("🐝")
 	}
-	if m.showContextPct && pct > 0 {
-		// rounded percent; cap display at 999% to avoid layout breaks if
-		// LastInput somehow exceeds the window.
-		p := int(pct*100 + 0.5)
-		if p > 999 {
-			p = 999
+	if m.showContextPct {
+		var label string
+		if !known {
+			// dim "?" — same width as "0%" so the chip doesn't jitter
+			// when the cap is finally learned mid-session.
+			label = style.Render("?")
+		} else {
+			p := int(pct*100 + 0.5)
+			if p > 999 {
+				p = 999
+			}
+			label = style.Render(fmt.Sprintf("%d%%", p))
 		}
-		label := style.Render(fmt.Sprintf("%d%%", p))
 		if out != "" {
 			out += " " + label
 		} else {
@@ -112,7 +141,20 @@ func (m Model) renderContextBar() string {
 	if m.width <= 0 {
 		return ""
 	}
-	pct := m.contextPct()
+	pct, known := m.contextPct()
+	if !known && !m.hasInputTokens() {
+		// fresh state: nothing to fill, but render the rule so the bottom
+		// edge still has the elegant chrome.
+		return lipgloss.NewStyle().Foreground(fgOyster).Render(strings.Repeat("─", m.width))
+	}
+	if !known {
+		// cap unknown but the user has used context: dim the strip, drop a
+		// single "?" at the left edge so the bar reads as "I have data
+		// but no cap" rather than a falsely-empty 0%.
+		dim := lipgloss.NewStyle().Foreground(fgOyster).Render(strings.Repeat("─", m.width-1))
+		glyph := lipgloss.NewStyle().Foreground(fgSquid).Render("?")
+		return glyph + dim
+	}
 	if pct > 1 {
 		pct = 1
 	}
