@@ -25,6 +25,14 @@ const (
 	StateError
 )
 
+// rateSample is one (time, chars) entry in the sliding tok/s window.
+// Pushed only when the tick produced output, so the window contains
+// only active-generation data.
+type rateSample struct {
+	at    time.Time
+	chars int
+}
+
 // Model is the bubbletea root model for bee's interactive REPL.
 type Model struct {
 	// chrome
@@ -290,15 +298,12 @@ type Model struct {
 	// particle density. loaderSampleChars holds the prior sample point.
 	loaderRate        int
 	loaderSampleChars int
-	// loaderSampleAt is wall-clock of the prior throughput sample. Used to
-	// divide by real elapsed time instead of the nominal tick interval —
-	// ticks lag under render load, and dividing a burst by the fixed 120ms
-	// would inflate the rate.
-	loaderSampleAt time.Time
-	// loaderRateTokS is the EMA-smoothed generation throughput in tok/s shown
-	// in the readout. Windowed (not a cumulative turn average) so it tracks
-	// current speed instead of spiking on the first frame and decaying slowly.
-	loaderRateTokS float64
+	// loaderRateSamples is a sliding 10s window of (time, chars) used to
+	// compute the displayed tok/s. Idle ticks push nothing, so the window
+	// naturally excludes gaps. loaderRateTokS is the cached result the
+	// renderer reads; recomputed from the window on every tick.
+	loaderRateSamples []rateSample
+	loaderRateTokS    float64
 
 	// turnStartedAt is wall-clock when the current turn left submit(). Zero
 	// when no turn in flight. Top-bar timer reads time.Since on every tick

@@ -170,23 +170,32 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	}
 	m.loaderRate = d
 	m.loaderSampleChars = m.turnOutChars
-	// smooth instantaneous throughput into an EMA so the readout tracks
-	// current speed. chars→tokens via a rough divisor; cumulative averaging
-	// would otherwise spike on the first frame and bleed down for the rest
-	// of the turn.
+	// sliding 10s window for the tok/s readout. Push a sample only when
+	// this tick actually produced chars, then drop anything older than 10s.
+	// Idle gaps contribute no samples, so the window reflects only the last
+	// 10s of active generation — no spikes, no slow EMA bleed.
 	now := time.Now()
-	elapsed := loaderTickInterval.Seconds()
-	if !m.loaderSampleAt.IsZero() {
-		// real elapsed, not the nominal tick — a lagged tick dividing a
-		// char burst by 120ms would report a rate far above actual.
-		if e := now.Sub(m.loaderSampleAt).Seconds(); e > 0 {
-			elapsed = e
-		}
+	if d > 0 {
+		m.loaderRateSamples = append(m.loaderRateSamples, rateSample{at: now, chars: d})
 	}
-	m.loaderSampleAt = now
-	instTokS := (float64(d) / elapsed) / charsPerToken
-	const emaAlpha = 0.25
-	m.loaderRateTokS = emaAlpha*instTokS + (1-emaAlpha)*m.loaderRateTokS
+	cutoff := now.Add(-10 * time.Second)
+	// prune in place from the front; samples are time-ordered by append.
+	prune := 0
+	for prune < len(m.loaderRateSamples) && !m.loaderRateSamples[prune].at.After(cutoff) {
+		prune++
+	}
+	if prune > 0 {
+		// rebuild instead of slice-header shift: keeps the backing array
+		// from drifting if a long turn floods the window.
+		next := make([]rateSample, len(m.loaderRateSamples)-prune, len(m.loaderRateSamples)-prune+8)
+		copy(next, m.loaderRateSamples[prune:])
+		m.loaderRateSamples = next
+	}
+	var winChars int
+	for _, s := range m.loaderRateSamples {
+		winChars += s.chars
+	}
+	m.loaderRateTokS = float64(winChars) / 10.0 / charsPerToken
 	return m, loaderTickCmd()
 }
 
