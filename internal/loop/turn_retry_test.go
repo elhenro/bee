@@ -57,7 +57,6 @@ func TestStreamOnce_RetriesPreContentError(t *testing.T) {
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	eng := &Engine{
-		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},
@@ -104,7 +103,6 @@ func TestStreamOnce_NoReplayAfterContent(t *testing.T) {
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	eng := &Engine{
-		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},
@@ -137,7 +135,6 @@ func TestStreamOnce_RecoversAfterMidStreamDrop(t *testing.T) {
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	eng := &Engine{
-		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},

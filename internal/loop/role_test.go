@@ -81,24 +81,6 @@ func TestRoleThinking(t *testing.T) {
 	}
 }
 
-func TestParseClassifyReadOnly(t *testing.T) {
-	cases := map[string]bool{
-		"plan":         true,
-		"  PLAN.":      true,
-		"\"plan\"":     true,
-		"plan mode":    true,
-		"edit":         false,
-		"unknown":      false,
-		"":             false,
-		"let me think": false,
-	}
-	for in, want := range cases {
-		if got := parseClassifyReadOnly(in); got != want {
-			t.Errorf("parseClassifyReadOnly(%q) = %v, want %v", in, got, want)
-		}
-	}
-}
-
 func TestFilterToolSpecsForRole(t *testing.T) {
 	specs := []llm.ToolSpec{
 		{Name: "read"},
@@ -169,12 +151,12 @@ func TestRolePromptPrefix(t *testing.T) {
 	if rolePromptPrefix(RoleWorker, false) != "" {
 		t.Error("act turn must have empty prefix")
 	}
-	// worker read-only must NOT mention "plan" — workers don't plan-and-stop,
-	// they gather info and the next turn acts. scout is the role that plans.
-	if w := rolePromptPrefix(RoleWorker, true); w == "" {
-		t.Error("read-only worker turn prefix must be non-empty")
-	} else if strings.Contains(strings.ToLower(w), "ordered plan") {
-		t.Errorf("worker read-only prefix should not tell model to plan-and-stop; got %q", w)
+	// worker is always act (turn_run pins readOnly=false), so the read-only
+	// path is a defensive no-op. if a future caller ever flips it, we must
+	// NOT ship a "READ-ONLY TURN" header — workers are the edit role, and a
+	// misleading prefix trains the model to plan-and-stop.
+	if w := rolePromptPrefix(RoleWorker, true); w != "" {
+		t.Errorf("worker read-only path must be empty (no misleading header); got %q", w)
 	}
 	scout := rolePromptPrefix(RoleScout, true)
 	if scout == "" {
@@ -182,10 +164,6 @@ func TestRolePromptPrefix(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(scout), "ordered plan") {
 		t.Error("scout prefix should still tell model to propose a plan")
-	}
-	// scout gets the extra web nudge that a plain read-only worker turn doesn't.
-	if scout == rolePromptPrefix(RoleWorker, true) {
-		t.Error("scout prefix should add the web-tools nudge")
 	}
 	// queen read-only is a defensive branch (queen is normally hive-routed
 	// and never lands here). Even so, the label must not claim "SCOUT" and

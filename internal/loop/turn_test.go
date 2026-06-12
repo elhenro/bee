@@ -96,7 +96,6 @@ func newEngine(p llm.Provider, reg *tools.Registry) (*Engine, *bytes.Buffer) {
 		Cfg:                   cfg,
 		Cwd:                   ".",
 		Stdout:                buf,
-		SkipPostureClassifier: true,
 	}, buf
 }
 
@@ -679,7 +678,9 @@ func (r *recordingProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm
 	return ch, nil
 }
 
-func TestRun_ClassifierCalled_HostedWorkerRole(t *testing.T) {
+func TestRun_NoClassifier_HostedWorkerRole(t *testing.T) {
+	// worker role no longer fires a posture side-LLM call. hosted+worker
+	// gets the same 1-call behaviour as local+worker now (classifier removed).
 	p := &recordingProvider{}
 	buf := &bytes.Buffer{}
 	cfg := config.Defaults()
@@ -699,9 +700,8 @@ func TestRun_ClassifierCalled_HostedWorkerRole(t *testing.T) {
 	if _, err := eng.Run(context.Background(), "explain x"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	// 1 classifier + 1 main turn = 2 stream calls
-	if got := p.calls.Load(); got != 2 {
-		t.Errorf("hosted+auto: provider calls = %d, want 2 (classifier + main)", got)
+	if got := p.calls.Load(); got != 1 {
+		t.Errorf("hosted+worker: provider calls = %d, want 1 (no classifier, main only)", got)
 	}
 }
 

@@ -115,13 +115,6 @@ type Engine struct {
 	// read-only turn legitimately strips. Cleared at the top of each Run.
 	OnceAllowTools []string
 
-	// SkipPostureClassifier disables the worker read-only/act classifier for
-	// this engine, so a worker turn always gets the full tool surface. Set for
-	// the scripted-provider test harness (the extra side Stream call would
-	// desync scripted response counts) and for callers that want byte-for-byte
-	// "always act" worker behavior.
-	SkipPostureClassifier bool
-
 	// run holds the per-Run scratch state (dedupes, streaks, trackers). Reset
 	// to a fresh runState at the top of every Run; the previous map values are
 	// dropped, not preserved (Run identity is what defines the dedupe scope).
