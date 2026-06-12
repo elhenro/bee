@@ -32,6 +32,8 @@ func runSwarm(args []string) {
 	plannerModel := fs.String("planner-model", "", "override planner model id")
 	workerModel := fs.String("worker-model", "", "override worker model id")
 	isolated := fs.Bool("isolated", false, "give each worker its own git worktree (avoids write races)")
+	triage := fs.Bool("triage", true, "skip the hive on small/clear tasks (one streaming turn instead of plan+workers+review)")
+	noTriage := fs.Bool("no-triage", false, "force the full hive even when triage says simple")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
@@ -85,6 +87,21 @@ func runSwarm(args []string) {
 	}
 	defer plannerSess.Close()
 
+	// triage: a cheap one-token classifier decides if the task is small/clear
+	// enough to skip the full hive. On "simple" we run a single streaming turn
+	// on the planner engine — no decompose, no workers, no review. Saves a
+	// full planner+worker+synth call on every trivial task. Ambiguity (and
+	// any classifier error) falls through to the hive, so a risky change is
+	// never under-reviewed. --no-triage forces the full hive.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	if shortCircuit, scErr := maybeTriageShortCircuit(ctx, prov, cfg.DefaultModel, *triage && !*noTriage, planner.Run, task, os.Stdout); shortCircuit {
+		if scErr != nil {
+			os.Exit(1)
+		}
+		return
+	}
+
 	// workers: same provider, possibly smaller model
 	workerCfg := cfg
 	if *workerModel != "" {
@@ -133,9 +150,6 @@ func runSwarm(args []string) {
 	}
 
 	q := hivepkg.NewQueen(planner, workers)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
 
 	fmt.Fprintln(os.Stderr, "swarm: decomposing task...")
 	res, err := q.Run(ctx, task)
@@ -200,4 +214,53 @@ func printQueenResult(w io.Writer, r hivepkg.QueenResult) {
 		fmt.Fprintln(w, "## Synthesis")
 		fmt.Fprintln(w, r.Final)
 	}
+}
+
+// printTriageShortCircuit emits the single-turn output for a triage=simple
+// pass. Headers match printQueenResult's shape so downstream consumers
+// (jq, scripts) see the same fields whether the hive ran or not.
+func printTriageShortCircuit(w io.Writer, r loop.RunResult, err error) {
+	if err != nil {
+		fmt.Fprintf(w, "## Single turn (triage=simple)\nerror: %v\n", err)
+		return
+	}
+	if r.FinalText != "" {
+		fmt.Fprintln(w, "## Single turn (triage=simple)")
+		fmt.Fprintln(w, r.FinalText)
+	}
+}
+
+// swarmPlannerRun is the signature of loop.Engine.Run — broken out as a func
+// type so the triage path is unit-testable without standing up a full engine
+// (provider, tools, skills, session, cwd) for every test.
+type swarmPlannerRun func(ctx context.Context, task string) (loop.RunResult, error)
+
+// maybeTriageShortCircuit runs the triage classifier and, on "simple", runs a
+// single streaming turn via plannerRun. Returns (true, _) when the caller
+// should exit (hive skipped); (false, nil) to continue with the full hive
+// (task was complex, classifier errored, or triage disabled).
+//
+// Extracted from runSwarm so the routing decision is unit-testable without
+// spinning up the full swarm wiring (config, workers, worktrees, etc).
+func maybeTriageShortCircuit(
+	ctx context.Context,
+	prov llm.Provider,
+	model string,
+	enabled bool,
+	plannerRun swarmPlannerRun,
+	task string,
+	out io.Writer,
+) (bool, error) {
+	if !enabled {
+		return false, nil
+	}
+	triageCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if !hivepkg.TriageSimple(triageCtx, prov, model, task) {
+		return false, nil
+	}
+	fmt.Fprintln(os.Stderr, "swarm: triage=simple — running single turn, no hive")
+	res, err := plannerRun(ctx, task)
+	printTriageShortCircuit(out, res, err)
+	return true, err
 }
