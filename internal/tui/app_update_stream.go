@@ -266,18 +266,15 @@ func (m Model) onRecapIdleTick(msg recapIdleTickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onRecapReady(msg recapReadyMsg) (tea.Model, tea.Cmd) {
-	// dim italic, single line. "※" glyph marks meta-commentary so it
-	// doesn't read as another assistant turn. Error + skip cases render
-	// too so the toggle is observable — silent empties looked like the
-	// feature was off.
+	// Error case renders too so the toggle is observable. Skip is silent:
+	// a model that declines to recap produced no useful output, no point
+	// cluttering the transcript with "※ recap: (skipped)".
 	var body string
 	switch {
 	case msg.text != "":
 		body = "※ recap: " + msg.text
 	case msg.err != "":
 		body = "※ recap failed: " + msg.err
-	case msg.skipped:
-		body = "※ recap: (skipped)"
 	default:
 		return m, nil
 	}
