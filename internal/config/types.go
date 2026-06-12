@@ -175,6 +175,14 @@ type Config struct {
 	ShowGitBranch   bool `toml:"show_git_branch"`   // ⎇ current git branch
 	ShowTotalTokens bool `toml:"show_total_tokens"` // Σ session tokens (in+out)
 
+	// OuterPadLR inserts N blank cells of left+right padding around the live
+	// TUI region (top bar, streaming partial, input, modals). 0 = off. Capped
+	// at 8 so a small terminal never collapses to a sliver. Finalized messages
+	// flushed to terminal scrollback via tea.Println are NOT padded — the
+	// setting only wraps the View() output. Toggle via /settings
+	// `outer_pad_lr <n>`; persists across launches.
+	OuterPadLR int `toml:"outer_pad_lr"`
+
 	// ExtraTools opts specific tools into the manifest beyond the active
 	// profile's allowlist. Names match tool Spec().Name (e.g. "apply_patch",
 	// "hashline_edit"). The default keeps the surface minimal; this is the

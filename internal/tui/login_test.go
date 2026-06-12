@@ -105,6 +105,8 @@ func (s *loginSideStub) SetShowLoaderOut(bool) error                   { return 
 func (s *loginSideStub) GetShowLoaderOut() bool                        { return true }
 func (s *loginSideStub) SetShowLoaderRate(bool) error                  { return nil }
 func (s *loginSideStub) GetShowLoaderRate() bool                       { return true }
+func (s *loginSideStub) SetOuterPadLR(int) error                       { return nil }
+func (s *loginSideStub) GetOuterPadLR() int                            { return 0 }
 func (s *loginSideStub) SetShowBanner(bool) error                      { return nil }
 func (s *loginSideStub) GetShowBanner() bool                           { return true }
 func (s *loginSideStub) SetShowLoader(bool) error                      { return nil }

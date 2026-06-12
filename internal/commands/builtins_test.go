@@ -69,6 +69,9 @@ type fakeSide struct {
 	removeToolErr   error
 	openToolsCalled bool
 	openToolsErr    error
+	outerPadLR      int
+	outerPadLRSet   bool
+	outerPadLRErr   error
 }
 
 func (f *fakeSide) Compact(context.Context) error { f.compactCalled = true; return nil }
@@ -198,6 +201,8 @@ func (f *fakeSide) SetShowLoaderOut(bool) error   { return nil }
 func (f *fakeSide) GetShowLoaderOut() bool        { return true }
 func (f *fakeSide) SetShowLoaderRate(bool) error  { return nil }
 func (f *fakeSide) GetShowLoaderRate() bool       { return true }
+func (f *fakeSide) SetOuterPadLR(n int) error        { f.outerPadLR = n; f.outerPadLRSet = true; return f.outerPadLRErr }
+func (f *fakeSide) GetOuterPadLR() int             { return f.outerPadLR }
 func (f *fakeSide) SetShowBanner(bool) error      { return nil }
 func (f *fakeSide) GetShowBanner() bool           { return true }
 func (f *fakeSide) SetShowLoader(bool) error      { return nil }
@@ -496,6 +501,57 @@ func TestBuiltin_Settings_UnknownKey(t *testing.T) {
 	out, _ := c.Run(context.Background(), []string{"bogus", "on"}, side)
 	if !strings.Contains(out, "unknown setting") {
 		t.Errorf("expected unknown-setting message, got %q", out)
+	}
+}
+
+// outer_pad_lr is the int-magnitude row. It must accept a number, clamp to
+// 0..8, and reject the bare-flip form (no single-arg semantics for int rows).
+func TestBuiltin_Settings_OuterPadLR(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	c, _ := r.Get("settings")
+
+	// valid int → stored + echoed.
+	side := &fakeSide{}
+	out, err := c.Run(context.Background(), []string{"outer_pad_lr", "3"}, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !side.outerPadLRSet || side.outerPadLR != 3 {
+		t.Errorf("expected outerPadLR=3, got %+v", side)
+	}
+	if !strings.Contains(out, "3") {
+		t.Errorf("expected '3' in output, got %q", out)
+	}
+
+	// out-of-range high → clamped to 8.
+	side = &fakeSide{}
+	_, err = c.Run(context.Background(), []string{"padding", "99"}, side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if side.outerPadLR != 8 {
+		t.Errorf("expected clamp to 8, got %d", side.outerPadLR)
+	}
+
+	// non-numeric → friendly error, no mutation.
+	side = &fakeSide{}
+	out, _ = c.Run(context.Background(), []string{"outer_pad_lr", "lots"}, side)
+	if side.outerPadLRSet {
+		t.Error("expected no mutation on non-numeric")
+	}
+	if !strings.Contains(out, "want a number") {
+		t.Errorf("expected number-error message, got %q", out)
+	}
+
+	// no value → must reject, int rows have no flip semantics.
+	side = &fakeSide{}
+	out, _ = c.Run(context.Background(), []string{"outer_pad_lr"}, side)
+	if side.outerPadLRSet {
+		t.Error("expected no mutation on bare int row")
+	}
+	if !strings.Contains(out, "needs a number") {
+		t.Errorf("expected needs-a-number message, got %q", out)
 	}
 }
 

@@ -122,5 +122,8 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		// can read from the start while the tail keeps growing. Opt out with
 		// BEE_STREAM_PROGRESSIVE=0 to fall back to pure tail-clipping.
 		progressiveStream: os.Getenv("BEE_STREAM_PROGRESSIVE") != "0",
+		// outerPadLR left at 0; the cfg-driven seed in app_run.go seeds it
+		// from eng.Cfg.OuterPadLR when an engine is present, so the default
+		// 0 ships off in both the test (eng==nil) and the live (eng!=nil) path.
 	}
 }

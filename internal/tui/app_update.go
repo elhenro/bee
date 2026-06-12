@@ -302,6 +302,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onOpenSettings(msg)
 	case settingsToggleMsg:
 		return m.onSettingsToggle(msg)
+	case settingsSetIntMsg:
+		return m.onSettingsSetInt(msg)
 	case openToolsMsg:
 		return m.onOpenTools(msg)
 	case toolsToggleMsg:

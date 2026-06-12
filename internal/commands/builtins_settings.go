@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"strconv"
 	"strings"
 )
 
@@ -44,8 +45,12 @@ func renderSettingsStatus(s Side) string {
 	b.WriteString("  one-line side-LLM recap after each turn\n")
 	b.WriteString("  compact       ")
 	b.WriteString(onOff(s.GetCompact()))
-	b.WriteString("  drop tui spacing (gutter, blank, tint, OSC 133)\n\n")
+	b.WriteString("  drop tui spacing (gutter, blank, tint, OSC 133)\n")
+	b.WriteString("  outer_pad_lr  ")
+	b.WriteString(strconv.Itoa(s.GetOuterPadLR()))
+	b.WriteString("    blank cells left+right around the TUI (0-8, 0=off)\n\n")
 	b.WriteString("usage: /settings <key> <on|off>\n")
+	b.WriteString("       /settings outer_pad_lr <0-8>\n")
 	b.WriteString("       /settings              (open pane)\n")
 	return b.String()
 }
@@ -71,8 +76,30 @@ func applySettingsArg(args []string, s Side) (string, error) {
 		key = "show_banner"
 	case "loader", "show_loader", "generating":
 		key = "show_loader"
+	case "outer_pad_lr", "padding", "outer_pad", "outer-pad":
+		key = "outer_pad_lr"
 	default:
-		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | show_recap | compact | shell_bang_silent | show_banner | show_loader)", nil
+		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | show_recap | compact | shell_bang_silent | show_banner | show_loader | outer_pad_lr)", nil
+	}
+	// Int keys must supply a numeric value; they have no "flip" semantics.
+	if key == "outer_pad_lr" {
+		if len(args) < 2 {
+			return "outer_pad_lr needs a number 0-8 (e.g. /settings outer_pad_lr 2)", nil
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(args[1]))
+		if err != nil {
+			return "outer_pad_lr: want a number 0-8, got " + quote(args[1]), nil
+		}
+		if n < 0 {
+			n = 0
+		}
+		if n > 8 {
+			n = 8
+		}
+		if err := s.SetOuterPadLR(n); err != nil {
+			return "", err
+		}
+		return "outer_pad_lr: " + strconv.Itoa(n), nil
 	}
 	var newVal bool
 	if len(args) >= 2 {

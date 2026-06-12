@@ -146,3 +146,23 @@ func TestRenderErrorBlock_WrapsAndIndents(t *testing.T) {
 		}
 	}
 }
+
+// padFrameLR(0) is identity; otherwise every line gets N blank cells of
+// left+right wrap. Multi-line content must keep its line count.
+func TestPadFrameLR(t *testing.T) {
+	m := NewModel(nil, "/tmp/work", "x", "workspace-write", caveman.Default)
+	m.width = 40 // must be set; padFrameLR bails out on width <= 0
+	if got := m.padFrameLR("hello"); got != "hello" {
+		t.Errorf("pad 0: got %q want %q", got, "hello")
+	}
+	m.outerPadLR = 2
+	got := m.padFrameLR("hi")
+	if got != "  hi  " {
+		t.Errorf("pad 2: got %q want %q", got, "  hi  ")
+	}
+	multi := "a\nb\nc"
+	wantMulti := "  a  \n  b  \n  c  "
+	if got := m.padFrameLR(multi); got != wantMulti {
+		t.Errorf("pad 2 multi: got %q want %q", got, wantMulti)
+	}
+}

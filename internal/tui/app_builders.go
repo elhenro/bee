@@ -157,6 +157,20 @@ func (m Model) WithShowGitBranch(v bool) Model { m.showGitBranch = v; return m }
 // WithShowTotalTokens seeds top-bar session-tokens chip visibility.
 func (m Model) WithShowTotalTokens(v bool) Model { m.showTotalTokens = v; return m }
 
+// WithOuterPadLR seeds the left+right outer-padding cell count around the
+// live TUI region. Clamps to 0..8 so a tiny terminal can't collapse to a
+// sliver or get a negative value from a typo.
+func (m Model) WithOuterPadLR(n int) Model {
+	if n < 0 {
+		n = 0
+	}
+	if n > 8 {
+		n = 8
+	}
+	m.outerPadLR = n
+	return m
+}
+
 // WithStreamCh wires a text-delta channel from the engine into the TUI.
 // The same channel must be set on Engine.StreamCh so deltas flow.
 func (m Model) WithStreamCh(ch chan string) Model {

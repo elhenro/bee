@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -15,6 +16,10 @@ type settingsRow struct {
 	key   string // toml key persisted to ~/.bee/config.toml
 	label string // human-readable label
 	desc  string // one-line description shown next to the toggle
+	// isInt marks the row as a magnitude (0..N) instead of a bool state.
+	// The renderer shows `[N]` instead of `[x]`, and toggleCurrent publishes
+	// settingsSetIntMsg instead of settingsToggleMsg on commit.
+	isInt bool
 }
 
 // settingsRows is the alphabetised pool. Sorted at package init so new rows
@@ -34,13 +39,15 @@ var settingsRows = []settingsRow{
 	{key: "show_context_pct", label: "top-bar: context %", desc: "percent label next to the bee glyph"},
 	{key: "show_model", label: "top-bar: model name", desc: "active provider/model label"},
 	{key: "show_cwd", label: "top-bar: cwd", desc: "current working directory"},
-	{key: "show_effort", label: "top-bar: effort", desc: "thinking-effort badge (t:max)"},
+	{key: "show_effort", label: "top-bar: effort", desc: "role + reasoning-budget chips (worker · t:max)"},
 	{key: "show_turn_timer", label: "top-bar: turn timer", desc: "⏱ live elapsed while working + final time after"},
 	{key: "show_git_branch", label: "top-bar: git branch", desc: "⎇ current git branch (when cwd is in a repo)"},
 	{key: "show_total_tokens", label: "top-bar: total tokens", desc: "Σ session tokens (input+output) next to cost"},
 	{key: "show_loader_in", label: "loader: input tokens", desc: "↑ input-token figure in the generating strip"},
 	{key: "show_loader_out", label: "loader: output tokens", desc: "↓ output-token figure in the generating strip"},
 	{key: "show_loader_rate", label: "loader: tok/s", desc: "average generation throughput in the generating strip"},
+	// outer_pad_lr is the int row: cycles 0..8, render as `[N]`.
+	{key: "outer_pad_lr", label: "outer padding (L/R)", desc: "blank cells left+right around TUI (int 0-8, 0=off; enter cycles)", isInt: true},
 }
 
 func init() {
@@ -79,7 +86,14 @@ type SettingsPane struct {
 	loaderIn   bool
 	loaderOut  bool
 	loaderRate bool
+	// outerPad mirrors the int value for the outer_pad_lr row. Renders as
+	// `[N]` (0..8) and cycles on enter/tab via settingsSetIntMsg.
+	outerPad int
 }
+
+// outerPadMax mirrors WithOuterPadLR's upper bound. Used by the cycle path
+// so the pane can't ask for a value the setter would clamp anyway.
+const outerPadMax = 8
 
 // NewSettingsPane returns a closed settings pane.
 func NewSettingsPane() *SettingsPane {
@@ -135,6 +149,9 @@ type SettingsSnapshot struct {
 	ShowLoaderIn    bool
 	ShowLoaderOut   bool
 	ShowLoaderRate  bool
+	// OuterPadLR is the live 0..8 cell count for the left+right padding wrap
+	// applied to View() output. Renders as the int row in the settings pane.
+	OuterPadLR int
 }
 
 // Show opens the pane seeded with the live values.
@@ -167,6 +184,7 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 	p.loaderIn = s.ShowLoaderIn
 	p.loaderOut = s.ShowLoaderOut
 	p.loaderRate = s.ShowLoaderRate
+	p.outerPad = s.OuterPadLR
 	p.recomputeMatches()
 }
 
@@ -175,6 +193,22 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 type settingsToggleMsg struct {
 	key   string
 	value bool
+}
+
+// settingsSetIntMsg is published when an int row is cycled (the only int row
+// today is outer_pad_lr). Same shape as settingsToggleMsg but with an int
+// payload, so the dispatcher in app_update.go can route the two message
+// kinds to the right Side method.
+type settingsSetIntMsg struct {
+	key   string
+	value int
+}
+
+// isIntRow reports whether the row keyed by key is the int-magnitude kind.
+// Today only outer_pad_lr. New int rows should append to settingsRows with
+// isInt: true and add a case here.
+func isIntRow(key string) bool {
+	return key == "outer_pad_lr"
 }
 
 // recomputeMatches fuzzy-filters settingsRows against the filter input. Empty
@@ -240,7 +274,8 @@ func (p *SettingsPane) Update(msg tea.Msg) (*SettingsPane, tea.Cmd) {
 }
 
 // toggleCurrent flips the row at p.cursor (in the filtered match list) and
-// returns the side-effect command publishing the new value.
+// returns the side-effect command publishing the new value. Int rows are
+// routed through settingsSetIntMsg and cycled 0..N..0 instead of bool-flipped.
 func (p *SettingsPane) toggleCurrent() tea.Cmd {
 	if len(p.matches) == 0 {
 		return nil
@@ -250,9 +285,43 @@ func (p *SettingsPane) toggleCurrent() tea.Cmd {
 		return nil
 	}
 	row := settingsRows[idx]
+	if isIntRow(row.key) {
+		cur := p.intRowState(row.key)
+		next := cur + 1
+		if next > outerPadMax {
+			next = 0
+		}
+		p.setIntRowState(row.key, next)
+		return func() tea.Msg { return settingsSetIntMsg{key: row.key, value: next} }
+	}
 	newVal := !p.rowState(row.key)
 	p.setRowState(row.key, newVal)
 	return func() tea.Msg { return settingsToggleMsg{key: row.key, value: newVal} }
+}
+
+// intRowState reads the int backing field for a given key. Mirrors rowState
+// for the bool rows; kept as a separate function so the int path doesn't
+// grow the bool switch.
+func (p *SettingsPane) intRowState(key string) int {
+	switch key {
+	case "outer_pad_lr":
+		return p.outerPad
+	}
+	return 0
+}
+
+// setIntRowState writes the int backing field for a given key.
+func (p *SettingsPane) setIntRowState(key string, v int) {
+	switch key {
+	case "outer_pad_lr":
+		if v < 0 {
+			v = 0
+		}
+		if v > outerPadMax {
+			v = outerPadMax
+		}
+		p.outerPad = v
+	}
 }
 
 // rowState reads the toggle backing field for a given key.
@@ -383,9 +452,14 @@ func (p *SettingsPane) View(width, height int) string {
 			marker = lipgloss.NewStyle().Foreground(accentHoney).Render("▸ ")
 			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
 		}
-		toggle := "[ ]"
-		if p.rowState(r.key) {
-			toggle = lipgloss.NewStyle().Foreground(accentHoney).Render("[x]")
+		var toggle string
+		if r.isInt {
+			toggle = fmt.Sprintf("[%d]", p.intRowState(r.key))
+		} else {
+			toggle = "[ ]"
+			if p.rowState(r.key) {
+				toggle = lipgloss.NewStyle().Foreground(accentHoney).Render("[x]")
+			}
 		}
 		b.WriteString(marker)
 		b.WriteString(toggle)

@@ -9,6 +9,55 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// maxOuterPadLR caps the live TUI padding so a tiny terminal can't collapse
+// to a sliver. Mirrored by the WithOuterPadLR setter.
+const maxOuterPadLR = 8
+
+// padFrameLR wraps the final rendered TUI string with N blank cells of
+// left+right padding when m.outerPadLR > 0. Identity otherwise. Used as the
+// outermost step of View() so every return path (bare frame + every modal
+// overlay) gets the same gutter without touching the inner renderers.
+//
+// The inner content is rendered against the full terminal width (top bar
+// right-align, context bar, stream wrap all still read m.width). Without
+// clipping, the rightmost pad cells would push past the terminal edge. We
+// pre-clip each line's visible width (using lipgloss.Width, which is
+// ANSI-aware) to m.width-2*pad before adding the pad, so the wrap stays
+// inside the terminal. Lines whose visible width already fits keep their
+// existing alignment — only their left/right pad changes.
+//
+// Finalized messages flushed via tea.Println are NOT padded (this only
+// affects the View() return).
+func (m Model) padFrameLR(s string) string {
+	pad := m.outerPadLR
+	if pad <= 0 || m.width <= 0 {
+		return s
+	}
+	if pad > maxOuterPadLR {
+		pad = maxOuterPadLR
+	}
+	inner := m.width - 2*pad
+	if inner < 1 {
+		// terminal narrower than 2*pad+1 — the padding would consume the
+		// whole row. Render as-is to keep at least one cell of content.
+		return s
+	}
+	left := strings.Repeat(" ", pad)
+	right := strings.Repeat(" ", pad)
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		// ANSI-aware trim. lipgloss.Width counts runes + escape codes
+		// correctly; we just chop visible runes off the right tail.
+		w := lipgloss.Width(line)
+		if w > inner {
+			lines[i] = truncateVisible(line, inner) + right
+		} else {
+			lines[i] = left + line + right
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // centerPane is the shape every Ctrl-key modal pane shares: a nil-safe Open
 // gate and a sized View. View() consumes a slice of these so adding a pane is
 // one slice entry, not another if-branch.
@@ -56,45 +105,45 @@ func (m Model) View() string {
 	}
 	frame := strings.Join(parts, "\n")
 	if m.approval.Active {
-		return overlayCenter(frame, m.approval.View(), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.approval.View(), m.width))
 	}
 	if m.askModel.Active {
-		return overlayCenter(frame, m.askModel.View(), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.askModel.View(), m.width))
 	}
 	if m.updatePrompt.Active {
-		return overlayCenter(frame, m.updatePrompt.View(), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.updatePrompt.View(), m.width))
 	}
 	if m.tutorial.active {
-		return overlayCenter(frame, m.renderTutorial(), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.renderTutorial(), m.width))
 	}
 	// palette, atpicker, picker, history all render inline above the input in
 	// renderBottomBar — no extra overlay needed for any picker-style flow.
 	if m.tree != nil && m.tree.Open() {
-		return overlayCenter(frame, m.tree.View(m.width, m.height), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.tree.View(m.width, m.height), m.width))
 	}
 	if m.resume != nil && m.resume.Open() {
-		return overlayCenter(frame, m.resume.View(m.width, m.height), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.resume.View(m.width, m.height), m.width))
 	}
 	if m.rewind != nil && m.rewind.Open() {
-		return overlayCenter(frame, m.rewind.View(m.width, m.height), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.rewind.View(m.width, m.height), m.width))
 	}
 	// centered modal panes share Open()+View(w,h); render the first open one.
 	// a nil *Pane stored in the interface stays safe — every Open() is
 	// nil-receiver guarded. add a pane by appending it here, not a new branch.
 	for _, p := range []centerPane{m.costPane, m.usagePane, m.loginPane, m.rolePane, m.effortPane, m.settingsPane, m.toolsPane} {
 		if p.Open() {
-			return overlayCenter(frame, p.View(m.width, m.height), m.width)
+			return m.padFrameLR(overlayCenter(frame, p.View(m.width, m.height), m.width))
 		}
 	}
 	if m.agentView != nil && m.agentView.IsOpen() {
-		return overlayCenter(frame, m.agentView.Render(m.width, m.height), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.agentView.Render(m.width, m.height), m.width))
 	}
 	if m.hive != nil && m.hive.Expanded() {
-		return overlayCenter(frame, m.hive.RenderFull(m.width, m.height), m.width)
+		return m.padFrameLR(overlayCenter(frame, m.hive.RenderFull(m.width, m.height), m.width))
 	}
 	// picker renders inline above the input bar (see renderBottomBar) — same
 	// flush-left dense layout as the slash palette.
-	return frame
+	return m.padFrameLR(frame)
 }
 
 // renderLive returns the live in-progress slice — streaming partial while

@@ -183,6 +183,10 @@ type Side interface {
 	// SetShowLoader toggles the streaming "generating" animation live + persists.
 	SetShowLoader(v bool) error
 	GetShowLoader() bool
+	// SetOuterPadLR sets the 0..8 left+right blank-cell wrap applied to
+	// every View() return. Persists via the standard toml key.
+	SetOuterPadLR(n int) error
+	GetOuterPadLR() int
 	// OpenSettings asks the TUI to display the settings pane. Returns an
 	// error in headless contexts so the slash command can fall back to text.
 	OpenSettings() error

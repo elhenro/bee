@@ -470,6 +470,14 @@ type Model struct {
 	showLoaderOut  bool
 	showLoaderRate bool
 
+	// outerPadLR inserts N cells of left+right padding around the live TUI
+	// region (top bar, streaming partial, input, modals). 0 = off. Capped at 8
+	// on write so a tiny terminal never collapses to a sliver. Mirrors
+	// eng.Cfg.OuterPadLR; persisted to ~/.bee/config.toml as
+	// `outer_pad_lr` via /settings. Finalized messages flushed to scrollback
+	// are NOT padded — the wrap is applied at the View() boundary.
+	outerPadLR int
+
 	// updatePrompt is the four-button modal surfaced when the hourly checker
 	// finds that main has new commits. Inactive until updateAvailableMsg fires.
 	updatePrompt UpdatePrompt

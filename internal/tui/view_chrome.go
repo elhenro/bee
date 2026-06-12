@@ -69,10 +69,14 @@ func (m Model) renderTopBar() string {
 	if yb := m.renderYoloBadge(); yb != "" {
 		right += yb + "  "
 	}
-	// showEffort now gates the role chip (the reasoning-effort chip it used to
-	// gate is gone — thinking is baked per role).
+	// showEffort gates the role chip AND the reasoning-budget chip — both
+	// live in the same chrome slot so users see "worker · t:max" at a glance.
+	// Thinking is per-role baked; the chip echoes the resolved value.
 	if m.showEffort {
 		if badge := m.renderRoleBadge(); badge != "" {
+			right += badge + "  "
+		}
+		if badge := m.renderEffortBadge(); badge != "" {
 			right += badge + "  "
 		}
 	}
@@ -194,6 +198,27 @@ func (m Model) renderRoleBadge() string {
 		fg = fgSquid
 	}
 	return lipgloss.NewStyle().Foreground(fg).Bold(true).Render(m.role)
+}
+
+// renderEffortBadge formats the active reasoning-budget level as "t:<level>".
+// Hidden when the resolved value is empty or "auto" — auto is the default and
+// has no signal to convey (the role chip already implies the baked budget).
+// Colour tracks intensity: off/auto dim, low/medium honey, high/max tool-accent.
+func (m Model) renderEffortBadge() string {
+	v := strings.ToLower(strings.TrimSpace(m.thinking))
+	if v == "" || v == "auto" {
+		return ""
+	}
+	var fg lipgloss.TerminalColor
+	switch v {
+	case "off":
+		fg = fgSquid
+	case "low", "med", "medium":
+		fg = accentHoney
+	default: // high, max
+		fg = accentTool
+	}
+	return lipgloss.NewStyle().Foreground(fg).Render("t:" + v)
 }
 
 // renderYoloBadge renders a loud inverse-red YOLO block, shown only while the

@@ -102,9 +102,9 @@ func runHeadlessReal(args []string) {
 		}
 	}
 	// scripted provider needs deterministic Stream-call count: pin worker role
-	// (SkipPostureClassifier is set on the engine below so the read|act side-
-	// query never fires), and disable compaction + memory selection. tests
-	// script exactly the calls they expect.
+	// (no per-turn classifier side-query fires — classifier was removed) and
+	// disable compaction + memory selection. tests script exactly the calls
+	// they expect.
 	if os.Getenv("BEE_TEST_PROVIDER") == "scripted" {
 		cfg.Role = "worker"
 		cfg.Compaction.Enabled = false
@@ -234,9 +234,7 @@ func runHeadlessReal(args []string) {
 		Stdout:   os.Stdout,
 		Costs:    cost.New(),
 	}
-	if os.Getenv("BEE_TEST_PROVIDER") == "scripted" {
-		eng.SkipPostureClassifier = true
-	}
+
 	if *jsonOut {
 		eng.JSONEmitter = jsonmode.New(os.Stdout)
 		// text deltas already routed through emitter; suppress raw writes.

@@ -202,3 +202,32 @@ func (s *tuiSide) GetShowLoaderRate() bool {
 	}
 	return s.m.showLoaderRate
 }
+
+// SetOuterPadLR applies the live TUI padding wrap. Clamps to 0..8 so a bad
+// config value (or a script-supplied one) can't collapse the live region.
+// Mirrors the value into eng.Cfg for the engine path (which has its own
+// builder; we keep them aligned so headless + TUI produce the same line
+// widths when both run in the same process).
+func (s *tuiSide) SetOuterPadLR(n int) error {
+	if s.m == nil {
+		return errors.New("outer_pad_lr: no tui state")
+	}
+	if n < 0 {
+		n = 0
+	}
+	if n > 8 {
+		n = 8
+	}
+	s.m.outerPadLR = n
+	if s.m.eng != nil {
+		s.m.eng.Cfg.OuterPadLR = n
+	}
+	return PersistSetting("", "outer_pad_lr", n)
+}
+
+func (s *tuiSide) GetOuterPadLR() int {
+	if s.m == nil {
+		return 0
+	}
+	return s.m.outerPadLR
+}

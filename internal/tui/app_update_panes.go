@@ -88,6 +88,7 @@ func (m Model) onOpenSettings(_ openSettingsMsg) (tea.Model, tea.Cmd) {
 		ShowLoaderIn:    m.showLoaderIn,
 		ShowLoaderOut:   m.showLoaderOut,
 		ShowLoaderRate:  m.showLoaderRate,
+		OuterPadLR:      m.outerPadLR,
 	})
 	return m, nil
 }
@@ -142,6 +143,24 @@ func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
 	if err != nil && m.state != StateStreaming {
 		// don't kill an in-flight turn over a persist hiccup; surface the
 		// error only when idle.
+		m.lastErr = err.Error()
+		m.state = StateError
+	}
+	return m, nil
+}
+
+// onSettingsSetInt handles the int-magnitude row cycle (only outer_pad_lr
+// today). Mirrors onSettingsToggle's apply+persist contract, but updates the
+// live field on the Model in addition to delegating to Side, so the next
+// View() picks the new padding up without restart.
+func (m Model) onSettingsSetInt(msg settingsSetIntMsg) (tea.Model, tea.Cmd) {
+	var err error
+	switch msg.key {
+	case "outer_pad_lr":
+		m.outerPadLR = msg.value
+		err = m.side().SetOuterPadLR(msg.value)
+	}
+	if err != nil && m.state != StateStreaming {
 		m.lastErr = err.Error()
 		m.state = StateError
 	}
