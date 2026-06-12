@@ -169,3 +169,27 @@ func (e *EmptyCompletionError) Error() string {
 
 func (e *EmptyCompletionError) Is(target error) bool { return target == ErrEmptyCompletion }
 func (e *EmptyCompletionError) Unwrap() error        { return ErrEmptyCompletion }
+
+// ErrProviderReject indicates the provider rejected the request body itself
+// (HTTP 400 with "invalid function arguments" / "invalid tool_call" / similar),
+// not the response stream. The most common cause: a previous assistant message
+// in the conversation history contained a tool_use block whose arguments were
+// malformed or unparseable, and replaying the full transcript trips the
+// provider's per-request validation. Bail with this sentinel so the resume
+// path can reframe the retry AND drop the bad block from history — otherwise
+// the model replays the same broken call forever.
+var ErrProviderReject = errors.New("loop: provider rejected request body")
+
+// ProviderRejectError carries the raw error string so the resume continuation
+// can quote the upstream message (helps tiny models recognise the failure
+// shape) while errors.Is(err, ErrProviderReject) matches for classification.
+type ProviderRejectError struct {
+	Raw string
+}
+
+func (e *ProviderRejectError) Error() string {
+	return fmt.Sprintf("%s: %s", ErrProviderReject.Error(), e.Raw)
+}
+
+func (e *ProviderRejectError) Is(target error) bool { return target == ErrProviderReject }
+func (e *ProviderRejectError) Unwrap() error        { return ErrProviderReject }

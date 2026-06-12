@@ -20,6 +20,18 @@ const (
 		"If you genuinely cannot proceed, call the escalate tool instead of retrying. " +
 		"When done, state clearly what you completed."
 	resumeContinueMsg = "[resume] Continue from where you left off."
+	// resumeProviderRejectMsg fires when the provider rejected the request body
+	// (HTTP 400 with "invalid function arguments" / "invalid tool_call" / similar).
+	// Most often: a prior assistant message contained a tool_use block whose
+	// arguments were unparseable, and the provider validates the whole payload
+	// on each call, so the same transcript keeps 400-ing. We strip the bad
+	// block from history before retrying — the model just needs to know it
+	// should re-emit the call cleanly or escalate rather than re-derive it
+	// from a body the provider already rejected.
+	resumeProviderRejectMsg = "[resume] The provider rejected your previous request because a tool call had malformed arguments. " +
+		"Your prior tool_use has been removed from history. " +
+		"Re-issue the call with valid JSON for every required argument, or call the escalate tool if you cannot. " +
+		"Do not paraphrase the rejected call — start fresh from the user's request."
 )
 
 // IsWedge reports the "this turn got stuck, a reframed retry is sane" family.
@@ -32,7 +44,8 @@ func IsWedge(err error) bool {
 		errors.Is(err, ErrPerToolFailureCap) ||
 		errors.Is(err, ErrFormatStrike) ||
 		errors.Is(err, ErrRepeatStream) ||
-		errors.Is(err, ErrEmptyCompletion)
+		errors.Is(err, ErrEmptyCompletion) ||
+		errors.Is(err, ErrProviderReject)
 }
 
 // ResumeDecision is the policy output. Stateless — the caller owns the counter
@@ -63,6 +76,13 @@ func ClassifyResume(err error, res RunResult) ResumeDecision {
 	case errors.Is(err, ErrTruncatedStream):
 		return ResumeDecision{Resume: true, Continuation: resumeStreamMsg, Reason: "stream-drop"}
 	case IsWedge(err):
+		// provider-reject is technically a wedge but gets its own label so the
+		// warning line tells the user the upstream provider bounced the request
+		// (vs. the model wedging on a tool call). The continuation tells the
+		// model to re-emit valid args or escalate.
+		if errors.Is(err, ErrProviderReject) {
+			return ResumeDecision{Resume: true, Continuation: resumeProviderRejectMsg, Reason: "provider-reject"}
+		}
 		return ResumeDecision{Resume: true, Continuation: resumeWedgeMsg, Reason: "wedged"}
 	case errors.Is(err, ErrMaxIterations):
 		return ResumeDecision{Resume: true, Continuation: resumeContinueMsg, Reason: "max-iter"}

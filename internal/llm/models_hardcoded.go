@@ -218,6 +218,21 @@ func hardcodedFallback(name string) []Model {
 			{ID: "llama3.1:8b", Name: "Llama 3.1 8B"},
 			{ID: "qwen2.5-coder:7b", Name: "Qwen2.5 Coder 7B"},
 		}
+	case "minimax":
+		// MiniMax exposes the anthropic wire format at /anthropic/v1 — its
+		// /models endpoint works live, so this list is only the offline /
+		// no-key fallback. Mirrors the surface we observed on
+		// https://api.minimax.io/anthropic/v1/models.
+		return []Model{
+			{ID: "MiniMax-M3", Name: "MiniMax-M3", ContextLength: 200000},
+			{ID: "MiniMax-M2.7", Name: "MiniMax-M2.7", ContextLength: 200000},
+			{ID: "MiniMax-M2.7-highspeed", Name: "MiniMax-M2.7-Highspeed", ContextLength: 200000},
+			{ID: "MiniMax-M2.5", Name: "MiniMax-M2.5", ContextLength: 200000},
+			{ID: "MiniMax-M2.5-highspeed", Name: "MiniMax-M2.5-Highspeed", ContextLength: 200000},
+			{ID: "MiniMax-M2.1", Name: "MiniMax-M2.1", ContextLength: 200000},
+			{ID: "MiniMax-M2.1-highspeed", Name: "MiniMax-M2.1-Highspeed", ContextLength: 200000},
+			{ID: "MiniMax-M2", Name: "MiniMax-M2", ContextLength: 200000},
+		}
 	}
 	return nil
 }

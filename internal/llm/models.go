@@ -64,23 +64,28 @@ func resolveProviderKey(name string, cfg config.ProviderConfig) string {
 	return key
 }
 
-// ListModels returns the model catalogue for the given provider. For
-// anthropic-wire providers or empty base URLs we return a curated hardcoded
-// list — Anthropic's /models endpoint is gated and not all wire-compat
-// servers expose one. Results are cached per-name with a 10-minute TTL.
+// ListModels returns the model catalogue for the given provider. The
+// anthropic wire is short-circuited only for the real Anthropic provider —
+// third parties that copy the wire shape (MiniMax and friends) usually DO
+// expose a /models endpoint and we should query it. Empty base URLs fall
+// back to a curated list. Results are cached per-name with a 10-minute TTL.
 func ListModels(ctx context.Context, name string, cfg config.ProviderConfig) ([]Model, error) {
 	if cached, ok := lookupCache(name); ok {
 		return cached, nil
 	}
 
-	if isAnthropicWire(cfg.WireAPI) || strings.TrimSpace(cfg.BaseURL) == "" {
-		key := cfg.WireAPI
-		if isAnthropicWire(key) {
-			key = "anthropic"
-		}
-		models := hardcodedModels(key)
+	if isAnthropicWire(cfg.WireAPI) && name == "anthropic" {
+		models := hardcodedModels("anthropic")
 		storeCache(name, models)
 		return models, nil
+	}
+	if strings.TrimSpace(cfg.BaseURL) == "" {
+		if fb := hardcodedFallback(name); fb != nil {
+			storeCache(name, fb)
+			return fb, nil
+		}
+		storeCache(name, []Model{})
+		return []Model{}, nil
 	}
 	// Responses-wire backends. chatgpt.com exposes a plan-filtered list at
 	// /backend-api/codex/models?client_version=X — query it live so users see
@@ -213,6 +218,10 @@ func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([
 		Data []struct {
 			ID            string `json:"id"`
 			Name          string `json:"name"`
+			// DisplayName is the anthropic-compat shape some vendors use
+			// (MiniMax returns `display_name` alongside `id`). Falls back to
+			// the ID when both `name` and `display_name` are missing.
+			DisplayName   string `json:"display_name"`
 			ContextLength int    `json:"context_length"`
 			MaxModelLen   int    `json:"max_model_len"`
 			Pricing       any    `json:"pricing"`
@@ -225,6 +234,9 @@ func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([
 	models := make([]Model, 0, len(body.Data))
 	for _, m := range body.Data {
 		name := m.Name
+		if name == "" {
+			name = m.DisplayName
+		}
 		if name == "" {
 			name = m.ID
 		}

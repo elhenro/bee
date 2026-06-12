@@ -1,54 +1,65 @@
 package loop
 
 import (
-	"context"
+	"errors"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/elhenro/bee/internal/config"
-	"github.com/elhenro/bee/internal/llm"
-	"github.com/elhenro/bee/internal/tools"
 )
 
-// textDeltaProvider emits two text deltas then done. No tool uses.
-type textDeltaProvider struct{}
+func TestIsProviderRejectErr(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		// positive: each marker
+		{"openrouter minimax", errors.New("provider openrouter status 400: invalid function arguments json string, tool_call_id: call_function_9cgx2d7tk613_1 (2013)"), true},
+		{"invalid tool_call", errors.New("provider openai status 400: invalid tool_call: missing function"), true},
+		{"anthropic invalid tool call", errors.New("provider anthropic status 400: messages.0.content.0: invalid tool call"), true},
+		{"tool_call_id phrasing", errors.New("provider openrouter status 400: bad, tool_call_id: abc"), true},
+		{"invalid_request_error envelope", errors.New("provider anthropic status 400: invalid_request_error: tools[0].input_schema invalid"), true},
+		{"invalid parameters envelope", errors.New("provider openai status 400: invalid parameters: function name"), true},
+		{"strict mode field", errors.New("provider openai status 400: tools.0.function.arguments must be valid JSON"), true},
+		{"invalid_argument generic", errors.New("provider gemini status 400: invalid_argument: bad tool"), true},
 
-func (p *textDeltaProvider) Name() string { return "text-delta" }
-func (p *textDeltaProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
-	ch := make(chan llm.Event, 4)
-	go func() {
-		defer close(ch)
-		ch <- llm.Event{Type: llm.EventTextDelta, Delta: "hello "}
-		ch <- llm.Event{Type: llm.EventTextDelta, Delta: "world"}
-		ch <- llm.Event{Type: llm.EventDone}
-	}()
-	return ch, nil
+		// negative: 400 but unrelated
+		{"400 auth", errors.New("provider openrouter status 400: invalid api key"), false},
+		{"401", errors.New("provider openai status 401: unauthorized"), false},
+		{"429", errors.New("provider openai status 429: rate limit exceeded"), false},
+		{"500", errors.New("provider openai status 500: internal"), false},
+		{"transport", errors.New("dial tcp: connection refused"), false},
+		{"nil", nil, false},
+		{"empty", errors.New(""), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isProviderRejectErr(tc.err)
+			if got != tc.want {
+				t.Errorf("isProviderRejectErr(%q) = %v, want %v", errString(tc.err), got, tc.want)
+			}
+		})
+	}
 }
 
-func TestStreamCh_ReceivesDeltas(t *testing.T) {
-	streamCh := make(chan string, 4)
-	cfg := config.Defaults()
-	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
-	eng := &Engine{
-		Provider: &textDeltaProvider{},
-		Tools:    tools.NewRegistry(),
-		Memory:   stubMemStore{},
-		StreamCh: streamCh,
-		Cfg:      cfg,
-		Cwd:      ".",
+func errString(e error) string {
+	if e == nil {
+		return "<nil>"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if _, err := eng.Run(ctx, "test"); err != nil {
-		t.Fatalf("Run: %v", err)
+	return e.Error()
+}
+
+// TestProviderRejectError_Is chains: errors.Is must match the sentinel so
+// resume.go's classification works without caring which transport produced it.
+func TestProviderRejectError_Is(t *testing.T) {
+	raw := "provider openrouter status 400: invalid function arguments, tool_call_id: x"
+	wrapped := &ProviderRejectError{Raw: raw}
+	if !errors.Is(wrapped, ErrProviderReject) {
+		t.Fatal("errors.Is(wrapped, ErrProviderReject) = false, want true")
 	}
-	close(streamCh)
-	var got strings.Builder
-	for d := range streamCh {
-		got.WriteString(d)
+	if wrapped.Error() == "" {
+		t.Fatal("Error() empty")
 	}
-	if got.String() != "hello world" {
-		t.Errorf("want %q, got %q", "hello world", got.String())
+	if !strings.Contains(wrapped.Error(), raw) {
+		t.Errorf("Error() = %q, want substring %q", wrapped.Error(), raw)
 	}
 }

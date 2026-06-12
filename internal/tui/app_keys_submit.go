@@ -390,7 +390,11 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 			}
 			// seed prior turns into the engine here, after the prior run released
 			// it, so two runs never write InitialMessages concurrently.
-			eng.InitialMessages = history
+			// StripDanglingToolUse scrubs any assistant tool_use that lacks a
+			// matching tool_result — a leftover from a turn the provider
+			// rejected for malformed arguments. Without this, the next
+			// provider call replays the bad tool_use and 400s again.
+			eng.InitialMessages = loop.StripDanglingToolUse(history)
 			res, err := eng.RunWithContentDisplay(ctx, content, display)
 			return turnDoneMsg{gen: gen, result: res, err: err}
 		},

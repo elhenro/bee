@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -239,5 +240,97 @@ func TestListModels_FallbackOnHTTPError(t *testing.T) {
 	}
 	if len(got) == 0 {
 		t.Fatal("expected openai fallback list, got empty")
+	}
+}
+
+// Regression: third parties that copy the anthropic wire shape (e.g. MiniMax
+// at https://api.minimax.io/anthropic/v1) expose their own /models endpoint.
+// The picker used to short-circuit any anthropic-wire provider and substitute
+// the curated Claude list, hiding the actual vendor's catalogue. Verify that
+// a non-"anthropic" provider using the anthropic wire hits the live endpoint
+// and surfaces its own models — not Claude.
+func TestListModels_AnthropicWireThirdPartyHitsLive(t *testing.T) {
+	ClearModelCache()
+	ResetLiveContextLengths()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// MiniMax-shaped response: `display_name` instead of `name`.
+		fmt.Fprint(w, `{"data":[
+			{"id":"MiniMax-M3","display_name":"MiniMax-M3","type":"model"},
+			{"id":"MiniMax-M2","display_name":"MiniMax-M2","type":"model"}
+		]}`)
+	}))
+	defer srv.Close()
+
+	cfg := config.ProviderConfig{BaseURL: srv.URL, WireAPI: "anthropic-messages", EnvKey: ""}
+	got, err := ListModels(context.Background(), "minimax", cfg)
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	byID := map[string]string{}
+	for _, m := range got {
+		if !strings.HasPrefix(m.ID, "MiniMax-") {
+			t.Errorf("unexpected model id %q — anthropic-wire third party must surface its own catalogue, not Claude", m.ID)
+		}
+		byID[m.ID] = m.Name
+	}
+	if byID["MiniMax-M3"] != "MiniMax-M3" {
+		t.Errorf("display_name fallback failed: MiniMax-M3 Name = %q, want MiniMax-M3", byID["MiniMax-M3"])
+	}
+	if byID["MiniMax-M2"] != "MiniMax-M2" {
+		t.Errorf("display_name fallback failed: MiniMax-M2 Name = %q, want MiniMax-M2", byID["MiniMax-M2"])
+	}
+}
+
+// Anthropic-wire provider name "anthropic" still uses the curated Claude list
+// (Anthropic's own /v1/models is admin-gated). Regression for the previous
+// short-circuit.
+func TestListModels_AnthropicProviderNameStillHardcoded(t *testing.T) {
+	ClearModelCache()
+	cfg := config.ProviderConfig{BaseURL: "https://api.anthropic.com/v1", WireAPI: "anthropic-messages"}
+	got, err := ListModels(context.Background(), "anthropic", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("expected hardcoded anthropic list")
+	}
+	for _, m := range got {
+		if !strings.HasPrefix(m.ID, "claude-") {
+			t.Errorf("expected claude- prefix, got %q", m.ID)
+		}
+	}
+}
+
+// When a third-party anthropic-wire /models fetch fails (no key, offline),
+// the per-provider hardcodedFallback kicks in so the picker stays useful.
+// Mirrors the offline dev affordance TestListModels_FallbackOnHTTPError
+// gives openai.
+func TestListModels_AnthropicWireThirdPartyFallback(t *testing.T) {
+	ClearModelCache()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	cfg := config.ProviderConfig{BaseURL: srv.URL, WireAPI: "anthropic-messages", EnvKey: ""}
+	got, err := ListModels(context.Background(), "minimax", cfg)
+	if err != nil {
+		t.Fatalf("expected fallback to swallow error, got: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatal("expected minimax fallback list, got empty")
+	}
+	for _, m := range got {
+		if !strings.HasPrefix(m.ID, "MiniMax-") {
+			t.Errorf("fallback leaked non-MiniMax id %q", m.ID)
+		}
 	}
 }
