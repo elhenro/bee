@@ -44,6 +44,7 @@ Real OpenRouter smoke (requires `OPENROUTER_API_KEY`):
 
 ```sh
 ./bee run "say hi in three words"
+BEE_PROVIDER=anthropic BEE_MODEL=claude-sonnet-4-5 ./bee run "say hi in three words"   # override provider/model inline
 ```
 
 First-run is implicit: `bee run` / `bee` / `bee <skill>` all call `ensureFirstRun`, which creates `~/.bee/skills` and drops the bundled skills the first time it sees an empty dir. User edits are preserved on subsequent installs.
@@ -93,6 +94,40 @@ Clean **types → provider → tools → loop → ui** stack. Internal packages 
   - `models.go` + `models_cache.go` + `models_hardcoded.go` — model registry with on-disk cache; pricing fuels `internal/cost`.
   - `wire/` — translates internal `types.Message`/`ToolUse`/`ToolResult` to/from each provider's wire format: `openai.go`/`openai_stream.go`, `anthropic_messages.go`/`anthropic_messages_stream.go`, `responses.go`/`responses_stream.go`, `gemini.go`. **Internal message types are agent-owned — never leak provider SDK types upward.**
   - `mockprov/` — fixture-driven `Provider` for scripted e2e tests.
+
+### Providers
+
+Built-in provider blocks ship in `internal/config/defaults.go` (`Providers` map); override per-project in `~/.bee/config.toml`. The env-var in the `EnvKey` column is read at startup unless `KeyOptional=true`.
+
+| Provider | Base URL | Wire API | Env Key | Auth |
+|---|---|---|---|---|
+| `openrouter` | `https://openrouter.ai/api/v1` | `chat` | `OPENROUTER_API_KEY` | key |
+| `openai` | `https://api.openai.com/v1` | `chat` | `OPENAI_API_KEY` | key |
+| `anthropic` | `https://api.anthropic.com/v1` | `anthropic-messages` | `ANTHROPIC_API_KEY` | key |
+| `gemini` | `https://generativelanguage.googleapis.com/v1beta` | `gemini` | `GEMINI_API_KEY` | key |
+| `ollama` | `http://localhost:11434/v1` | `chat` | — | none (local) |
+| `omlx` | `http://localhost:8000/v1` | `chat` | `OMLX_API_KEY` | key (optional) |
+| `chatgpt` | `https://chatgpt.com/backend-api/codex` | `responses` | — | OAuth (`/login chatgpt`) |
+
+Any new OpenAI-compatible endpoint (DeepSeek, Groq, Together, custom proxy, …) is a config-only addition — no code, just a `[providers.<name>]` block:
+
+```toml
+default_provider = "openrouter"
+default_model    = "anthropic/claude-sonnet-4.5"
+
+[providers.openrouter]
+base_url      = "https://openrouter.ai/api/v1"
+wire_api      = "chat"
+env_key       = "OPENROUTER_API_KEY"
+default_model = "anthropic/claude-sonnet-4.5"
+reports_cost  = true
+
+[providers.deepseek]
+base_url      = "https://api.deepseek.com/v1"
+wire_api      = "chat"
+env_key       = "DEEPSEEK_API_KEY"
+default_model = "deepseek-chat"
+```
 
 - **`internal/tools/`** — current surface (Spec name in `tools/<dir>/<dir>.go`):
   - **Read-side**: `read`, `search` (regex grep, code in `internal/tools/grep/`), `glob` (filename match, code in `internal/tools/find/`), `ls`, `godoc` (`go doc -short` for a package/symbol), `codegraph` (symbol-relationship queries over the project's CodeGraph index).
