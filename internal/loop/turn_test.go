@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -848,37 +847,6 @@ func TestRun_TokenBudgetAutoRecovery(t *testing.T) {
 	}
 	if eng.run.budgetRecoveries != maxBudgetRecoveries {
 		t.Errorf("budgetRecoveries = %d, want %d", eng.run.budgetRecoveries, maxBudgetRecoveries)
-	}
-}
-
-// TestRun_StallCap drives the read-only stall cap: provider keeps calling
-// `read` (non-mutator) so noMutationStreak grows. Loop must bail before
-// the iter cap. Output varies per call so the identical-output guard
-// (which fires earlier, with its own test) stays out of the way.
-func TestRun_StallCap(t *testing.T) {
-	reg := tools.NewRegistry()
-	n := 0
-	_ = reg.Register(&stubTool{
-		name: "read",
-		desc: "x",
-		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
-			n++
-			return tools.Result{Content: fmt.Sprintf("ok %d", n)}, nil
-		},
-	})
-	p := &stubProvider{scripts: [][]llm.Event{
-		{
-			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u", Name: "read", Input: map[string]any{"path": "f"}}},
-			{Type: llm.EventDone, StopReason: "tool_use"},
-		},
-	}}
-	eng, _ := newEngine(p, reg)
-	_, err := eng.Run(context.Background(), "loop me")
-	if err == nil || !strings.Contains(err.Error(), "read-only iters") {
-		t.Fatalf("expected stall-cap error, got %v", err)
-	}
-	if got := p.calls.Load(); got >= 100 {
-		t.Errorf("stall cap should fire before iter cap; got %d calls", got)
 	}
 }
 

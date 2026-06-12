@@ -214,9 +214,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		maxIter = p.MaxIterations
 	}
 	unlimited := maxIter <= 0
-	tokenBudget, stallCap := computeBudgetCaps(e.Cfg)
+	tokenBudget := computeTokenBudget(e.Cfg)
 	for i := 0; unlimited || i < maxIter; i++ {
-		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget, stallCap, readOnly); err != nil {
+		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget); err != nil {
 			return res, err
 		}
 		// mid-turn steering: drain pending user input into a synthetic

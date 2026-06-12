@@ -16,44 +16,19 @@ import (
 // just compacts and continues instead of stopping on the first hit.
 const maxBudgetRecoveries = 3
 
-// computeBudgetCaps returns the adaptive token budget and stall cap for the
-// current Run. tokenBudget=0 means unknown context window → disabled. Both
-// caps fire BEFORE the iter ceiling so wasteful runs stop on real cost
-// (tokens) or real stall (read-only streak) rather than running out the
-// arbitrary iter count.
-//   tokenBudget: 10× the model's context window.
-//   stallCap:    9× profile NoMutationStallThreshold, default 24.
-func computeBudgetCaps(cfg config.Config) (tokenBudget, stallCap int) {
-	tokenBudget = 10 * contextBudget(cfg)
-	stallCap = 24
-	if t := config.ActiveProfile(cfg).NoMutationStallThreshold; t > 0 {
-		stallCap = t * 9
-	}
-	return
+// computeTokenBudget returns the adaptive token budget for the current Run.
+// tokenBudget=0 means unknown context window → disabled.
+func computeTokenBudget(cfg config.Config) (tokenBudget int) {
+	return 10 * contextBudget(cfg)
 }
 
-// handleBudgetCaps enforces the per-Run caps at the top of each iteration.
-// The read-only stall cap is a hard stop — compaction can't unwedge an
-// explore-loop. The token-budget cap instead AUTO-RECOVERS up to
-// maxBudgetRecoveries times: compact history, reset the cumulative counter,
-// re-arm the token warnings, and continue. Only once the recovery budget is
-// spent does it hard-stop. Returns a non-nil error only on hard stop; callers
-// return it as the Run error verbatim. msgs is mutated in place on recovery.
-func (e *Engine) handleBudgetCaps(ctx context.Context, msgs *[]types.Message, currentIter, tokenBudget, stallCap int, readOnly bool) error {
-	// read-only stall: model kept calling reads for stallCap iters without any
-	// mutation — almost always stuck in an explore-loop. no recovery. disabled
-	// on read-only turns: read-only is the intended behavior there, so the
-	// streak is not a stall and must not hard-stop a legit research run.
-	if !readOnly && e.run.noMutationStreak >= stallCap {
-		return fmt.Errorf("loop: %d read-only iters with no edits, stopping — type 'continue' to resume", e.run.noMutationStreak)
-	}
-	// read-only turns still need a backstop: with an unlimited iter cap and an
-	// unknown context window (tokenBudget<=0) a scout reading genuinely new
-	// files each turn has no ceiling at all. allow a generous research budget,
-	// then stop cleanly instead of running forever.
-	if readOnly && e.run.noMutationStreak >= 2*stallCap {
-		return fmt.Errorf("loop: %d read-only iters, stopping research run — type 'continue' to resume", e.run.noMutationStreak)
-	}
+// handleBudgetCaps enforces the per-Run token budget at the top of each
+// iteration. The cap AUTO-RECOVERS up to maxBudgetRecoveries times: compact
+// history, reset the cumulative counter, re-arm the token warnings, and
+// continue. Only once the recovery budget is spent does it hard-stop.
+// Returns a non-nil error only on hard stop; callers return it as the Run
+// error verbatim. msgs is mutated in place on recovery.
+func (e *Engine) handleBudgetCaps(ctx context.Context, msgs *[]types.Message, currentIter, tokenBudget int) error {
 	// token budget: cumulative input+output across iterations. only enforced
 	// when the model's context window is known so unknown-model runs aren't
 	// bounded by a fabricated number.
