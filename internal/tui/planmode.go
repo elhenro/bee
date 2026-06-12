@@ -143,8 +143,16 @@ func (m PlanModeModel) View() string {
 }
 
 // continuePrompt is submitted when the user picks a build option without a
-// fresh session — the plan is still in context.
-const continuePrompt = "Implement the plan above."
+// fresh session — the plan is still in context. Worker may have been in scout
+// last turn; spell out the role switch so a model that pattern-matches on
+// "above" + recent scout context doesn't keep acting as scout (no shell/git
+// tools). Tools the model is allowed this turn are the full surface, not the
+// scout whitelist.
+const continuePrompt = "You are now in worker mode with the full tool surface " +
+	"(bash, read, write, edit, search, glob, ls, etc.). The plan is the assistant " +
+	"turn above this one. Implement it now — run commands, edit files, and stop " +
+	"only when the plan is fully executed. Do not re-plan and do not stay in " +
+	"research mode."
 
 // freshContinuePrompt wraps the plan text for a cleared session so the model
 // still has the plan even though the planning conversation was dropped.
@@ -153,7 +161,12 @@ func freshContinuePrompt(plan string) string {
 	if plan == "" {
 		return continuePrompt
 	}
-	return "Here is the plan to implement:\n\n" + plan + "\n\nImplement it."
+	return "You are in worker mode with the full tool surface (bash, read, " +
+		"write, edit, search, glob, ls, etc.).\n\n" +
+		"Here is the plan to implement:\n\n" + plan +
+		"\n\nExecute it now. Run commands, edit files, and stop only when the " +
+		"plan is fully implemented. Do not re-plan and do not stay in research " +
+		"mode."
 }
 
 // freshDisplay is the scrollback bubble for a fresh-session handoff. The full

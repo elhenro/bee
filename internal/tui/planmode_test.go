@@ -114,8 +114,8 @@ func TestFreshContinuePrompt(t *testing.T) {
 		t.Fatalf("blank plan should fall back to continuePrompt, got %q", got)
 	}
 	got := freshContinuePrompt("do A then B")
-	if !strings.Contains(got, "do A then B") || !strings.Contains(got, "Implement") {
-		t.Fatalf("fresh prompt should carry the plan, got %q", got)
+	if !strings.Contains(got, "do A then B") || !strings.Contains(got, "worker mode") {
+		t.Fatalf("fresh prompt should carry the plan and cue worker role, got %q", got)
 	}
 }
 
