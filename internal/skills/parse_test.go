@@ -61,54 +61,6 @@ optional body`,
 			},
 		},
 		{
-			name: "mcp",
-			body: `---
-name: slack
-type: mcp
-description: send slack messages
-server:
-  command: slack-mcp
-  args: ["--token-env", "SLACK_TOKEN"]
-  env: { FOO: bar }
----
-`,
-			check: func(t *testing.T, s Skill) {
-				if s.Kind != KindMCP {
-					t.Fatalf("kind: %s", s.Kind)
-				}
-				if s.Server.Command != "slack-mcp" {
-					t.Fatalf("server: %+v", s.Server)
-				}
-				if s.Server.Env["FOO"] != "bar" {
-					t.Fatalf("env: %v", s.Server.Env)
-				}
-			},
-		},
-		{
-			name: "http",
-			body: `---
-name: notion
-type: http
-description: query notion
-endpoint: https://example.local/q
-auth:
-  type: bearer
-  env: NOTION_TOKEN
----
-`,
-			check: func(t *testing.T, s Skill) {
-				if s.Kind != KindHTTP {
-					t.Fatalf("kind: %s", s.Kind)
-				}
-				if s.Endpoint != "https://example.local/q" {
-					t.Fatalf("endpoint: %s", s.Endpoint)
-				}
-				if s.Auth.Type != "bearer" || s.Auth.Env != "NOTION_TOKEN" {
-					t.Fatalf("auth: %+v", s.Auth)
-				}
-			},
-		},
-		{
 			name:    "invalid-no-frontmatter",
 			body:    "just a markdown body, no yaml",
 			wantErr: true,
@@ -136,24 +88,6 @@ body`,
 			body: `---
 name: x
 type: exec
----
-`,
-			wantErr: true,
-		},
-		{
-			name: "invalid-mcp-no-server",
-			body: `---
-name: x
-type: mcp
----
-`,
-			wantErr: true,
-		},
-		{
-			name: "invalid-http-no-endpoint",
-			body: `---
-name: x
-type: http
 ---
 `,
 			wantErr: true,

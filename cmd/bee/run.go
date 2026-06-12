@@ -191,9 +191,10 @@ func runHeadlessReal(args []string) {
 			fmt.Fprintf(os.Stderr, "bee run: unknown skill %q\n", *skillName)
 			os.Exit(2)
 		}
-		// prompt-kind: prepend body to user message. exec-kind skills are
-		// registered as callable tools above; mcp/http defer to v0.2.
-		if s.Kind == skills.KindPrompt && s.Body != "" {
+		// prompt-kind: prepend body to user message. recipe is handled the
+		// same way (recipeBuild folds the steps into Body at parse time).
+		// exec-kind skills are registered as callable tools above.
+		if (s.Kind == skills.KindPrompt || s.Kind == skills.KindRecipe) && s.Body != "" {
 			if userMsg == "" {
 				userMsg = s.Body
 			} else {

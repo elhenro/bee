@@ -35,7 +35,6 @@ var truncatableLimits = map[string]int{
 	"hashline_edit": MaxOutputTokens,
 	"write":         MaxOutputTokens,
 	"webfetch":      MaxWebfetchTokens,
-	"skill_mcp":     MaxOutputTokens,
 }
 
 // limitFor returns the per-tool cap. Unknown tools get MaxOutputTokens.

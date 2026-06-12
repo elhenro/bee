@@ -1,10 +1,11 @@
 // Package skills defines skill types and the contract a skill executor satisfies.
 //
 // A Skill is a markdown file with YAML frontmatter. It can be: a prompt template
-// (type=prompt), an external command (type=exec), an MCP server tool (type=mcp),
-// or an HTTP endpoint (type=http). Each skill is surfaced two ways:
+// (type=prompt), an external command (type=exec), or an ordered multi-step
+// recipe (type=recipe). Each skill is surfaced two ways:
 //  1. as `bee <name> [args...]` non-interactively
-//  2. as a model-callable tool in the live agent session
+//  2. as a model-callable tool in the live agent session (exec only; prompt
+//     and recipe fold into the user turn)
 package skills
 
 import "context"
@@ -14,12 +15,12 @@ type Kind string
 const (
 	KindPrompt Kind = "prompt"
 	KindExec   Kind = "exec"
-	KindMCP    Kind = "mcp"
-	KindHTTP   Kind = "http"
 	// KindRecipe is a sequenced multi-step skill. Frontmatter declares an
 	// ordered list of steps; bee renders them into a constrained prompt
 	// addendum so small models that drop steps in free-form planning stay
 	// on the rails — the next step is always the next line of the prompt.
+	// No runtime enforcement: the model is asked to follow the order, not
+	// forced to. Don't use it for safety-critical sequencing.
 	KindRecipe Kind = "recipe"
 )
 
@@ -39,13 +40,6 @@ type Skill struct {
 	// kind=exec
 	Exec   []string
 	Stream bool
-
-	// kind=mcp
-	Server MCPServer
-
-	// kind=http
-	Endpoint string
-	Auth     HTTPAuth
 
 	// kind=recipe
 	Steps []RecipeStep
@@ -67,18 +61,6 @@ type RecipeStep struct {
 	// OnFailure: step id to jump to if Tool fails. "escalate" = call the
 	// escalate tool. Empty = abort the recipe.
 	OnFailure string
-}
-
-type MCPServer struct {
-	Command string
-	Args    []string
-	Env     map[string]string
-}
-
-type HTTPAuth struct {
-	Type   string // "bearer" | "header" | "none"
-	Env    string // env var holding the secret
-	Header string // header name (for type=header)
 }
 
 // Executor runs a skill non-interactively given the user message + ambient

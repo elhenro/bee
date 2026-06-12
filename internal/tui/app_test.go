@@ -307,8 +307,8 @@ func TestModel_SubmitSlashSkill_NonPromptKindErrors(t *testing.T) {
 	if m.state != StateError {
 		t.Fatalf("expected error for non-prompt skill kind, got state %v", m.state)
 	}
-	if !strings.Contains(m.lastErr, "not supported") {
-		t.Errorf("expected 'not supported' in err, got: %q", m.lastErr)
+	if !strings.Contains(m.lastErr, "not invokable as a slash command") {
+		t.Errorf("expected 'not invokable as a slash command' in err, got: %q", m.lastErr)
 	}
 }
 

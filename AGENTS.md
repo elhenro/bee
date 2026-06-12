@@ -7,7 +7,7 @@ Guidance for agents (and humans) working on this repository. Read this **before*
 `bee` is a pure-Go single-binary coding agent. Three intentional wedges over other CLI coding agents:
 
 1. **Skills are `bee <name>` subcommands.** `~/.bee/skills/<name>.md` is invokable as `bee <name> [args...]` — one binary, one PATH entry, no shell shims sprayed onto `$PATH`. Unknown `arg[1]` falls through to skill-registry lookup via `dispatchSkill`.
-2. **Skills are agent endpoints.** Four kinds: `prompt` | `exec` | `mcp` | `http`. The same skill is surfaced both as a `bee <name>` subcommand AND a model-callable tool the agent can invoke mid-task.
+2. **Skills are agent endpoints.** Three kinds: `prompt` | `exec` | `recipe`. The same skill is surfaced both as a `bee <name>` subcommand AND a model-callable tool the agent can invoke mid-task (exec only; prompt/recipe fold into the user turn).
 3. **Tiny-context friendly.** System-prompt budget is configurable per-profile (`tiny|normal|large|auto`); memory injection is lazy top-k; tool descriptions and skill manifest are token-budgeted. Designed to run against a 4k-context local Ollama as well as frontier APIs.
 
 Other load-bearing choices: `apply_patch` collapses write/edit/multi-edit on capable models (tiny profile swaps it out for `write`+`edit`+`hashline_edit`); codex-style two-axis sandbox; frontmatter knowledge store with lazy top-K selection; textmode wrapper that emits XML-style tool calls for local models that ignore `tool_calls`.

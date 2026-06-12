@@ -34,13 +34,13 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 	c, ok := m.cmds.Get(parts[0])
 	if !ok {
 		// fall through to skills registry so "/calc" runs the calc skill
-		// the same way "#calc" did from the palette. prompt-kind skills
-		// fold body into a user-turn prompt; non-prompt kinds aren't yet
-		// supported here (defer to headless `bee <skill>`).
+		// the same way "#calc" did from the palette. prompt and recipe
+		// skills fold body into a user-turn prompt; exec skills are
+		// already registered as tools by the engine.
 		if m.skills != nil {
 			if sk, found := m.skills.Get(parts[0]); found {
-				if sk.Kind != "" && sk.Kind != skills.KindPrompt {
-					m.lastErr = "/" + parts[0] + ": skill kind " + string(sk.Kind) + " not supported in TUI yet; run `bee " + parts[0] + "` instead"
+				if sk.Kind != skills.KindPrompt && sk.Kind != skills.KindRecipe {
+					m.lastErr = "/" + parts[0] + ": skill kind " + string(sk.Kind) + " not invokable as a slash command; exec skills are auto-registered as tools and prompt/recipe bodies are folded into the user turn"
 					m.state = StateError
 					return m, nil
 				}

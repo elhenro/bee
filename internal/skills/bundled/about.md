@@ -29,9 +29,10 @@ preserved on update.
 **Skill kinds** (frontmatter `type:`):
 - `prompt` — text body becomes a sub-prompt; runs in the same engine.
 - `exec`   — body is documentation; `exec:` line spawns a subprocess.
-- `mcp`    — proxies an MCP tool.
-- `http`   — POSTs to an HTTP endpoint.
-- `recipe` — ordered multi-step sequence of other skills.
+- `recipe` — ordered multi-step sequence rendered into a prompt addendum.
+  No runtime enforcement — the model is asked to follow the order, not forced
+  to. Use it to keep small models on the rails, not for safety-critical
+  sequencing.
 
 **List skills:**
 ```sh

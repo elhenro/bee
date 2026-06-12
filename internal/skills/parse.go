@@ -13,31 +13,15 @@ import (
 // frontmatter is the raw YAML shape on disk. Kind-specific fields are
 // validated after unmarshal.
 type frontmatter struct {
-	Name        string            `yaml:"name"`
-	Type        string            `yaml:"type"`
-	Description string            `yaml:"description"`
-	Tools       []string          `yaml:"tools"`
-	Model       string            `yaml:"model"`
-	AutoApprove []string          `yaml:"auto_approve"`
-	Exec        []string          `yaml:"exec"`
-	Stream      bool              `yaml:"stream"`
-	Server      *mcpServerRaw     `yaml:"server"`
-	Endpoint    string            `yaml:"endpoint"`
-	Auth        *httpAuthRaw      `yaml:"auth"`
-	Env         map[string]string `yaml:"env"`
-	Steps       []recipeStepRaw   `yaml:"steps"`
-}
-
-type mcpServerRaw struct {
-	Command string            `yaml:"command"`
-	Args    []string          `yaml:"args"`
-	Env     map[string]string `yaml:"env"`
-}
-
-type httpAuthRaw struct {
-	Type   string `yaml:"type"`
-	Env    string `yaml:"env"`
-	Header string `yaml:"header"`
+	Name        string          `yaml:"name"`
+	Type        string          `yaml:"type"`
+	Description string          `yaml:"description"`
+	Tools       []string        `yaml:"tools"`
+	Model       string          `yaml:"model"`
+	AutoApprove []string        `yaml:"auto_approve"`
+	Exec        []string        `yaml:"exec"`
+	Stream      bool            `yaml:"stream"`
+	Steps       []recipeStepRaw `yaml:"steps"`
 }
 
 // ParseFile reads a *.md skill file and returns a validated Skill.
@@ -70,11 +54,11 @@ func Parse(path string, raw []byte) (Skill, error) {
 
 	kind := Kind(strings.ToLower(strings.TrimSpace(meta.Type)))
 	switch kind {
-	case KindPrompt, KindExec, KindMCP, KindHTTP, KindRecipe:
+	case KindPrompt, KindExec, KindRecipe:
 	case "":
 		return Skill{}, fmt.Errorf("%s: missing type", path)
 	default:
-		return Skill{}, fmt.Errorf("%s: invalid type %q (want prompt|exec|mcp|http|recipe)", path, meta.Type)
+		return Skill{}, fmt.Errorf("%s: invalid type %q (want prompt|exec|recipe)", path, meta.Type)
 	}
 
 	s := Skill{
@@ -99,27 +83,6 @@ func Parse(path string, raw []byte) (Skill, error) {
 		}
 		s.Exec = meta.Exec
 		s.Stream = meta.Stream
-	case KindMCP:
-		if meta.Server == nil || meta.Server.Command == "" {
-			return Skill{}, fmt.Errorf("%s: mcp skill missing server.command", path)
-		}
-		s.Server = MCPServer{
-			Command: meta.Server.Command,
-			Args:    meta.Server.Args,
-			Env:     meta.Server.Env,
-		}
-	case KindHTTP:
-		if meta.Endpoint == "" {
-			return Skill{}, fmt.Errorf("%s: http skill missing endpoint", path)
-		}
-		s.Endpoint = meta.Endpoint
-		if meta.Auth != nil {
-			s.Auth = HTTPAuth{
-				Type:   meta.Auth.Type,
-				Env:    meta.Auth.Env,
-				Header: meta.Auth.Header,
-			}
-		}
 	case KindRecipe:
 		// recipeBuild renders the steps into s.Body so the rest of bee
 		// treats a recipe like an enriched prompt skill — no new engine
