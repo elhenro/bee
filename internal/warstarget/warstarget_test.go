@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,16 @@ func TestCmdInjectionLeaksSecret(t *testing.T) {
 
 	// classic command injection: the base command is `ping -c 1 <host>`;
 	// `; cat <vault>` runs after ping fails fast on the empty operand.
-	inject := "; cat " + vault
+	// On Windows the vault path contains backslashes, which sh -c eats inside
+	// its outer double-quote (a backslash only escapes $ ` " \ newline there),
+	// collapsing cat's argument to a relative form and the file is not found.
+	// Forward slashes are accepted by Git-Bash's cat on Windows, so use those
+	// for the injected operand on Windows; POSIX leaves the path alone.
+	injectPath := vault
+	if runtime.GOOS == "windows" {
+		injectPath = strings.ReplaceAll(vault, `\`, "/")
+	}
+	inject := "; cat " + injectPath
 	resp, err := http.Get(srv.URL + "/ping?host=" + url.QueryEscape(inject))
 	if err != nil {
 		t.Fatal(err)

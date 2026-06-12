@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	yaml "github.com/goccy/go-yaml"
@@ -92,10 +93,20 @@ func Curate(proj, user *Store, staleAge time.Duration, minFails int, now time.Ti
 // missing dir is not an error (empty set, nil); any other read error propagates
 // so Curate can skip ledger compaction rather than wipe a valid ledger.
 func survivingNames(s *Store) (map[string]bool, error) {
-	ents, err := os.ReadDir(s.dir)
+	info, err := os.Stat(s.dir)
 	if os.IsNotExist(err) {
 		return map[string]bool{}, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		// os.ReadDir on a regular file path is platform-specific (ENOTDIR on
+		// POSIX, but Windows can return nil or wrap it as a not-exist), so
+		// detect the case explicitly and surface it as a real error.
+		return nil, syscall.ENOTDIR
+	}
+	ents, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, err
 	}

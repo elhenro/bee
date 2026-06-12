@@ -95,12 +95,21 @@ func TestResolveMaybe_Confined(t *testing.T) {
 func TestResolveMaybe_Unconfined(t *testing.T) {
 	// empty root = danger-full-access passthrough: any path is accepted and
 	// returned absolute (the no-containment branch the scope gate relies on).
-	abs, _, _, ok := ResolveMaybe("", "/etc/passwd")
+	// The expected absolute value is platform-specific: filepath.Abs on POSIX
+	// leaves /etc/passwd alone; on Windows a volume-less absolute resolves to
+	// the current drive (D:\etc\passwd). Both are correct — the contract is
+	// "returned absolute" — so derive want through filepath.Abs itself.
+	in := "/etc/passwd"
+	want, err := filepath.Abs(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs, _, _, ok := ResolveMaybe("", in)
 	if !ok {
 		t.Fatalf("unconfined ResolveMaybe rejected an absolute path")
 	}
-	if abs != "/etc/passwd" {
-		t.Errorf("abs = %q, want /etc/passwd", abs)
+	if abs != want {
+		t.Errorf("abs = %q, want %q", abs, want)
 	}
 	// a relative path resolves against cwd, still accepted.
 	if _, _, _, ok := ResolveMaybe("", "../../somewhere/else"); !ok {
