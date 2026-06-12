@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/elhenro/bee/internal/llm"
@@ -168,15 +169,35 @@ func TestRolePromptPrefix(t *testing.T) {
 	if rolePromptPrefix(RoleWorker, false) != "" {
 		t.Error("act turn must have empty prefix")
 	}
-	if rolePromptPrefix(RoleWorker, true) == "" {
+	// worker read-only must NOT mention "plan" — workers don't plan-and-stop,
+	// they gather info and the next turn acts. scout is the role that plans.
+	if w := rolePromptPrefix(RoleWorker, true); w == "" {
 		t.Error("read-only worker turn prefix must be non-empty")
+	} else if strings.Contains(strings.ToLower(w), "ordered plan") {
+		t.Errorf("worker read-only prefix should not tell model to plan-and-stop; got %q", w)
 	}
 	scout := rolePromptPrefix(RoleScout, true)
 	if scout == "" {
 		t.Error("scout prefix must be non-empty")
 	}
+	if !strings.Contains(strings.ToLower(scout), "ordered plan") {
+		t.Error("scout prefix should still tell model to propose a plan")
+	}
 	// scout gets the extra web nudge that a plain read-only worker turn doesn't.
 	if scout == rolePromptPrefix(RoleWorker, true) {
 		t.Error("scout prefix should add the web-tools nudge")
+	}
+	// queen read-only is a defensive branch (queen is normally hive-routed
+	// and never lands here). Even so, the label must not claim "SCOUT" and
+	// the web-tool rules must not be silently dropped.
+	queen := rolePromptPrefix(RoleQueen, true)
+	if queen == "" {
+		t.Error("queen read-only prefix must be non-empty (defensive branch)")
+	}
+	if strings.Contains(queen, "(SCOUT)") {
+		t.Errorf("queen read-only prefix should not be mislabeled SCOUT; got %q", queen)
+	}
+	if !strings.Contains(queen, "TOOL RULES") {
+		t.Errorf("queen read-only prefix should include the web-tool rules; got %q", queen)
 	}
 }

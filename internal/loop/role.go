@@ -137,21 +137,60 @@ func applySkillToolGrants(specs []llm.ToolSpec, reg *tools.Registry, grants []st
 }
 
 // rolePromptPrefix is prepended to the assembled system prompt on a read-only
-// turn. Tells the model to research and propose a plan without touching files;
-// scout also gets a nudge toward the web tools. Empty on act turns.
+// turn. Empty on act turns. The wording differs by role:
+//
+//	scout  — research, then propose a plan the user can approve. The whole
+//	         point of scout is to plan; the post-scout picker converts the
+//	         plan into a build turn.
+//	worker — read-only was forced by the per-turn classifier on what looked
+//	         like a research question. Worker should not plan-and-stop; the
+//	         next turn resumes acting with full tools. Tell it to gather
+//	         info, not to write a finished plan.
+//	queen  — never reaches this path in normal operation (TUI routes queen
+//	         through the hive; headless run() falls back to a worker turn
+//	         with readOnly=false). The branch is kept queen-labeled and
+//	         shares scout's web-tool rules so a future caller that does
+//	         land here doesn't ship a misleading header or silently drop
+//	         them.
 func rolePromptPrefix(role Role, readOnly bool) string {
 	if !readOnly {
 		return ""
 	}
-	prefix := "## READ-ONLY MODE\n" +
-		"You are in read-only mode. Do NOT modify files, run shell commands, or " +
-		"call any mutator tools (none are available this turn). Read, search, " +
-		"and think. When a decision is the user's to make and you can't infer " +
-		"it, call ask_user with concrete options (mark your suggested pick " +
-		"recommended) instead of guessing. Reply with a concrete, ordered plan " +
-		"the user can approve before any edits run. End your reply with a " +
-		"one-line summary the user can act on.\n"
-	if role == RoleScout {
+	var prefix string
+	switch role {
+	case RoleScout:
+		prefix = "## READ-ONLY MODE (SCOUT)\n" +
+			"You are in scout mode. Do NOT modify files, run shell commands, " +
+			"or call any mutator tools (none are available this turn). Read, " +
+			"search, and think. When a decision is the user's to make and " +
+			"you can't infer it, call ask_user with concrete options (mark " +
+			"your suggested pick recommended) instead of guessing. Reply " +
+			"with a concrete, ordered plan the user can approve before any " +
+			"edits run. End your reply with a one-line summary the user can " +
+			"act on.\n"
+	case RoleQueen:
+		// queen should never reach this path (TUI routes queen through the
+		// hive; headless run() prints a warning and falls back to a worker
+		// turn where readOnly=false so this branch is skipped). Kept
+		// queen-labeled and parallel to scout so a future code path that
+		// does land here doesn't ship a misleading "SCOUT" header or
+		// silently lose the web-tool rules the scout branch adds below.
+		prefix = "## READ-ONLY MODE (QUEEN)\n" +
+			"You are in queen read-only mode (defensive — this branch is " +
+			"not on the normal queen path). Do NOT modify files, run shell " +
+			"commands, or call any mutator tools (none are available this " +
+			"turn). Read, search, and think. Reply with a concrete, ordered " +
+			"plan the user can approve before any edits run.\n"
+	default:
+		// worker (or any other role that hit a read-only posture decision).
+		prefix = "## READ-ONLY TURN (WORKER)\n" +
+			"This turn has no mutator tools — read, search, and gather " +
+			"information only. Do NOT produce a finished plan: the next " +
+			"turn resumes acting with full tools. Keep the reply short — " +
+			"what you found, what still needs to be checked. Don't " +
+			"summarize or end with a one-liner; the loop continues.\n"
+	}
+	if role == RoleScout || role == RoleQueen {
 		prefix += "TOOL RULES (hard):\n" +
 			"- To find code, symbols, types, functions, files, or anything " +
 			"that lives in this repo, use search (local grep), glob, ls, and " +
