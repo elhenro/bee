@@ -84,6 +84,19 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	// reasoning block now lives in m.messages; clear the live partial so
 	// scrollback doesn't double-render it next View().
 	m.thinkPartial = ""
+	// thinking block just landed — reset loader rate tracking so the
+	// token-strip's first frame after the answer starts renders at the
+	// floor (3 particles) instead of the per-tick thinking char rate,
+	// which would otherwise burst in for a single frame at the
+	// thinking→answer transition. The braille loader that animates
+	// during thinking is unaffected (it doesn't read these fields); the
+	// cumulative ↓ figure also keeps including reasoning by design.
+	if hasThinkingBlock(msg.Msg) {
+		m.loaderRate = 0
+		m.loaderSampleChars = m.turnOutChars
+		m.loaderRateTokS = 0
+		m.loaderRateSamples = m.loaderRateSamples[:0]
+	}
 	flushCmd := m.flush()
 	return m, tea.Batch(flushCmd, m.waitLiveMsg())
 }
@@ -99,6 +112,18 @@ func pendingToolUses(m types.Message) []types.ToolUse {
 		}
 	}
 	return out
+}
+
+// hasThinkingBlock reports whether m carries a chain-of-thought content
+// block. Used to gate the loader-rate reset on the thinking→answer
+// transition so a pure-text turn doesn't drop its accumulated rate.
+func hasThinkingBlock(m types.Message) bool {
+	for _, b := range m.Content {
+		if b.Type == types.BlockThinking {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) onWarning(msg warningMsg) (tea.Model, tea.Cmd) {

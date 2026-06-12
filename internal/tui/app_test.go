@@ -1081,3 +1081,79 @@ func TestCycleCaveman(t *testing.T) {
 		}
 	}
 }
+
+// TestOnLiveMsg_ThinkingResetsLoaderRate covers the thinking→answer
+// transition: while a reasoning block streams, the loader tick accumulates a
+// high per-tick rate from the thinking chars. Without a reset, the
+// token-strip's first frame after the answer text starts would render with
+// the inflated rate and burst in a dense particle cloud. Pushing a live msg
+// carrying a BlockThinking block must zero the rate-tracking fields so the
+// strip starts at the floor and ramps naturally from the answer deltas.
+func TestOnLiveMsg_ThinkingResetsLoaderRate(t *testing.T) {
+	m := newTestModel(t)
+	m.state = StateStreaming
+	m.turnOutChars = 1234
+	m.loaderRate = 200
+	m.loaderSampleChars = 1000
+	m.loaderRateTokS = 12.5
+	m.loaderRateSamples = []rateSample{{at: time.Now(), chars: 50}}
+	m.partial = ""
+	m.thinkPartial = "still streaming"
+
+	thinkMsg := types.Message{
+		Role:    types.RoleAssistant,
+		Content: []types.ContentBlock{{Type: types.BlockThinking, Text: "hmm"}},
+	}
+	m2, _ := m.Update(liveMsgMsg{Msg: thinkMsg})
+	got := m2.(Model)
+
+	if got.loaderRate != 0 {
+		t.Errorf("loaderRate = %d, want 0", got.loaderRate)
+	}
+	if got.loaderSampleChars != got.turnOutChars {
+		t.Errorf("loaderSampleChars = %d, want %d (turnOutChars)", got.loaderSampleChars, got.turnOutChars)
+	}
+	if got.loaderRateTokS != 0 {
+		t.Errorf("loaderRateTokS = %f, want 0", got.loaderRateTokS)
+	}
+	if len(got.loaderRateSamples) != 0 {
+		t.Errorf("loaderRateSamples len = %d, want 0", len(got.loaderRateSamples))
+	}
+	if got.thinkPartial != "" {
+		t.Errorf("thinkPartial = %q, want empty", got.thinkPartial)
+	}
+}
+
+// TestOnLiveMsg_TextMsgLeavesLoaderRateAlone is the negative case: a live
+// msg with no BlockThinking (e.g. a pure text delta landing as a final
+// message, or a tool result) must not clobber the accumulated loader rate.
+// Only the thinking→answer transition triggers the reset.
+func TestOnLiveMsg_TextMsgLeavesLoaderRateAlone(t *testing.T) {
+	m := newTestModel(t)
+	m.state = StateStreaming
+	m.turnOutChars = 800
+	m.loaderRate = 40
+	m.loaderSampleChars = 760
+	m.loaderRateTokS = 5.0
+	m.loaderRateSamples = []rateSample{{at: time.Now(), chars: 40}}
+
+	textMsg := types.Message{
+		Role:    types.RoleAssistant,
+		Content: []types.ContentBlock{{Type: types.BlockText, Text: "answer"}},
+	}
+	m2, _ := m.Update(liveMsgMsg{Msg: textMsg})
+	got := m2.(Model)
+
+	if got.loaderRate != 40 {
+		t.Errorf("loaderRate = %d, want 40 (unchanged)", got.loaderRate)
+	}
+	if got.loaderSampleChars != 760 {
+		t.Errorf("loaderSampleChars = %d, want 760 (unchanged)", got.loaderSampleChars)
+	}
+	if got.loaderRateTokS != 5.0 {
+		t.Errorf("loaderRateTokS = %f, want 5.0 (unchanged)", got.loaderRateTokS)
+	}
+	if len(got.loaderRateSamples) != 1 {
+		t.Errorf("loaderRateSamples len = %d, want 1 (unchanged)", len(got.loaderRateSamples))
+	}
+}

@@ -139,10 +139,17 @@ func (r *StreamRenderer) animatedCaret(frame int) string {
 	return r.pulseStyle(nf).Render(renderBrailleCaretSwarm(nf))
 }
 
+// loaderPulsePeriod is the loader color-pulse alternation period in ticks.
+// At loaderTickInterval=120ms, 14 ticks = 1.68s per phase, ~3.36s full cycle.
+// The previous 6-tick period landed 720ms per phase, which on a quiet live
+// region (no think block above to mask the alternation) read as a clear
+// flash. Regression-tested by stream_loader_pulse_test.go.
+const loaderPulsePeriod = 14
+
 // pulseStyle picks the loader color for this frame — alternates between
-// accent and dim every 6 ticks so the art breathes.
+// accent and dim every loaderPulsePeriod ticks so the art breathes.
 func (r *StreamRenderer) pulseStyle(nf int) lipgloss.Style {
-	if (nf/6)%2 == 0 {
+	if (nf/loaderPulsePeriod)%2 == 0 {
 		return r.styles.RoleBee
 	}
 	return lipgloss.NewStyle().Foreground(fgSquid)
