@@ -42,11 +42,11 @@ var verifyBashRe = regexp.MustCompile(`(?i)\b(go\s+(test|build|vet|run)|npm\s+(t
 // usually picks one form per session, so cross-form collisions are rare —
 // and a missed match just means the nudge fires later.
 func observeEditNoVerify(e *Engine, uses []types.ToolUse, results []types.ToolResult, blocks []types.ContentBlock) []types.ContentBlock {
-	if e.editsByFile == nil {
-		e.editsByFile = make(map[string]int)
+	if e.run.editsByFile == nil {
+		e.run.editsByFile = make(map[string]int)
 	}
-	if e.nudgedEditNoVerify == nil {
-		e.nudgedEditNoVerify = make(map[string]bool)
+	if e.run.nudgedEditNoVerify == nil {
+		e.run.nudgedEditNoVerify = make(map[string]bool)
 	}
 	// build a quick lookup of UseID → result so we can skip failed edits
 	// (a failed write doesn't change the file on disk and shouldn't count).
@@ -60,16 +60,16 @@ func observeEditNoVerify(e *Engine, uses []types.ToolUse, results []types.ToolRe
 	for _, u := range uses {
 		if u.Name == "read" {
 			if p, ok := u.Input["path"].(string); ok && p != "" {
-				delete(e.editsByFile, normalizeEditPath(p))
-				delete(e.nudgedEditNoVerify, normalizeEditPath(p))
+				delete(e.run.editsByFile, normalizeEditPath(p))
+				delete(e.run.nudgedEditNoVerify, normalizeEditPath(p))
 			}
 			continue
 		}
 		if u.Name == "bash" {
 			cmd, _ := u.Input["command"].(string)
 			if verifyBashRe.MatchString(cmd) {
-				e.editsByFile = make(map[string]int)
-				e.nudgedEditNoVerify = make(map[string]bool)
+				e.run.editsByFile = make(map[string]int)
+				e.run.nudgedEditNoVerify = make(map[string]bool)
 			}
 		}
 	}
@@ -86,12 +86,12 @@ func observeEditNoVerify(e *Engine, uses []types.ToolUse, results []types.ToolRe
 			continue
 		}
 		key := normalizeEditPath(p)
-		e.editsByFile[key]++
-		if e.editsByFile[key] >= editVerifyThreshold && !e.nudgedEditNoVerify[key] {
+		e.run.editsByFile[key]++
+		if e.run.editsByFile[key] >= editVerifyThreshold && !e.run.nudgedEditNoVerify[key] {
 			w := fmt.Sprintf("[verify] %d edits to %s without running build/test. run it before more edits — small fixes can cascade.\n\n",
-				e.editsByFile[key], p)
+				e.run.editsByFile[key], p)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.nudgedEditNoVerify[key] = true
+			e.run.nudgedEditNoVerify[key] = true
 		}
 	}
 	return blocks

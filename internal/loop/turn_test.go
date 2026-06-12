@@ -846,8 +846,8 @@ func TestRun_TokenBudgetAutoRecovery(t *testing.T) {
 	if got := p.calls.Load(); got <= 3 {
 		t.Errorf("expected recovery to continue past first trip; got %d calls", got)
 	}
-	if eng.budgetRecoveries != maxBudgetRecoveries {
-		t.Errorf("budgetRecoveries = %d, want %d", eng.budgetRecoveries, maxBudgetRecoveries)
+	if eng.run.budgetRecoveries != maxBudgetRecoveries {
+		t.Errorf("budgetRecoveries = %d, want %d", eng.run.budgetRecoveries, maxBudgetRecoveries)
 	}
 }
 

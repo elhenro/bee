@@ -14,7 +14,6 @@ import (
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools"
-	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/types"
 	"github.com/elhenro/bee/internal/waggle"
 )
@@ -123,99 +122,13 @@ type Engine struct {
 	// "always act" worker behavior.
 	SkipPostureClassifier bool
 
-	// allowedTools is the set of tool names the current Run actually advertised
-	// after role/posture filtering. The executor gates on it so a model that
-	// calls an unadvertised tool (e.g. a local model emitting write on a
-	// read-only scout turn) is rejected instead of silently mutating. Rebuilt
-	// each Run from the filtered specs; nil = no gate (allow all registered).
-	allowedTools map[string]bool
+	// run holds the per-Run scratch state (dedupes, streaks, trackers). Reset
+	// to a fresh runState at the top of every Run; the previous map values are
+	// dropped, not preserved (Run identity is what defines the dedupe scope).
+	// nil before the first Run — callers that never invoke Run (headless tests,
+	// hive workers that bypass the loop) leave it nil.
+	run *runState
 
-	// lastInputTokens is the most recent provider-reported input-token count
-	// from the latest EventDone usage. Used to drive the context-window
-	// warning injection. Reset at the top of each Run.
-	lastInputTokens int
-	// warnedContext flips true once the context-warning prefix has been
-	// injected into a tool result this Run. dedupes — caller sees one notice.
-	warnedContext bool
-	// iteration progress / stall tracking; reset per Run.
-	warnedIterHalf      bool
-	warnedIterEighty    bool
-	warnedStall         bool
-	warnedStallEscalate bool
-	noMutationStreak    int
-	// editsByFile counts edits per path since the last verify (build/test
-	// run or read of the same path). Resets per Run.
-	editsByFile map[string]int
-	// nudgedEditNoVerify dedupes the per-file edit-no-verify nudge so the
-	// model isn't spammed every iter once threshold crossed.
-	nudgedEditNoVerify map[string]bool
-	// cumulative token spend across iterations of one Run. drives the
-	// adaptive token-budget cap so long productive turns aren't bounded
-	// purely by iter count. reset per Run.
-	cumInputTokens  int
-	cumOutputTokens int
-	// warnedTokenHalf / Eighty: token-budget warnings dedupe per Run.
-	warnedTokenHalf   bool
-	warnedTokenEighty bool
-	// budgetRecoveries counts how many times the token-budget cap was hit and
-	// auto-recovered (compact + re-arm) this Run, instead of hard-stopping.
-	// bounds total spend at ~(maxBudgetRecoveries+1)×budget. reset per Run.
-	budgetRecoveries int
-	// nudgedReasoningOnly flips true after one synthetic continuation nudge
-	// is injected in response to a thinking-only assistant turn. dedupes per
-	// Run so a wedged provider can't burn the whole iter budget.
-	nudgedReasoningOnly bool
-	// formatNudgeCount counts how many format-correction nudges have fired
-	// this Run. Allows up to formatNudgeMax retries with escalating wording
-	// before format-strike bail fires. separate from reasoning-only dedupe
-	// because the two failure modes need independent budgets.
-	formatNudgeCount int
-	// formatSlipStreak counts consecutive turns where the assistant produced
-	// no tool_use but the text looked like a malformed envelope. Reset by any
-	// turn that dispatches a tool. Drives FormatStrikeError at formatStrikeAt.
-	formatSlipStreak int
-	// repeats tracks tool-call signatures across iterations of one Run so
-	// the loop can detect identical-call loops, per-tool failure cascades,
-	// and two-strike escalations. allocated lazily on first dispatch.
-	repeats *repeatTracker
-	// nudgedRepeat / nudgedPerToolFail / nudgedTwoStrike dedupe the
-	// corresponding warning prefixes — each fires at most once per Run.
-	nudgedRepeat      bool
-	nudgedPerToolFail bool
-	nudgedTwoStrike   bool
-	nudgedSameResult  bool
-	// lastTurnLooped flags that the just-finished stream was cut mid-repetition
-	// so the turn loop injects a corrective nudge instead of treating the
-	// partial text as a clean finish. read and cleared each iteration.
-	lastTurnLooped bool
-	// loopCutStreak counts consecutive turns cut for degenerate repetition.
-	// drives RepeatStreamError at loopCutBailAt; reset by any clean stream.
-	loopCutStreak int
-	// lastReasoningSig fingerprints the prior turn's reasoning/text. when N
-	// consecutive turns rehash near-identical reasoning the model is spinning
-	// across turn boundaries (each turn under the in-stream cut threshold), so
-	// reasoningDupStreak drives a hard escalate nudge. reset by a turn whose
-	// reasoning diverges enough.
-	lastReasoningSig   map[string]struct{}
-	reasoningDupStreak int
-	warnedReasoningDup bool
-	// lastTurnTruncated flags that the just-finished stream dropped mid-output
-	// on a transient error after content streamed. the turn loop keeps the
-	// partial turn and nudges to continue instead of failing the Run.
-	lastTurnTruncated bool
-	// truncCutStreak counts consecutive turns that dropped mid-output with no
-	// progress. drives TruncatedStreamError at truncCutBailAt; reset by progress.
-	truncCutStreak int
-	// dupWrites tracks (path, content-hash) of writes within one Run so the
-	// engine can warn on duplicate identical writes. opt-in per profile.
-	dupWrites *duplicateWriteTracker
-	// escalateErr stashes the escalate-tool payload during dispatch so
-	// dispatchTools can return ErrEscalate after the synthetic tool_result
-	// lands in the transcript. nil = no escalation in flight.
-	escalateErr *escalate.Error
-	// card is the per-Run state card when the active profile opts in
-	// (state_card = true). nil = transcript mode (default). See statecard.go.
-	card *stateCard
 	// jsonModeNoticeShown dedupes the one-time "json tool mode active"
 	// confirmation per session. Deliberately NOT reset per Run.
 	jsonModeNoticeShown bool
@@ -232,21 +145,6 @@ type Engine struct {
 	// for a given (model, ctx) pair, and we re-scale on model switch via the
 	// model-id check.
 	profileScaledFor string
-	// visionCache memoizes image-description text by content hash so a
-	// non-vision main model doesn't re-describe the same image every turn.
-	// visionWarned dedupes the "no fallback configured" notice per Run.
-	visionCache  map[string]string
-	visionWarned bool
-	// emptyCompletionStreak counts consecutive turns that produced no text, no
-	// reasoning, and no tool call (whitespace-only output). drives
-	// EmptyCompletionError at emptyCompletionBailAt; reset by any turn with
-	// content. catches models whose thinking-suppression switch degenerates the
-	// response to whitespace instead of suppressing the trace.
-	emptyCompletionStreak int
-	// thinkingSuppressRequested records whether this turn asked the model to
-	// skip reasoning (effort off on a model that nominally supports thinking).
-	// set per turn; read by verifyThinkingSuppression to detect non-compliance.
-	thinkingSuppressRequested bool
 	// warnedThinkingIgnored dedupes the "model ignores thinking suppression"
 	// notice. session-level (NOT reset per Run): the model rarely changes
 	// mid-session, so one warning is enough.

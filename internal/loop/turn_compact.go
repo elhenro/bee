@@ -100,7 +100,12 @@ func (e *Engine) PrepareResume(ctx context.Context) (CompactStats, bool, error) 
 		return stats, false, err
 	}
 	e.InitialMessages = out
-	e.lastInputTokens = 0
+	// PrepareResume may be invoked on a bare Engine (test fixture) that hasn't
+	// gone through freshRunState. Lazy-allocate so the reset doesn't panic.
+	if e.run == nil {
+		e.run = e.freshRunState()
+	}
+	e.run.lastInputTokens = 0
 	return stats, true, nil
 }
 

@@ -14,7 +14,7 @@ func thinkTurn(text string) []types.ContentBlock {
 // repeating the same multi-line reasoning across turns must cross the dup
 // streak; a divergent turn resets it.
 func TestObserveReasoningDup_FiresOnRepeatResetsOnDiverge(t *testing.T) {
-	e := &Engine{}
+	e := &Engine{run: &runState{}}
 	reason := "The blocked function checks all colliders in the world.\n" +
 		"Let me verify the door gap math against the player radius once more.\n" +
 		"So the door gap should work correctly given the clearance we computed.\n"
@@ -30,20 +30,20 @@ func TestObserveReasoningDup_FiresOnRepeatResetsOnDiverge(t *testing.T) {
 		}
 	}
 	if !fired {
-		t.Fatalf("expected dup streak to cross %d, streak=%d", reasoningDupBailAt, e.reasoningDupStreak)
+		t.Fatalf("expected dup streak to cross %d, streak=%d", reasoningDupBailAt, e.run.reasoningDupStreak)
 	}
 	// a genuinely different turn resets.
 	diff := "Now I will edit Buildings.go to drop the collider on door segments.\n" +
 		"That removes the invisible wall at the doorway opening for good.\n" +
 		"Then I will rebuild and confirm the player can step inside the house.\n"
 	observeReasoningDup(e, thinkTurn(diff))
-	if e.reasoningDupStreak != 0 {
-		t.Fatalf("divergent turn must reset streak, got %d", e.reasoningDupStreak)
+	if e.run.reasoningDupStreak != 0 {
+		t.Fatalf("divergent turn must reset streak, got %d", e.run.reasoningDupStreak)
 	}
 }
 
 func TestObserveReasoningDup_ThinTurnsDoNotTrip(t *testing.T) {
-	e := &Engine{}
+	e := &Engine{run: &runState{}}
 	for i := 0; i < 10; i++ {
 		if observeReasoningDup(e, thinkTurn("ok.")) {
 			t.Fatal("thin turns must never trip the loop guard")

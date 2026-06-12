@@ -22,17 +22,16 @@ func (e *Engine) applyVisionFallback(ctx context.Context, msgs []types.Message) 
 	}
 	client, ok := e.visionClient()
 	if !ok {
-		if !e.visionWarned {
-			e.visionWarned = true
+		if !e.run.visionWarned {
+			e.run.visionWarned = true
 			e.warnf("model %q has no vision and no [vision] fallback set — image dropped. run /vision <model> or set [vision] in config", e.Cfg.DefaultModel)
 		}
 		return swapImages(msgs, func(types.ContentBlock) string {
 			return "[image omitted: active model has no vision; configure a fallback vision model]"
 		})
 	}
-	if e.visionCache == nil {
-		e.visionCache = map[string]string{}
-	}
+	// e.run.visionCache is allocated (or borrowed from the previous Run) by
+	// freshRunState, so the lazy-init guard that used to live here is gone.
 	return swapImages(msgs, func(b types.ContentBlock) string {
 		return e.describeCached(ctx, client, b)
 	})
@@ -71,7 +70,7 @@ func (e *Engine) visionClient() (vision.Client, bool) {
 func (e *Engine) describeCached(ctx context.Context, c vision.Client, b types.ContentBlock) string {
 	sum := sha256.Sum256(b.Data)
 	hkey := hex.EncodeToString(sum[:])
-	if d, ok := e.visionCache[hkey]; ok {
+	if d, ok := e.run.visionCache[hkey]; ok {
 		return d
 	}
 	txt, err := c.Describe(ctx, b.Data, b.MediaType, "")
@@ -81,7 +80,7 @@ func (e *Engine) describeCached(ctx context.Context, c vision.Client, b types.Co
 	} else {
 		txt = "[image description (via " + c.Model + "): " + txt + "]"
 	}
-	e.visionCache[hkey] = txt
+	e.run.visionCache[hkey] = txt
 	return txt
 }
 

@@ -9,8 +9,10 @@ import (
 
 func newVerifyEngine() *Engine {
 	return &Engine{
-		editsByFile:        make(map[string]int),
-		nudgedEditNoVerify: make(map[string]bool),
+		run: &runState{
+			editsByFile:        make(map[string]int),
+			nudgedEditNoVerify: make(map[string]bool),
+		},
 	}
 }
 
@@ -82,10 +84,10 @@ func TestEditVerify_BashVerifyResets(t *testing.T) {
 	// run `go test`: resets counter and nudge flag.
 	uses := []types.ToolUse{{ID: "b", Name: "bash", Input: map[string]any{"command": "go test ./..."}}}
 	_ = observeEditNoVerify(e, uses, []types.ToolResult{{UseID: "b"}}, nil)
-	if e.editsByFile[path] != 0 {
-		t.Errorf("expected counter reset, got %d", e.editsByFile[path])
+	if e.run.editsByFile[path] != 0 {
+		t.Errorf("expected counter reset, got %d", e.run.editsByFile[path])
 	}
-	if e.nudgedEditNoVerify[path] {
+	if e.run.nudgedEditNoVerify[path] {
 		t.Error("expected nudge flag reset")
 	}
 	// 3 more edits should trigger nudge again.
@@ -115,11 +117,11 @@ func TestEditVerify_ReadResetsOnlyThatPath(t *testing.T) {
 		[]types.ToolUse{{ID: "r", Name: "read", Input: map[string]any{"path": a}}},
 		[]types.ToolResult{{UseID: "r"}},
 		nil)
-	if e.editsByFile[a] != 0 {
-		t.Errorf("expected a reset, got %d", e.editsByFile[a])
+	if e.run.editsByFile[a] != 0 {
+		t.Errorf("expected a reset, got %d", e.run.editsByFile[a])
 	}
-	if e.editsByFile[b] != 2 {
-		t.Errorf("expected b unchanged at 2, got %d", e.editsByFile[b])
+	if e.run.editsByFile[b] != 2 {
+		t.Errorf("expected b unchanged at 2, got %d", e.run.editsByFile[b])
 	}
 }
 
@@ -134,8 +136,8 @@ func TestEditVerify_FailedEditNotCounted(t *testing.T) {
 			t.Fatalf("failed edits should not count toward threshold")
 		}
 	}
-	if e.editsByFile[path] != 0 {
-		t.Errorf("expected zero count for failed edits, got %d", e.editsByFile[path])
+	if e.run.editsByFile[path] != 0 {
+		t.Errorf("expected zero count for failed edits, got %d", e.run.editsByFile[path])
 	}
 }
 
@@ -153,8 +155,8 @@ func TestEditVerify_NonVerifyBashIgnored(t *testing.T) {
 		[]types.ToolUse{{ID: "b", Name: "bash", Input: map[string]any{"command": "ls -la"}}},
 		[]types.ToolResult{{UseID: "b"}},
 		nil)
-	if e.editsByFile[path] != 2 {
-		t.Errorf("ls should not reset counter, got %d", e.editsByFile[path])
+	if e.run.editsByFile[path] != 2 {
+		t.Errorf("ls should not reset counter, got %d", e.run.editsByFile[path])
 	}
 }
 

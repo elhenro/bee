@@ -33,8 +33,8 @@ func observeDuplicateWrites(e *Engine, uses []types.ToolUse, results []types.Too
 	if !config.ActiveProfile(e.Cfg).Safety.WarnOnDuplicateWrites {
 		return blocks
 	}
-	if e.dupWrites == nil {
-		e.dupWrites = newDuplicateWriteTracker()
+	if e.run.dupWrites == nil {
+		e.run.dupWrites = newDuplicateWriteTracker()
 	}
 	byUseID := make(map[string]bool, len(results))
 	for _, r := range results {
@@ -43,7 +43,7 @@ func observeDuplicateWrites(e *Engine, uses []types.ToolUse, results []types.Too
 	for _, u := range uses {
 		if k, ok := readPathTools[u.Name]; ok {
 			if p, _ := u.Input[k].(string); p != "" {
-				e.dupWrites.ObserveRead(p)
+				e.run.dupWrites.ObserveRead(p)
 			}
 			continue
 		}
@@ -58,7 +58,7 @@ func observeDuplicateWrites(e *Engine, uses []types.ToolUse, results []types.Too
 			continue
 		}
 		body := canonicalArgsBody(u.Input, keys)
-		if e.dupWrites.ObserveWrite(path, body) {
+		if e.run.dupWrites.ObserveWrite(path, body) {
 			w := fmt.Sprintf("[dup-write] %s wrote identical content to %s twice with no read in between — confirm the file isn't already at the target state.\n\n", u.Name, path)
 			blocks = prependWarningToToolResult(blocks, w)
 		}

@@ -35,7 +35,11 @@ func TestApplyVisionFallback_PassthroughForVisionModel(t *testing.T) {
 // non-vision model, no fallback configured: image swapped for placeholder text.
 func TestApplyVisionFallback_NoFallbackDropsImage(t *testing.T) {
 	warn := make(chan string, 4)
-	e := &Engine{Cfg: config.Config{DefaultModel: "deepseek-v4-flash"}, WarnCh: warn}
+	e := &Engine{
+		Cfg:    config.Config{DefaultModel: "deepseek-v4-flash"},
+		WarnCh: warn,
+		run:    &runState{},
+	}
 	out := e.applyVisionFallback(context.Background(), imgMsg())
 	for _, b := range out[0].Content {
 		if b.Type == types.BlockImage {
@@ -60,11 +64,14 @@ func TestApplyVisionFallback_InheritsProviderEndpoint(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := &Engine{Cfg: config.Config{
-		DefaultModel: "deepseek-v4-flash",
-		Providers:    map[string]config.ProviderConfig{"omlx": {BaseURL: srv.URL}},
-		Vision:       config.VisionConfig{Provider: "omlx", Model: "qwen3-vl-it"},
-	}}
+	e := &Engine{
+		Cfg: config.Config{
+			DefaultModel: "deepseek-v4-flash",
+			Providers:    map[string]config.ProviderConfig{"omlx": {BaseURL: srv.URL}},
+			Vision:       config.VisionConfig{Provider: "omlx", Model: "qwen3-vl-it"},
+		},
+		run: &runState{visionCache: map[string]string{}},
+	}
 	out := e.applyVisionFallback(context.Background(), imgMsg())
 	if !strings.Contains(out[0].Content[1].Text, "a chart") {
 		t.Errorf("provider-inherited endpoint not used: %q", out[0].Content[1].Text)
@@ -82,10 +89,13 @@ func TestApplyVisionFallback_DescribesAndCaches(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := &Engine{Cfg: config.Config{
-		DefaultModel: "deepseek-v4-flash",
-		Vision:       config.VisionConfig{Model: "qwen-vl", Endpoint: srv.URL, API: "openai"},
-	}}
+	e := &Engine{
+		Cfg: config.Config{
+			DefaultModel: "deepseek-v4-flash",
+			Vision:       config.VisionConfig{Model: "qwen-vl", Endpoint: srv.URL, API: "openai"},
+		},
+		run: &runState{visionCache: map[string]string{}},
+	}
 	out := e.applyVisionFallback(context.Background(), imgMsg())
 	got := out[0].Content[1].Text
 	if !strings.Contains(got, "a bee logo") || !strings.Contains(got, "qwen-vl") {

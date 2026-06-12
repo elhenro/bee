@@ -31,8 +31,8 @@ const (
 //
 // blocks already carries the tool-result content; we only prepend warnings.
 func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult, blocks []types.ContentBlock) ([]types.ContentBlock, error) {
-	if e.repeats == nil {
-		e.repeats = newRepeatTracker()
+	if e.run.repeats == nil {
+		e.run.repeats = newRepeatTracker()
 	}
 	// index results by UseID so we can pair use ↔ content reliably even when
 	// safeParallelTools shuffles in-flight order.
@@ -42,7 +42,7 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 	}
 	for _, u := range uses {
 		r := resByID[u.ID]
-		obs := e.repeats.ObserveWithResult(u, r.IsError, hashResult(r.Content))
+		obs := e.run.repeats.ObserveWithResult(u, r.IsError, hashResult(r.Content))
 
 		// hard bail: same (tool,args) failed N times in a row OR same tool name
 		// failed K times in a row. give the model rope (nudges first), but stop
@@ -64,31 +64,28 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 
 		// 2-in-a-row soft signal: inject a strong corrective nudge but keep
 		// looping. dedupes per Run so a wedged provider isn't spam-nudged.
-		if obs.IsTwoStrike && !e.nudgedTwoStrike {
+		if obs.IsTwoStrike && e.nudgeOnce(nudgeTwoStrike) {
 			class := parseClassFromResult(r.Content)
 			w := fmt.Sprintf("[two-strike] %s called twice with identical args, both failed (class=%s). "+
 				"read the error above carefully — change args or pick a different tool. if blocked, call escalate.\n\n",
 				u.Name, class)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.nudgedTwoStrike = true
 			emitRepeatEvent(e, u, "two_strike_nudge", obs)
 		}
 		// only nudge when the repeated call is currently failing. an identical
 		// call that succeeds is legit re-verification (e.g. re-running tests
 		// after an edit) — nudging "try a different approach" there is wrong
 		// advice and pushes small models to escalate over normal work.
-		if !e.nudgedRepeat && obs.RepeatCount >= repeatNudgeAt && r.IsError {
+		if obs.RepeatCount >= repeatNudgeAt && r.IsError && e.nudgeOnce(nudgeRepeat) {
 			w := fmt.Sprintf("[repeat] same call to %s failed %dx — try a different approach, ask the user, or call escalate.\n\n",
 				u.Name, obs.RepeatCount)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.nudgedRepeat = true
 			emitRepeatEvent(e, u, "repeat", obs)
 		}
-		if !e.nudgedPerToolFail && obs.ConsecutiveSameToolFailures >= perToolFailNudgeAt {
+		if obs.ConsecutiveSameToolFailures >= perToolFailNudgeAt && e.nudgeOnce(nudgePerToolFail) {
 			w := fmt.Sprintf("[tool-fail] %s failed %dx in a row — different tool? different args? ask the user.\n\n",
 				u.Name, obs.ConsecutiveSameToolFailures)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.nudgedPerToolFail = true
 			emitRepeatEvent(e, u, "per_tool_fail", obs)
 		}
 		// identical-output loop on read-only tools: the same read with the
@@ -101,11 +98,10 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 				emitRepeatEvent(e, u, "hard_bail_same_result", obs)
 				return blocks, &TwoStrikeError{Use: u, Class: "identical-read-loop"}
 			}
-			if !e.nudgedSameResult && obs.SameResultCount >= sameResultNudgeAt {
+			if obs.SameResultCount >= sameResultNudgeAt && e.nudgeOnce(nudgeSameResult) {
 				w := fmt.Sprintf("[repeat] %s returned IDENTICAL output %dx — you already have this information. "+
 					"act on it: make your edit, or finish.\n\n", u.Name, obs.SameResultCount)
 				blocks = prependWarningToToolResult(blocks, w)
-				e.nudgedSameResult = true
 				emitRepeatEvent(e, u, "same_result", obs)
 			}
 		}

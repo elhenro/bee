@@ -35,37 +35,11 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	if e.Sessions != nil {
 		defer func() { _ = e.Sessions.Flush() }()
 	}
-	// reset per-Run state so context warnings dedupe inside one Run only.
-	e.lastInputTokens = 0
-	e.warnedContext = false
-	e.warnedIterHalf = false
-	e.warnedIterEighty = false
-	e.warnedTokenHalf = false
-	e.warnedTokenEighty = false
-	e.warnedStall = false
-	e.warnedStallEscalate = false
-	e.noMutationStreak = 0
-	e.editsByFile = make(map[string]int)
-	e.nudgedEditNoVerify = make(map[string]bool)
-	e.cumInputTokens = 0
-	e.cumOutputTokens = 0
-	e.budgetRecoveries = 0
-	e.nudgedReasoningOnly = false
-	e.formatNudgeCount = 0
-	e.formatSlipStreak = 0
-	e.repeats = newRepeatTracker()
-	e.nudgedRepeat = false
-	e.nudgedPerToolFail = false
-	e.nudgedSameResult = false
-	e.nudgedTwoStrike = false
-	e.lastTurnLooped = false
-	e.loopCutStreak = 0
-	e.lastReasoningSig = nil
-	e.reasoningDupStreak = 0
-	e.warnedReasoningDup = false
-	e.dupWrites = newDuplicateWriteTracker()
-	e.escalateErr = nil
-	e.emptyCompletionStreak = 0
+	// reset per-Run state. freshRunState allocates the dedupe/streak maps;
+	// sticky fields (sysPromptCache, profileScaledFor, warnedThinkingIgnored)
+	// live on Engine and survive this assignment. The previous runState is
+	// dropped — Run identity is the dedupe scope.
+	e.run = e.freshRunState()
 	res := RunResult{}
 
 	// probe the active model's context window before the first iteration so
@@ -156,9 +130,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// model calls that wasn't offered this turn — read-only enforcement must
 	// hold at execution time, not just at advertise time (a local model can
 	// call write even when it's stripped from the wire).
-	e.allowedTools = make(map[string]bool, len(specs))
+	e.run.allowedTools = make(map[string]bool, len(specs))
 	for _, s := range specs {
-		e.allowedTools[s.Name] = true
+		e.run.allowedTools[s.Name] = true
 	}
 	skillManifest := ""
 	if e.Skills != nil {
@@ -203,10 +177,10 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// run when available; otherwise falls back to estimator over sys+history.
 	if e.compactionEnabled() {
 		budget := contextBudget(e.Cfg)
-		if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
+		if ShouldAutoCompactWithUsage(sys, res.Messages, e.run.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
 			if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
 				res.Messages = e.emitCompactNotice(compacted, stats)
-				e.lastInputTokens = 0
+				e.run.lastInputTokens = 0
 			} else {
 				fmt.Fprintf(os.Stderr, "loop: auto-compact failed: %v\n", cerr)
 			}
@@ -231,9 +205,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// wire (see statecard.go). reset every Run so the goal tracks the latest
 	// user ask; the session transcript itself is untouched.
 	if config.ActiveProfile(e.Cfg).StateCard {
-		e.card = newStateCard(userText)
+		e.run.card = newStateCard(userText)
 	} else {
-		e.card = nil
+		e.run.card = nil
 	}
 
 	// resolve the per-Run iteration ceiling. 0 (or negative) = unlimited: the
@@ -280,12 +254,12 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// surfaces usage); fall back to the estimator on the first turn.
 		if e.compactionEnabled() {
 			budget := contextBudget(e.Cfg)
-			if ShouldAutoCompactWithUsage(sys, res.Messages, e.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
+			if ShouldAutoCompactWithUsage(sys, res.Messages, e.run.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
 				if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
 					res.Messages = e.emitCompactNotice(compacted, stats)
 					// post-compact: reset lastInputTokens so the next
 					// iteration re-evaluates against the smaller history.
-					e.lastInputTokens = 0
+					e.run.lastInputTokens = 0
 				} else {
 					fmt.Fprintf(os.Stderr, "loop: auto-compact failed: %v\n", cerr)
 				}
@@ -325,10 +299,10 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		}
 		// suppression requested when effort resolved to off on a model that
 		// nominally reasons. drives the post-turn compliance check below.
-		e.thinkingSuppressRequested = resolvedThinking == llm.ThinkingOff && llm.ThinkingApplies(e.Cfg.DefaultModel)
+		e.run.thinkingSuppressRequested = resolvedThinking == llm.ThinkingOff && llm.ThinkingApplies(e.Cfg.DefaultModel)
 		wireMsgs := dropEphemeral(res.Messages)
-		if e.card != nil {
-			wireMsgs = e.card.view(wireMsgs)
+		if e.run.card != nil {
+			wireMsgs = e.run.card.view(wireMsgs)
 		}
 		req := llm.Request{
 			Model:              e.Cfg.DefaultModel,
@@ -367,12 +341,12 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// when a tool call survived the cut, fall through: skipping dispatch
 		// would leave an orphaned tool_use in the transcript (assistant msg is
 		// already appended) and the wire rejects tool_use without tool_result.
-		if e.lastTurnLooped {
-			e.lastTurnLooped = false
+		if e.run.lastTurnLooped {
+			e.run.lastTurnLooped = false
 			if len(toolUses) == 0 && !detectDoneSignal(finalText) {
-				e.loopCutStreak++
-				if e.loopCutStreak >= loopCutBailAt {
-					return res, &RepeatStreamError{Streak: e.loopCutStreak}
+				e.run.loopCutStreak++
+				if e.run.loopCutStreak >= loopCutBailAt {
+					return res, &RepeatStreamError{Streak: e.run.loopCutStreak}
 				}
 				nudge := types.Message{
 					ID:       newID(),
@@ -389,7 +363,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 				continue
 			}
 		}
-		e.loopCutStreak = 0
+		e.run.loopCutStreak = 0
 
 		// stream dropped mid-output on a transient error. when no tool call
 		// survived the drop, the turn made no progress — nudge the model to
@@ -397,12 +371,12 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// after truncCutBailAt consecutive no-progress drops (dead connection).
 		// when a tool call DID survive, fall through: dispatching it is progress
 		// and its result carries the loop forward on its own.
-		if e.lastTurnTruncated {
-			e.lastTurnTruncated = false
+		if e.run.lastTurnTruncated {
+			e.run.lastTurnTruncated = false
 			if len(toolUses) == 0 && !detectDoneSignal(finalText) {
-				e.truncCutStreak++
-				if e.truncCutStreak >= truncCutBailAt {
-					return res, &TruncatedStreamError{Streak: e.truncCutStreak}
+				e.run.truncCutStreak++
+				if e.run.truncCutStreak >= truncCutBailAt {
+					return res, &TruncatedStreamError{Streak: e.run.truncCutStreak}
 				}
 				nudge := types.Message{
 					ID:       newID(),
@@ -419,11 +393,11 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 				continue
 			}
 		}
-		e.truncCutStreak = 0
+		e.run.truncCutStreak = 0
 
 		// a turn with any text or tool call clears the empty-completion streak.
 		if strings.TrimSpace(finalText) != "" || len(toolUses) > 0 {
-			e.emptyCompletionStreak = 0
+			e.run.emptyCompletionStreak = 0
 		}
 
 		if len(toolUses) == 0 || detectDoneSignal(finalText) {
@@ -431,9 +405,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			// then bail with a typed error so the wrapper can surface "switch
 			// model" instead of ending on a blank answer or spinning the budget.
 			if strings.TrimSpace(finalText) == "" && len(toolUses) == 0 && !hasThinkingOnly(assistantMsg) {
-				e.emptyCompletionStreak++
-				if e.emptyCompletionStreak >= emptyCompletionBailAt {
-					return res, &EmptyCompletionError{Streak: e.emptyCompletionStreak}
+				e.run.emptyCompletionStreak++
+				if e.run.emptyCompletionStreak >= emptyCompletionBailAt {
+					return res, &EmptyCompletionError{Streak: e.run.emptyCompletionStreak}
 				}
 				nudge := types.Message{
 					ID:       newID(),
@@ -454,12 +428,12 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			// done-signal turns are intentional exits, not slips. real done
 			// resets the streak so the FormatStrikeError reads as consecutive.
 			if len(toolUses) == 0 && !detectDoneSignal(finalText) && looksLikeAttemptedToolCall(finalText, specs) {
-				e.formatSlipStreak++
-				if e.formatSlipStreak >= formatStrikeAt {
-					return res, &FormatStrikeError{Streak: e.formatSlipStreak}
+				e.run.formatSlipStreak++
+				if e.run.formatSlipStreak >= formatStrikeAt {
+					return res, &FormatStrikeError{Streak: e.run.formatSlipStreak}
 				}
 			} else {
-				e.formatSlipStreak = 0
+				e.run.formatSlipStreak = 0
 			}
 			if nudge := attemptRecoveryNudge(e, assistantMsg, finalText, toolUses, specs); nudge != nil {
 				if err := e.appendMessage(ctx, *nudge); err != nil {
@@ -484,7 +458,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		}
 		// any successful tool dispatch resets the format-slip streak; the model
 		// proved it can produce a parseable envelope this turn.
-		e.formatSlipStreak = 0
+		e.run.formatSlipStreak = 0
 
 		// one-time confirmation that constrained json tool mode is live: the
 		// first parsed call proves the grammar pipeline works end to end.
@@ -498,8 +472,8 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		if err != nil {
 			return res, err
 		}
-		if e.card != nil {
-			e.card.observe(toolUses, toolResults)
+		if e.run.card != nil {
+			e.run.card.observe(toolUses, toolResults)
 		}
 		// track mutation cadence for stall detection
 		mutated := false
@@ -510,9 +484,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			}
 		}
 		if mutated {
-			e.noMutationStreak = 0
+			e.run.noMutationStreak = 0
 		} else {
-			e.noMutationStreak++
+			e.run.noMutationStreak++
 		}
 
 		blocks := toolResultBlocks(toolResults)
@@ -538,9 +512,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		}
 		// escalate bail: same shape — append the synthetic tool_result first
 		// (transcript shows the model's reason) then surface ErrEscalate.
-		if e.escalateErr != nil {
-			esc := e.escalateErr
-			e.escalateErr = nil
+		if e.run.escalateErr != nil {
+			esc := e.run.escalateErr
+			e.run.escalateErr = nil
 			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction, Options: esc.Options}
 		}
 	}

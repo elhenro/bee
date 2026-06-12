@@ -31,19 +31,19 @@ func attemptRecoveryNudge(e *Engine, assistantMsg types.Message, finalText strin
 	}
 	nudgeText := ""
 	switch {
-	case strings.TrimSpace(finalText) == "" && hasThinkingOnly(assistantMsg) && !e.nudgedReasoningOnly:
+	case strings.TrimSpace(finalText) == "" && hasThinkingOnly(assistantMsg) && !e.run.nudgedReasoningOnly:
 		nudgeText = "[nudge] previous turn was reasoning-only. respond now: emit final answer or call a tool."
-		e.nudgedReasoningOnly = true
-	case looksLikeAttemptedToolCall(finalText, specs) && e.formatNudgeCount < formatNudgeMax:
+		e.run.nudgedReasoningOnly = true
+	case looksLikeAttemptedToolCall(finalText, specs) && e.run.formatNudgeCount < formatNudgeMax:
 		// jsonmode providers expect the json envelope, not textmode's XML —
 		// only reachable there on the degraded no-grammar path, where XML
 		// advice would push the model further from a parseable shape.
 		if strings.HasSuffix(e.Provider.Name(), "+jsonmode") {
 			nudgeText = "[nudge] tool call did not parse. emit ONE json object only: {\"tool\":\"<name>\",\"args\":{...}} with EXACT arg names. no fences, no prose."
 		} else {
-			nudgeText = buildFormatNudge(finalText, specs, e.formatNudgeCount)
+			nudgeText = buildFormatNudge(finalText, specs, e.run.formatNudgeCount)
 		}
-		e.formatNudgeCount++
+		e.run.formatNudgeCount++
 	}
 	if nudgeText == "" {
 		return nil

@@ -101,7 +101,7 @@ func (e *Engine) runOneTrapped(ctx context.Context, u types.ToolUse) types.ToolR
 		if errors.As(err, &esc) {
 			// stash so dispatchTools can return ErrEscalate post-flush; also
 			// surface a synthetic tool_result so the transcript records why.
-			e.escalateErr = esc
+			e.run.escalateErr = esc
 			// `[escalate]` tag already labels the block; esc.Error() self-
 			// prefixes "escalate:" too, so build the body bare to avoid the
 			// doubled word in transcript + display.
@@ -216,8 +216,9 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	// gate against the surface advertised this turn. a tool stripped by the
 	// role/posture filter (e.g. write on a read-only scout turn) must be
 	// rejected even if a local model calls it unprompted — otherwise read-only
-	// is advisory, not enforced. nil set = no gate (legacy/test engines).
-	if e.allowedTools != nil && !e.allowedTools[u.Name] {
+	// is advisory, not enforced. nil set = no gate (legacy/test engines that
+	// bypass Run and call runOne directly).
+	if e.run != nil && e.run.allowedTools != nil && !e.run.allowedTools[u.Name] {
 		return types.ToolResult{UseID: u.ID, Content: unknownToolMsg(u.Name, e.allowedNames()), IsError: true}, nil
 	}
 	t, ok := e.Tools.Get(u.Name)
@@ -292,14 +293,14 @@ func stringifyArgs(in map[string]any) map[string]string {
 // unknown-tool diagnostic. Falls back to the full registry when no per-turn
 // surface was recorded (legacy/test engines that never ran filterToolSpecs).
 func (e *Engine) allowedNames() []string {
-	if len(e.allowedTools) == 0 {
+	if len(e.run.allowedTools) == 0 {
 		if e.Tools != nil {
 			return e.Tools.Names()
 		}
 		return nil
 	}
-	names := make([]string, 0, len(e.allowedTools))
-	for n := range e.allowedTools {
+	names := make([]string, 0, len(e.run.allowedTools))
+	for n := range e.run.allowedTools {
 		names = append(names, n)
 	}
 	sort.Strings(names)

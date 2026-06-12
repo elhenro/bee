@@ -80,12 +80,12 @@ func observeReasoningDup(e *Engine, content []types.ContentBlock) bool {
 		// turns is still a loop), just skip the comparison.
 		return false
 	}
-	if e.lastReasoningSig != nil && jaccard(e.lastReasoningSig, sig) >= reasoningDupSimThreshold {
-		e.reasoningDupStreak++
+	if e.run.lastReasoningSig != nil && jaccard(e.run.lastReasoningSig, sig) >= reasoningDupSimThreshold {
+		e.run.reasoningDupStreak++
 	} else {
-		e.reasoningDupStreak = 0
-		e.warnedReasoningDup = false
+		e.run.reasoningDupStreak = 0
+		e.run.warnedReasoningDup = false
 	}
-	e.lastReasoningSig = sig
-	return e.reasoningDupStreak >= reasoningDupBailAt
+	e.run.lastReasoningSig = sig
+	return e.run.reasoningDupStreak >= reasoningDupBailAt
 }

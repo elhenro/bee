@@ -14,41 +14,41 @@ import (
 func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentIter, maxIter, tokenBudget int, readOnly bool) []types.ContentBlock {
 	// context-window warning: if usage crosses threshold, prepend a one-shot
 	// notice so the model summarizes/drops noise on the following turn.
-	if !e.warnedContext {
+	if !e.run.warnedContext {
 		limit := contextBudget(e.Cfg)
-		if w := prompt.FormatContextWarning(e.lastInputTokens, limit); w != "" {
+		if w := prompt.FormatContextWarning(e.run.lastInputTokens, limit); w != "" {
 			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedContext = true
+			e.run.warnedContext = true
 		}
 	}
 	// iteration warnings; each fires at most once per Run. Skipped entirely
 	// when the cap is lifted (maxIter <= 0) — there's no ceiling to warn about;
 	// the token-budget and stall guards below carry the load instead.
 	if maxIter > 0 {
-		if !e.warnedIterHalf && currentIter*2 >= maxIter {
+		if !e.run.warnedIterHalf && currentIter*2 >= maxIter {
 			w := fmt.Sprintf("[iter %d/%d] half the budget spent. summarize progress; commit edits or stop if stuck.\n\n", currentIter, maxIter)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedIterHalf = true
+			e.run.warnedIterHalf = true
 		}
-		if !e.warnedIterEighty && currentIter*5 >= maxIter*4 {
+		if !e.run.warnedIterEighty && currentIter*5 >= maxIter*4 {
 			w := fmt.Sprintf("[iter %d/%d] near iter cap. finish current edit or stop and ask user.\n\n", currentIter, maxIter)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedIterEighty = true
+			e.run.warnedIterEighty = true
 		}
 	}
 	// token-budget warnings mirror the iter-cap warnings so the model hears
 	// about cost pressure separately from iter pressure.
 	if tokenBudget > 0 {
-		spent := e.cumInputTokens + e.cumOutputTokens
-		if !e.warnedTokenHalf && spent*2 >= tokenBudget {
+		spent := e.run.cumInputTokens + e.run.cumOutputTokens
+		if !e.run.warnedTokenHalf && spent*2 >= tokenBudget {
 			w := fmt.Sprintf("[tokens %d/%d] half the token budget spent. summarize and commit edits.\n\n", spent, tokenBudget)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedTokenHalf = true
+			e.run.warnedTokenHalf = true
 		}
-		if !e.warnedTokenEighty && spent*5 >= tokenBudget*4 {
+		if !e.run.warnedTokenEighty && spent*5 >= tokenBudget*4 {
 			w := fmt.Sprintf("[tokens %d/%d] near token cap. finish current edit or stop.\n\n", spent, tokenBudget)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedTokenEighty = true
+			e.run.warnedTokenEighty = true
 		}
 	}
 	// stall warning is opt-in: profile must set a positive threshold. skipped on
@@ -56,29 +56,29 @@ func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentI
 	// is expected, not a stall. nudging "commit edits" would contradict the
 	// read-only prompt that forbids edits.
 	if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 && !readOnly {
-		if !e.warnedStall && e.noMutationStreak >= t {
-			w := fmt.Sprintf("[stall] %d read-only iters; commit edits when ready.\n\n", e.noMutationStreak)
+		if !e.run.warnedStall && e.run.noMutationStreak >= t {
+			w := fmt.Sprintf("[stall] %d read-only iters; commit edits when ready.\n\n", e.run.noMutationStreak)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedStall = true
+			e.run.warnedStall = true
 		}
 		// escalation tier: streak hit 2x threshold AND first nudge already
 		// fired. previous session evidence (5e20f3f8): two soft nudges
 		// fired, model ignored both, kept reading. Hard stop at 3x threshold
 		// arrives too late — burns more tokens. At 2x emit an actionable
 		// pointer to the escalate tool so the model exits cleanly.
-		if e.warnedStall && !e.warnedStallEscalate && e.noMutationStreak >= 2*t {
-			w := fmt.Sprintf("[stall %d iters] previous nudge ignored. if stuck, call `escalate` with a reason — clean exit beats another read.\n\n", e.noMutationStreak)
+		if e.run.warnedStall && !e.run.warnedStallEscalate && e.run.noMutationStreak >= 2*t {
+			w := fmt.Sprintf("[stall %d iters] previous nudge ignored. if stuck, call `escalate` with a reason — clean exit beats another read.\n\n", e.run.noMutationStreak)
 			blocks = prependWarningToToolResult(blocks, w)
-			e.warnedStallEscalate = true
+			e.run.warnedStallEscalate = true
 		}
 	}
 	// cross-turn reasoning loop: the model rehashed near-identical reasoning for
 	// reasoningDupBailAt turns running. independent of mutation state — fires
 	// even while it makes token tool calls each turn. one-shot per crossing.
-	if !e.warnedReasoningDup && e.reasoningDupStreak >= reasoningDupBailAt {
-		w := fmt.Sprintf("[loop] your last %d turns repeated near-identical reasoning without progress. stop re-deriving the same analysis — take a concrete action, or call `escalate` with a reason to exit cleanly.\n\n", e.reasoningDupStreak+1)
+	if !e.run.warnedReasoningDup && e.run.reasoningDupStreak >= reasoningDupBailAt {
+		w := fmt.Sprintf("[loop] your last %d turns repeated near-identical reasoning without progress. stop re-deriving the same analysis — take a concrete action, or call `escalate` with a reason to exit cleanly.\n\n", e.run.reasoningDupStreak+1)
 		blocks = prependWarningToToolResult(blocks, w)
-		e.warnedReasoningDup = true
+		e.run.warnedReasoningDup = true
 	}
 	return blocks
 }

@@ -10,6 +10,7 @@ import (
 
 // minimal engine for warning-injection tests. config is the only field
 // injectIterAndTokenWarnings actually consults beyond the warned* flags.
+// `run` is allocated so e.run.warned* writes don't nil-panic.
 func warnEngine(t int) *Engine {
 	cfg := config.Defaults()
 	cfg.Profile = "tiny"
@@ -19,7 +20,7 @@ func warnEngine(t int) *Engine {
 		prof.NoMutationStallThreshold = t
 		cfg.Profiles["tiny"] = prof
 	}
-	return &Engine{Cfg: cfg}
+	return &Engine{Cfg: cfg, run: &runState{}}
 }
 
 func extractWarnText(blocks []types.ContentBlock) string {
@@ -35,7 +36,7 @@ func extractWarnText(blocks []types.ContentBlock) string {
 
 func TestStallWarning_FirstNudge(t *testing.T) {
 	e := warnEngine(3)
-	e.noMutationStreak = 3
+	e.run.noMutationStreak = 3
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
@@ -47,7 +48,7 @@ func TestStallWarning_FirstNudge(t *testing.T) {
 	if strings.Contains(text, "previous nudge ignored") {
 		t.Error("escalation should NOT fire on first nudge")
 	}
-	if !e.warnedStall {
+	if !e.run.warnedStall {
 		t.Error("warnedStall flag not set")
 	}
 }
@@ -56,7 +57,7 @@ func TestStallWarning_SuppressedInPlanMode(t *testing.T) {
 	// plan mode strips mutators, so a read-only streak is expected, not a stall.
 	// the "commit edits" nudge must not fire — it contradicts the plan prompt.
 	e := warnEngine(3)
-	e.noMutationStreak = 6 // well past 2x threshold
+	e.run.noMutationStreak = 6 // well past 2x threshold
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
@@ -65,15 +66,15 @@ func TestStallWarning_SuppressedInPlanMode(t *testing.T) {
 	if strings.Contains(text, "[stall]") {
 		t.Errorf("stall nudge should be suppressed in plan mode, got: %q", text)
 	}
-	if e.warnedStall {
+	if e.run.warnedStall {
 		t.Error("warnedStall should not be set in plan mode")
 	}
 }
 
 func TestStallWarning_EscalateAfterIgnored(t *testing.T) {
 	e := warnEngine(3)
-	e.warnedStall = true // first nudge already fired
-	e.noMutationStreak = 6 // 2x threshold
+	e.run.warnedStall = true // first nudge already fired
+	e.run.noMutationStreak = 6 // 2x threshold
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
@@ -85,16 +86,16 @@ func TestStallWarning_EscalateAfterIgnored(t *testing.T) {
 	if !strings.Contains(text, "call `escalate`") {
 		t.Errorf("expected escalate pointer in nudge, got: %q", text)
 	}
-	if !e.warnedStallEscalate {
+	if !e.run.warnedStallEscalate {
 		t.Error("warnedStallEscalate flag not set")
 	}
 }
 
 func TestStallWarning_EscalateOnceOnly(t *testing.T) {
 	e := warnEngine(3)
-	e.warnedStall = true
-	e.warnedStallEscalate = true // already fired
-	e.noMutationStreak = 7
+	e.run.warnedStall = true
+	e.run.warnedStallEscalate = true // already fired
+	e.run.noMutationStreak = 7
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}
@@ -111,8 +112,8 @@ func TestStallWarning_CatchupFiresBoth(t *testing.T) {
 	// escalation pointer in the same call. better than one-per-call when
 	// the model is already deep in the stall.
 	e := warnEngine(3)
-	e.warnedStall = false
-	e.noMutationStreak = 6
+	e.run.warnedStall = false
+	e.run.noMutationStreak = 6
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},
 	}

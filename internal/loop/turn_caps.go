@@ -44,43 +44,43 @@ func (e *Engine) handleBudgetCaps(ctx context.Context, msgs *[]types.Message, cu
 	// mutation — almost always stuck in an explore-loop. no recovery. disabled
 	// on read-only turns: read-only is the intended behavior there, so the
 	// streak is not a stall and must not hard-stop a legit research run.
-	if !readOnly && e.noMutationStreak >= stallCap {
-		return fmt.Errorf("loop: %d read-only iters with no edits, stopping — type 'continue' to resume", e.noMutationStreak)
+	if !readOnly && e.run.noMutationStreak >= stallCap {
+		return fmt.Errorf("loop: %d read-only iters with no edits, stopping — type 'continue' to resume", e.run.noMutationStreak)
 	}
 	// read-only turns still need a backstop: with an unlimited iter cap and an
 	// unknown context window (tokenBudget<=0) a scout reading genuinely new
 	// files each turn has no ceiling at all. allow a generous research budget,
 	// then stop cleanly instead of running forever.
-	if readOnly && e.noMutationStreak >= 2*stallCap {
-		return fmt.Errorf("loop: %d read-only iters, stopping research run — type 'continue' to resume", e.noMutationStreak)
+	if readOnly && e.run.noMutationStreak >= 2*stallCap {
+		return fmt.Errorf("loop: %d read-only iters, stopping research run — type 'continue' to resume", e.run.noMutationStreak)
 	}
 	// token budget: cumulative input+output across iterations. only enforced
 	// when the model's context window is known so unknown-model runs aren't
 	// bounded by a fabricated number.
-	spent := e.cumInputTokens + e.cumOutputTokens
+	spent := e.run.cumInputTokens + e.run.cumOutputTokens
 	if tokenBudget <= 0 || spent <= tokenBudget {
 		return nil
 	}
 	// recovery exhausted (or disabled) → hard stop.
-	if e.budgetRecoveries >= maxBudgetRecoveries || !e.Cfg.Compaction.Enabled {
+	if e.run.budgetRecoveries >= maxBudgetRecoveries || !e.Cfg.Compaction.Enabled {
 		return fmt.Errorf("loop: hit token budget (%d > %d tokens, %d iters, %d auto-compactions) — type 'continue' to resume",
-			spent, tokenBudget, currentIter, e.budgetRecoveries)
+			spent, tokenBudget, currentIter, e.run.budgetRecoveries)
 	}
 	// auto-recover: force-compact history, re-arm the cap, continue. compaction
 	// shrinks per-turn cost going forward; resetting the cumulative counter
 	// re-arms the guard for another budget's worth of work.
-	e.budgetRecoveries++
+	e.run.budgetRecoveries++
 	if compacted, _, cerr := e.compact(ctx, *msgs); cerr == nil {
 		*msgs = compacted
 	} else {
 		fmt.Fprintf(os.Stderr, "loop: budget-recovery compact failed: %v\n", cerr)
 	}
-	e.cumInputTokens = 0
-	e.cumOutputTokens = 0
-	e.lastInputTokens = 0
-	e.warnedTokenHalf = false
-	e.warnedTokenEighty = false
+	e.run.cumInputTokens = 0
+	e.run.cumOutputTokens = 0
+	e.run.lastInputTokens = 0
+	e.run.warnedTokenHalf = false
+	e.run.warnedTokenEighty = false
 	fmt.Fprintf(os.Stderr, "loop: token budget hit (%d/%d) — compacted and continued (recovery %d/%d)\n",
-		spent, tokenBudget, e.budgetRecoveries, maxBudgetRecoveries)
+		spent, tokenBudget, e.run.budgetRecoveries, maxBudgetRecoveries)
 	return nil
 }

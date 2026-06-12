@@ -58,7 +58,11 @@ func TestVerifyThinkingSuppression_WarnsOnce(t *testing.T) {
 	warnCh := make(chan string, 4)
 	cfg := config.Defaults()
 	cfg.DefaultModel = "qwen3-30b-a3b"
-	eng := &Engine{Cfg: cfg, WarnCh: warnCh, thinkingSuppressRequested: true}
+	eng := &Engine{
+		Cfg:    cfg,
+		WarnCh: warnCh,
+		run:    &runState{thinkingSuppressRequested: true},
+	}
 
 	msg := types.Message{Content: []types.ContentBlock{{Type: types.BlockThinking, Text: "deliberating"}}}
 	eng.verifyThinkingSuppression("", msg)
@@ -81,7 +85,11 @@ func TestVerifyThinkingSuppression_WarnsOnce(t *testing.T) {
 
 func TestVerifyThinkingSuppression_SilentWhenNotRequested(t *testing.T) {
 	warnCh := make(chan string, 2)
-	eng := &Engine{Cfg: config.Defaults(), WarnCh: warnCh, thinkingSuppressRequested: false}
+	eng := &Engine{
+		Cfg:    config.Defaults(),
+		WarnCh: warnCh,
+		run:    &runState{thinkingSuppressRequested: false},
+	}
 	msg := types.Message{Content: []types.ContentBlock{{Type: types.BlockThinking, Text: "x"}}}
 	eng.verifyThinkingSuppression("", msg)
 	select {

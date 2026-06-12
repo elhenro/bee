@@ -214,14 +214,14 @@ events:
 				cost.AddLifetime(ev.Usage.InputTokens, ev.Usage.OutputTokens)
 			}
 			if ev.Usage != nil && ev.Usage.InputTokens > 0 {
-				e.lastInputTokens = ev.Usage.InputTokens
+				e.run.lastInputTokens = ev.Usage.InputTokens
 			}
 			// cumulative spend feeds the adaptive token-budget cap in
 			// turn_run. tracked separately from lastInputTokens (which is
 			// a per-request snapshot, not a sum).
 			if ev.Usage != nil {
-				e.cumInputTokens += ev.Usage.InputTokens
-				e.cumOutputTokens += ev.Usage.OutputTokens
+				e.run.cumInputTokens += ev.Usage.InputTokens
+				e.run.cumOutputTokens += ev.Usage.OutputTokens
 			}
 		}
 		// repetition watchdog: a wedged local model can loop the same phrase
@@ -275,10 +275,10 @@ events:
 		} else if loopTrimText >= 0 {
 			textStr = trimLoopedTailAt(textStr, loopTrimText)
 		}
-		e.lastTurnLooped = true
+		e.run.lastTurnLooped = true
 	}
 	if truncated {
-		e.lastTurnTruncated = true
+		e.run.lastTurnTruncated = true
 	}
 	// thinking block first so the rendered transcript reads in causal order
 	if thinkStr != "" {

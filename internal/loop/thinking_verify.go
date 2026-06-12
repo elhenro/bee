@@ -70,7 +70,7 @@ func hasThinkingBlock(msg types.Message) bool {
 // the setting is a no-op for this model rather than silently wondering why it
 // still thinks.
 func (e *Engine) verifyThinkingSuppression(finalText string, msg types.Message) {
-	if e == nil || e.warnedThinkingIgnored || !e.thinkingSuppressRequested {
+	if e == nil || e.warnedThinkingIgnored || !e.run.thinkingSuppressRequested {
 		return
 	}
 	reason := ""
