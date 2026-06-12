@@ -86,22 +86,16 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		recs = r
 	}
 
-	// resolve role + per-turn posture. worker fires a side classifier off
-	// userText to pick read-only vs act so small models don't reflex into shell
-	// on a greeting. Local providers skip the classifier — the round-trip is
-	// expensive on slow local models; default to act so tools stay available.
-	// scout is always read-only; queen never reaches here (the TUI routes queen
-	// turns through the hive).
+	// resolve role + per-turn posture. worker mode always acts — no side-LLM
+	// classifier call. The classifier existed to stop small local models from
+	// reflex-shelling on a greeting, but on hosted providers it produced false
+	// "plan" verdicts for clear edit requests (worker diagnosed, then stopped
+	// without acting, forcing the user to send a follow-up). Local models still
+	// get the full surface; a greeting produces a text-only turn that exits
+	// cleanly. scout is always read-only; queen never reaches here (the TUI
+	// routes queen turns through the hive).
 	role := ParseRole(e.Cfg.Role)
 	readOnly := role == RoleScout
-	if role == RoleWorker && !e.SkipPostureClassifier {
-		switch {
-		case config.IsLocalProvider(e.Cfg.DefaultProvider):
-			readOnly = false
-		default:
-			readOnly = classifyPosture(ctx, e.Provider, e.Cfg.DefaultModel, userText)
-		}
-	}
 
 	specs := []llm.ToolSpec{}
 	if e.Tools != nil {

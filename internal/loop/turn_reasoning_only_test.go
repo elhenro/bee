@@ -43,7 +43,6 @@ func TestRun_ReasoningOnlyTurn_Nudges(t *testing.T) {
 	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	eng := &Engine{
-		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},
@@ -132,7 +131,6 @@ func TestRun_FailedToolCallShape_NudgesFormatCorrection(t *testing.T) {
 		return tools.Result{}, nil
 	}})
 	eng := &Engine{
-		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    reg,
 		Memory:   stubMemStore{},
@@ -171,7 +169,6 @@ func TestRun_ReasoningOnlyTurn_NudgesAtMostOnce(t *testing.T) {
 	cfg.Role = "worker"
 	cfg.Compaction = config.CompactionConfig{Enabled: false}
 	eng := &Engine{
-		SkipPostureClassifier: true,
 		Provider: prov,
 		Tools:    tools.NewRegistry(),
 		Memory:   stubMemStore{},
