@@ -53,8 +53,18 @@ func (l lockedRunner) Run(ctx context.Context, msg string) (loop.RunResult, erro
 // its activity into scrollback live, so the run shows what every bee is doing.
 func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan struct{}, content []types.ContentBlock, history, prior []types.Message) tea.Cmd {
 	planner := m.eng
+	// pump channels: the TUI's stream/think/progress/live pumps are armed at
+	// Init() against the parent engine's channels. In queen mode the parent
+	// engine never runs — work happens on sub-engines spawned below. Snapshot
+	// the TUI's channels here and re-bind them on every spawned engine so the
+	// planner's first call (decompose) and every worker/reviewer/synthesize
+	// turn stream reasoning + text deltas live into the same pump, instead of
+	// dropping them because the sub-engine's channels are nil.
 	warn := m.warnCh
 	live := m.liveMsgCh
+	stream := m.streamCh
+	think := m.thinkCh
+	progress := m.progressCh
 	task := hiveTaskWithContext(content, history)
 
 	workerCount := planner.Cfg.MastermindWorkers
@@ -131,7 +141,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 			eng, sess, err := hive.SpawnWorker(planner, label)
 			if err == nil {
 				eng.Costs = planner.Costs
-				eng.LiveMsgCh = live
+				wireHivePumps(eng, live, stream, think, progress)
 			}
 			return eng, sess, err
 		}
@@ -397,4 +407,27 @@ func formatWorker(i int, r hive.Result) string {
 		body = "_(no output)_"
 	}
 	return head + "\n\n" + body
+}
+
+// wireHivePumps binds the TUI's stream/think/progress/live pump channels onto
+// a hive sub-engine so its reasoning + text deltas render live in scrollback.
+// In queen mode the parent engine never runs; the planner's first call
+// (decompose) and every worker / reviewer / verifier / synthesize turn live on
+// sub-engines, and their ThinkCh / StreamCh / ProgressCh default to nil out of
+// SpawnWorker. nil-channel sends in turn_stream.go's non-blocking selects
+// swallow the delta — the user would see a spinner through the entire phase.
+// Reusing the parent engine's channels (the ones the TUI's pump waits on) is
+// the simplest fix: the planner, workers, reviewers, and verifier all push
+// into the same render path the worker/scout roles already use.
+//
+// Kept as a named function so the regression test can verify all four fields
+// are wired without spinning up the whole mastermind goroutine.
+func wireHivePumps(eng *loop.Engine, live chan types.Message, stream chan string, think chan string, progress chan int) {
+	if eng == nil {
+		return
+	}
+	eng.LiveMsgCh = live
+	eng.StreamCh = stream
+	eng.ThinkCh = think
+	eng.ProgressCh = progress
 }
