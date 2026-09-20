@@ -50,15 +50,22 @@ WIP limits are hard. A column over its limit means **stop pulling**, not "just t
 
 | 📥 Backlog | 🔜 Ready | 🚧 In Progress (WIP 3) | 👀 Review (WIP 2) | ✅ Done |
 |---|---|---|---|---|
-| T104 T203 T205 T206 T303 T304 T402 T404 T406 T407 T501 T503 T504 T506 T603 T604 T605 T703 T704 T802 T804 | T103 T105 T106 T202 T204 T302 T403 T405 T502 T602 T801 | T301 (`35e9c57`) T702 T803 | T505 (`7eceee0`) T201 (`d7b30b9`) | T101 T401 T701 T102 T601 |
+| T104 T203 T205 T206 T303 T304 T402 T404 T406 T407 T501 T503 T504 T506 T603 T604 T605 T703 T704 T802 T804 | T103 T105 T106 T204 T302 T403 T405 T502 T801 | T803 (`582fd4f`) T202 T602 | T301 (`35e9c57`) T702 (`9e25897`) | T101 T401 T701 T102 T601 T505 T201 |
 
 ⛔ **Blocked:** _(none yet)_
 
-> **Done (5):** T101 `379d442` · T401 `db4a68d` · T701 `aa663ec` · T102 `1037bbc` · T601 `1037bbc`.
-> Every Done card had an independent verifier verdict of VERIFIED and merge gates re-run on the
-> integration tip (last: G0 ✅ · G2 ✅ 0 issues · G3 ✅ 51.8s · G4 ✅ · G5 ✅ 34.3 == M0).
-> **In flight:** T702 (C14, machine status line) · T803 (C17, bench gate) · T301 built, awaiting a
-> Review slot. **Review:** T505 · T201.
+> **Done (7):** T101 `379d442` · T401 `db4a68d` · T701 `aa663ec` · T102 `1037bbc` · T601 `1037bbc`
+> · T505 `f97791a` · T201 `f97791a`. All independently VERIFIED; merge gates re-run on the
+> integration tip (last: G0 ✅ · G2 ✅ 0 issues · G3 ✅ 50.2s · G4 ✅ · G5 ✅ 34.3 == M0).
+> **In flight:** T202 (C16) · T602 (C13) · T803 built `582fd4f`, awaiting a Review slot.
+> **Review:** T301 · T702.
+>
+> ⚠ **T505 follow-up (for T506):** the verifier found that the **first run ignores the cron
+> `schedule`** — `New` seeds `nextDue = clock.Now()`, so every job fires on the first tick after
+> process start regardless of its expression (then follows the schedule). This is outside T505's
+> ACs and was documented by the builder as intended "due on first tick", but a yearly job firing on
+> every restart is likely wrong. **T506 must resolve it** (seed `nextDue = Schedule.Next(now)`) or
+> explicitly bless run-on-start in docs. Not blocking T505 (ACs green); filed here so it is not lost.
 
 ### Column rules (quick)
 - **📥 Backlog** — spec exists in TICKETS.md, dependencies may be unmet.
@@ -184,7 +191,7 @@ Every card's full spec lives in [TICKETS.md](./TICKETS.md). Card IDs are stable 
 
 | Metric | M0 (baseline) | M1 | M2 | M3 | M4 | M5 |
 |---|---|---|---|---|---|---|
-| Tickets Done | **5 / 42** | | | | | |
+| Tickets Done | **7 / 42** | | | | | |
 | Bench score (tiny profile) | **34.3** (holdout 50.4) | | | | | |
 | `go test ./...` duration | **42.5s** (`-count=1`) | | | | | |
 | Open blockers | 0 | | | | | |
