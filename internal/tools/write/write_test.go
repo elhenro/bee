@@ -305,3 +305,71 @@ func TestWrite_AllowsNormalCode(t *testing.T) {
 		t.Fatalf("normal code must not be misclassified: %s", res.Content)
 	}
 }
+
+// regression: a "rewrite the whole file" via `write` on an EXISTING file is
+// the wedge pattern that surfaces as ErrProviderReject — model emits the file
+// as text preamble, blows output budget, then truncates the tool call. guard
+// must redirect the model to `edit` or `shell`+`git checkout` for large
+// overwrites of existing files, while leaving new files uncapped.
+func TestWrite_RefusesLargeRewriteOfExisting(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "RobotDog.ts")
+	// start with a small file (so the file is "existing" but the *new* content
+	// crosses the rewrite cap).
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	big := strings.Repeat("export const x = 1;\n", 600) // ~12KB, > 8KB cap
+	w := New(dir)
+	res, _ := w.Run(context.Background(), map[string]any{"path": target, "content": big})
+	if !res.IsError {
+		t.Fatal("want IsError for large rewrite of existing file")
+	}
+	if !strings.Contains(res.Content, "edit") {
+		t.Errorf("error must redirect to `edit` tool; got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "git checkout") {
+		t.Errorf("error must redirect to `git checkout`; got: %s", res.Content)
+	}
+	// existing file must be untouched.
+	data, _ := os.ReadFile(target)
+	if string(data) != "old" {
+		t.Errorf("existing file must be untouched on refuse, got %q", string(data))
+	}
+}
+
+func TestWrite_AllowsLargeNewFile(t *testing.T) {
+	dir := t.TempDir()
+	big := strings.Repeat("export const x = 1;\n", 600) // > 8KB cap
+	w := New(dir)
+	res, _ := w.Run(context.Background(), map[string]any{
+		"path":    filepath.Join(dir, "new.go"),
+		"content": big,
+	})
+	if res.IsError {
+		t.Fatalf("new file must be uncapped: %s", res.Content)
+	}
+	info, _ := os.Stat(filepath.Join(dir, "new.go"))
+	if info == nil || info.Size() != int64(len(big)) {
+		t.Errorf("new file not written at full size, got %v", info)
+	}
+}
+
+func TestWrite_AllowsSmallRewriteOfExisting(t *testing.T) {
+	// the cap is for full-file rewrites of existing files; small overwrites
+	// (a config tweak, a typo fix) must still go through.
+	dir := t.TempDir()
+	target := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	res, _ := w.Run(context.Background(), map[string]any{"path": target, "content": "new"})
+	if res.IsError {
+		t.Fatalf("small rewrite of existing file must be allowed: %s", res.Content)
+	}
+	data, _ := os.ReadFile(target)
+	if string(data) != "new" {
+		t.Errorf("small rewrite not applied, got %q", string(data))
+	}
+}
