@@ -52,6 +52,7 @@ type Config struct {
 	Compaction CompactionConfig          `toml:"compaction"`
 	Watchdog   WatchdogConfig            `toml:"watchdog"`
 	Waggle     WaggleConfig              `toml:"waggle"`
+	TUI        TUIConfig                 `toml:"tui"`
 	Providers  map[string]ProviderConfig `toml:"providers"`
 	Profiles   map[string]Profile        `toml:"profiles"`
 
@@ -220,6 +221,19 @@ type Config struct {
 
 	// UpdateBranch is the branch to compare against. Empty = main.
 	UpdateBranch string `toml:"update_branch"`
+}
+
+// TUIConfig holds interactive-interface layout knobs. Kept separate from the
+// flat top-level chrome toggles so ordered layout data (status_line) stays
+// grouped and forward-compatible with machine-readable status modes.
+type TUIConfig struct {
+	// StatusLine is the ordered list of status-line item ids to render.
+	// Item ids are owned by the tui package's item registry. An omitted key
+	// (nil) uses the built-in default order; an explicit empty array hides
+	// the line. Unknown ids are ignored and duplicates keep the first
+	// occurrence, so a damaged list degrades gracefully instead of blocking
+	// startup. Toggled from config only — machine-readable mode is opt-in.
+	StatusLine []string `toml:"status_line"`
 }
 
 // UserTool describes a custom shell-alias tool. Name becomes the tool id the

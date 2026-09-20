@@ -6,85 +6,17 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-
 )
 
+// renderTopBar draws the configurable status line. Item set and order come
+// from the status registry (see statusline.go) via the tui.status_line config
+// list; an absent key falls back to the built-in default order, and an empty
+// list hides the row. Kept as a thin alias so callers (View, live-budget)
+// stay unchanged. The hex glyph doubles as a context-fill pie: outline when
+// empty, filled and color-tiered as input tokens grow against the model's
+// context window.
 func (m Model) renderTopBar() string {
-	// Slim, dim status line. Hex glyph doubles as a context-fill pie:
-	// outline when empty, filled and color-tiered as input tokens grow
-	// against the model's context window. Each chunk is independently
-	// toggleable via /settings; flipping all five user-visible chunks off
-	// collapses the entire row (caller drops the empty string from parts).
-	if !m.showBee && !m.showContextPct && !m.showModel && !m.showCwd && !m.showEffort && !m.showTurnTimer && !m.showGitBranch && !m.showTotalTokens {
-		return ""
-	}
-	hex := m.renderContextHex()
-	var leftParts []string
-	if hex != "" {
-		leftParts = append(leftParts, hex)
-	}
-	if m.showModel {
-		leftParts = append(leftParts, m.styles.Dim.Render(m.displayModel()))
-	}
-	if m.showCwd {
-		leftParts = append(leftParts, m.styles.Dim.Render(prettyCwd(m.cwd)))
-	}
-	if m.showGitBranch {
-		if br := gitBranch(m.cwd); br != "" {
-			leftParts = append(leftParts, m.styles.Dim.Render("⎇ "+br))
-		}
-	}
-	left := strings.Join(leftParts, "  ")
-	if m.costs != nil && !m.isLocalProvider() {
-		tot := m.costs.Total()
-		// only render badge when there's actual spend — free local models
-		// (ollama, lm-studio) report 0 USD and shouldn't show "$0.0000".
-		if tot.USD > 0 {
-			if left != "" {
-				left += "  "
-			}
-			left += m.renderCostBadge(tot.USD)
-		}
-	}
-	if m.showTotalTokens && m.costs != nil {
-		tot := m.costs.Total()
-		if n := tot.Input + tot.Output; n > 0 {
-			if left != "" {
-				left += "  "
-			}
-			left += m.styles.Dim.Render("Σ" + tokensHuman(n))
-		}
-	}
-	if gl := m.goalStatusLine(); gl != "" {
-		if left != "" {
-			left += "  "
-		}
-		left += m.styles.Dim.Render("◎ " + gl)
-	}
-	right := ""
-	if timer := m.renderTurnTimer(); timer != "" {
-		right += timer + "  "
-	}
-	// yolo badge is always shown — it's a safety state, not a chrome preference.
-	if yb := m.renderYoloBadge(); yb != "" {
-		right += yb + "  "
-	}
-	// showEffort gates the role chip AND the reasoning-budget chip — both
-	// live in the same chrome slot so users see "worker · t:max" at a glance.
-	// Thinking is per-role baked; the chip echoes the resolved value.
-	if m.showEffort {
-		if badge := m.renderRoleBadge(); badge != "" {
-			right += badge + "  "
-		}
-		if badge := m.renderEffortBadge(); badge != "" {
-			right += badge + "  "
-		}
-	}
-	pad := m.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if pad < 1 {
-		pad = 1
-	}
-	return left + strings.Repeat(" ", pad) + right
+	return m.renderStatusLine()
 }
 
 // renderTurnTimer formats a tiny right-side chip showing how long the bee
