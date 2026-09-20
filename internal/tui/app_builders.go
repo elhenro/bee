@@ -157,6 +157,19 @@ func (m Model) WithShowGitBranch(v bool) Model { m.showGitBranch = v; return m }
 // WithShowTotalTokens seeds top-bar session-tokens chip visibility.
 func (m Model) WithShowTotalTokens(v bool) Model { m.showTotalTokens = v; return m }
 
+// WithStatusLine seeds the ordered status-line item list from config. nil
+// keeps the built-in default order; a non-nil empty slice hides the line.
+// The slice is copied so later mutation of the config can't leak in.
+func (m Model) WithStatusLine(ids []string) Model {
+	if ids == nil {
+		m.statusLine = nil
+		return m
+	}
+	m.statusLine = make([]string, len(ids))
+	copy(m.statusLine, ids)
+	return m
+}
+
 // WithOuterPadLR seeds the left+right outer-padding cell count around the
 // live TUI region. Clamps to 0..8 so a tiny terminal can't collapse to a
 // sliver or get a negative value from a typo.

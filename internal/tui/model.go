@@ -442,6 +442,12 @@ type Model struct {
 	showGitBranch   bool
 	showTotalTokens bool
 
+	// statusLine is the ordered list of status-line item ids (see
+	// statusline.go) seeded from cfg.TUI.StatusLine. nil = use the built-in
+	// default order; a non-nil empty slice hides the line. Unknown ids are
+	// dropped at render time so a damaged config never blocks startup.
+	statusLine []string
+
 	// quitArmed is true after a first ctrl+d. Within quitConfirmWindow a
 	// second ctrl+d quits; any other key clears the armed state. Ctrl+c is
 	// not gated by this — POSIX cancel convention is single-press.

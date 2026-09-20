@@ -143,6 +143,7 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 			WithShowTurnTimer(eng.Cfg.ShowTurnTimer).
 			WithShowGitBranch(eng.Cfg.ShowGitBranch).
 			WithShowTotalTokens(eng.Cfg.ShowTotalTokens).
+			WithStatusLine(eng.Cfg.TUI.StatusLine).
 			WithOuterPadLR(eng.Cfg.OuterPadLR)
 	}
 	// hand the engine's stream channel to the model so deltas land in the
