@@ -50,15 +50,13 @@ WIP limits are hard. A column over its limit means **stop pulling**, not "just t
 
 | 📥 Backlog | 🔜 Ready | 🚧 In Progress (WIP 3) | 👀 Review (WIP 2) | ✅ Done |
 |---|---|---|---|---|
-| T104 T203 T205 T206 T303 T304 T402 T404 T406 T407 T501 T503 T504 T506 T603 T604 T605 T703 T704 T802 T804 | T103 T105 T106 T201 T202 T204 T301 T302 T403 T405 T502 T602 T702 T801 T803 | T102 T601 T505 | T701 (`211f434`) | T101 (`379d442`) T401 (`db4a68d`) |
+| T104 T203 T205 T206 T303 T304 T402 T404 T406 T407 T501 T503 T504 T506 T603 T604 T605 T703 T704 T802 T804 | T103 T105 T106 T202 T204 T302 T403 T405 T502 T602 T702 T801 T803 | T201 T301 T505 | T102 (`70bb83a`) T601 (`bbf7301`) | T101 (`379d442`) T401 (`db4a68d`) T701 (`aa663ec`) |
 
 ⛔ **Blocked:** _(none yet)_
 
-> **Wave A:** T101 ✅ (merge `379d442`) · T401 ✅ (merge `db4a68d`) · T701 in Review.
-> Merge gates re-run on the integration tip after each merge: G0 ✅ · G2 ✅ 0 issues · G3 ✅ 43.4s ·
-> G4 ✅ exit 0 · G5 ✅ 34.3 (== M0, no regression). Both T101 and T401 verifiers returned
-> **VERIFIED** with independent falsification (throwaway tests under `/tmp`, no repo writes).
-> Next pulls: T102 (C1, now free after T101), T601 (C13), T505 (C12).
+> **Landed:** T101 ✅ · T401 ✅ · T701 ✅ (all verifier-VERIFIED, merge gates re-run on the integration tip).
+> **In flight:** T201 (C16) · T301 (C6) · T505 (C12, built `7eceee0`, awaiting a Review slot).
+> **Review:** T102 · T601. T505 waits for a slot (Review WIP 2).
 
 ### Column rules (quick)
 - **📥 Backlog** — spec exists in TICKETS.md, dependencies may be unmet.
@@ -184,7 +182,7 @@ Every card's full spec lives in [TICKETS.md](./TICKETS.md). Card IDs are stable 
 
 | Metric | M0 (baseline) | M1 | M2 | M3 | M4 | M5 |
 |---|---|---|---|---|---|---|
-| Tickets Done | **2 / 42** | | | | | |
+| Tickets Done | **3 / 42** | | | | | |
 | Bench score (tiny profile) | **34.3** (holdout 50.4) | | | | | |
 | `go test ./...` duration | **42.5s** (`-count=1`) | | | | | |
 | Open blockers | 0 | | | | | |
