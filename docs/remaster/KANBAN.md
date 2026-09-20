@@ -50,13 +50,13 @@ WIP limits are hard. A column over its limit means **stop pulling**, not "just t
 
 | 📥 Backlog | 🔜 Ready | 🚧 In Progress (WIP 3) | 👀 Review (WIP 2) | ✅ Done |
 |---|---|---|---|---|
-| T104 T203 T205 T206 T303 T304 T402 T404 T406 T407 T501 T503 T504 T506 T603 T604 T605 T703 T704 T802 T804 | T102 T103 T105 T106 T201 T202 T204 T301 T302 T403 T405 T502 T505 T601 T602 T702 T801 T803 | T101 T401 T701 | _(empty)_ | _(empty)_ |
+| T104 T203 T205 T206 T303 T304 T402 T404 T406 T407 T501 T503 T504 T506 T603 T604 T605 T703 T704 T802 T804 | T102 T103 T105 T106 T201 T202 T204 T301 T302 T403 T405 T502 T505 T601 T602 T702 T801 T803 | T701 *(built `211f434`; queued for Review slot)* | T101 (`ad53556`) T401 (`546ef8d`) | _(empty)_ |
 
 ⛔ **Blocked:** _(none yet)_
 
-> **Wave A (disjoint clusters):** T101 (C1) · T401 (C8) · T701 (C14) started under WIP 3. Held in
-> 🔜 Ready pending a free WIP slot: **T601** (C13) · **T505** (C12). All five Wave-A clusters are
-> pairwise disjoint, so the only binding constraint is the WIP limit.
+> **Wave A (disjoint clusters):** T101 (C1) · T401 (C8) · T701 (C14). All three branches are cut from
+> `remaster/integration@70649d0` and are clean. Review holds 2 at a time per WIP; T701 waits for a slot.
+> Held in 🔜 Ready pending a free WIP slot: **T601** (C13) · **T505** (C12).
 
 ### Column rules (quick)
 - **📥 Backlog** — spec exists in TICKETS.md, dependencies may be unmet.
