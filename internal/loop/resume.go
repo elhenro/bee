@@ -29,8 +29,11 @@ const (
 	// should re-emit the call cleanly or escalate rather than re-derive it
 	// from a body the provider already rejected.
 	resumeProviderRejectMsg = "[resume] The provider rejected your previous request because a tool call had malformed arguments. " +
-		"Your prior tool_use has been removed from history. " +
-		"Re-issue the call with valid JSON for every required argument, or call the escalate tool if you cannot. " +
+		"Your prior tool_use (and the long preamble that drove it) has been removed from history. " +
+		"Do NOT retry the same call. The most common trigger is calling `write` on an existing file: the model prints the file as text, blows the output budget, then emits a truncated tool call. " +
+		"For targeted changes use the `edit` tool. For full-file rollbacks use `shell` with `git checkout -- <file>`. " +
+		"For new files or small rewrites `write` is fine. " +
+		"If you cannot fix it with those tools, call the escalate tool. " +
 		"Do not paraphrase the rejected call — start fresh from the user's request."
 )
 
@@ -128,4 +131,27 @@ func StripDanglingToolUse(msgs []types.Message) []types.Message {
 	copy(out, msgs)
 	out[len(out)-1].Content = kept
 	return out
+}
+
+// StripBrokenToolCall is the aggressive variant of StripDanglingToolUse, used
+// on the provider-reject auto-resume path. The broken tool_use is usually
+// preceded by a long text preamble (the file content the model was about to
+// "write") — keeping the text just lets the next attempt re-derive the same
+// wedge. Drop the entire trailing assistant message instead of preserving
+// the text. If the last message has no tool_use, this is a no-op (returns
+// msgs unchanged) so it's safe to call unconditionally on submit / resume.
+func StripBrokenToolCall(msgs []types.Message) []types.Message {
+	if len(msgs) == 0 {
+		return msgs
+	}
+	last := msgs[len(msgs)-1]
+	if last.Role != types.RoleAssistant {
+		return msgs
+	}
+	for _, b := range last.Content {
+		if b.Type == types.BlockToolUse {
+			return msgs[:len(msgs)-1]
+		}
+	}
+	return msgs
 }

@@ -293,8 +293,17 @@ func runHeadlessReal(args []string) {
 		fmt.Fprintf(os.Stderr, "bee: turn stopped (%s), auto-resuming %d/%d…\n",
 			d.Reason, attempt+1, cfg.Watchdog.Resumes())
 		// carry context into the next attempt, minus any tool_use left dangling
-		// by the aborted dispatch (replaying those is a wire error).
-		eng.InitialMessages = loop.StripDanglingToolUse(res.Messages)
+		// by the aborted dispatch (replaying those is a wire error). for
+		// provider-reject the broken tool_use is usually preceded by a long
+		// text preamble that drove the model into the wedge — drop the whole
+		// trailing assistant message so the next attempt doesn't re-derive
+		// the same broken approach. other resume reasons keep the text
+		// (it's useful context for a fresh turn).
+		if d.Reason == "provider-reject" {
+			eng.InitialMessages = loop.StripBrokenToolCall(res.Messages)
+		} else {
+			eng.InitialMessages = loop.StripDanglingToolUse(res.Messages)
+		}
 		msg = d.Continuation
 	}
 
