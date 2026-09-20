@@ -42,7 +42,7 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 	}
 	for _, u := range uses {
 		r := resByID[u.ID]
-		obs := e.run.repeats.ObserveWithResult(u, r.IsError, hashResult(r.Content))
+		obs := e.run.repeats.ObserveWithResult(u, r.IsError, r.Content)
 
 		// hard bail: same (tool,args) failed N times in a row OR same tool name
 		// failed K times in a row. give the model rope (nudges first), but stop

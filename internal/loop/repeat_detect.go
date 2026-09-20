@@ -21,12 +21,13 @@ type ToolCallSignature struct {
 // Observation summarizes what the tracker learned about a freshly observed
 // (ToolUse, isError) pair. Caller decides how to react.
 type Observation struct {
-	Sig                         ToolCallSignature
-	RepeatCount                 int  // how many times this exact Sig has fired this Run
-	ConsecutiveSameToolFailures int  // streak of failures on the same tool name (any args)
-	ConsecutiveSameSigFailures  int  // streak of failures on the same (tool,args) sig
-	SameResultCount             int  // successful calls of this Sig returning byte-identical output
-	IsTwoStrike                 bool // same Sig failed twice in a row → nudge (no longer bails)
+	Sig                           ToolCallSignature
+	RepeatCount                   int  // how many times this exact Sig has fired this Run
+	ConsecutiveSameToolFailures   int  // streak of failures on the same tool name (any args)
+	ConsecutiveSameSigFailures    int  // streak of failures on the same (tool,args) sig
+	SameResultCount               int  // successful calls of this Sig returning byte-identical output
+	ConsecutiveSameFamilyFailures int  // streak of failures sharing one (tool, error-family) key
+	IsTwoStrike                   bool // same Sig failed twice in a row → nudge (no longer bails)
 }
 
 // repeatTracker is a per-Run signal collector. cheap to allocate.
@@ -46,6 +47,11 @@ type repeatTracker struct {
 	lastSig    ToolCallSignature
 	lastFailed bool
 	hasLast    bool
+	// error-family streak: the last failing family key and the run of failures
+	// landing on it. reset by any success. see error_family.go.
+	familyKey    string
+	familyStreak int
+	familyActive bool
 }
 
 func newRepeatTracker() *repeatTracker {
@@ -63,10 +69,13 @@ func (t *repeatTracker) Observe(u types.ToolUse, isErr bool) Observation {
 	return t.ObserveWithResult(u, isErr, "")
 }
 
-// ObserveWithResult is Observe with the result-content hash, enabling the
-// identical-output streak. Empty hash skips that tracking.
-func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultHash string) Observation {
+// ObserveWithResult is Observe with the raw tool-result content. The content
+// fuels the identical-output streak (hashed internally) and the error-family
+// streak. Empty content skips output tracking but still permits family
+// clustering of empty-body errors.
+func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultContent string) Observation {
 	sig := signatureFor(u)
+	resultHash := hashResult(resultContent)
 	t.sigCounts[sig]++
 	if isErr {
 		t.failByTool[u.Name]++
@@ -80,6 +89,7 @@ func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultHas
 			t.lastResult[sig] = resultHash
 		}
 	}
+	familyStreak := t.observeFamily(u.Name, isErr, resultContent)
 	twoStrike := false
 	if t.hasLast && t.lastFailed && isErr && t.lastSig == sig {
 		twoStrike = true
@@ -96,13 +106,36 @@ func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultHas
 	t.lastFailed = isErr
 	t.hasLast = true
 	return Observation{
-		Sig:                         sig,
-		RepeatCount:                 t.sigCounts[sig],
-		ConsecutiveSameToolFailures: t.failByTool[u.Name],
-		ConsecutiveSameSigFailures:  t.failBySig,
-		SameResultCount:             t.sameResult[sig],
-		IsTwoStrike:                 twoStrike,
+		Sig:                           sig,
+		RepeatCount:                   t.sigCounts[sig],
+		ConsecutiveSameToolFailures:   t.failByTool[u.Name],
+		ConsecutiveSameSigFailures:    t.failBySig,
+		SameResultCount:               t.sameResult[sig],
+		ConsecutiveSameFamilyFailures: familyStreak,
+		IsTwoStrike:                   twoStrike,
 	}
+}
+
+// observeFamily folds one result into the error-family streak and returns the
+// current run length. A success clears the streak (the tool made progress); a
+// failure extends it only when its (tool, normalized-shape) key matches the
+// previous failing family, otherwise the streak restarts at 1.
+func (t *repeatTracker) observeFamily(toolName string, isErr bool, content string) int {
+	if !isErr {
+		t.familyStreak = 0
+		t.familyKey = ""
+		t.familyActive = false
+		return 0
+	}
+	key := errorFamilyKey(toolName, content)
+	if t.familyActive && t.familyKey == key {
+		t.familyStreak++
+	} else {
+		t.familyStreak = 1
+	}
+	t.familyKey = key
+	t.familyActive = true
+	return t.familyStreak
 }
 
 // batchKey returns a stable hash for one step's set of tool calls: each call
