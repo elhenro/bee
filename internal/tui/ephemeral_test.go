@@ -16,7 +16,7 @@ func TestNonEphemeral_DropsUIOnlyEchoes(t *testing.T) {
 	in := []types.Message{
 		{Role: types.RoleAssistant, Content: txt("(/new done)"), Ephemeral: true},
 		{Role: types.RoleUser, Content: txt("set threshold to 0.2")},
-		{Role: types.RoleAssistant, Content: txt("(queued: continue)"), Ephemeral: true},
+		{Role: types.RoleAssistant, Content: txt("(steering: continue)"), Ephemeral: true},
 		{Role: types.RoleAssistant, Content: txt("on it")},
 	}
 
@@ -29,7 +29,7 @@ func TestNonEphemeral_DropsUIOnlyEchoes(t *testing.T) {
 		if msg.Ephemeral {
 			t.Fatalf("ephemeral message leaked through: %+v", msg)
 		}
-		if txt := msg.Content[0].Text; txt == "(/new done)" || txt == "(queued: continue)" {
+		if txt := msg.Content[0].Text; txt == "(/new done)" || txt == "(steering: continue)" {
 			t.Fatalf("UI echo leaked into model context: %q", txt)
 		}
 	}

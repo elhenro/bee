@@ -232,6 +232,14 @@ func (m Model) renderLive(maxRows int) string {
 	if m.compacting || m.handoffing {
 		parts = append(parts, m.stream.RenderCompacting(m.loaderFrame))
 	}
+	// queued mid-compact: a plain-text submit landed while /compact was
+	// running. Render it inline below the compacting animation with the
+	// same blue rail+body the live region uses for sent user messages, so
+	// the queued text reads as "your turn, held until done" and stays
+	// visibly stuck to the input bar until onCompactDone drains it.
+	if m.compacting && m.queuedMidCompact != "" {
+		parts = append(parts, m.renderQueuedMidCompact())
+	}
 	if m.state == StateError && m.lastErr != "" {
 		parts = append(parts, m.renderErrorBlock(m.lastErr))
 	}
@@ -242,6 +250,22 @@ func (m Model) renderLive(maxRows int) string {
 		parts = append(parts, m.planmode.View())
 	}
 	return strings.Join(parts, "\n")
+}
+
+// renderQueuedMidCompact paints a plain-text submit that landed while
+// /compact was running. Styled like a sent user message — blue rail on
+// the left, bold blue body — so the queued text reads as the user's own
+// held turn rather than a meta echo. Multi-line input gets the rail
+// applied to every continuation line so the block stays anchored to the
+// left margin the way finalized user turns do.
+func (m Model) renderQueuedMidCompact() string {
+	rail := m.styles.UserRail.Render("┃")
+	body := m.styles.UserBody.Render
+	lines := strings.Split("queued: "+m.queuedMidCompact, "\n")
+	for i, ln := range lines {
+		lines[i] = rail + " " + body(ln)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderErrorBlock formats m.lastErr for the live region: strips noisy

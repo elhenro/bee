@@ -150,13 +150,12 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 			})
 			return m, m.flush()
 		}
+		// queue lives in m.queuedMidCompact only — renderLive paints it
+		// inline below the compacting animation as a blue "queued: <text>"
+		// line so it sits right above the input bar. No scrollback echo:
+		// the live line vanishes when onCompactDone drains the queue.
 		m.queuedMidCompact = text
-		m.messages = append(m.messages, types.Message{
-			Role:      types.RoleAssistant,
-			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(queued, runs after compact: " + text + ")"}},
-			Ephemeral: true,
-		})
-		return m, m.flush()
+		return m, nil
 	}
 	if m.state != StateIdle {
 		// mid-run slash commands: allow read-only ones (model, cost, tree,
@@ -390,11 +389,14 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 			}
 			// seed prior turns into the engine here, after the prior run released
 			// it, so two runs never write InitialMessages concurrently.
-			// StripDanglingToolUse scrubs any assistant tool_use that lacks a
-			// matching tool_result — a leftover from a turn the provider
-			// rejected for malformed arguments. Without this, the next
-			// provider call replays the bad tool_use and 400s again.
-			eng.InitialMessages = loop.StripDanglingToolUse(history)
+			// StripBrokenToolCall scrubs the trailing assistant message when it
+			// ends on a tool_use with no matching tool_result — a leftover from
+			// a turn the provider rejected for malformed arguments. the
+			// aggressive variant drops the whole message (including the long
+			// text preamble that drove the wedge) instead of just the tool_use
+			// block, so the next attempt doesn't re-derive the same broken
+			// approach. no-op when the last message is fine.
+			eng.InitialMessages = loop.StripBrokenToolCall(history)
 			res, err := eng.RunWithContentDisplay(ctx, content, display)
 			return turnDoneMsg{gen: gen, result: res, err: err}
 		},
