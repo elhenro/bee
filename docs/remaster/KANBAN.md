@@ -50,9 +50,13 @@ WIP limits are hard. A column over its limit means **stop pulling**, not "just t
 
 | 📥 Backlog | 🔜 Ready | 🚧 In Progress (WIP 3) | 👀 Review (WIP 2) | ✅ Done |
 |---|---|---|---|---|
-| T104 T203 T205 T206 T303 T304 T401 T402 T404 T406 T407 T501 T503 T504 T505 T506 T603 T604 T605 T703 T704 T802 T804 | T101 T102 T103 T105 T106 T201 T202 T204 T301 T302 T403 T405 T502 T601 T602 T701 T702 T801 T803 | _(empty — pull on start)_ | _(empty)_ | _(empty)_ |
+| T104 T203 T205 T206 T303 T304 T402 T404 T406 T407 T501 T503 T504 T506 T603 T604 T605 T703 T704 T802 T804 | T102 T103 T105 T106 T201 T202 T204 T301 T302 T403 T405 T502 T505 T601 T602 T702 T801 T803 | T101 T401 T701 | _(empty)_ | _(empty)_ |
 
 ⛔ **Blocked:** _(none yet)_
+
+> **Wave A (disjoint clusters):** T101 (C1) · T401 (C8) · T701 (C14) started under WIP 3. Held in
+> 🔜 Ready pending a free WIP slot: **T601** (C13) · **T505** (C12). All five Wave-A clusters are
+> pairwise disjoint, so the only binding constraint is the WIP limit.
 
 ### Column rules (quick)
 - **📥 Backlog** — spec exists in TICKETS.md, dependencies may be unmet.
@@ -176,11 +180,20 @@ Every card's full spec lives in [TICKETS.md](./TICKETS.md). Card IDs are stable 
 
 ## 7. Board metrics (update at each milestone)
 
-| Metric | Now | M1 | M2 | M3 | M4 | M5 |
+| Metric | M0 (baseline) | M1 | M2 | M3 | M4 | M5 |
 |---|---|---|---|---|---|---|
 | Tickets Done | 0 / 42 | | | | | |
-| Bench score (tiny profile) | baseline: _fill at M0_ | | | | | |
-| `go test ./...` duration | _fill_ | | | | | |
+| Bench score (tiny profile) | **34.3** (holdout 50.4) | | | | | |
+| `go test ./...` duration | **42.5s** (`-count=1`) | | | | | |
 | Open blockers | 0 | | | | | |
 
-> **M0 action (PM):** record the bench baseline and test wall-clock before the first ticket lands. Without a baseline, T803 cannot prove non-regression.
+> **M0 recorded 2026-09-20** on the merge base `main@8ee9812` (fast-forward of
+> `fix/provider-400-wedge-hardening`; tree identical to that branch tip). Provider: `stub` for
+> both bench and e2e (offline). Full gate sweep: G0 `go build ./...` ✅ · G2 `go vet ./...` ✅ +
+> `golangci-lint run` ✅ 0 issues (lint 2.13.2/go1.27.1) · G3 `go test ./... -count=1` ✅ 42.48s ·
+> G4 `BEE_TEST_PROVIDER=stub ./bee run --headless` ✅ exit 0 · G5 bench ✅ 34.3. Bench JSON:
+> `bench/results/m0-baseline.json` (gitignored).
+>
+> **Integration trunk:** `remaster/integration` (branched from `main@8ee9812`). Builders branch
+> `remaster/<ticket-id>-<slug>` off it; the Integrator merges reviewed branches here. `main` is
+> advanced only on an explicit PM/user decision.
