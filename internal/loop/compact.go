@@ -18,7 +18,7 @@ const PreserveTail = 4
 
 // CompactStats reports what a Compact call achieved. Duration spans the
 // LLM summarization plus token accounting. Token figures are estimates
-// derived from estimateMessageTokens so they line up with the
+// derived from the default TokenEstimator so they line up with the
 // auto-compact trigger heuristic.
 type CompactStats struct {
 	BeforeMsgs   int
@@ -36,7 +36,7 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	start := time.Now()
 	stats := CompactStats{
 		BeforeMsgs:   len(msgs),
-		BeforeTokens: totalTokens(msgs),
+		BeforeTokens: defaultTokenEstimator.EstimateMessages(msgs),
 	}
 	if len(msgs) <= PreserveTail {
 		stats.AfterMsgs = stats.BeforeMsgs
@@ -100,7 +100,7 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	}
 	out := append([]types.Message{summaryMsg}, preserved...)
 	stats.AfterMsgs = len(out)
-	stats.AfterTokens = totalTokens(out)
+	stats.AfterTokens = defaultTokenEstimator.EstimateMessages(out)
 	stats.Duration = time.Since(start)
 	return out, stats, nil
 }
@@ -115,16 +115,6 @@ func hasToolResult(m types.Message) bool {
 		}
 	}
 	return false
-}
-
-// totalTokens sums estimateMessageTokens across a slice. Same heuristic the
-// auto-compact trigger uses, so reported "size now" matches what the trigger sees.
-func totalTokens(msgs []types.Message) int {
-	t := 0
-	for _, m := range msgs {
-		t += estimateMessageTokens(m)
-	}
-	return t
 }
 
 // ShouldAutoCompact returns true if assembled prompt + history exceeds
@@ -149,38 +139,9 @@ func ShouldAutoCompactWithUsage(sys string, msgs []types.Message, actualInputTok
 	}
 	total := actualInputTokens
 	if total <= 0 {
-		total = prompt.EstimateTokens(sys)
-		for _, m := range msgs {
-			total += estimateMessageTokens(m)
-		}
+		total = prompt.EstimateTokens(sys) + defaultTokenEstimator.EstimateMessages(msgs)
 	}
 	return float64(total) > float64(budget)*threshold
-}
-
-// estimateMessageTokens approximates the token cost of one message by
-// summing every content block — not just text. Tool output dominates real
-// conversations, so ignoring BlockToolResult under-estimates by orders of
-// magnitude on tool-heavy turns.
-func estimateMessageTokens(m types.Message) int {
-	total := 0
-	for _, c := range m.Content {
-		switch c.Type {
-		case types.BlockText, types.BlockThinking:
-			total += prompt.EstimateTokens(c.Text)
-		case types.BlockToolUse:
-			if c.Use != nil {
-				if b, err := json.Marshal(c.Use.Input); err == nil {
-					total += prompt.EstimateTokens(string(b))
-				}
-				total += prompt.EstimateTokens(c.Use.Name)
-			}
-		case types.BlockToolResult:
-			if c.Result != nil {
-				total += prompt.EstimateTokens(c.Result.Content)
-			}
-		}
-	}
-	return total
 }
 
 // summaryToolResultCap bounds how much of a single tool result feeds the
@@ -255,5 +216,5 @@ func compactWorthwhile(msgs []types.Message, budget int) bool {
 	if floor < 2000 {
 		floor = 2000
 	}
-	return totalTokens(older) >= floor
+	return defaultTokenEstimator.EstimateMessages(older) >= floor
 }
