@@ -137,7 +137,6 @@ var unsafeFlags = map[string][]string{
 	"tree": {"-o"},
 	"date": {"-s", "--set"},
 	"file": {"-C", "--compile"},
-	"go":   {"-o", "-exec", "-toolexec", "-vettool", "-modfile", "-overlay", "-w", "-u", "-coverprofile", "-cpuprofile", "-memprofile", "-blockprofile", "-mutexprofile", "-trace"},
 	"git":  {"--output", "--ext-diff", "--exec-path"},
 }
 
@@ -158,6 +157,9 @@ func UnsafeInvocation(argv []string) bool {
 		return true
 	}
 	args := argv[1:]
+	if name == "go" && !goArgsSafe(args) {
+		return true
+	}
 	if name == "git" && len(args) > 0 {
 		switch args[0] {
 		case "branch":
@@ -196,13 +198,65 @@ func matchesUnsafeFlag(cmd, bad, arg string) bool {
 		name, _, _ := strings.Cut(arg, "=")
 		return len(name) >= 3 && strings.HasPrefix(name, "--") && strings.HasPrefix(bad, name)
 	}
-	if cmd == "go" {
-		// go's flag package: -f, --f, -f=v and --f=v are all one flag, never clustered
-		name, _, _ := strings.Cut(strings.TrimPrefix(arg, "-"), "=")
-		return "-"+strings.TrimPrefix(name, "-") == bad
-	}
 	if len(bad) == 2 && strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
 		return strings.ContainsRune(arg[1:], rune(bad[1]))
 	}
 	return false
+}
+
+// goSafeFlags is a closed set of flags per go subcommand. go's flag space is
+// too large to denylist (-test.* aliases, -ldflags, -C, -vettool, ...), so
+// any flag not listed here makes the invocation unsafe. Non-flag arguments
+// (packages, patterns, flag values) are not policed.
+var goSafeFlags = map[string][]string{
+	"build":    {"v", "race", "tags", "p"},
+	"test":     {"v", "race", "tags", "p", "run", "count", "short", "timeout", "json", "failfast", "shuffle", "parallel", "cover", "bench", "benchmem", "benchtime"},
+	"vet":      {"v", "tags", "p"},
+	"list":     {"f", "json", "m", "e", "deps", "test", "find", "tags"},
+	"env":      {"json"},
+	"version":  {"m", "v"},
+	"download": {"json"}, // go mod download
+	"verify":   nil,      // go mod verify
+}
+
+// goArgsSafe reports whether every flag in a go command line is on the
+// subcommand's allow set. Unknown subcommands are left to the prefix list.
+func goArgsSafe(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+	if strings.HasPrefix(args[0], "-") {
+		return false // go -C dir ...: global flags before the subcommand
+	}
+	sub, rest := args[0], args[1:]
+	if sub == "mod" {
+		if len(rest) == 0 {
+			return true
+		}
+		sub, rest = rest[0], rest[1:]
+		if sub != "download" && sub != "verify" {
+			return true
+		}
+	}
+	allowed, known := goSafeFlags[sub]
+	if !known {
+		return true
+	}
+	for _, a := range rest {
+		if !strings.HasPrefix(a, "-") || a == "-" {
+			continue
+		}
+		name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		ok := false
+		for _, f := range allowed {
+			if f == name {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
 }

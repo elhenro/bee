@@ -318,5 +318,5 @@ func toInt(v any) (int, error) {
 // command that starts the same way.
 func untrustedKey(cmd string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(cmd)))
-	return "untrusted:" + hex.EncodeToString(sum[:6])
+	return "untrusted:" + hex.EncodeToString(sum[:])
 }
