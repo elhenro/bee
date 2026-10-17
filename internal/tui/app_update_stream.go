@@ -339,6 +339,8 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	}
 	// error-resume cmd, populated in the error branch when the watchdog arms.
 	var errResumeCmd tea.Cmd
+	// a note for scrollback that is not part of the message list
+	var noteCmd tea.Cmd
 	// snapCmd, populated on a clean finish, snapshots the work-tree for rewind.
 	var snapCmd tea.Cmd
 	switch {
@@ -367,6 +369,10 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		// gate the `/` palette and `@` picker behind error-recovery).
 		if len(msg.result.Messages) > 0 {
 			m.messages = msg.result.Messages
+		}
+		if m.interrupted {
+			m.interrupted = false
+			noteCmd = m.printNotice("(interrupted)")
 		}
 		m.commitFlushed()
 		m.partial = ""
@@ -427,6 +433,9 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	// turn finished/cancelled/errored — no tools left in flight.
 	m.pendingTools = nil
 	flushCmd := m.flush()
+	if noteCmd != nil {
+		flushCmd = tea.Sequence(flushCmd, noteCmd)
+	}
 	// kick off the top-bar cost flash when a fresh event landed. Diff
 	// the call-count against the previous turn so multi-iteration loops
 	// fold all their per-iteration events into one visible delta.

@@ -2,7 +2,11 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
@@ -88,5 +92,47 @@ func TestModel_Submit_ChainsRunDone(t *testing.T) {
 	}
 	if m2.turnGen != 2 {
 		t.Fatalf("second submit should bump turnGen to 2, got %d", m2.turnGen)
+	}
+}
+
+// esc says so in the transcript; a cancel you didn't press esc for (stop
+// command, watchdog) says nothing extra
+func TestEscInterrupt_FlagIsConsumedByItsTurn(t *testing.T) {
+	m := newTestModel(t)
+	m.state = StateStreaming
+	nm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = nm.(Model)
+	if !m.interrupted {
+		t.Fatal("esc on a running turn did not arm the notice")
+	}
+	nm, cmd := m.Update(turnDoneMsg{err: context.Canceled})
+	m = nm.(Model)
+	if m.interrupted || cmd == nil {
+		t.Fatalf("the turn's cancel should consume the flag and print: interrupted=%v cmd=%v", m.interrupted, cmd)
+	}
+
+	// a flag left by an esc that raced a natural finish must not leak into the next turn
+	stale := newTestModel(t)
+	stale.interrupted = true
+	nm, _ = stale.submit("next task")
+	if nm.(Model).interrupted {
+		t.Fatal("a new turn inherited the interrupt flag")
+	}
+}
+
+// the notice is a printed line, not a message: a turn result replaces the
+// message list, which would swallow one appended before it
+func TestPrintNotice_RendersAQuietLine(t *testing.T) {
+	m := newTestModel(t)
+	cmd := m.printNotice("(interrupted)")
+	if cmd == nil {
+		t.Fatal("no cmd")
+	}
+	got := stripANSI(fmt.Sprintf("%+v", cmd()))
+	if !strings.Contains(got, "interrupted") || strings.Contains(got, "(") {
+		t.Fatalf("printed %q", got)
+	}
+	if len(m.messages) != 0 {
+		t.Fatalf("notice leaked into the message list: %+v", m.messages)
 	}
 }

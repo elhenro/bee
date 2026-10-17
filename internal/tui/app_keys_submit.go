@@ -256,6 +256,7 @@ func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 // scrollback while the expanded skill body (text) goes to the model.
 func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	m.state = StateStreaming
+	m.interrupted = false
 	// a fresh turn supersedes any stashed bail reason — a later /handoff must
 	// not inherit a stall from an already-recovered failure.
 	m.handoffStall = ""

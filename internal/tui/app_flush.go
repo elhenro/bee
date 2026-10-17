@@ -96,6 +96,21 @@ func (m *Model) flush() tea.Cmd {
 	return tea.Sequence(cmds...)
 }
 
+// a one-off scrollback line that never enters m.messages: a turn result
+// replaces that list wholesale, and a note appended before then can land
+// behind the printed count and be skipped
+func (m *Model) printNotice(text string) tea.Cmd {
+	rendered := m.stream.RenderMessage(ephemeral(text))
+	if rendered == "" {
+		return nil
+	}
+	w := m.width
+	if w < 4 {
+		w = 80
+	}
+	return tea.Println(ansi.Hardwrap(expandTabs(rendered), w, true))
+}
+
 // commitFlushed transfers any progressively-flushed prefix from the active
 // stream over to pendingFlushedPrefix so the next flush() call can suppress
 // the already-printed head from the final assistant message. Must be called
