@@ -133,8 +133,15 @@ func TestApprover_UntrustedAllowOnceRuns(t *testing.T) {
 	}
 }
 
-func TestUntrustedKey_ScopedToProgram(t *testing.T) {
-	if got := untrustedKey("make build"); got != "untrusted:make" {
-		t.Fatalf("key = %q", got)
+func TestUntrustedKey_ScopedToExactCommand(t *testing.T) {
+	a, b := untrustedKey("make build"), untrustedKey("make build && rm -rf x")
+	if a == b {
+		t.Fatal("different command lines must not share a grant key")
+	}
+	if a != untrustedKey("  make build ") {
+		t.Fatal("key should ignore outer whitespace")
+	}
+	if untrustedKey(`bash -c "ls"`) == untrustedKey(`bash -c "rm f"`) {
+		t.Fatal("shell wrapper must not share a key")
 	}
 }

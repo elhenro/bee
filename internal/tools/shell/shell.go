@@ -6,6 +6,8 @@
 package shell
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"bytes"
 	"context"
 	"errors"
@@ -311,11 +313,10 @@ func toInt(v any) (int, error) {
 	}
 }
 
-// untrustedKey scopes session/persistent grants to the program, so allowing
-// `make` once never approves every other unknown command.
+// untrustedKey scopes a grant to this exact command line. Keying on the
+// program name would let one approval of `bash` or `cd` cover every later
+// command that starts the same way.
 func untrustedKey(cmd string) string {
-	if f := strings.Fields(cmd); len(f) > 0 {
-		return "untrusted:" + f[0]
-	}
-	return "untrusted"
+	sum := sha256.Sum256([]byte(strings.TrimSpace(cmd)))
+	return "untrusted:" + hex.EncodeToString(sum[:6])
 }

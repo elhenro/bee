@@ -48,7 +48,7 @@ func plainSegments(cmd string, depth int) ([][]string, bool) {
 			}
 			return nil, false
 		}
-		if hasSubstitution(t) {
+		if hasSubstitution(t) || hasDollarQuote(t) {
 			return nil, false
 		}
 		cur = append(cur, t.Value)
@@ -72,6 +72,13 @@ func hasSubstitution(t Token) bool {
 		}
 	}
 	return false
+}
+
+// hasDollarQuote flags $'...' and $\"...\" words. The shell decodes escapes
+// inside them (a literal \\n becomes a newline), which the tokenizer does
+// not, so the decoded text could hide extra commands from the checks here.
+func hasDollarQuote(t Token) bool {
+	return strings.Contains(t.Raw, "$'") || strings.Contains(t.Raw, `$"`)
 }
 
 // unwrapShells replaces `sh|bash|zsh -c|-lc <script>` segments with the
@@ -130,7 +137,7 @@ var unsafeFlags = map[string][]string{
 	"tree": {"-o"},
 	"date": {"-s", "--set"},
 	"file": {"-C", "--compile"},
-	"go":   {"-o", "-exec", "-toolexec", "-overlay", "-coverprofile", "-cpuprofile", "-memprofile", "-blockprofile", "-mutexprofile", "-trace"},
+	"go":   {"-o", "-exec", "-toolexec", "-overlay", "-w", "-u", "-coverprofile", "-cpuprofile", "-memprofile", "-blockprofile", "-mutexprofile", "-trace"},
 	"git":  {"--output", "--ext-diff", "--exec-path"},
 }
 
@@ -169,11 +176,32 @@ func UnsafeInvocation(argv []string) bool {
 	}
 	for _, bad := range unsafeFlags[name] {
 		for _, a := range args {
-			if a == bad || (strings.HasPrefix(bad, "--") && strings.HasPrefix(a, bad+"=")) ||
-				(name == "go" && strings.HasPrefix(a, bad+"=")) {
+			if matchesUnsafeFlag(name, bad, a) {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// matchesUnsafeFlag reports whether arg could select the denied flag bad.
+// It is deliberately wider than equality: long options may be abbreviated
+// (--out for --output) and short ones clustered or glued to a value
+// (-ao, -ofile). A false positive only costs an approval prompt.
+func matchesUnsafeFlag(cmd, bad, arg string) bool {
+	if arg == bad {
+		return true
+	}
+	if strings.HasPrefix(bad, "--") {
+		name, _, _ := strings.Cut(arg, "=")
+		return len(name) >= 3 && strings.HasPrefix(name, "--") && strings.HasPrefix(bad, name)
+	}
+	if cmd == "go" {
+		// go's flag package: -o=value, never clustered
+		return strings.HasPrefix(arg, bad+"=")
+	}
+	if len(bad) == 2 && strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
+		return strings.ContainsRune(arg[1:], rune(bad[1]))
 	}
 	return false
 }
