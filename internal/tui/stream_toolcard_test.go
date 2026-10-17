@@ -230,3 +230,28 @@ func TestSearchRow_SplitsPathFromMatch(t *testing.T) {
 		t.Fatalf("bare row should carry one style, got %d: %q", got, bare)
 	}
 }
+
+func TestExpandTabs_AlignsToStops(t *testing.T) {
+	got := expandTabs("f\t21\tgo.mod\nd\t96\tinternal\nf\t253\tmain.go")
+	rows := strings.Split(got, "\n")
+	want := []string{"f   21  go.mod", "d   96  internal", "f   253 main.go"}
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Fatalf("row %d = %q, want %q", i, rows[i], want[i])
+		}
+	}
+	// escapes take no width: `ab` is two cells, so the tab pads two more
+	if got := expandTabs("\x1b[31mab\x1b[0m\tc"); got != "\x1b[31mab\x1b[0m  c" {
+		t.Fatalf("escape width counted: %q", got)
+	}
+	// wide runes count two cells
+	if got := expandTabs("界\tc"); got != "界  c" {
+		t.Fatalf("wide rune width wrong: %q", got)
+	}
+	if got := expandTabs("\t\tx"); got != "        x" {
+		t.Fatalf("leading tabs = %q", got)
+	}
+	if got := expandTabs("no tabs here"); got != "no tabs here" {
+		t.Fatalf("plain text changed: %q", got)
+	}
+}

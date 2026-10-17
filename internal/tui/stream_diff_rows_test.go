@@ -233,4 +233,7 @@ func TestSummarizeSearch_DefaultScopeStaysQuiet(t *testing.T) {
 	if got := summarizeToolArgs("glob", map[string]any{"name": "*.go", "path": "./"}, 80); got != "*.go" {
 		t.Fatalf("glob root scope leaked: %q", got)
 	}
+	if got := summarizeToolArgs("glob", map[string]any{"pattern": "*_test.go", "path": "internal"}, 80); got != "*_test.go  · internal" {
+		t.Fatalf("glob pattern spelling not summarized: %q", got)
+	}
 }

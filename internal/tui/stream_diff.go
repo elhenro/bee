@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -18,11 +20,9 @@ const diffPreviewLinesCompact = 14
 // blow the cap; LCS already strips matched lines.
 const diffContextLines = 1
 
-// diffTabWidth expands tab characters in diff bodies to a fixed number of
-// spaces. Tabs were rendering as terminal default tab stops (8 cols) inside
-// a styled rail, which visually skewed indentation and pushed continuation
-// content off the right edge of the card. 4 spaces matches the project's
-// gofmt visual width and stays readable on narrow terminals.
+// diffTabWidth is the tab stop expandTabs aligns to. Terminal default stops
+// (8 cols) pushed indentation off the right edge of a card; 4 matches gofmt's
+// visual width and stays readable on narrow terminals.
 const diffTabWidth = 4
 
 // renderEditPreview turns a file-mutation tool call into a `path` header +
@@ -116,17 +116,37 @@ func splitKeepEmpty(s string) []string {
 	return strings.Split(s, "\n")
 }
 
-// expandTabs replaces tab characters with diffTabWidth spaces. Diff rows
-// render under a styled rail and a 1-col `+`/`-` sign, so raw tabs land on
-// terminal-default tab stops (8 cols) and jump content well past the rail's
-// visual indent — making it look as if random characters were prepended to
-// the first identifier. Expanding here keeps the visual column for each
-// rendered line aligned with the rail.
+// expandTabs replaces each tab with spaces up to the next stop, diffTabWidth
+// wide, counting from the start of its line. A fixed run of spaces would skew
+// columns an output lined up with tabs (ls, go test); a raw tab is worse, it
+// skips cells without erasing them, so a redrawn row keeps stale characters.
+// Escape sequences take no width and a newline restarts the column.
 func expandTabs(s string) string {
 	if !strings.ContainsRune(s, '\t') {
 		return s
 	}
-	return strings.ReplaceAll(s, "\t", strings.Repeat(" ", diffTabWidth))
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+	var state byte
+	col := 0
+	for len(s) > 0 {
+		seq, w, n, next := ansi.DecodeSequence(s, state, nil)
+		state = next
+		switch {
+		case seq == "\t":
+			pad := diffTabWidth - col%diffTabWidth
+			b.WriteString("    "[:pad])
+			col += pad
+		case strings.ContainsAny(seq, "\r\n"):
+			b.WriteString(seq)
+			col = 0
+		default:
+			b.WriteString(seq)
+			col += w
+		}
+		s = s[n:]
+	}
+	return b.String()
 }
 
 // numericField coerces a JSON number (float64 from encoding/json) or int into int.

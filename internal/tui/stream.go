@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/elhenro/bee/internal/types"
 )
@@ -47,6 +46,8 @@ func applyGutter(s string) string {
 type StreamRenderer struct {
 	styles       Styles
 	md           *glamour.TermRenderer
+	mdWrap       int                           // wrap width md renders at
+	mdTables     map[int]*glamour.TermRenderer // per table width, see renderMarkdown
 	width        int
 	verbose      bool
 	showThoughts bool
@@ -222,29 +223,17 @@ func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 	if width <= 0 {
 		width = 80
 	}
-	// no WithAutoStyle: its OSC 11 reply leaks into the input; follow the
-	// lipgloss flag cmd/bee/tui.go set from BEE_THEME / COLORFGBG
-	// WithPreservedNewLines keeps model's intentional line breaks (lists,
-	// short prose lines) instead of collapsing them into one paragraph.
-	// WithEmoji expands `:sparkles:` shortcodes — cheap delight.
 	// gutter + marker column + right margin
 	wrap := width - 4
 	if wrap < 20 {
 		wrap = width
 	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStyles(markdownStyle(lipgloss.HasDarkBackground())),
-		glamour.WithWordWrap(wrap),
-		glamour.WithPreservedNewLines(),
-		glamour.WithEmoji(),
-	)
-	if err != nil {
-		// fallback: nil md renderer means plain text.
-		r = nil
-	}
+	// a nil md renderer means plain text
+	r := newMarkdown(wrap)
 	return &StreamRenderer{
 		styles:       styles,
 		md:           r,
+		mdWrap:       wrap,
 		width:        width,
 		showThoughts: true,
 		highlight:    true,

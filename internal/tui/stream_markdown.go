@@ -21,7 +21,7 @@ func (r *StreamRenderer) renderText(s string) string {
 		return wrapText(s, r.textWidth(markIndent))
 	}
 	s = rewriteShellSessionFences(s)
-	out, err := r.md.Render(s)
+	out, err := r.renderMarkdown(s)
 	if err != nil {
 		return s
 	}

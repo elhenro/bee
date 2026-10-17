@@ -123,11 +123,15 @@ func narrowsScope(path string) bool {
 }
 
 // summarizeGlob renders a glob tool call with the filename pattern leading.
-// Optional `path` trails as `· <path>`. Returns (_, false) when name is
-// missing so the caller falls back to the generic summary.
+// Optional `path` trails as `· <path>`. Returns (_, false) when no pattern is
+// given so the caller falls back to the generic summary. `name` is the
+// legacy spelling of `pattern`.
 func summarizeGlob(in map[string]any, budget int) (string, bool) {
-	name, ok := in["name"].(string)
-	if !ok || name == "" {
+	name, _ := in["pattern"].(string)
+	if name == "" {
+		name, _ = in["name"].(string)
+	}
+	if name == "" {
 		return "", false
 	}
 	out := name
