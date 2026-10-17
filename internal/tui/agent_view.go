@@ -149,7 +149,7 @@ func (a *AgentView) Render(width, height int) string {
 		for i, r := range a.rows {
 			marker := " "
 			if i == a.selected {
-				marker = avSelStyle.Render("▸")
+				marker = avSelStyle.Render(glyphSel)
 			}
 			lines = append(lines, fmt.Sprintf("%s %s  %-10s  %-8s  ⬢ %s",
 				marker,
@@ -172,7 +172,7 @@ func (a *AgentView) Render(width, height int) string {
 	}
 	lines = append(lines, "", a.reply.View())
 	if a.err != "" {
-		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("#ff5f5f")).Render("error: "+a.err))
+		lines = append(lines, lipgloss.NewStyle().Foreground(semError).Render("error: "+a.err))
 	}
 	_ = height
 	return strings.Join(lines, "\n")
@@ -181,11 +181,11 @@ func (a *AgentView) Render(width, height int) string {
 func stateLabel(s bgreg.State) string {
 	switch s {
 	case bgreg.StateActive:
-		return lipgloss.NewStyle().Foreground(accentBusy).Render(string(s))
-	case bgreg.StateAwaiting:
 		return lipgloss.NewStyle().Foreground(accentHoney).Render(string(s))
+	case bgreg.StateAwaiting:
+		return lipgloss.NewStyle().Foreground(semWarning).Render(string(s))
 	case bgreg.StateFailed:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#ff5f5f")).Render(string(s))
+		return lipgloss.NewStyle().Foreground(semError).Render(string(s))
 	default:
 		return avDim.Render(string(s))
 	}
