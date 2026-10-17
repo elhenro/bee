@@ -33,30 +33,37 @@ func touchesGate(repoRoot, dir string) bool {
 
 // gatePaths are the pathspecs a branch may not touch: the whole .bee dir in
 // any case (a case-insensitive filesystem maps .BEE onto .bee, and a .bee
-// symlink would redirect the gate), plus the in-repo file the gate resolves
-// to when it is a symlink.
+// symlink would redirect the gate), plus every in-repo link and target the
+// main checkout's gate resolves through.
 func gatePaths(repoRoot string) []string {
 	specs := []string{":(icase)" + filepath.Dir(gate.File)}
 	root, err := filepath.EvalSymlinks(repoRoot)
 	if err != nil {
 		return specs
 	}
-	real, err := filepath.EvalSymlinks(filepath.Join(root, gate.File))
-	if err != nil {
-		return specs
-	}
-	rel, err := filepath.Rel(root, real)
-	if err == nil && rel != gate.File && rel != ".." && !strings.HasPrefix(rel, "../") {
-		specs = append(specs, ":(literal)"+filepath.ToSlash(rel))
+	for _, p := range linkChain(root, gate.File) {
+		if p != gate.File {
+			specs = append(specs, ":(literal)"+p)
+		}
 	}
 	return specs
 }
 
-// pristine checks sha out detached into a temp dir, so verify sees exactly
-// the commit being merged: no untracked or ignored leftovers from the agent.
-// The gate must therefore bring its own dependencies.
+// pristine checks sha out detached, so verify sees exactly the commit being
+// merged: no untracked or ignored leftovers from the agent. The gate must
+// therefore bring its own dependencies. The checkout lives in a private dir
+// under bee home, outside every agent's sandbox write roots (tmp is shared
+// with them), so no other agent can edit it while verify runs.
 func pristine(repoRoot, sha string) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "bee-verify-")
+	home, err := beeHome()
+	if err != nil {
+		return "", nil, err
+	}
+	base := filepath.Join(home, "verify")
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return "", nil, err
+	}
+	dir, err := os.MkdirTemp(base, "v-")
 	if err != nil {
 		return "", nil, err
 	}

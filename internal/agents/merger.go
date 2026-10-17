@@ -267,5 +267,10 @@ func verifyPinned(ctx context.Context, repoRoot, pinned string, sw config.SwarmC
 		return gate.Result{}, err
 	}
 	defer cleanup()
-	return gate.Run(ctx, dir, cmds, gate.Opts{Timeout: sw.VerifyTimeout(), Scope: agentScope})
+	res, err := gate.Run(ctx, dir, cmds, gate.Opts{Timeout: sw.VerifyTimeout(), Scope: agentScope})
+	// a checkout that moved off pinned verified something else
+	if head, herr := gitOut(dir, "rev-parse", "HEAD"); err == nil && (herr != nil || head != pinned) {
+		return gate.Result{Ran: res.Ran, Failed: "checkout integrity", Output: "verify checkout moved off " + pinned}, nil
+	}
+	return res, err
 }

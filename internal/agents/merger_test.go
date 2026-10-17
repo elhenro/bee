@@ -304,3 +304,30 @@ func TestVerifyIgnoresIgnoredLeftovers(t *testing.T) {
 		t.Fatalf("verify checkout not cleaned up:\n%s", out)
 	}
 }
+
+// the main checkout's gate goes .bee/verify -> hop -> real; retargeting the
+// middle link would change the gate without touching .bee.
+func TestGateIntermediateLinkBlocks(t *testing.T) {
+	f := newFixture(t)
+	commit(t, f.repo, "real", "true\n")
+	_ = os.MkdirAll(filepath.Join(f.repo, ".bee"), 0o755)
+	if err := os.Symlink("../hop", filepath.Join(f.repo, ".bee", "verify")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(f.repo, "hop")); err != nil {
+		t.Fatal(err)
+	}
+	git(t, f.repo, "add", "hop")
+	git(t, f.repo, "commit", "-q", "-m", "hop link")
+	git(t, f.wt, "rebase", "-q", "main")
+	_ = os.Remove(filepath.Join(f.wt, "hop"))
+	if err := os.Symlink("feature.txt", filepath.Join(f.wt, "hop")); err != nil {
+		t.Fatal(err)
+	}
+	git(t, f.wt, "add", "hop")
+	git(t, f.wt, "commit", "-q", "-m", "retarget")
+	TryMerge(context.Background(), f.repo, f.status(t), config.SwarmConfig{})
+	if s := f.status(t); s.MergeState != bgreg.MergeStateBlocked {
+		t.Fatalf("merge=%s, retargeting a gate hop must block", s.MergeState)
+	}
+}
