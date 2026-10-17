@@ -30,6 +30,18 @@ func (r *loopRunner) Run(ctx context.Context, prompt string) (loop.RunResult, er
 	return r.eng.Run(ctx, prompt)
 }
 func (r *loopRunner) CostTotal() cost.Summary { return r.eng.Costs.Total() }
+func (r *loopRunner) MarkOutcome(ok bool)     { r.eng.Waggle.MarkOutcome(ok) }
+
+// outcomeMarker is implemented by runners whose engine mines procedure memory.
+// A kept iteration verifies the tool routes it recorded; a rolled-back one
+// discards them, so a mutating route is only learned from work that survived.
+type outcomeMarker interface{ MarkOutcome(ok bool) }
+
+func markOutcome(eng Runner, ok bool) {
+	if m, is := eng.(outcomeMarker); is {
+		m.MarkOutcome(ok)
+	}
+}
 
 // preamble is prepended to every iteration prompt. The engine runs without a
 // human at the keyboard so it must be told to make ONE small change and stop,
@@ -198,6 +210,7 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 		// DONE wins regardless of iter shape — an agent that says "objective
 		// already complete" without touching files must not be force-looped.
 		if sentinel.IsDone(res.Subject) {
+			markOutcome(eng, res.Status == IterCommitted || res.Status == IterNoop)
 			if res.Status == IterCommitted {
 				run.Commits = append(run.Commits, res.CommitSHA)
 				_ = AppendNote(run.ID, iter, res.Subject, res.DiffStat)
@@ -213,6 +226,7 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 
 		switch res.Status {
 		case IterCommitted:
+			markOutcome(eng, true)
 			consecutiveFails = 0
 			consecutiveNoops = 0
 			run.Commits = append(run.Commits, res.CommitSHA)
@@ -229,6 +243,8 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 			// killed, but leave a note (so the next prompt shows the survey
 			// already happened) and track the streak so a model that only ever
 			// surveys can't spin to MaxIterations committing nothing.
+			// nothing mutated, so the span holds only reads: keep them.
+			markOutcome(eng, true)
 			consecutiveFails = 0
 			consecutiveNoops++
 			_ = AppendNote(run.ID, iter, "noop — no file changes this iteration", res.Subject)
@@ -238,6 +254,7 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 				goto finish
 			}
 		case IterReset, IterFailed:
+			markOutcome(eng, false)
 			consecutiveFails++
 			if consecutiveFails >= maxFails {
 				run.Status = StatusFailed

@@ -59,7 +59,7 @@ func scriptOf(c Candidate) (script string, params []string, ok bool) {
 	paramTok := func(step int, key string) string {
 		if m := paramPos[step]; m != nil {
 			if n, ok := m[key]; ok {
-				return fmt.Sprintf("$%d", n)
+				return fmt.Sprintf("\"$%d\"", n)
 			}
 		}
 		return ""

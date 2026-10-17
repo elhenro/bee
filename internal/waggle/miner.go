@@ -7,10 +7,15 @@ import (
 
 // MineConfig bounds the search. MinLen/MaxLen cap route length; K is the minimum
 // number of non-overlapping occurrences before a route is worth crystallizing.
+// Mutating admits windows that contain mutating calls, provided every call in
+// the window is Verified and every mutator is a shell command; such a route
+// crystallizes as a recipe (explicit, approval-gated), never as a replayable
+// exec waggle.
 type MineConfig struct {
-	MinLen int
-	MaxLen int
-	K      int
+	MinLen   int
+	MaxLen   int
+	K        int
+	Mutating bool
 }
 
 // Param marks an argument position whose value varies across occurrences, so it
@@ -53,7 +58,10 @@ func Mine(calls []Call, cfg MineConfig) []Candidate {
 		var order []string
 		for i := 0; i+l <= n; i++ {
 			win := calls[i : i+l]
-			if windowHasMutator(win) || !isPrimitive(win) {
+			if windowHasMutator(win) && (!cfg.Mutating || !verifiedProcedure(win)) {
+				continue
+			}
+			if !isPrimitive(win) {
 				continue
 			}
 			sig := shapeSig(win)
@@ -96,8 +104,25 @@ func windowHasMutator(win []Call) bool {
 	return false
 }
 
+// verifiedProcedure reports whether a window with mutators may be mined: every
+// call verified by an outcome mark, and every mutator a shell command. Edits
+// and writes carry file contents, which are task data rather than procedure.
+func verifiedProcedure(win []Call) bool {
+	for _, c := range win {
+		if !c.Verified || (c.Mutates && c.Tool != "bash") {
+			return false
+		}
+	}
+	return true
+}
+
 // callShape is the value-independent identity of a call: tool + sorted arg keys.
+// A shell call is identified by its command: two different commands are two
+// different steps, not one parameterizable shape.
 func callShape(c Call) string {
+	if c.Tool == "bash" {
+		return "bash{" + c.Args["command"] + "}"
+	}
 	return c.Tool + "(" + strings.Join(sortedKeys(c.Args), ",") + ")"
 }
 

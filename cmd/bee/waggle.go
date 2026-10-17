@@ -61,5 +61,8 @@ func waggleLs(scope string, s *waggle.Store) {
 	for _, m := range metas {
 		st := stats[m.Name]
 		fmt.Printf("  %s  (uses %d, ~%d tok saved): %s\n      $ %s\n", m.Name, st.Uses, st.Yield, m.Description, m.Script)
+		if m.Kind == "recipe" {
+			fmt.Printf("      recipe with shell steps, run: bee %s\n", m.Name)
+		}
 	}
 }

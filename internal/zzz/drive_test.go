@@ -25,6 +25,13 @@ type stubRunner struct {
 	dir    string
 	total  cost.Summary
 	tokens int
+	marks  []bool // outcome marks, in order
+}
+
+func (s *stubRunner) MarkOutcome(ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.marks = append(s.marks, ok)
 }
 
 type stubTurn struct {
@@ -180,6 +187,22 @@ func TestDrive_NoopDoesNotCountAsFail(t *testing.T) {
 	if len(run.Commits) != 1 {
 		t.Errorf("want 1 commit, got %d", len(run.Commits))
 	}
+	// noop and committed iterations both keep their forage span.
+	if want := []bool{true, true, true}; !equalBools(runner.marks, want) {
+		t.Errorf("outcome marks: got %v want %v", runner.marks, want)
+	}
+}
+
+func equalBools(a, b []bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // TestDrive_BLOCKEDStashesPatch confirms a BLOCKED iter writes blocked-N.patch

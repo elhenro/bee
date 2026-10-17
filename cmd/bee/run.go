@@ -189,6 +189,9 @@ func runHeadlessReal(args []string) {
 	if *skillName != "" {
 		s, ok := skillReg.Get(*skillName)
 		if !ok {
+			s, ok = waggleSkill(*skillName)
+		}
+		if !ok {
 			fmt.Fprintf(os.Stderr, "bee run: unknown skill %q\n", *skillName)
 			os.Exit(2)
 		}

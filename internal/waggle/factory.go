@@ -3,12 +3,18 @@ package waggle
 // ProjectManager builds the project-scoped procedure-memory manager for cwd. It
 // observes read-only routes and crystallizes repeated ones under the project
 // store. Returns nil on store error, leaving the feature inert.
-func ProjectManager(cwd string) *Manager {
+func ProjectManager(cwd string) *Manager { return ProjectManagerLearning(cwd, false) }
+
+// ProjectManagerLearning is ProjectManager with mutating-route mining switched
+// by mutating. Only a caller that reports outcomes through MarkOutcome (an
+// unattended commit-or-reset loop) should pass true: without marks no mutating
+// window is ever verified, so the switch is inert anyway.
+func ProjectManagerLearning(cwd string, mutating bool) *Manager {
 	store, err := ProjectStore(cwd)
 	if err != nil {
 		return nil
 	}
-	return NewManager(store, ManagerConfig{Scope: ScopeProject})
+	return NewManager(store, ManagerConfig{Scope: ScopeProject, Mine: MineConfig{Mutating: mutating}})
 }
 
 // ProjectReplayer loads crystallized routes (project store for cwd plus the

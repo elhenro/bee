@@ -12,13 +12,16 @@ import "sync"
 // Call is one recorded tool invocation in the forage log. Args holds the tool's
 // input flattened to strings (sorted-key iteration gives a deterministic shape).
 // Mutates marks a state-changing tool so the miner can exclude it. OutHash and
-// EstTokens feed dedup and yield estimation.
+// EstTokens feed dedup and yield estimation. Verified is set by MarkOutcome once
+// the work the call belonged to was kept (e.g. committed); a mutating route is
+// only ever mined from verified calls.
 type Call struct {
 	Tool      string
 	Args      map[string]string
 	Mutates   bool
 	OutHash   string
 	EstTokens int
+	Verified  bool
 }
 
 // Recorder is a bounded per-session ring buffer of recent tool calls.
@@ -45,6 +48,26 @@ func (r *Recorder) Record(c Call) {
 	if len(r.buf) > r.cap {
 		r.buf = append(r.buf[:0:0], r.buf[len(r.buf)-r.cap:]...)
 	}
+}
+
+// MarkOutcome closes the span of calls recorded since the last mark. ok marks
+// them verified (the work was kept); !ok drops them, so a rolled-back attempt
+// never teaches the miner a mutating route. Read-only calls in a dropped span
+// are lost too, which is the cheaper error.
+func (r *Recorder) MarkOutcome(ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	kept := r.buf[:0]
+	for _, c := range r.buf {
+		if !c.Verified {
+			if !ok {
+				continue
+			}
+			c.Verified = true
+		}
+		kept = append(kept, c)
+	}
+	r.buf = kept
 }
 
 // Calls returns a copy of the buffered calls, oldest first.

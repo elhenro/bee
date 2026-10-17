@@ -56,6 +56,17 @@ func (m *Manager) Observe(c Call) {
 	}
 }
 
+// MarkOutcome closes the forage span since the last mark: ok verifies those
+// calls for mutating-route mining, !ok discards them. Unattended loops call it
+// after commit-or-reset; a manager that never hears it mines read-only routes
+// only.
+func (m *Manager) MarkOutcome(ok bool) {
+	if m == nil || m.store == nil {
+		return
+	}
+	m.rec.MarkOutcome(ok)
+}
+
 // sweep mines the current forage log and promotes the single highest-value
 // crystallizable route, returning how many it wrote (0 or 1). If that route is
 // already stored the sweep is a no-op: it does not fall through to lesser or
@@ -63,17 +74,12 @@ func (m *Manager) Observe(c Call) {
 // genuinely distinct route is promoted once it becomes the top candidate.
 func (m *Manager) sweep() int {
 	for _, c := range Mine(m.rec.Calls(), m.cfg.Mine) {
-		script, _, ok := scriptOf(c)
+		name, md, ok := render(c, m.cfg.Scope)
 		if !ok {
 			continue // not crystallizable; keep looking for the best one that is
 		}
-		name := waggleName(script)
 		if m.store.Exists(name) {
 			return 0 // best route already captured; nothing new to promote
-		}
-		md, ok := Render(name, c, m.cfg.Scope)
-		if !ok {
-			continue
 		}
 		if err := m.store.Write(name, md); err != nil {
 			return 0
@@ -81,6 +87,28 @@ func (m *Manager) sweep() int {
 		return 1
 	}
 	return 0
+}
+
+// render picks the on-disk form for a candidate: a route with a mutating step
+// becomes a recipe waggle (run only by `bee <name>`), a read-only route an exec
+// waggle (replayable). The name hashes the rendered script either way.
+func render(c Candidate, scope Scope) (name, md string, ok bool) {
+	if hasMutator(c.Steps) {
+		script, _, ok := recipeScriptOf(c)
+		if !ok {
+			return "", "", false
+		}
+		name = waggleName(script)
+		md, ok = RenderRecipe(name, c, scope)
+		return name, md, ok
+	}
+	script, _, ok := scriptOf(c)
+	if !ok {
+		return "", "", false
+	}
+	name = waggleName(script)
+	md, ok = Render(name, c, scope)
+	return name, md, ok
 }
 
 // waggleName derives a stable name from the route's script, so the same route

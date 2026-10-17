@@ -3,8 +3,9 @@ package waggle
 import "strings"
 
 // shellCommand renders one recorded call as a deterministic bash command line.
-// paramTok(step, key) returns the positional token (e.g. "$1") for a varying
-// argument, or "" when the argument is a literal. ok=false means the tool has no
+// paramTok(step, key) returns the fully rendered token for a varying argument
+// (an exec waggle passes "\"$1\"", a recipe passes {{argv.0}} which the
+// recipe runtime quotes itself), or "" when the argument is a literal. ok=false means the tool has no
 // safe shell translation, so the route must not be crystallized.
 //
 // Secondary flags (grep glob/context/count_only, read offset/limit) are dropped:
@@ -14,7 +15,7 @@ import "strings"
 func shellCommand(step int, c Call, paramTok func(step int, key string) string) (string, bool) {
 	tokenFor := func(key string) string {
 		if t := paramTok(step, key); t != "" {
-			return `"` + t + `"`
+			return t
 		}
 		return singleQuote(c.Args[key])
 	}

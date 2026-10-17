@@ -17,7 +17,7 @@ func TestShellCommand_GrepParam(t *testing.T) {
 	c := Call{Tool: "search", Args: map[string]string{"pattern": "foo"}}
 	tok := func(step int, key string) string {
 		if key == "pattern" {
-			return "$1"
+			return `"$1"`
 		}
 		return ""
 	}

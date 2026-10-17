@@ -9,9 +9,12 @@ import (
 	"github.com/elhenro/bee/internal/skills"
 )
 
-// Meta is a stored waggle's display info for `bee waggle ls`.
+// Meta is a stored waggle's display info for `bee waggle ls`. Kind is "exec"
+// for a replayable read-only route and "recipe" for a mutating one that only
+// runs as `bee <name>`.
 type Meta struct {
 	Name        string
+	Kind        string
 	Description string
 	Script      string
 	Path        string
@@ -40,7 +43,7 @@ func List(s *Store) ([]Meta, error) {
 		if err != nil {
 			continue
 		}
-		out = append(out, Meta{Name: sk.Name, Description: sk.Description, Script: scriptFromExec(sk.Exec), Path: p})
+		out = append(out, Meta{Name: sk.Name, Kind: string(sk.Kind), Description: sk.Description, Script: scriptOfSkill(sk), Path: p})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -71,7 +74,7 @@ func GC(s *Store) (int, error) {
 		sk, err := skills.ParseFile(p)
 		script := ""
 		if err == nil {
-			script = scriptFromExec(sk.Exec)
+			script = scriptOfSkill(sk)
 		}
 		if script == "" || seen[script] {
 			if os.Remove(p) == nil {
@@ -82,6 +85,21 @@ func GC(s *Store) (int, error) {
 		seen[script] = true
 	}
 	return removed, nil
+}
+
+// scriptOfSkill is the dedup/display key of a stored waggle: the exec script
+// for an exec waggle, the shell steps joined for a recipe waggle.
+func scriptOfSkill(sk skills.Skill) string {
+	if sk.Kind == skills.KindRecipe && sk.Runtime {
+		cmds := make([]string, 0, len(sk.Steps))
+		for _, st := range sk.Steps {
+			if st.Kind == skills.StepShell {
+				cmds = append(cmds, st.Run)
+			}
+		}
+		return strings.Join(cmds, "; ")
+	}
+	return scriptFromExec(sk.Exec)
 }
 
 // scriptFromExec extracts the bash script from a [bash, -c, <script>] vector.

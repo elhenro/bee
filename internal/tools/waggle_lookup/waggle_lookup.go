@@ -100,7 +100,11 @@ func (t *Tool) list() string {
 		stats, _ := waggle.ReadLedger(s.LedgerPath())
 		for _, m := range metas {
 			st := stats[m.Name]
-			rows = append(rows, row{m.Name, m.Description, st.Uses, st.Yield})
+			desc := m.Description
+			if m.Kind == string(skills.KindRecipe) {
+				desc += " [recipe: bee " + m.Name + "]"
+			}
+			rows = append(rows, row{m.Name, desc, st.Uses, st.Yield})
 		}
 	}
 	if len(rows) == 0 {
@@ -133,6 +137,11 @@ func (t *Tool) follow(ctx context.Context, name string, in map[string]any) (tool
 		sk, err := skills.ParseFile(filepath.Join(s.Dir(), name+".md"))
 		if err != nil {
 			return tools.Result{Content: fmt.Sprintf("waggle %q failed to parse: %v", name, err), IsError: true}, nil
+		}
+		if sk.Kind == skills.KindRecipe {
+			// a mutating route is never run from here: it needs the approval
+			// gate, which only the subcommand path provides.
+			return tools.Result{Content: fmt.Sprintf("waggle %q has shell steps that change state; run it as `bee %s [args]` via the bash tool (its steps prompt for approval)", name, name), IsError: true}, nil
 		}
 		tool, err := skillexec.New(sk)
 		if err != nil {

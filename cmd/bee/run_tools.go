@@ -51,6 +51,16 @@ func waggleManager(cfg config.Config, cwd string) *waggle.Manager {
 	return waggle.ProjectManager(cwd)
 }
 
+// waggleManagerLearning is waggleManager with mutating-route mining on. Only
+// loops that verify outcomes (zzz commit-or-reset) wire it; the routes it
+// writes are recipe waggles, run only by `bee <name>`.
+func waggleManagerLearning(cfg config.Config, cwd string) *waggle.Manager {
+	if !cfg.Waggle.Enabled {
+		return nil
+	}
+	return waggle.ProjectManagerLearning(cwd, true)
+}
+
 // waggleReplayer builds the predictive replayer for cwd, or nil when waggle is
 // disabled or the library is cold.
 func waggleReplayer(cfg config.Config, cwd string) *waggle.Replayer {
