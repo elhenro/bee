@@ -143,7 +143,11 @@ func newShellTool(app approval.Approver, cfg config.Config) tools.Tool {
 		Shell:     cfg.Shell.Shell,
 		RCFile:    cfg.Shell.RCFile,
 	}
-	if !opts.UseUserRC && opts.Shell == "" && opts.RCFile == "" {
+	if sandbox.ApprovalMode(cfg.Sandbox.Approval) == sandbox.Untrusted {
+		pol := sandbox.Policy{AllowList: config.ActiveProfile(cfg).Safety.ExtraSafeCommands}
+		opts.Allowed = pol.IsAllowed
+	}
+	if !opts.UseUserRC && opts.Shell == "" && opts.RCFile == "" && opts.Allowed == nil {
 		if app == nil {
 			return shell.New()
 		}

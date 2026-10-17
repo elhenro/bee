@@ -105,3 +105,36 @@ func TestApprover_Nil_NoGating(t *testing.T) {
 		t.Fatalf("nil approver should not gate: %q", res.Content)
 	}
 }
+
+// untrusted mode: known-safe sequences run without asking, anything else is
+// put to the approver even when no dangerous pattern matched.
+func TestApprover_UntrustedGatesUnknownCommands(t *testing.T) {
+	allowed := func(cmd string) bool { return cmd == "echo ok" || cmd == "echo ok && echo ok" }
+	tool := NewWithOptions(approval.Static{Verdict: approval.Deny}, Options{Allowed: allowed})
+
+	res, err := tool.Run(context.Background(), map[string]any{"command": "echo ok"})
+	if err != nil || res.IsError {
+		t.Fatalf("known-safe cmd should run unasked: %v %q", err, res.Content)
+	}
+	res, err = tool.Run(context.Background(), map[string]any{"command": "touch /tmp/bee-untrusted-xyz"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError || !strings.Contains(res.Content, "refused by user") {
+		t.Fatalf("unknown cmd should be put to the approver and denied, got %q", res.Content)
+	}
+}
+
+func TestApprover_UntrustedAllowOnceRuns(t *testing.T) {
+	tool := NewWithOptions(approval.Static{Verdict: approval.AllowOnce}, Options{Allowed: func(string) bool { return false }})
+	res, err := tool.Run(context.Background(), map[string]any{"command": "echo approved"})
+	if err != nil || res.IsError || !strings.Contains(res.Content, "approved") {
+		t.Fatalf("approved unknown cmd should run: %v %q", err, res.Content)
+	}
+}
+
+func TestUntrustedKey_ScopedToProgram(t *testing.T) {
+	if got := untrustedKey("make build"); got != "untrusted:make" {
+		t.Fatalf("key = %q", got)
+	}
+}

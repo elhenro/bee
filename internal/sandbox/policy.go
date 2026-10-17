@@ -7,7 +7,11 @@
 // degrades to running the bare command and emitting a warning.
 package sandbox
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/elhenro/bee/internal/safety"
+)
 
 // Scope is the OS-level confinement applied to a child process.
 type Scope string
@@ -81,7 +85,6 @@ var defaultSafe = []string{
 	"hostname",
 	"uname",
 	"date",
-	"env",
 	"printenv",
 	"grep",
 	"egrep",
@@ -111,29 +114,41 @@ var defaultSafe = []string{
 	"go mod verify",
 }
 
-// IsKnownSafe reports whether cmd matches a built-in safe prefix. Used by
-// Untrusted mode to auto-approve without escalation.
-func IsKnownSafe(cmd string) bool {
-	c := strings.TrimSpace(cmd)
-	if c == "" {
+// IsKnownSafe reports whether every command in cmd matches a built-in safe
+// prefix. cmd is tokenized first: a compound line is safe only when each
+// simple command is, and redirections, substitutions and flags that turn a
+// read-only tool into a writer (find -exec, git branch -D, ...) are refused.
+func IsKnownSafe(cmd string) bool { return Policy{}.IsAllowed(cmd) }
+
+// IsAllowed extends IsKnownSafe with the policy's per-invocation AllowList.
+// The list is matched per simple command, never against the raw line, so
+// "ls; rm x" cannot ride on an "ls" entry.
+func (p Policy) IsAllowed(cmd string) bool {
+	segs, ok := safety.PlainSegments(cmd)
+	if !ok {
 		return false
 	}
+	for _, argv := range segs {
+		if !p.segmentAllowed(argv) {
+			return false
+		}
+	}
+	return true
+}
+
+func (p Policy) segmentAllowed(argv []string) bool {
+	if safety.UnsafeInvocation(argv) {
+		return false
+	}
+	argv = append([]string{safety.CommandName(argv[0])}, argv[1:]...)
+	line := strings.Join(argv, " ")
 	for _, prefix := range defaultSafe {
-		if hasCmdPrefix(c, prefix) {
+		if hasCmdPrefix(line, prefix) {
 			return true
 		}
 	}
-	return false
-}
-
-// IsAllowed extends IsKnownSafe with the policy's per-invocation AllowList.
-func (p Policy) IsAllowed(cmd string) bool {
-	if IsKnownSafe(cmd) {
-		return true
-	}
-	c := strings.TrimSpace(cmd)
 	for _, prefix := range p.AllowList {
-		if hasCmdPrefix(c, prefix) {
+		if hasCmdPrefix(line, prefix) {
 			return true
 		}
 	}

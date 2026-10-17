@@ -33,10 +33,15 @@ const (
 // each command so aliases and shell functions are available. Default false
 // preserves the hermetic shape. Shell and RCFile override autodetection
 // (autodetect = $SHELL → ~/.zshrc or ~/.bashrc).
+//
+// Allowed, when non-nil, enables untrusted-mode gating: a command it rejects
+// is put to the approver (if any) before running, even when no dangerous
+// pattern matched. nil leaves only the dangerous-pattern gate.
 type Options struct {
 	UseUserRC bool
 	Shell     string
 	RCFile    string
+	Allowed   func(cmd string) bool
 }
 
 // Tool is the shell executor.
@@ -126,6 +131,9 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		key, desc, hit := safety.DetectDangerous(displayCmd)
 		if !hit && cmdStr != displayCmd {
 			key, desc, hit = safety.DetectDangerous(cmdStr)
+		}
+		if !hit && t.opts.Allowed != nil && !t.opts.Allowed(displayCmd) {
+			key, desc, hit = untrustedKey(displayCmd), "command is not on the known-safe list (approval = untrusted)", true
 		}
 		if hit {
 			d, err := t.approver.Request(ctx, displayCmd, key, desc)
@@ -301,4 +309,13 @@ func toInt(v any) (int, error) {
 	default:
 		return 0, fmt.Errorf("not a number: %T", v)
 	}
+}
+
+// untrustedKey scopes session/persistent grants to the program, so allowing
+// `make` once never approves every other unknown command.
+func untrustedKey(cmd string) string {
+	if f := strings.Fields(cmd); len(f) > 0 {
+		return "untrusted:" + f[0]
+	}
+	return "untrusted"
 }

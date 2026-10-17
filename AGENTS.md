@@ -68,6 +68,7 @@ Override `$HOME` via `BEE_HOME=/tmp/iso` for hermetic install tests.
 | `agents` | TUI overview of parallel detached agents — each chat submit spawns one in its own worktree. |
 | `remote-control` | Serves a local web relay (URL + QR) to drive bee from another device over the LAN. |
 | `zzz` | Overnight autonomous-commit loop. Same engine, sentinel-driven stop. |
+| `cron` | `ls` / `run <name>` / `daemon` over `[[cron.jobs]]` in config. Jobs run through the shell and take the zzz worktree lock, so cron and `zzz` never drive one tree at once. |
 | `doctor` | Read-only preflight: provider keys, sandbox tools, ollama probe, models cache. |
 | `bench` | Small-model benchmark harness — scored task suite with ledger + holdout split. |
 | `version` / `-v` / `--version` | Build version. |

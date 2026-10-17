@@ -67,6 +67,13 @@ WIP limits are hard. A column over its limit means **stop pulling**, not "just t
 > every restart is likely wrong. **T506 must resolve it** (seed `nextDue = Schedule.Next(now)`) or
 > explicitly bless run-on-start in docs. Not blocking T505 (ACs green); filed here so it is not lost.
 
+> **Wired into the runtime on `main` (post-M1):** `bee cron ls|run|daemon` (T506 core; first-run
+> schedule bug from T505 fixed, zzz lock guard + tests). Reply fingerprint drives an
+> identical-reply stop in the headless/TUI `/goal` loops and `zzz` (T605 fingerprint part only,
+> verifier policy and budget turn still open). The tokenizer backs `sandbox.IsKnownSafe`
+> (per-segment, flag-aware; covers the T402/T403 intent) and `approval = "untrusted"` now gates the
+> shell tool. Permission registry (T405) and slow-command guard (T404) are still open.
+
 ### Column rules (quick)
 - **📥 Backlog** — spec exists in TICKETS.md, dependencies may be unmet.
 - **🔜 Ready** — passes Definition of Ready (WORKFLOWS §3): scope files named, AC testable, verification command present, no unmet dependency.

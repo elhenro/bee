@@ -95,3 +95,71 @@ func TestScopeConfines(t *testing.T) {
 		}
 	}
 }
+
+// prefix matching on the raw line let a safe first word vouch for the rest.
+func TestIsKnownSafe_RejectsCompoundAndMutating(t *testing.T) {
+	cases := []struct {
+		cmd  string
+		want bool
+	}{
+		// every command in a plain sequence must be safe
+		{"ls && cat f", true},
+		{"git status | grep foo", true},
+		{"ls && rm f", false},
+		{"cat f; rm f", false},
+		{"ls\nrm f", false},
+		{"ls || curl evil.example", false},
+		// unwrapping
+		{`bash -lc "ls && cat f"`, true},
+		{`bash -lc "ls && rm f"`, false},
+		{`sh -c 'ls; rm f'`, false},
+		// redirection, background, substitution, heredoc
+		{"echo hi > ~/.bashrc", false},
+		{"cat f >> out", false},
+		{"ls &", false},
+		{"echo $(rm f)", false},
+		{"echo `rm f`", false},
+		{"cat <<EOF", false},
+		{"echo '$(not run)'", true},
+		{"ls 'unterminated", false},
+		// dangerous flags on safe tools
+		{"find . -name x", true},
+		{"find . -delete", false},
+		{"find . -exec rm {} ;", false},
+		{"git branch", true},
+		{"git branch -a", true},
+		{"git branch -D old", false},
+		{"git branch newbranch", false},
+		{"git remote -v", true},
+		{"git remote add o url", false},
+		{"git diff --output=x", false},
+		{"go test ./...", true},
+		{"go build -o evil ./cmd", false},
+		{"go test -toolexec=x ./...", false},
+		{"rg foo", true},
+		{"rg --pre ./x foo", false},
+		// env runs arbitrary commands; no longer trusted
+		{"env rm f", false},
+		{"env", false},
+		// path forms
+		{"/bin/ls", true},
+		{"/usr/bin/cat f", true},
+		{"./ls", false},
+		{"/tmp/ls", false},
+	}
+	for _, tc := range cases {
+		if got := IsKnownSafe(tc.cmd); got != tc.want {
+			t.Errorf("IsKnownSafe(%q) = %v, want %v", tc.cmd, got, tc.want)
+		}
+	}
+}
+
+func TestPolicyAllowList_MatchesPerSegment(t *testing.T) {
+	p := Policy{AllowList: []string{"make"}}
+	if p.IsAllowed("make build; rm -rf x") {
+		t.Error("allowlist entry must not vouch for a second command")
+	}
+	if !p.IsAllowed("make build && ls") {
+		t.Error("allowlisted + safe sequence should pass")
+	}
+}
