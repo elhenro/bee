@@ -220,7 +220,8 @@ var goSafeFlags = map[string][]string{
 }
 
 // goArgsSafe reports whether every flag in a go command line is on the
-// subcommand's allow set. Unknown subcommands are left to the prefix list.
+// subcommand's allow set. Unknown subcommands allow no flags at all, so a
+// user allow-list entry like "go run" cannot smuggle -toolexec through.
 func goArgsSafe(args []string) bool {
 	if len(args) == 0 {
 		return true
@@ -235,13 +236,10 @@ func goArgsSafe(args []string) bool {
 		}
 		sub, rest = rest[0], rest[1:]
 		if sub != "download" && sub != "verify" {
-			return true
+			sub = "mod " + sub // never in goSafeFlags: no flags allowed
 		}
 	}
-	allowed, known := goSafeFlags[sub]
-	if !known {
-		return true
-	}
+	allowed := goSafeFlags[sub] // unknown subcommands get an empty set: no flags
 	for _, a := range rest {
 		if !strings.HasPrefix(a, "-") || a == "-" {
 			continue

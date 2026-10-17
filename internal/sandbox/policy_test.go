@@ -188,6 +188,23 @@ func TestIsKnownSafe_RejectsCompoundAndMutating(t *testing.T) {
 	}
 }
 
+// a broad user allow-list entry must not open go's flag space.
+func TestPolicyAllowList_GoUnknownSubcommandNoFlags(t *testing.T) {
+	p := Policy{AllowList: []string{"go run", "go mod tidy", "go install"}}
+	for cmd, want := range map[string]bool{
+		"go run ./cmd/bee":                 true,
+		"go run -toolexec=x ./cmd/bee":     false,
+		"go install -toolexec=x ./cmd/bee": false,
+		"go mod tidy":                      true,
+		"go mod tidy -modfile=x.mod":       false,
+		"go mod edit -replace=a=../b":      false,
+	} {
+		if got := p.IsAllowed(cmd); got != want {
+			t.Errorf("IsAllowed(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
 func TestPolicyAllowList_MatchesPerSegment(t *testing.T) {
 	p := Policy{AllowList: []string{"make"}}
 	if p.IsAllowed("make build; rm -rf x") {
