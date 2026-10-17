@@ -202,14 +202,12 @@ func (t *SessionTree) renderNode(b *strings.Builder, n *types.MessageNode, prefi
 		nextPrefix = ""
 	}
 
-	cursor := "  "
-	if n.Msg.ID == t.selected {
-		cursor = "▸ "
-	}
+	cursor := selectMark(n.Msg.ID == t.selected)
+	const cursorW = 2 // the marker is styled, so len() can't measure it
 
 	label := nodeLabel(n)
-	if width > 0 && len(cursor)+len(prefix)+len(branch)+len(label) > width {
-		cut := width - len(cursor) - len(prefix) - len(branch) - 1
+	if width > 0 && cursorW+len(prefix)+len(branch)+len(label) > width {
+		cut := width - cursorW - len(prefix) - len(branch) - 1
 		if cut < 4 {
 			cut = 4
 		}
@@ -275,4 +273,15 @@ func boxModal(body string, width, height int) string {
 		Width(width - 2).
 		Height(height - 2).
 		Render(body)
+}
+
+// like boxModal for rows of aligned columns: each row clips to the box
+// instead of wrapping, which would shear the columns
+func boxRows(body string, width, height int) string {
+	inner := max(width, 20) - 4 // border and padding
+	lines := strings.Split(body, "\n")
+	for i, ln := range lines {
+		lines[i] = clipLine(ln, inner)
+	}
+	return boxModal(strings.Join(lines, "\n"), width, height)
 }

@@ -82,7 +82,7 @@ func renderLoginRow(p commands.ProviderAuth, selected bool, nameW int) string {
 	marker := "  "
 	nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
 	if selected {
-		marker = lipgloss.NewStyle().Foreground(accentHoney).Render("▸ ")
+		marker = selectMark(true)
 		nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
 	}
 	name := p.Name

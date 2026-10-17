@@ -106,7 +106,7 @@ func (p *RolePane) View(width, height int) string {
 		marker := "  "
 		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
 		if i == p.cursor {
-			marker = lipgloss.NewStyle().Foreground(accentHoney).Render("▸ ")
+			marker = selectMark(true)
 			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
 		}
 		b.WriteString(marker)

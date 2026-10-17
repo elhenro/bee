@@ -214,7 +214,7 @@ func TestSessionTree_CursorRendered(t *testing.T) {
 	tree.LoadMessages(sampleTreeMsgs(), "c")
 	tree.Update(ToggleSessionTreeMsg{})
 	out := strip(tree.View(80, 24))
-	if !strings.Contains(out, "▸") {
-		t.Fatalf("expected cursor glyph ▸, got %q", out)
+	if !strings.Contains(out, glyphSel) {
+		t.Fatalf("expected cursor glyph %s, got %q", glyphSel, out)
 	}
 }

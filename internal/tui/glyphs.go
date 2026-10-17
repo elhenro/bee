@@ -1,5 +1,7 @@
 package tui
 
+import "github.com/charmbracelet/lipgloss"
+
 // every symbol the ui is built from, in one place so a font that mangles
 // one is a one-line swap
 const (
@@ -42,4 +44,13 @@ func toolTitle(name string) string {
 		return t
 	}
 	return name
+}
+
+// selection marker for a pane row: honey chevron on the selected one, blank
+// column of the same width otherwise
+func selectMark(selected bool) string {
+	if !selected {
+		return "  "
+	}
+	return lipgloss.NewStyle().Foreground(accentHoney).Render(glyphSel) + " "
 }

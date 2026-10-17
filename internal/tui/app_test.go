@@ -876,10 +876,9 @@ func TestModel_QueuedMidCompact_LiveViewAndNoScrollbackEcho(t *testing.T) {
 	if !strings.Contains(out, "queued: continue") {
 		t.Fatalf("queued text should appear in live view; got:\n%s", out)
 	}
-	// the user rail is rendered as the live `┃` glyph, mirroring how sent
-	// user messages get a blue rail in the same view.
-	if !strings.Contains(out, "┃") {
-		t.Fatalf("queued line missing the blue rail glyph; got:\n%s", out)
+	// the queued turn wears the same bar as a sent one
+	if !strings.Contains(out, glyphUser) {
+		t.Fatalf("queued line missing the user bar; got:\n%s", out)
 	}
 	// the queued text must NOT bleed into scrollback — only renderLive
 	// owns the display, no ephemeral m.messages entry should exist for it.

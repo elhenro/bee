@@ -566,7 +566,7 @@ func TestRenderMessage_InlineShellStyled(t *testing.T) {
 		}
 	}
 	// glyph replaced by `$` prompt — neither role glyph should appear.
-	for _, glyph := range []string{"▸", "⬢", "◇"} {
+	for _, glyph := range []string{glyphUser, glyphBee, "◇"} {
 		if strings.Contains(plain, glyph) {
 			t.Fatalf("unexpected role glyph %q in %q", glyph, plain)
 		}

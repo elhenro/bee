@@ -199,7 +199,7 @@ func (p *RewindPicker) viewMode(width, height int) string {
 		cursor := "  "
 		style := StyleLabel
 		if i == p.modeSel {
-			cursor = "▸ "
+			cursor = selectMark(true)
 			style = StyleActive
 		}
 		label := opt.label
@@ -214,10 +214,9 @@ func (p *RewindPicker) viewMode(width, height int) string {
 }
 
 func renderRewindRow(e RewindEntry, selected bool, width int) string {
-	cursor := "  "
+	cursor := selectMark(selected)
 	style := StyleLabel
 	if selected {
-		cursor = "▸ "
 		style = StyleActive
 	}
 	preview := strings.TrimSpace(strings.ReplaceAll(e.Preview, "\n", " "))

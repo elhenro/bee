@@ -105,7 +105,7 @@ func (p *ToolsPane) View(width, height int) string {
 		marker := "  "
 		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
 		if i == p.cursor {
-			marker = lipgloss.NewStyle().Foreground(accentHoney).Render("▸ ")
+			marker = selectMark(true)
 			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
 		}
 		toggle := lipgloss.NewStyle().Foreground(accentHoney).Render("[x]")
@@ -129,7 +129,7 @@ func (p *ToolsPane) View(width, height int) string {
 
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ pick · enter/space toggle · esc close · /tools add NAME CMD adds new"))
-	return boxModal(b.String(), width, height)
+	return boxRows(b.String(), width, height)
 }
 
 // truncateOneLine collapses to one line and hard-trims to max runes.

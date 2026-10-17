@@ -191,7 +191,7 @@ func renderResumeRow(e ResumeEntry, selected bool, width int) string {
 	tsStyle := StyleLabel
 	prevStyle := StyleLabel
 	if selected {
-		cursor = "▸ "
+		cursor = selectMark(true)
 		idStyle = StyleActive
 		tsStyle = StyleActive
 		prevStyle = StyleActive

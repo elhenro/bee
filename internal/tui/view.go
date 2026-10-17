@@ -141,19 +141,10 @@ func (m Model) View() string {
 }
 
 // renderQueuedMidCompact paints a plain-text submit that landed while
-// /compact was running. Styled like a sent user message — blue rail on
-// the left, bold blue body — so the queued text reads as the user's own
-// held turn rather than a meta echo. Multi-line input gets the rail
-// applied to every continuation line so the block stays anchored to the
-// left margin the way finalized user turns do.
+// /compact was running, as the user turn it will become: same bar and panel
+// as a sent one, tagged so it reads as held rather than delivered.
 func (m Model) renderQueuedMidCompact() string {
-	rail := m.styles.UserRail.Render("┃")
-	body := m.styles.UserBody.Render
-	lines := strings.Split("queued: "+m.queuedMidCompact, "\n")
-	for i, ln := range lines {
-		lines[i] = rail + " " + body(ln)
-	}
-	return strings.Join(lines, "\n")
+	return m.stream.gutter(m.stream.renderUser("queued: " + m.queuedMidCompact))
 }
 
 // renderErrorBlock formats m.lastErr for the live region: strips noisy

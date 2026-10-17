@@ -28,13 +28,13 @@ var settingsRows = []settingsRow{
 	{key: "verbose", label: "verbose tool output", desc: "full tool result instead of one-line preview"},
 	{key: "show_thoughts", label: "agent thoughts", desc: "chain-of-thought reasoning blocks"},
 	{key: "show_nudges", label: "nudge messages", desc: "self-nudge recovery messages in the transcript"},
-	{key: "show_recap", label: "post-turn recap", desc: "one-line side-LLM summary + next step after each turn (extra tokens)"},
-	{key: "compact", label: "compact layout", desc: "dense layout: no gutter, no blank rows between turns, no user panel"},
+	{key: "show_recap", label: "post-turn recap", desc: "one-line summary + next step after each turn (costs tokens)"},
+	{key: "compact", label: "compact layout", desc: "dense: no gutter, no blank rows between turns, no user panel"},
 	{key: "show_context_bar", label: "context gauge", desc: "fill the prompt's bottom rule as the context window fills"},
 	{key: "highlight", label: "syntax highlight", desc: "color code in diffs, file content, and bash commands"},
 	{key: "shell_bang_silent", label: "!shell stays local", desc: "!cmd runs without forwarding output to the LLM (!! inverts)"},
 	{key: "show_banner", label: "intro animation", desc: "braille startup animation (applies on next launch)"},
-	{key: "show_loader", label: "spinner animation", desc: "animated spinner while the model is generating (off = static mark)"},
+	{key: "show_loader", label: "spinner animation", desc: "animated spinner while generating (off = static mark)"},
 	{key: "show_bee", label: "status: bee mark", desc: "⬢ mark beside the context figure in the status line"},
 	{key: "show_context_pct", label: "status: context %", desc: "context-window fill label (ctx 12%)"},
 	{key: "show_model", label: "status: model name", desc: "active provider/model label"},
@@ -449,7 +449,7 @@ func (p *SettingsPane) View(width, height int) string {
 		marker := "  "
 		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
 		if i == p.cursor {
-			marker = lipgloss.NewStyle().Foreground(accentHoney).Render("▸ ")
+			marker = selectMark(true)
 			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
 		}
 		var toggle string
@@ -472,7 +472,7 @@ func (p *SettingsPane) View(width, height int) string {
 
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("type filter · ↑/↓ pick · enter/tab toggle · esc close · saved to ~/.bee/config.toml"))
-	return boxModal(b.String(), width, height)
+	return boxRows(b.String(), width, height)
 }
 
 // highlightLabel renders label with matched runes accented, then pads the
