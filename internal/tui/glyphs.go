@@ -10,6 +10,7 @@ const (
 	glyphTool   = "●" // tool-call bullet
 	glyphResult = "⎿" // connector from a call to its result
 	glyphThink  = "✻" // reasoning marker
+	glyphFail   = "✗" // turn-level error marker
 	glyphPrompt = "❯" // input prompt
 	glyphShell  = "!" // input prompt in shell mode
 	glyphRule   = "─" // hairline

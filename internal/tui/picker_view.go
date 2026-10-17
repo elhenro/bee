@@ -59,7 +59,7 @@ func (p *Picker) renderActive(w int) string {
 		if isAuthErr(err.Error()) {
 			hint = "ctrl+l enroll api key (/login " + p.currentProvider + ") · ctrl+r retry · esc back"
 		}
-		return "  " + errStyle.Render("✗ error: "+msg) + "\n  " + dim.Render(hint)
+		return "  " + errStyle.Render(glyphFail+" error: "+msg) + "\n  " + dim.Render(hint)
 	}
 	matches := p.matchModels()
 	models := p.modelsByProvider[p.currentProvider]

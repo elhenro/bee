@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"time"
 
@@ -153,33 +154,33 @@ func (m Model) renderQueuedMidCompact() string {
 	return m.stream.gutter(m.stream.renderUser("queued: " + m.queuedMidCompact))
 }
 
-// renderErrorBlock formats m.lastErr for the live region: strips noisy
-// provider JSON tails, wraps on word boundaries to terminal width with a
-// hanging indent so continuation lines align under the body, and tints the
-// whole block via the Error style. Nothing about the message is truncated
-// — long errors wrap to multiple rows instead of being clipped off-screen.
+// renderErrorBlock formats m.lastErr for the live region as a block like any
+// other: marker column, message hanging under it, blank row above. strips
+// noisy provider JSON tails and wraps on word boundaries; nothing about the
+// message is truncated, long errors wrap to more rows instead of being
+// clipped off-screen.
 func (m Model) renderErrorBlock(s string) string {
-	body := cleanErrorMessage(s)
-	const glyph = "✗ "
-	const indent = "  "
-	w := m.width
-	if w <= 0 {
-		return m.styles.Error.Render(glyph + body)
+	lines := []string{cleanErrorMessage(s)}
+	if m.width > 0 {
+		lines = wrapHanging(lines[0], max(m.width-markIndent-2, 20))
 	}
-	bodyW := w - len(indent)
-	if bodyW < 20 {
-		bodyW = 20
-	}
-	lines := wrapHanging(body, bodyW)
 	for i := range lines {
 		if i == 0 {
-			lines[i] = glyph + lines[i]
+			lines[i] = glyphFail + " " + lines[i]
 		} else {
-			lines[i] = indent + lines[i]
+			lines[i] = strings.Repeat(" ", markIndent) + lines[i]
 		}
 	}
-	return m.styles.Error.Render(strings.Join(lines, "\n"))
+	out := m.stream.gutter(m.styles.Error.Render(strings.Join(lines, "\n")))
+	if m.stream.compact {
+		return out
+	}
+	return "\n" + out
 }
+
+// the `post: Post "url": ` net/http wraps around a transport failure; the
+// cause after it is what matters
+var httpVerbNoise = regexp.MustCompile(`(?i)\b(post|get): (post|get) "[^"]*": `)
 
 // cleanErrorMessage trims trailing provider JSON envelopes off raw error
 // strings so the user sees the human-readable message instead of a wall of
@@ -188,6 +189,7 @@ func (m Model) renderErrorBlock(s string) string {
 // Falls back to the prefix-only form when the JSON is truncated/unparsable,
 // and to the original string when no JSON envelope is found.
 func cleanErrorMessage(s string) string {
+	s = httpVerbNoise.ReplaceAllString(s, "")
 	i := strings.IndexByte(s, '{')
 	if i < 0 {
 		return s

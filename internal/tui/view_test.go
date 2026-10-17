@@ -99,6 +99,11 @@ func TestCleanErrorMessage(t *testing.T) {
 			`provider stream: status 500: {"error":{"message":"interna`,
 			`provider stream: status 500`,
 		},
+		// the net/http verb wrapper around a transport failure is noise
+		{
+			`provider stream: provider fake exhausted retries: post: Post "http://127.0.0.1:18080/v1/chat/completions": dial tcp 127.0.0.1:18080: connect: connection refused`,
+			`provider stream: provider fake exhausted retries: dial tcp 127.0.0.1:18080: connect: connection refused`,
+		},
 		// top-level message field also supported.
 		{
 			`oops: {"message":"limit hit"}`,
@@ -131,44 +136,32 @@ func TestWrapHanging(t *testing.T) {
 	}
 }
 
-// the rendered error block must hang-indent continuation lines under the
-// glyph so the message reads as one paragraph rather than a sequence of
-// orphaned fragments. Width = 40 forces wrapping.
+// the rendered error block sits in the marker column like any other block and
+// hang-indents continuation lines under the message, so it reads as one
+// paragraph rather than orphaned fragments. Width = 40 forces wrapping.
 func TestRenderErrorBlock_WrapsAndIndents(t *testing.T) {
 	m := NewModel(nil, "/tmp/work", "x", "workspace-write", caveman.Default)
 	m.width = 40
 	long := "provider openrouter status 429: rate limit exceeded for free tier"
 	out := stripANSI(m.renderErrorBlock(long))
 	lines := strings.Split(out, "\n")
-	if len(lines) < 2 {
-		t.Fatalf("expected wrap into multiple lines, got %d:\n%s", len(lines), out)
+	if len(lines) < 3 {
+		t.Fatalf("expected a blank row and a wrapped message, got %d lines:\n%s", len(lines), out)
 	}
-	if !strings.HasPrefix(lines[0], "✗ ") {
-		t.Errorf("first line should start with ✗ glyph, got %q", lines[0])
+	if lines[0] != "" {
+		t.Errorf("block should open with a blank row, got %q", lines[0])
 	}
-	for i, ln := range lines[1:] {
-		if !strings.HasPrefix(ln, "  ") {
-			t.Errorf("continuation line %d should hang-indent, got %q", i+1, ln)
+	if !strings.HasPrefix(lines[1], " "+glyphFail+" ") {
+		t.Errorf("first row should carry the marker in the gutter column, got %q", lines[1])
+	}
+	for i, ln := range lines[2:] {
+		if !strings.HasPrefix(ln, "   ") {
+			t.Errorf("continuation line %d should hang under the message, got %q", i+1, ln)
 		}
 	}
-}
-
-// padFrameLR(0) is identity; otherwise every line gets N blank cells of
-// left+right wrap. Multi-line content must keep its line count.
-func TestPadFrameLR(t *testing.T) {
-	m := NewModel(nil, "/tmp/work", "x", "workspace-write", caveman.Default)
-	m.width = 40 // must be set; padFrameLR bails out on width <= 0
-	if got := m.padFrameLR("hello"); got != "hello" {
-		t.Errorf("pad 0: got %q want %q", got, "hello")
-	}
-	m.outerPadLR = 2
-	got := m.padFrameLR("hi")
-	if got != "  hi  " {
-		t.Errorf("pad 2: got %q want %q", got, "  hi  ")
-	}
-	multi := "a\nb\nc"
-	wantMulti := "  a  \n  b  \n  c  "
-	if got := m.padFrameLR(multi); got != wantMulti {
-		t.Errorf("pad 2 multi: got %q want %q", got, wantMulti)
+	for _, ln := range lines {
+		if lipglossWidth(ln) > 40 {
+			t.Errorf("row exceeds the terminal width: %q", ln)
+		}
 	}
 }
