@@ -162,21 +162,23 @@ func (m AskModel) answer(ans ask.Answer) (AskModel, tea.Cmd) {
 // left-aligned regardless of terminal size so the box never spans the screen.
 const askModalWidth = 64
 
+// content width inside a modal box: askModalWidth, less the border and padding
+// on a terminal too narrow for it
+func modalInner(termWidth int) int {
+	inner := askModalWidth
+	if termWidth > 0 && termWidth-6 < inner {
+		inner = termWidth - 6
+	}
+	return max(inner, 10)
+}
+
 // View renders the picker box. The parent overlays it on the main view.
 func (m AskModel) View() string {
 	if !m.Active {
 		return ""
 	}
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
-	// inner content width: cap at askModalWidth but shrink on narrow terminals.
-	// reserve 6 cols for the modal's border (2) + horizontal padding (4).
-	inner := askModalWidth
-	if m.width > 0 && m.width-6 < inner {
-		inner = m.width - 6
-	}
-	if inner < 24 {
-		inner = 24
-	}
+	inner := modalInner(m.width)
 	lines := []string{}
 
 	title := m.styles.ModalTitle.Render("question")

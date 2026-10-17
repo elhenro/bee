@@ -175,7 +175,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		// re-size text input to fit
 		m.input.SetWidth(max(0, msg.Width-2))
 		prev := m.stream
-		m.stream = NewStreamRenderer(*m.styles, max(40, msg.Width))
+		m.stream = NewStreamRenderer(*m.styles, max(minRenderWidth, msg.Width))
 		if prev != nil {
 			// a resize mid-tool-call must not orphan the call's result
 			m.stream.toolUses, m.stream.afterTool = prev.toolUses, prev.afterTool

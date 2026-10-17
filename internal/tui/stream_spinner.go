@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // braille dots: one cell, smooth, reads as "working" in any font
@@ -34,7 +37,14 @@ func (r *StreamRenderer) RenderSpinner(frame int, elapsed time.Duration) string 
 	return r.RenderSpinnerLabel(frame, r.spinnerVerb()+"…", elapsed, interruptHint)
 }
 
-// RenderSpinner with a custom label and hint (compaction, handoff)
+// a figure on the busy row; higher shed goes first when the row is too wide
+type spinnerChip struct {
+	text string
+	shed int
+}
+
+// RenderSpinner with a custom label and hint (compaction, handoff). figures
+// that don't fit are dropped whole, never cut mid-item
 func (r *StreamRenderer) RenderSpinnerLabel(frame int, label string, elapsed time.Duration, hint string) string {
 	if frame < 0 {
 		frame = -frame
@@ -45,27 +55,54 @@ func (r *StreamRenderer) RenderSpinnerLabel(frame int, label string, elapsed tim
 	}
 	row := r.styles.Mark.Render(glyph) + " " + r.styles.Key.Render(label)
 
-	var meta []string
+	var chips []spinnerChip
 	if elapsed >= time.Second {
-		meta = append(meta, formatClock(elapsed))
+		chips = append(chips, spinnerChip{formatClock(elapsed), 0})
 	}
 	st := r.loaderStats
 	if st.ShowIn && st.InTokens > 0 {
-		meta = append(meta, "↑ "+tokensHuman(st.InTokens))
+		chips = append(chips, spinnerChip{"↑ " + tokensHuman(st.InTokens), 2})
 	}
 	if st.ShowOut && st.OutTokens > 0 {
-		meta = append(meta, "↓ "+tokensHuman(st.OutTokens))
+		chips = append(chips, spinnerChip{"↓ " + tokensHuman(st.OutTokens), 3})
 	}
-	if st.ShowRate {
-		if st.RateTokS >= 1 {
-			meta = append(meta, tokensHuman(int(st.RateTokS))+" tok/s")
-		}
+	if st.ShowRate && st.RateTokS >= 1 {
+		chips = append(chips, spinnerChip{tokensHuman(int(st.RateTokS)) + " tok/s", 4})
 	}
 	if hint != "" {
-		meta = append(meta, hint)
+		chips = append(chips, spinnerChip{hint, 1})
 	}
-	if len(meta) > 0 {
-		row += "  " + r.styles.Dim.Render(strings.Join(meta, " "+glyphSep+" "))
+	room := r.width - 2 - lipgloss.Width(row) - 2
+	if meta := fitChips(chips, room); meta != "" {
+		row += "  " + r.styles.Dim.Render(meta)
 	}
 	return r.gutter(clipLine(row, r.width-2))
+}
+
+// the chips joined for the row. they claim the room in keep order (lowest
+// shed first) and one that doesn't fit is skipped, so a long chip can't cost
+// the short ones behind it their place
+func fitChips(chips []spinnerChip, room int) string {
+	keep := make([]bool, len(chips))
+	join := func() string {
+		var texts []string
+		for i, c := range chips {
+			if keep[i] {
+				texts = append(texts, c.text)
+			}
+		}
+		return strings.Join(texts, " "+glyphSep+" ")
+	}
+	order := make([]int, len(chips))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool { return chips[order[a]].shed < chips[order[b]].shed })
+	for _, i := range order {
+		keep[i] = true
+		if lipgloss.Width(join()) > room {
+			keep[i] = false
+		}
+	}
+	return join()
 }

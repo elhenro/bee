@@ -7,25 +7,36 @@ import (
 )
 
 func (r *StreamRenderer) renderText(s string) string {
+	return r.renderTextAs(s, false)
+}
+
+// ui marks app-generated text, whose aligned rows wrap with a hanging indent
+func (r *StreamRenderer) renderTextAs(s string, ui bool) string {
 	if s == "" {
 		return s
 	}
 	s = expandTabs(s) // before wrapping, so width math sees the real cells
-	if r.md == nil {
+	plain := func() string {
+		if ui {
+			return wrapColumns(s, r.textWidth(markIndent))
+		}
 		return wrapText(s, r.textWidth(markIndent))
+	}
+	if r.md == nil {
+		return plain()
 	}
 	// short-circuit: glamour's document margin and surrounding blank lines
 	// turn "Yo." into "  Yo." sandwiched in blanks. Plain text gets returned
 	// raw; only invoke glamour when there's actual markdown to style.
 	if !needsMarkdown(s) {
-		return wrapText(s, r.textWidth(markIndent))
+		return plain()
 	}
 	s = rewriteShellSessionFences(s)
 	out, err := r.renderMarkdown(s)
 	if err != nil {
 		return s
 	}
-	return trimBlankLines(dedent(out))
+	return clampRows(trimBlankLines(dedent(out)), r.textWidth(markIndent))
 }
 
 // trimBlankLines drops leading and trailing rows that are blank once styling

@@ -19,8 +19,47 @@ func TestTextWidth_AccountsForGutterIndentAndMargin(t *testing.T) {
 	}
 	tiny := NewStreamRenderer(DefaultStyles(), 40)
 	tiny.width = 5
-	if got := tiny.textWidth(markIndent); got != 20 {
-		t.Fatalf("textWidth floors at 20, got %d", got)
+	if got := tiny.textWidth(markIndent); got != minTextWidth {
+		t.Fatalf("textWidth floors at %d, got %d", minTextWidth, got)
+	}
+}
+
+func TestWrapColumns_HangsDescriptionUnderItsColumn(t *testing.T) {
+	in := "/cost    open the cost monitor and the per-model breakdown\n/help    list commands"
+	got := strings.Split(wrapColumns(in, 40), "\n")
+	want := []string{
+		"/cost    open the cost monitor and the",
+		"         per-model breakdown",
+		"/help    list commands",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("wrapColumns =\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestWrapColumns_NarrowStacksDescriptionUnderName(t *testing.T) {
+	in := "/settings  toggle verbosity and agent-thought visibility"
+	got := wrapColumns(in, 22)
+	for _, ln := range strings.Split(got, "\n") {
+		if lipgloss.Width(ln) > 22 {
+			t.Fatalf("row %q wider than 22 in\n%s", ln, got)
+		}
+	}
+	rows := strings.Split(got, "\n")
+	if rows[0] != "/settings" || !strings.HasPrefix(rows[1], "  toggle") {
+		t.Fatalf("expected name row then indented description, got\n%s", got)
+	}
+}
+
+func TestWrapColumns_PlainRowHangsUnderItsIndent(t *testing.T) {
+	got := wrapColumns("  one two three four five", 12)
+	for _, ln := range strings.Split(got, "\n") {
+		if !strings.HasPrefix(ln, "  ") || lipgloss.Width(ln) > 12 {
+			t.Fatalf("row %q should keep the 2-cell indent within 12 cells\n%s", ln, got)
+		}
+	}
+	if short := wrapColumns("fits  fine", 40); short != "fits  fine" {
+		t.Fatalf("a row that fits is untouched, got %q", short)
 	}
 }
 

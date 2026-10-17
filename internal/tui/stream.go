@@ -226,10 +226,7 @@ func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 		width = 80
 	}
 	// gutter + marker column + right margin
-	wrap := width - 4
-	if wrap < 20 {
-		wrap = width
-	}
+	wrap := max(width-4, minTextWidth)
 	// a nil md renderer means plain text
 	r := newMarkdown(wrap)
 	return &StreamRenderer{

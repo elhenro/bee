@@ -153,15 +153,7 @@ func (m ApprovalModel) View() string {
 		return ""
 	}
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
-	// inner content width: same bound as the question modal, shrunk on narrow
-	// terminals. reserve 6 cols for border (2) + horizontal padding (4).
-	inner := askModalWidth
-	if m.width > 0 && m.width-6 < inner {
-		inner = m.width - 6
-	}
-	if inner < 24 {
-		inner = 24
-	}
+	inner := modalInner(m.width)
 
 	action := strings.TrimRight(m.Request.Action, "\n")
 	if action == "" {
@@ -193,7 +185,7 @@ func (m ApprovalModel) View() string {
 			btns[i] = m.styles.Button.Render(lbl)
 		}
 	}
-	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, btns[0], " ", btns[1], " ", btns[2], " ", btns[3]))
+	lines = append(lines, packRow(btns, inner)...)
 
 	return m.styles.Modal.Width(inner + 4).Render(strings.Join(lines, "\n"))
 }
@@ -204,10 +196,7 @@ func clipActionLines(action string, inner int) []string {
 	raw := strings.Split(action, "\n")
 	var out []string
 	for _, l := range raw {
-		if len(l) > inner {
-			l = l[:inner-1] + "…"
-		}
-		out = append(out, "  "+l)
+		out = append(out, "  "+clipLine(l, inner-2))
 		if len(out) >= approvalActionLines && len(raw) > approvalActionLines {
 			dim := lipgloss.NewStyle().Foreground(fgOyster)
 			out = append(out, dim.Render(fmt.Sprintf("  … +%d more", len(raw)-approvalActionLines)))
@@ -215,4 +204,27 @@ func clipActionLines(action string, inner int) []string {
 		}
 	}
 	return out
+}
+
+// items laid out left to right, starting a new row when the next one won't fit
+func packRow(items []string, width int) []string {
+	var rows []string
+	row, w := "", 0
+	for _, it := range items {
+		iw := lipgloss.Width(it)
+		if row != "" && w+1+iw > width {
+			rows = append(rows, row)
+			row, w = "", 0
+		}
+		if row != "" {
+			row += " "
+			w++
+		}
+		row += it
+		w += iw
+	}
+	if row != "" {
+		rows = append(rows, row)
+	}
+	return rows
 }

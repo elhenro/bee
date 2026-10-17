@@ -162,7 +162,7 @@ func (m Model) renderQueuedMidCompact() string {
 func (m Model) renderErrorBlock(s string) string {
 	lines := []string{cleanErrorMessage(s)}
 	if m.width > 0 {
-		lines = wrapHanging(lines[0], max(m.width-markIndent-2, 20))
+		lines = wrapHanging(lines[0], max(m.width-markIndent-2, minTextWidth))
 	}
 	for i := range lines {
 		if i == 0 {
