@@ -137,7 +137,7 @@ var unsafeFlags = map[string][]string{
 	"tree": {"-o"},
 	"date": {"-s", "--set"},
 	"file": {"-C", "--compile"},
-	"go":   {"-o", "-exec", "-toolexec", "-overlay", "-w", "-u", "-coverprofile", "-cpuprofile", "-memprofile", "-blockprofile", "-mutexprofile", "-trace"},
+	"go":   {"-o", "-exec", "-toolexec", "-vettool", "-modfile", "-overlay", "-w", "-u", "-coverprofile", "-cpuprofile", "-memprofile", "-blockprofile", "-mutexprofile", "-trace"},
 	"git":  {"--output", "--ext-diff", "--exec-path"},
 }
 
@@ -197,8 +197,9 @@ func matchesUnsafeFlag(cmd, bad, arg string) bool {
 		return len(name) >= 3 && strings.HasPrefix(name, "--") && strings.HasPrefix(bad, name)
 	}
 	if cmd == "go" {
-		// go's flag package: -o=value, never clustered
-		return strings.HasPrefix(arg, bad+"=")
+		// go's flag package: -f, --f, -f=v and --f=v are all one flag, never clustered
+		name, _, _ := strings.Cut(strings.TrimPrefix(arg, "-"), "=")
+		return "-"+strings.TrimPrefix(name, "-") == bad
 	}
 	if len(bad) == 2 && strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
 		return strings.ContainsRune(arg[1:], rune(bad[1]))
