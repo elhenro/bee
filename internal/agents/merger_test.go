@@ -305,29 +305,37 @@ func TestVerifyIgnoresIgnoredLeftovers(t *testing.T) {
 	}
 }
 
-// the main checkout's gate goes .bee/verify -> hop -> real; retargeting the
-// middle link would change the gate without touching .bee.
-func TestGateIntermediateLinkBlocks(t *testing.T) {
-	f := newFixture(t)
-	commit(t, f.repo, "real", "true\n")
-	_ = os.MkdirAll(filepath.Join(f.repo, ".bee"), 0o755)
-	if err := os.Symlink("../hop", filepath.Join(f.repo, ".bee", "verify")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("real", filepath.Join(f.repo, "hop")); err != nil {
-		t.Fatal(err)
-	}
-	git(t, f.repo, "add", "hop")
-	git(t, f.repo, "commit", "-q", "-m", "hop link")
-	git(t, f.wt, "rebase", "-q", "main")
-	_ = os.Remove(filepath.Join(f.wt, "hop"))
-	if err := os.Symlink("feature.txt", filepath.Join(f.wt, "hop")); err != nil {
-		t.Fatal(err)
-	}
-	git(t, f.wt, "add", "hop")
-	git(t, f.wt, "commit", "-q", "-m", "retarget")
-	TryMerge(context.Background(), f.repo, f.status(t), config.SwarmConfig{})
-	if s := f.status(t); s.MergeState != bgreg.MergeStateBlocked {
-		t.Fatalf("merge=%s, retargeting a gate hop must block", s.MergeState)
+// a symlinked gate could point at a file any branch may edit, so the merger
+// refuses to judge against it until a human makes it a regular file.
+func TestSymlinkedGateBlocks(t *testing.T) {
+	for name, setup := range map[string]func(t *testing.T, repo string){
+		"file link": func(t *testing.T, repo string) {
+			commit(t, repo, "real", "true\n")
+			_ = os.MkdirAll(filepath.Join(repo, ".bee"), 0o755)
+			if err := os.Symlink("../real", filepath.Join(repo, ".bee", "verify")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"dir link": func(t *testing.T, repo string) {
+			_ = os.MkdirAll(filepath.Join(repo, "cfg"), 0o755)
+			commit(t, repo, "cfg/verify", "true\n")
+			if err := os.Symlink("cfg", filepath.Join(repo, ".bee")); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			setup(t, f.repo)
+			mainBefore := git(t, f.repo, "rev-parse", "main")
+			TryMerge(context.Background(), f.repo, f.status(t), config.SwarmConfig{})
+			s := f.status(t)
+			if s.MergeState != bgreg.MergeStateBlocked || !strings.Contains(s.ConflictMsg, "symlink") {
+				t.Fatalf("merge=%s msg=%q", s.MergeState, s.ConflictMsg)
+			}
+			if git(t, f.repo, "rev-parse", "main") != mainBefore {
+				t.Fatal("main moved past a symlinked gate")
+			}
+		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -83,8 +84,12 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 		_, res.Err = Resume(repoRoot, st, dirtyFeedback(st), sw.Resumes())
 		return res
 	}
-	if touchesGate(repoRoot, st.WorktreePath) {
-		Block(st.SessionID, "branch edits "+gate.File+", a human must review the gate change")
+	if gateLinked(repoRoot) {
+		Block(st.SessionID, gate.File+" is a symlink in the main checkout, make it a regular file")
+		return res
+	}
+	if touchesGate(st.WorktreePath) {
+		Block(st.SessionID, "branch edits "+filepath.Dir(gate.File)+", a human must review the gate change")
 		return res
 	}
 	pinned, err := gitOut(st.WorktreePath, "rev-parse", "HEAD")

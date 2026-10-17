@@ -22,31 +22,27 @@ func gitOut(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// touchesGate reports whether the branch changes what the main checkout's
-// gate reads. Once merged, such a change would govern every later merge, so a
-// human decides. Fails closed: a git error counts as touched.
-func touchesGate(repoRoot, dir string) bool {
-	args := append([]string{"diff", "--name-only", MergeBase + "...HEAD", "--"}, gatePaths(repoRoot)...)
-	out, err := gitOut(dir, args...)
+// touchesGate reports whether the branch changes anything under .bee, in any
+// case (a case-insensitive filesystem maps .BEE onto .bee). Once merged, such
+// a change would govern every later merge, so a human decides. Fails closed:
+// a git error counts as touched.
+func touchesGate(dir string) bool {
+	out, err := gitOut(dir, "diff", "--name-only", MergeBase+"...HEAD", "--", ":(icase)"+filepath.Dir(gate.File))
 	return err != nil || out != ""
 }
 
-// gatePaths are the pathspecs a branch may not touch: the whole .bee dir in
-// any case (a case-insensitive filesystem maps .BEE onto .bee, and a .bee
-// symlink would redirect the gate), plus every in-repo link and target the
-// main checkout's gate resolves through.
-func gatePaths(repoRoot string) []string {
-	specs := []string{":(icase)" + filepath.Dir(gate.File)}
-	root, err := filepath.EvalSymlinks(repoRoot)
-	if err != nil {
-		return specs
-	}
-	for _, p := range linkChain(root, gate.File) {
-		if p != gate.File {
-			specs = append(specs, ":(literal)"+p)
+// gateLinked reports whether the main checkout reads its gate through a
+// symlink. That is unsupported: a link could point at a file any branch may
+// edit, and following link chains safely is not worth the complexity. A
+// missing gate is fine, since a branch adding one trips touchesGate.
+func gateLinked(repoRoot string) bool {
+	for _, p := range []string{filepath.Dir(gate.File), gate.File} {
+		fi, err := os.Lstat(filepath.Join(repoRoot, p))
+		if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return true
 		}
 	}
-	return specs
+	return false
 }
 
 // pristine checks sha out detached, so verify sees exactly the commit being
