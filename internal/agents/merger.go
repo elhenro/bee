@@ -83,7 +83,7 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 		_, res.Err = Resume(repoRoot, st, dirtyFeedback(st), sw.Resumes())
 		return res
 	}
-	if touchesGate(st.WorktreePath) {
+	if touchesGate(repoRoot, st.WorktreePath) {
 		Block(st.SessionID, "branch edits "+gate.File+", a human must review the gate change")
 		return res
 	}
@@ -95,7 +95,7 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 	}
 	// read the gate from the main checkout: the agent's branch must not be
 	// able to weaken its own gate.
-	v, err := gate.Run(ctx, st.WorktreePath, gate.Commands(repoRoot, sw.Verify), gate.Opts{Timeout: sw.VerifyTimeout(), Scope: agentScope})
+	v, err := verifyPinned(ctx, repoRoot, pinned, sw)
 	if err != nil {
 		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "verify: "+err.Error())
 		res.Err = err
@@ -254,4 +254,18 @@ func mergeable(s bgreg.Status) bool {
 // means the spawner has not recorded the child yet.
 func crashed(s bgreg.Status) bool {
 	return s.WorktreePath != "" && s.State == bgreg.StateActive && s.PID > 0 && !pidAlive(s.PID)
+}
+
+// verifyPinned runs the gate on a fresh checkout of exactly the pinned commit.
+func verifyPinned(ctx context.Context, repoRoot, pinned string, sw config.SwarmConfig) (gate.Result, error) {
+	cmds := gate.Commands(repoRoot, sw.Verify)
+	if len(cmds) == 0 {
+		return gate.Result{OK: true}, nil
+	}
+	dir, cleanup, err := pristine(repoRoot, pinned)
+	if err != nil {
+		return gate.Result{}, err
+	}
+	defer cleanup()
+	return gate.Run(ctx, dir, cmds, gate.Opts{Timeout: sw.VerifyTimeout(), Scope: agentScope})
 }

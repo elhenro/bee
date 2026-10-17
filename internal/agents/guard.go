@@ -1,7 +1,10 @@
 package agents
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/elhenro/bee/internal/gate"
@@ -19,11 +22,55 @@ func gitOut(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// touchesGate reports whether the branch changes the repo's gate file. Once
-// merged, such a change would govern every later merge, so a human decides.
-func touchesGate(dir string) bool {
-	out, err := gitOut(dir, "diff", "--name-only", MergeBase+"...HEAD", "--", gate.File)
-	return err == nil && out != ""
+// touchesGate reports whether the branch changes what the main checkout's
+// gate reads. Once merged, such a change would govern every later merge, so a
+// human decides. Fails closed: a git error counts as touched.
+func touchesGate(repoRoot, dir string) bool {
+	args := append([]string{"diff", "--name-only", MergeBase + "...HEAD", "--"}, gatePaths(repoRoot)...)
+	out, err := gitOut(dir, args...)
+	return err != nil || out != ""
+}
+
+// gatePaths are the pathspecs a branch may not touch: the whole .bee dir in
+// any case (a case-insensitive filesystem maps .BEE onto .bee, and a .bee
+// symlink would redirect the gate), plus the in-repo file the gate resolves
+// to when it is a symlink.
+func gatePaths(repoRoot string) []string {
+	specs := []string{":(icase)" + filepath.Dir(gate.File)}
+	root, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		return specs
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(root, gate.File))
+	if err != nil {
+		return specs
+	}
+	rel, err := filepath.Rel(root, real)
+	if err == nil && rel != gate.File && rel != ".." && !strings.HasPrefix(rel, "../") {
+		specs = append(specs, ":(literal)"+filepath.ToSlash(rel))
+	}
+	return specs
+}
+
+// pristine checks sha out detached into a temp dir, so verify sees exactly
+// the commit being merged: no untracked or ignored leftovers from the agent.
+// The gate must therefore bring its own dependencies.
+func pristine(repoRoot, sha string) (string, func(), error) {
+	dir, err := os.MkdirTemp("", "bee-verify-")
+	if err != nil {
+		return "", nil, err
+	}
+	cmd := exec.Command("git", "worktree", "add", "--detach", "-q", dir, sha)
+	cmd.Dir = repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", nil, fmt.Errorf("verify checkout: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	cleanup := func() {
+		_, _ = gitOut(repoRoot, "worktree", "remove", "--force", dir)
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup, nil
 }
 
 // branchAt reports whether refs/heads/branch in repoRoot still points at sha,

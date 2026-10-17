@@ -191,7 +191,7 @@ func TestRepoGateFileWins(t *testing.T) {
 func TestHeadMovedDuringVerifyIsFreeBounce(t *testing.T) {
 	f := newFixture(t)
 	mainBefore := git(t, f.repo, "rev-parse", "main")
-	sneak := "git -c user.name=x -c user.email=x@x commit --allow-empty -q -m sneaky"
+	sneak := "git -C " + f.wt + " -c user.name=x -c user.email=x@x commit --allow-empty -q -m sneaky"
 	res := TryMerge(context.Background(), f.repo, f.status(t), config.SwarmConfig{Verify: []string{sneak}})
 	if res.OK {
 		t.Fatal("a commit nobody verified must not merge")
@@ -259,5 +259,48 @@ func TestBranchEditingGateBlocks(t *testing.T) {
 	}
 	if git(t, f.repo, "rev-parse", "main") != mainBefore {
 		t.Fatal("a gate edit must not reach main without a human")
+	}
+}
+
+func TestGateCaseVariantAndSymlinkBlock(t *testing.T) {
+	for name, edit := range map[string]func(t *testing.T, wt string){
+		"case variant": func(t *testing.T, wt string) {
+			_ = os.MkdirAll(filepath.Join(wt, ".BEE"), 0o755)
+			commit(t, wt, ".BEE/verify", "true\n")
+		},
+		"symlinked dir": func(t *testing.T, wt string) {
+			_ = os.MkdirAll(filepath.Join(wt, "elsewhere"), 0o755)
+			commit(t, wt, "elsewhere/verify", "true\n")
+			if err := os.Symlink("elsewhere", filepath.Join(wt, ".bee")); err != nil {
+				t.Fatal(err)
+			}
+			git(t, wt, "add", ".bee")
+			git(t, wt, "commit", "-q", "-m", "link")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			edit(t, f.wt)
+			TryMerge(context.Background(), f.repo, f.status(t), config.SwarmConfig{Verify: []string{"true"}})
+			if s := f.status(t); s.MergeState != bgreg.MergeStateBlocked {
+				t.Fatalf("merge=%s, a gate redirect must block for a human", s.MergeState)
+			}
+		})
+	}
+}
+
+// verify sees the commit, not ignored leftovers in the agent's worktree.
+func TestVerifyIgnoresIgnoredLeftovers(t *testing.T) {
+	f := newFixture(t)
+	commit(t, f.wt, ".gitignore", "gen.txt\n")
+	if err := os.WriteFile(filepath.Join(f.wt, "gen.txt"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := TryMerge(context.Background(), f.repo, f.status(t), config.SwarmConfig{Verify: []string{"test -f gen.txt"}})
+	if res.OK || !res.Red {
+		t.Fatalf("an ignored file in the worktree must not make verify pass: %+v", res)
+	}
+	if out := git(t, f.repo, "worktree", "list"); strings.Count(out, "\n") != 1 {
+		t.Fatalf("verify checkout not cleaned up:\n%s", out)
 	}
 }
