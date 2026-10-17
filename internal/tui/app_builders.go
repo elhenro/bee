@@ -184,6 +184,15 @@ func (m Model) WithOuterPadLR(n int) Model {
 	return m
 }
 
+// WithLoader seeds the busy-indicator style from config (tui.loader).
+func (m Model) WithLoader(name string) Model {
+	m.loader = name
+	if m.stream != nil {
+		m.stream.SetLoader(name)
+	}
+	return m
+}
+
 // WithStreamCh wires a text-delta channel from the engine into the TUI.
 // The same channel must be set on Engine.StreamCh so deltas flow.
 func (m Model) WithStreamCh(ch chan string) Model {

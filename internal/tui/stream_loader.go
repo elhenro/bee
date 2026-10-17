@@ -129,6 +129,15 @@ func ParseLoaderStyle(s string) LoaderStyle {
 // setting the env var before NewStreamRenderer. Indirected for clarity.
 func envLoaderStyle() string { return os.Getenv("BEE_LOADER") }
 
+// SetLoader applies the configured loader name (tui.loader); BEE_LOADER, when
+// set, wins so a one-off launch can still try another style.
+func (r *StreamRenderer) SetLoader(name string) {
+	if env := envLoaderStyle(); env != "" {
+		name = env
+	}
+	r.loaderStyle = ParseLoaderStyle(name)
+}
+
 // animatedCaret renders a tiny 3-cell bee swarm at the tail of a
 // streaming partial. Replaces the old static ▍ caret: when the model
 // paused between deltas (mid-text reasoning, slow tool-call emission,

@@ -66,13 +66,14 @@ type Config struct {
 	// on next launch (intro is a one-shot startup animation).
 	ShowBanner bool `toml:"show_banner"`
 
-	// ShowLoader controls the braille "generating" animation shown while
-	// the model is producing the next turn (pre-token loader + animated
-	// caret). Default true. Toggle via /settings; persists across launches.
+	// ShowLoader controls the motion of the busy indicator while the model
+	// is producing the next turn: the turning glyph on the spinner row, or
+	// the braille animation of a pinned tui.loader. Off leaves a static bee
+	// mark. Default true. Toggle via /settings; persists across launches.
 	ShowLoader bool `toml:"show_loader"`
 
-	// Loader readout figures shown in the generating strip. Default true for
-	// each; flipping all three off leaves only the particle stream.
+	// Figures shown on the busy row (and in the strip loader's readout).
+	// Default true for each.
 	ShowLoaderIn   bool `toml:"show_loader_in"`   // ↑ input tokens
 	ShowLoaderOut  bool `toml:"show_loader_out"`  // ↓ output tokens
 	ShowLoaderRate bool `toml:"show_loader_rate"` // avg tok/s throughput
@@ -235,6 +236,13 @@ type TUIConfig struct {
 	// occurrence, so a damaged list degrades gracefully instead of blocking
 	// startup. Toggled from config only — machine-readable mode is opt-in.
 	StatusLine []string `toml:"status_line"`
+
+	// Loader picks the busy indicator while a turn runs. Empty or "spinner"
+	// (default) is one row with the clock and token figures; "strip" is the
+	// braille token stream, "phased" the pipeline that evolves with the wait,
+	// and a painter name (wave, comet, hex, ...) pins that animation. The
+	// BEE_LOADER environment variable overrides it.
+	Loader string `toml:"loader"`
 }
 
 // UserTool describes a custom shell-alias tool. Name becomes the tool id the

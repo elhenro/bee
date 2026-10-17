@@ -185,6 +185,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.stream.SetShowNudges(m.showNudges)
 		m.stream.SetCompact(m.compact)
 		m.stream.SetHighlight(m.highlight)
+		m.stream.SetLoader(m.loader)
 		m.palette.SetWidth(msg.Width)
 		m.atpicker.SetWidth(msg.Width)
 		m.history.SetWidth(msg.Width)

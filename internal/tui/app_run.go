@@ -144,7 +144,8 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 			WithShowGitBranch(eng.Cfg.ShowGitBranch).
 			WithShowTotalTokens(eng.Cfg.ShowTotalTokens).
 			WithStatusLine(eng.Cfg.TUI.StatusLine).
-			WithOuterPadLR(eng.Cfg.OuterPadLR)
+			WithOuterPadLR(eng.Cfg.OuterPadLR).
+			WithLoader(eng.Cfg.TUI.Loader)
 	}
 	// hand the engine's stream channel to the model so deltas land in the
 	// bubbletea Update loop instead of corrupting the alt-screen.

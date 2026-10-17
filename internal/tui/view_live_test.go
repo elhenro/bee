@@ -192,3 +192,34 @@ func TestRenderLive_LongReasoningStaysInsideBudget(t *testing.T) {
 		t.Fatalf("with text too: %d rows, budget 14", rows)
 	}
 }
+
+func TestSetLoader_ConfigPicksTheStyleAndTheEnvWins(t *testing.T) {
+	t.Setenv("BEE_LOADER", "")
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	if !r.isDefaultLoader() {
+		t.Fatal("no config and no env should give the busy-row spinner")
+	}
+	r.SetLoader("strip")
+	if !r.isStripLoader() {
+		t.Fatal("tui.loader = strip should pin the strip")
+	}
+	r.SetLoader("not-a-loader")
+	if !r.isDefaultLoader() {
+		t.Fatal("an unknown name falls back to the spinner")
+	}
+	t.Setenv("BEE_LOADER", "phased")
+	r.SetLoader("strip")
+	if r.loaderStyle != LoaderStylePhased {
+		t.Fatalf("BEE_LOADER should win over config, got style %v", r.loaderStyle)
+	}
+}
+
+// a resize rebuilds the renderer; the configured loader must survive it
+func TestLoader_SurvivesResize(t *testing.T) {
+	t.Setenv("BEE_LOADER", "")
+	m := newTestModel(t).WithLoader("strip")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if !next.(Model).stream.isStripLoader() {
+		t.Fatal("resize dropped the configured loader")
+	}
+}

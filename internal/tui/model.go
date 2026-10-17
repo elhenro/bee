@@ -361,6 +361,9 @@ type Model struct {
 	// View() never renders past messages — they live in native scrollback.
 	// flush() emits the slice m.messages[printedCount:] and advances this.
 	printedCount int
+	// loader is the configured busy-indicator name (tui.loader), re-applied
+	// whenever the stream renderer is rebuilt on resize
+	loader string
 	// scroll orders everything that goes to scrollback; shared by pointer
 	// like styles, so every copy of the Model queues into the same line
 	scroll *scrollback
