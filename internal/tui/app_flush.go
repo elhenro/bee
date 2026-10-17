@@ -69,6 +69,9 @@ func (m *Model) flush() tea.Cmd {
 		m.stream.SetContinuation(cont)
 		rendered := m.stream.RenderMessage(msg)
 		m.stream.SetContinuation(false)
+		if msg.Role == types.RoleTool && rendered != "" {
+			m.lastToolClipped = m.stream.clipped
+		}
 		// renderer may return empty for filtered messages (e.g. hidden
 		// [nudge] turns); skip those so we don't blit a stray blank row.
 		if rendered == "" {

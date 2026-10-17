@@ -41,6 +41,7 @@ var statusRegistry = map[string]statusItem{
 	"cost":          {id: "cost", align: alignRight, draw: drawStatusCost},
 	"total_tokens":  {id: "total_tokens", align: alignRight, draw: drawStatusTotalTokens},
 	"turn_timer":    {id: "turn_timer", align: alignRight, draw: func(m Model) string { return m.renderTurnTimer() }},
+	"expand":        {id: "expand", align: alignRight, draw: drawStatusExpand},
 	"hints":         {id: "hints", align: alignRight, draw: drawStatusHints},
 }
 
@@ -50,14 +51,14 @@ var statusRegistry = map[string]statusItem{
 func defaultStatusLineIDs() []string {
 	return []string{
 		"context", "model", "role", "effort", "yolo", "goal",
-		"cwd", "git_branch", "cost", "total_tokens", "turn_timer", "hints",
+		"cwd", "git_branch", "cost", "total_tokens", "turn_timer", "expand", "hints",
 	}
 }
 
 // shed order (first goes first) when the footer doesn't fit; identity items
 // (context, model, role, safety) truncate instead
 var statusDropOrder = []string{
-	"hints", "total_tokens", "turn_timer", "git_branch", "cwd", "cost", "goal", "session_title",
+	"hints", "total_tokens", "turn_timer", "expand", "git_branch", "cwd", "cost", "goal", "session_title",
 }
 
 // resolveStatusLine turns a configured id list into the ordered ids to draw.
@@ -267,6 +268,15 @@ func drawStatusHints(m Model) string {
 		return m.hints([][2]string{{"enter", "send"}, {"shift+↵", "newline"}})
 	}
 	return m.hints([][2]string{{"/", "commands"}, {"@", "files"}, {"?", "help"}})
+}
+
+// ctrl+o offer after a tool card that cut rows: gone once you type, send or
+// expand, and shed after the always-on hints
+func drawStatusExpand(m Model) string {
+	if !m.lastToolClipped || m.input.Value() != "" || m.state == StateStreaming || m.showHelp || m.pickerOpen() {
+		return ""
+	}
+	return m.hints([][2]string{{"ctrl+o", "expand"}})
 }
 
 // drawStatusRole renders the active-role chip (gated by the effort toggle).

@@ -294,3 +294,67 @@ func TestCallRow_NeverWrapsOnANarrowTerminal(t *testing.T) {
 		}
 	}
 }
+
+func toolTurn(name string, input map[string]any, out string) []types.Message {
+	return []types.Message{
+		{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockToolUse, Use: &types.ToolUse{ID: "t1", Name: name, Input: input}}}},
+		{Role: types.RoleTool, Content: []types.ContentBlock{{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: "t1", Content: out}}}},
+	}
+}
+
+func TestClipped_TracksCardsThatCutRows(t *testing.T) {
+	long := strings.Repeat("line\n", 40)
+	cases := []struct {
+		name string
+		use  string
+		in   map[string]any
+		out  string
+		want bool
+	}{
+		{"long bash output", "bash", map[string]any{"command": "seq 40"}, long, true},
+		{"short bash output", "bash", map[string]any{"command": "echo hi"}, "hi\n", false},
+		{"a read always collapses, nothing to offer", "read", map[string]any{"path": "a.go"}, long, false},
+		{"long diff", "write", map[string]any{"path": "a.txt", "content": long}, "wrote", true},
+	}
+	for _, c := range cases {
+		r := NewStreamRenderer(DefaultStyles(), 100)
+		for _, msg := range toolTurn(c.use, c.in, c.out) {
+			r.RenderMessage(msg)
+		}
+		if r.clipped != c.want {
+			t.Errorf("%s: clipped = %v, want %v", c.name, r.clipped, c.want)
+		}
+	}
+	// the flag describes the latest tool message only
+	r := NewStreamRenderer(DefaultStyles(), 100)
+	for _, msg := range toolTurn("bash", map[string]any{"command": "seq 40"}, long) {
+		r.RenderMessage(msg)
+	}
+	r.toolUses["t1"] = types.ToolUse{ID: "t1", Name: "bash", Input: map[string]any{"command": "echo"}}
+	r.RenderMessage(types.Message{Role: types.RoleTool, Content: []types.ContentBlock{{Type: types.BlockToolResult, Result: &types.ToolResult{UseID: "t1", Content: "ok"}}}})
+	if r.clipped {
+		t.Error("a later short card left the clipped flag set")
+	}
+}
+
+func TestFooter_OffersCtrlOAfterAClippedCard(t *testing.T) {
+	m := newTestModel(t)
+	m.width, m.height = 100, 30
+	m.messages = toolTurn("bash", map[string]any{"command": "seq 40"}, strings.Repeat("line\n", 40))
+	m.flush()
+	if !m.lastToolClipped {
+		t.Fatal("flushing a clipped card did not arm the hint")
+	}
+	if got := stripANSI(drawStatusExpand(m)); !strings.Contains(got, "ctrl+o") {
+		t.Fatalf("idle footer lacks the ctrl+o offer: %q", got)
+	}
+	m.input.SetValue("typing")
+	if got := stripANSI(drawStatusExpand(m)); got != "" {
+		t.Fatalf("the offer should vanish while typing: %q", got)
+	}
+	m.input.Reset()
+	nm, _ := m.toggleLastToolOutput()
+	if nm.(Model).lastToolClipped {
+		t.Fatal("expanding did not retire the hint")
+	}
+}

@@ -150,6 +150,7 @@ func (r *StreamRenderer) diffCard(blocks []diffBlock) string {
 	}
 	if !r.verbose {
 		for i := range blocks {
+			r.clipped = r.clipped || len(blocks[i].rows) > keep
 			blocks[i].rows = trimRows(blocks[i].rows, keep)
 		}
 	}

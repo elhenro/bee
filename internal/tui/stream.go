@@ -73,6 +73,8 @@ type StreamRenderer struct {
 	toolUses map[string]types.ToolUse
 	// last rendered message was a tool card: the next one stacks tight
 	afterTool bool
+	// the last tool message cut rows from its output; ctrl+o shows the rest
+	clipped bool
 	// reply already printed its marker (progressive flush), no second ⬢
 	cont bool
 	// pulse phase of in-flight call bullets

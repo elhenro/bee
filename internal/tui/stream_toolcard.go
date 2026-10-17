@@ -222,6 +222,7 @@ func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.T
 			}
 		}
 		if hidden := len(v.lines) - len(shown); hidden > 0 {
+			r.clipped = true
 			more := fmt.Sprintf("%s +%d lines", glyphMore, hidden)
 			if v.total >= 1000 {
 				more += " " + glyphSep + " " + humanBytes(v.total)

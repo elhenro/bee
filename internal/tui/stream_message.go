@@ -59,6 +59,7 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 		r.afterTool = false
 		return r.frame(body, true, false)
 	default:
+		r.clipped = false
 		body := r.toolBody(m)
 		if body == "" {
 			return ""

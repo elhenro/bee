@@ -17,6 +17,7 @@ func (m Model) toggleLastToolOutput() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.toolOutputExpanded = !m.toolOutputExpanded
+	m.lastToolClipped = false
 	rendered := m.stream.RenderMessageDetail(msg, m.toolOutputExpanded)
 	if rendered == "" {
 		return m, nil

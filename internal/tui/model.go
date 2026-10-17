@@ -341,6 +341,8 @@ type Model struct {
 	stallResumeReason  string
 	// esc was pressed on this turn: when its Canceled turnDoneMsg lands, say so
 	interrupted bool
+	// the last printed tool card cut rows: the footer offers ctrl+o
+	lastToolClipped bool
 
 	// compacting is true while an async /compact goroutine is running.
 	// renderLive uses this to keep the loader animation alive while the
