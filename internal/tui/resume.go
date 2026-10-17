@@ -131,7 +131,7 @@ func (p *ResumePicker) View(width, height int) string {
 		return ""
 	}
 	title := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorAccent)).
+		Foreground(accentHoney).
 		Bold(true).
 		Render("⬢ Resume session")
 	if len(p.entries) == 0 {

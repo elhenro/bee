@@ -18,7 +18,7 @@ type EscalateChoiceMsg struct {
 // option list beneath it, tied in with the same mustard warn rail. Inactive =
 // renders nothing.
 type EscalateModel struct {
-	styles  Styles
+	styles  *Styles
 	Active  bool
 	options []string
 	focus   int
@@ -27,7 +27,7 @@ type EscalateModel struct {
 
 // NewEscalateModel returns a fresh, inactive picker.
 func NewEscalateModel(styles Styles) EscalateModel {
-	return EscalateModel{styles: styles}
+	return EscalateModel{styles: &styles}
 }
 
 // SetWidth records the terminal width so View can wrap option rows.

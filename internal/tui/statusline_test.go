@@ -24,7 +24,7 @@ func TestStatusLine_ConfigOrderRendersInOrder(t *testing.T) {
 	out := stripANSI(m.renderTopBar())
 	iCwd := strings.Index(out, "/tmp/work")
 	iModel := strings.Index(out, "gpt-4o-mini")
-	iContext := strings.Index(out, "🐝")
+	iContext := strings.Index(out, glyphBee)
 	if iCwd < 0 || iModel < 0 || iContext < 0 {
 		t.Fatalf("missing item(s) in %q", out)
 	}
@@ -93,7 +93,7 @@ func TestStatusLine_EmptyListHidesLine(t *testing.T) {
 func TestStatusLine_MissingKeyUsesDefaults(t *testing.T) {
 	m := statusTestModel() // statusLine left nil == key absent
 	out := stripANSI(m.renderTopBar())
-	if !strings.Contains(out, "🐝") || !strings.Contains(out, "/tmp/work") {
+	if !strings.Contains(out, glyphBee) || !strings.Contains(out, "/tmp/work") {
 		t.Fatalf("default line missing expected items: %q", out)
 	}
 	if got := resolveStatusLine(nil); len(got) != len(defaultStatusLineIDs()) {

@@ -1,9 +1,11 @@
 // Package tui implements bee's interactive Bubbletea interface.
 //
-// Palette follows the charmbracelet/crush approach: a layered neutral scale
-// (multiple foreground subtleties × multiple background layers) with a single
-// brand accent. Bee swaps crush's purple for honey amber. Hex values are
-// inlined so we don't take a charmtone dependency.
+// The look is "honey minimal": a layered neutral scale (faint → subtle →
+// body → bright foregrounds, plus a few quiet panel backgrounds) with one
+// brand accent, honey amber, and a handful of semantic hues for diffs and
+// status. Chrome stays dim; honey marks what is live or yours (prompt,
+// your turns, the spinner, the selected row). Hex values are inlined so we
+// don't take a palette dependency.
 package tui
 
 import (
@@ -13,59 +15,51 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Layered neutrals — borrowed from charmtone, mirrored for light mode so
-// the same role (subtle/body/highlight) stays consistent across themes.
+// Layered neutrals, mirrored for light mode so the same role (faint /
+// subtle / body / bright) stays consistent across themes.
 //
-//	fg: Oyster (most subtle) → Squid → Smoke → Ash (base) → Butter (highlight)
-//	bg: Pepper (base) → BBQ → Charcoal → Iron
+//	fg: Oyster (faint) → Squid (subtle) → Smoke (secondary) → Ash (body) → Butter (bright)
+//	bg: Pepper (base) → BBQ (surface) → Charcoal (separator) → Iron (emphasis)
 var (
-	fgOyster = lipgloss.AdaptiveColor{Light: "#7C7A86", Dark: "#605F6B"} // most subtle text
-	fgSquid  = lipgloss.AdaptiveColor{Light: "#5D5B6A", Dark: "#858392"} // subtle text
-	fgSmoke  = lipgloss.AdaptiveColor{Light: "#3F3E4A", Dark: "#BFBCC8"} // body-secondary
-	fgAsh    = lipgloss.AdaptiveColor{Light: "#201F26", Dark: "#DFDBDD"} // body text
-	fgButter = lipgloss.AdaptiveColor{Light: "#201F26", Dark: "#FFFAF1"} // on-accent highlights
+	fgOyster = lipgloss.AdaptiveColor{Light: "#8B8996", Dark: "#5F5E6A"} // faint: hints, rules
+	fgSquid  = lipgloss.AdaptiveColor{Light: "#65636F", Dark: "#8B8997"} // subtle: args, results
+	fgSmoke  = lipgloss.AdaptiveColor{Light: "#45434F", Dark: "#B9B6C2"} // secondary body
+	fgAsh    = lipgloss.AdaptiveColor{Light: "#222127", Dark: "#E0DCDE"} // body text
+	fgButter = lipgloss.AdaptiveColor{Light: "#17161B", Dark: "#FFFAF1"} // bright / on-accent
 
 	bgPepper   = lipgloss.AdaptiveColor{Light: "#F4F1EC", Dark: "#201F26"} // base
 	bgBBQ      = lipgloss.AdaptiveColor{Light: "#E8E4DD", Dark: "#2D2C35"} // surface
 	bgCharcoal = lipgloss.AdaptiveColor{Light: "#D2CEC6", Dark: "#3A3943"} // separator / soft border
 	bgIron     = lipgloss.AdaptiveColor{Light: "#B8B4AC", Dark: "#4D4C57"} // emphasized surface
 
-	// warm tint for user-prompt bubbles. Adaptive so it stays subtle in
-	// both modes: dark amber on dark terminals, light honey-cream on light
-	// terminals. Either way the eye locks onto past user turns when
-	// scanning scrollback without the block looking like a brutal slab.
-	bgUserHl = lipgloss.AdaptiveColor{Light: "#FFE9B8", Dark: "#3A2E14"}
+	// warm panel behind your own turns: a whisper of amber so past prompts
+	// pop out of scrollback without a heavy slab.
+	bgUserHl = lipgloss.AdaptiveColor{Light: "#F6ECD0", Dark: "#2B261A"}
 
-	// soft red bg for the failed-command badge that replaces the bare
-	// "exit N" preview on bash errors. Picked so it sits subtly on both
-	// terminal themes — pale rose over cream, deep wine over charcoal.
-	bgErrorHl = lipgloss.AdaptiveColor{Light: "#FFD7DC", Dark: "#5A1F2C"}
+	// failed-command badge bg: pale rose over cream, deep wine over charcoal.
+	bgErrorHl = lipgloss.AdaptiveColor{Light: "#FFD7DC", Dark: "#4A1F2A"}
 
-	// soft yellow bg for refusal/denial badges. Same role as bgErrorHl but
-	// for permission-denied / refused-by-user / safety-rejected results —
-	// reads "this was blocked, not broken". Pale cream over light, warm
-	// amber-brown over dark, so it sits adjacent to honey without clashing.
-	bgWarnHl = lipgloss.AdaptiveColor{Light: "#FFEAB8", Dark: "#5A4214"}
+	// refusal/denial badge bg: reads "blocked, not broken".
+	bgWarnHl = lipgloss.AdaptiveColor{Light: "#FFEAB8", Dark: "#4A3A14"}
 
-	// soft green/red bgs for + / - lines in edit previews. Subtler than
-	// bgErrorHl (which is a single-row badge) because diff bodies span many
-	// rows and a saturated wash would visually scream. Mirrors github/gitlab
-	// diff highlighting: pale tint on light, deep low-sat tint on dark.
-	bgDiffAddHl = lipgloss.AdaptiveColor{Light: "#DDF5DD", Dark: "#1E3A24"}
-	bgDiffDelHl = lipgloss.AdaptiveColor{Light: "#F5DDDD", Dark: "#3A1E24"}
+	// + / - rows in edit previews: low-saturation tints so a many-row hunk
+	// reads as a quiet block, not a scream.
+	bgDiffAddHl = lipgloss.AdaptiveColor{Light: "#DDF3DF", Dark: "#1B3324"}
+	bgDiffDelHl = lipgloss.AdaptiveColor{Light: "#F6DFE0", Dark: "#3A1F26"}
 )
 
 // Brand + semantic accents. Light-mode pairs darken the hue so it carries
-// over white-ish backgrounds without losing the role association.
+// over pale backgrounds without losing the role association.
 var (
-	accentHoney = lipgloss.AdaptiveColor{Light: "#A56F00", Dark: "#FFB000"} // primary brand — bee accent
-	accentYou   = lipgloss.AdaptiveColor{Light: "#0064B5", Dark: "#00A4FF"} // Malibu — user role
-	accentBee   = lipgloss.AdaptiveColor{Light: "#8A5A00", Dark: "#FFC857"} // soft honey — assistant role
-	accentTool  = lipgloss.AdaptiveColor{Light: "#6B4A93", Dark: "#B084CC"} // lilac — tool calls/output, distinct from honey + blue
-	accentBusy  = lipgloss.AdaptiveColor{Light: "#5E6E00", Dark: "#E8FF27"} // Citron — streaming pulse
-	semSuccess  = lipgloss.AdaptiveColor{Light: "#007A52", Dark: "#00FFB2"} // Julep
-	semWarning  = lipgloss.AdaptiveColor{Light: "#7C7300", Dark: "#F5EF34"} // Mustard
-	semError    = lipgloss.AdaptiveColor{Light: "#C0203F", Dark: "#EB4268"} // Sriracha
+	accentHoney = lipgloss.AdaptiveColor{Light: "#A56F00", Dark: "#FFB000"} // brand: prompt, spinner, your turns
+	accentYou   = lipgloss.AdaptiveColor{Light: "#0B63C5", Dark: "#7AB7FF"} // info blue: links
+	accentBee   = lipgloss.AdaptiveColor{Light: "#8A5A00", Dark: "#FFC857"} // soft honey: assistant marker
+	accentTool  = lipgloss.AdaptiveColor{Light: "#6B4A93", Dark: "#B79AD6"} // lilac: queen role, rare accents
+	accentCode  = lipgloss.AdaptiveColor{Light: "#0E7A6C", Dark: "#7FD1C2"} // teal: inline code
+	accentBusy  = lipgloss.AdaptiveColor{Light: "#7A6A00", Dark: "#F0D84A"} // context nearly full
+	semSuccess  = lipgloss.AdaptiveColor{Light: "#0A7A4F", Dark: "#6FD6A0"}
+	semWarning  = lipgloss.AdaptiveColor{Light: "#8A6A00", Dark: "#E6C35C"}
+	semError    = lipgloss.AdaptiveColor{Light: "#C0203F", Dark: "#EE6A82"}
 )
 
 // Aliases kept so existing callers (caveman cycle, etc.) compile without churn.
@@ -82,105 +76,105 @@ var (
 
 // Styles bundles every reusable lipgloss style.
 type Styles struct {
-	TopBar     lipgloss.Style // dim chrome — bee glyph carries the accent
+	TopBar     lipgloss.Style // dim chrome: the bee glyph carries the accent
 	BottomBar  lipgloss.Style
 	Scope      lipgloss.Style
 	RoleYou    lipgloss.Style
 	RoleBee    lipgloss.Style
 	RoleTool   lipgloss.Style
 	ToolCard   lipgloss.Style
-	ToolName   lipgloss.Style // lilac, bold — distinguishes from honey AI + blue user
-	ToolArgs   lipgloss.Style
-	ToolPrev   lipgloss.Style
-	ToolRail   lipgloss.Style // lilac left rail beside tool-output lines
-	DiffAdd    lipgloss.Style // green `+` line for inserted text in edit previews
-	DiffDel    lipgloss.Style // red `-` line for removed text in edit previews
-	DiffAddBg  lipgloss.Style // pale green wash behind whole `+` diff row
-	DiffDelBg  lipgloss.Style // pale red wash behind whole `-` diff row
-	DiffPath   lipgloss.Style // bold path header above diff body
-	DiffMeta   lipgloss.Style // dimmed meta line (occurrence, anchors, hunk hdrs)
-	Thought    lipgloss.Style // grayed italic — model's chain-of-thought
+	ToolName   lipgloss.Style // bold body: the verb of a tool call
+	ToolArgs   lipgloss.Style // subtle: what the call acts on
+	ToolPrev   lipgloss.Style // subtle: result preview rows
+	ToolRail   lipgloss.Style // faint connector beside result rows
+	DiffAdd    lipgloss.Style // green `+` text in edit previews
+	DiffDel    lipgloss.Style // red `-` text in edit previews
+	DiffAddBg  lipgloss.Style // soft green wash behind a whole `+` row
+	DiffDelBg  lipgloss.Style // soft red wash behind a whole `-` row
+	DiffPath   lipgloss.Style // path header above a diff body
+	DiffMeta   lipgloss.Style // dimmed meta line (anchors, gaps)
+	Thought    lipgloss.Style // faint italic: the model's chain-of-thought
 	Modal      lipgloss.Style
 	ModalTitle lipgloss.Style
 	Button     lipgloss.Style
 	ButtonHot  lipgloss.Style
 	Error      lipgloss.Style
-	ErrorCmd   lipgloss.Style // failed-bash command rendered on red bg highlight
-	Warn       lipgloss.Style // refused/denied body text (permission blocked, not broken)
-	WarnCmd    lipgloss.Style // refused command rendered on yellow bg highlight
+	ErrorCmd   lipgloss.Style // failed-bash command on a red wash
+	Warn       lipgloss.Style // refused/denied text (blocked, not broken)
+	WarnCmd    lipgloss.Style // refused command on a yellow wash
 	WarnBadge  lipgloss.Style // pill badge for the escalate card title
-	WarnRail   lipgloss.Style // mustard left rail beside escalate body lines
+	WarnRail   lipgloss.Style // amber rail beside escalate body lines
 	Dim        lipgloss.Style
 	Body       lipgloss.Style // base prose
-	UserBubble lipgloss.Style // (legacy) full-width warm tint — retained for callers
-	UserRail   lipgloss.Style // blue left rail beside user-turn lines
-	UserBody   lipgloss.Style // bold blue prose for the user-turn body
+	UserBubble lipgloss.Style // warm panel behind your turns
+	UserRail   lipgloss.Style // honey bar beside your turns
+	UserBody   lipgloss.Style // your turn's text on the panel
+
+	Rule     lipgloss.Style // hairline rules framing the prompt
+	Key      lipgloss.Style // keycap in a hint (bright)
+	Hint     lipgloss.Style // hint label (faint)
+	Mark     lipgloss.Style // honey assistant marker
+	ToolOK   lipgloss.Style // finished-call bullet
+	ToolFail lipgloss.Style // failed-call bullet
+	Select   lipgloss.Style // selected picker row
 }
 
-// DefaultStyles returns the layered honey-on-charmtone palette.
+// DefaultStyles returns the honey-minimal palette.
 func DefaultStyles() Styles {
 	return Styles{
-		// chrome stays quiet; accent only on the bee glyph
-		TopBar:    lipgloss.NewStyle().Foreground(fgSmoke).Bold(true),
+		// chrome stays quiet; accent only where something is live
+		TopBar:    lipgloss.NewStyle().Foreground(fgSquid),
 		BottomBar: lipgloss.NewStyle().Foreground(fgOyster),
 		Scope:     lipgloss.NewStyle().Foreground(fgSquid).Italic(true),
 
-		// role markers — single-glyph, single-color
-		RoleYou:  lipgloss.NewStyle().Foreground(accentYou).Bold(true),
-		RoleBee:  lipgloss.NewStyle().Foreground(accentBee).Bold(true),
-		RoleTool: lipgloss.NewStyle().Foreground(accentTool),
+		RoleYou:  lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
+		RoleBee:  lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
+		RoleTool: lipgloss.NewStyle().Foreground(fgSquid),
 
-		// tool cards — borderless. Lilac so eye instantly distinguishes
-		// tool activity from honey-AI prose and blue-user input.
+		// tool activity is neutral so it reads as a quiet lane next to the
+		// answer: bold verb, subtle object, faint connector.
 		ToolCard: lipgloss.NewStyle(),
-		ToolName: lipgloss.NewStyle().Foreground(accentTool).Bold(true),
+		ToolName: lipgloss.NewStyle().Foreground(fgAsh).Bold(true),
 		ToolArgs: lipgloss.NewStyle().Foreground(fgSquid),
-		ToolPrev: lipgloss.NewStyle().Foreground(fgSmoke),
-		ToolRail: lipgloss.NewStyle().Foreground(accentTool),
+		ToolPrev: lipgloss.NewStyle().Foreground(fgSquid),
+		ToolRail: lipgloss.NewStyle().Foreground(fgOyster),
 
-		// diff lines for edit/write/apply_patch/hashline_edit previews — green
-		// add, red del, accent path header, dimmed meta. Same palette as
-		// `git diff --color` so users read it instantly.
 		DiffAdd:   lipgloss.NewStyle().Foreground(semSuccess),
 		DiffDel:   lipgloss.NewStyle().Foreground(semError),
 		DiffAddBg: lipgloss.NewStyle().Background(bgDiffAddHl),
 		DiffDelBg: lipgloss.NewStyle().Background(bgDiffDelHl),
-		DiffPath:  lipgloss.NewStyle().Foreground(accentTool).Bold(true),
-		DiffMeta:  lipgloss.NewStyle().Foreground(fgOyster).Italic(true),
+		DiffPath:  lipgloss.NewStyle().Foreground(fgSmoke),
+		DiffMeta:  lipgloss.NewStyle().Foreground(fgOyster),
 
-		// chain-of-thought: most subtle fg + italic so it reads as
-		// "background musing", visibly secondary to the answer.
+		// chain-of-thought: faint italic, visibly secondary to the answer.
 		Thought: lipgloss.NewStyle().Foreground(fgOyster).Italic(true),
 
-		// approval modal
 		Modal:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(bgIron).Padding(1, 2),
 		ModalTitle: lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
 		Button:     lipgloss.NewStyle().Foreground(fgSquid).Padding(0, 2),
 		ButtonHot:  lipgloss.NewStyle().Foreground(fgButter).Background(accentHoney).Bold(true).Padding(0, 2),
 
-		Error: lipgloss.NewStyle().Foreground(semError).Bold(true),
-		// failed-bash command: keep the cmd readable (body fg) on the soft
-		// red bg so the eye reads "this command failed" instead of just
-		// "exit 1". Bold so it stands out from any trailing stderr lines.
-		ErrorCmd: lipgloss.NewStyle().Foreground(fgAsh).Background(bgErrorHl).Bold(true),
-		// refusal/denial body — mustard fg, bold. Sits next to ErrorCmd as
-		// "blocked, not broken": permission denied, safety reject, user n.
-		Warn:      lipgloss.NewStyle().Foreground(semWarning).Bold(true),
-		WarnCmd:   lipgloss.NewStyle().Foreground(fgAsh).Background(bgWarnHl).Bold(true),
+		Error:     lipgloss.NewStyle().Foreground(semError),
+		ErrorCmd:  lipgloss.NewStyle().Foreground(fgAsh).Background(bgErrorHl),
+		Warn:      lipgloss.NewStyle().Foreground(semWarning),
+		WarnCmd:   lipgloss.NewStyle().Foreground(fgAsh).Background(bgWarnHl),
 		WarnBadge: lipgloss.NewStyle().Foreground(fgButter).Background(accentHoney).Bold(true).Padding(0, 1),
 		WarnRail:  lipgloss.NewStyle().Foreground(semWarning),
 		Dim:       lipgloss.NewStyle().Foreground(fgOyster),
 		Body:      lipgloss.NewStyle().Foreground(fgAsh),
 
-		// legacy user-bubble — kept so callers that referenced it still compile.
-		// renderer no longer applies it; user turns now use a left-rail layout.
+		// your turns: honey bar on a warm panel, body-colored text.
 		UserBubble: lipgloss.NewStyle().Background(bgUserHl),
-		// blue rail beside every user-turn line. Mirrors ToolRail's role for
-		// tool output — one column wide, role-colored, no background.
-		UserRail: lipgloss.NewStyle().Foreground(accentYou),
-		// user-turn body: bold + blue. Mirrors the rail color so prompt
-		// reads as one prominent quoted block, no bg highlight needed.
-		UserBody: lipgloss.NewStyle().Foreground(accentYou).Bold(true),
+		UserRail:   lipgloss.NewStyle().Foreground(accentHoney).Background(bgUserHl),
+		UserBody:   lipgloss.NewStyle().Foreground(fgButter).Background(bgUserHl),
+
+		Rule:     lipgloss.NewStyle().Foreground(bgCharcoal),
+		Key:      lipgloss.NewStyle().Foreground(fgSmoke),
+		Hint:     lipgloss.NewStyle().Foreground(fgOyster),
+		Mark:     lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
+		ToolOK:   lipgloss.NewStyle().Foreground(semSuccess),
+		ToolFail: lipgloss.NewStyle().Foreground(semError),
+		Select:   lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
 	}
 }
 

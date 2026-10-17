@@ -8,7 +8,7 @@ import (
 )
 
 // diffPreviewLinesCompact caps body height for compact-mode edit previews.
-// Verbose mode lets every line through (mirrors previewLines() semantics).
+// Verbose mode lets every line through (mirrors previewRows semantics).
 // Sized to fit a focused hunk: 1 context + change block + 1 context.
 const diffPreviewLinesCompact = 14
 
@@ -129,13 +129,9 @@ func (r *StreamRenderer) diffStats(adds, dels int) string {
 	return strings.Join(parts, " ")
 }
 
-// diffBody wraps a slice of already-styled lines in the lilac tool rail
-// (same as renderToolResult) and applies the compact-mode line cap. When
-// every line would render empty the empty string is returned so the
-// caller can omit the body entirely. When the cap fires, the body is
-// trimmed by balancedTrim so both `-` and `+` rails stay represented —
-// the previous head-cap could fully hide the additions when the removal
-// block was long enough to fill the budget alone.
+// styled diff rows hung off the call header, capped outside verbose via
+// balancedTrim so both `-` and `+` rows stay represented (a head cap could
+// hide the additions entirely)
 func (r *StreamRenderer) diffBody(lines []string) string {
 	if len(lines) == 0 {
 		return ""
@@ -145,16 +141,16 @@ func (r *StreamRenderer) diffBody(lines []string) string {
 		hidden = len(lines) - diffPreviewLinesCompact
 		lines = balancedTrim(lines, diffPreviewLinesCompact)
 	}
-	rail := r.styles.ToolRail.Render("▎")
-	out := make([]string, len(lines))
+	w := r.textWidth(resultIndent)
+	rows := make([]string, len(lines))
 	for i, ln := range lines {
-		out[i] = rail + " " + ln
+		rows[i] = clipLine(ln, w)
 	}
-	body := strings.Join(out, "\n")
+	body := strings.Join(rows, "\n")
 	if hidden > 0 {
-		body += "\n" + rail + " " + r.styles.Dim.Render(fmt.Sprintf("⋯ +%d more", hidden))
+		body += "\n" + r.styles.Dim.Render(fmt.Sprintf("%s +%d lines", glyphMore, hidden))
 	}
-	return body
+	return hang(body, r.connector(), strings.Repeat(" ", resultIndent))
 }
 
 // splitKeepEmpty splits on \n preserving trailing empty entries. Avoids the

@@ -19,7 +19,10 @@ import (
 type LoaderStats struct {
 	InTokens int
 	OutChars int
-	Rate     int
+	// OutTokens is the live output-token figure for the busy row: the cost
+	// tracker's real count when it has one, else OutChars/charsPerToken.
+	OutTokens int
+	Rate      int
 	// RateTokS is the EMA-smoothed generation throughput in tok/s for the
 	// readout. Windowed, so it reflects current speed rather than the turn's
 	// cumulative average.

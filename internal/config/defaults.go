@@ -68,7 +68,7 @@ func Defaults() Config {
 		ShowThoughts:        true,
 		ShowNudges:          true,
 		ShowRecap:           false,
-		Compact:             true,
+		Compact:             false,
 		ShowContextBar:      true,
 		Highlight:           true,
 		// silent by default: `!ls` runs in your shell without spending tokens

@@ -14,7 +14,7 @@ func TestRenderPendingTools_OneRowPerCall(t *testing.T) {
 		{ID: "u2", Name: "read", Input: map[string]any{"path": "go.mod"}},
 	}
 	out := stripANSI(r.RenderPendingTools(uses, 3))
-	for _, want := range []string{"bash", "go version", "read", "go.mod"} {
+	for _, want := range []string{"Bash", "go version", "Read", "go.mod"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in pending render: %q", want, out)
 		}

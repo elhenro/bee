@@ -51,7 +51,7 @@ func drainTurnDone(t *testing.T, cmd tea.Cmd) tea.Msg {
 func TestModel_InitialView_TopBar(t *testing.T) {
 	m := newTestModel(t)
 	out := stripANSI(m.View())
-	for _, want := range []string{"🐝", "/tmp/proj"} {
+	for _, want := range []string{glyphBee, "/tmp/proj"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in view: %q", want, out)
 		}

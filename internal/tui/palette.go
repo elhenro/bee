@@ -75,7 +75,7 @@ func (p *PaletteModel) SetWidth(w int) { p.width = w }
 func NewPalette(cmds *commands.Registry, sk SkillsLister) PaletteModel {
 	ti := textinput.New()
 	ti.Placeholder = "type to filter…"
-	ti.Prompt = "› "
+	ti.Prompt = " › "
 	ti.CharLimit = 64
 	ti.Focus()
 	return PaletteModel{input: ti, cmds: cmds, skills: sk, usage: loadCmdUsage()}

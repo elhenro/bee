@@ -25,14 +25,14 @@ func (p PaletteModel) View() string {
 
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
 	hl := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
-	cmdGlyph := lipgloss.NewStyle().Foreground(accentYou)
-	skillGlyph := lipgloss.NewStyle().Foreground(semSuccess)
+	cmdGlyph := lipgloss.NewStyle().Foreground(fgSquid)
+	skillGlyph := lipgloss.NewStyle().Foreground(accentCode)
 	selMark := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 	nameSel := lipgloss.NewStyle().Foreground(fgButter).Bold(true)
 	nameNorm := lipgloss.NewStyle().Foreground(fgSmoke)
 
 	if len(p.matches) == 0 {
-		return dim.Render("  no matches")
+		return dim.Render("   no matches")
 	}
 
 	total := len(p.matches)
@@ -58,7 +58,7 @@ func (p PaletteModel) View() string {
 
 	var b strings.Builder
 	if overflowAbove > 0 {
-		b.WriteString(dim.Render("  ↑ " + strconv.Itoa(overflowAbove) + " more"))
+		b.WriteString(dim.Render("   ↑ " + strconv.Itoa(overflowAbove) + " more"))
 		b.WriteString("\n")
 	}
 	for i, m := range rows {
@@ -67,9 +67,9 @@ func (p PaletteModel) View() string {
 
 		var line strings.Builder
 		if absIdx == p.selected {
-			line.WriteString(selMark.Render("›"))
+			line.WriteString(" " + selMark.Render(glyphSel))
 		} else {
-			line.WriteString(" ")
+			line.WriteString("  ")
 		}
 		line.WriteString(" ")
 
@@ -117,7 +117,7 @@ func (p PaletteModel) View() string {
 		}
 	}
 	if overflowBelow > 0 {
-		b.WriteString(dim.Render("  ↓ " + strconv.Itoa(overflowBelow) + " more"))
+		b.WriteString(dim.Render("   ↓ " + strconv.Itoa(overflowBelow) + " more"))
 	}
 	return b.String()
 }

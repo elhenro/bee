@@ -1,0 +1,160 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/elhenro/bee/internal/types"
+)
+
+func streamingModel(t *testing.T) Model {
+	t.Helper()
+	m := newTestModel(t)
+	m.state = StateStreaming
+	m.turnStartedAt = time.Now().Add(-5 * time.Second)
+	m.showLoaderIn, m.showLoaderOut, m.showLoaderRate = true, true, true
+	return m
+}
+
+func TestRenderLive_IdleIsEmpty(t *testing.T) {
+	if got := newTestModel(t).renderLive(20); got != "" {
+		t.Fatalf("idle live region should collapse, got %q", got)
+	}
+}
+
+func TestRenderLive_PreTokenShowsOnlyBusyRow(t *testing.T) {
+	m := streamingModel(t)
+	out := stripANSI(m.renderLive(20))
+	if !strings.Contains(out, m.stream.spinnerVerb()+"…") || !strings.Contains(out, interruptHint) {
+		t.Fatalf("busy row missing: %q", out)
+	}
+	var rows int
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.TrimSpace(ln) != "" {
+			rows++
+		}
+	}
+	if rows != 1 {
+		t.Fatalf("no answer text yet, only the busy row, got %d rows: %q", rows, out)
+	}
+}
+
+func TestRenderLive_StreamsTextAboveBusyRow(t *testing.T) {
+	m := streamingModel(t)
+	m.partial = "working on it"
+	out := stripANSI(m.renderLive(20))
+	ti, bi := strings.Index(out, "working on it"), strings.Index(out, interruptHint)
+	if ti < 0 || bi < 0 || ti > bi {
+		t.Fatalf("text must sit above the busy row: %q", out)
+	}
+}
+
+func TestRenderLive_PendingToolsSitBetweenTextAndBusyRow(t *testing.T) {
+	m := streamingModel(t)
+	m.partial = "reading"
+	m.pendingTools = []types.ToolUse{{ID: "u1", Name: "read", Input: map[string]any{"path": "a.go"}}}
+	out := stripANSI(m.renderLive(20))
+	ti, pi, bi := strings.Index(out, "reading"), strings.Index(out, "Read  a.go"), strings.Index(out, interruptHint)
+	if !(ti >= 0 && ti < pi && pi < bi) {
+		t.Fatalf("want text, then running call, then busy row: %q", out)
+	}
+}
+
+func TestRenderLive_FlushedHeadContinuesWithoutMarker(t *testing.T) {
+	m := streamingModel(t)
+	m.partial = "head paragraph\n\ntail still streaming"
+	m.streamFlushed = "head paragraph\n\n"
+	out := stripANSI(m.renderLive(20))
+	if strings.Contains(out, glyphBee+" tail") {
+		t.Fatalf("flushed head already printed the marker: %q", out)
+	}
+	if strings.Contains(out, "head paragraph") {
+		t.Fatalf("flushed prefix must not render twice: %q", out)
+	}
+	if !strings.Contains(out, "tail still streaming") {
+		t.Fatalf("tail missing: %q", out)
+	}
+}
+
+func TestRenderLive_CompactingShowsLabelledSpinner(t *testing.T) {
+	m := newTestModel(t)
+	m.compacting = true
+	if out := stripANSI(m.renderLive(20)); !strings.Contains(out, "Compacting context…") {
+		t.Fatalf("compaction row missing: %q", out)
+	}
+	m.compacting, m.handoffing = false, true
+	if out := stripANSI(m.renderLive(20)); !strings.Contains(out, "Writing handoff…") {
+		t.Fatalf("handoff row missing: %q", out)
+	}
+}
+
+func TestRenderLive_PinnedLoaderKeepsLegacyLayout(t *testing.T) {
+	m := streamingModel(t)
+	m.stream.SetLoaderStyle(LoaderStyleSwarm)
+	out := stripANSI(m.renderLive(20))
+	if strings.Contains(out, interruptHint) {
+		t.Fatalf("pinned braille loaders don't get the busy row: %q", out)
+	}
+	if out == "" {
+		t.Fatal("pinned loader should still draw its animation")
+	}
+}
+
+func TestBusyRows_ReservesSpinnerAndRunningCalls(t *testing.T) {
+	m := streamingModel(t)
+	if got := m.busyRows(); got != 2 {
+		t.Fatalf("clean: busy row + blank = 2, got %d", got)
+	}
+	m.pendingTools = []types.ToolUse{
+		{ID: "1", Name: "read", Input: map[string]any{"path": "a"}},
+		{ID: "2", Name: "read", Input: map[string]any{"path": "b"}},
+	}
+	if got := m.busyRows(); got != 4 {
+		t.Fatalf("two running calls add two rows, got %d", got)
+	}
+	m.stream.SetLoaderStyle(LoaderStyleSwarm)
+	if got := m.busyRows(); got != 0 {
+		t.Fatalf("pinned loaders reserve nothing, got %d", got)
+	}
+}
+
+func TestView_StreamingFrameOrder(t *testing.T) {
+	m := streamingModel(t)
+	m.partial = "answer"
+	out := stripANSI(m.View())
+	idx := func(s string) int { return strings.Index(out, s) }
+	if !(idx("answer") < idx(interruptHint) && idx(interruptHint) < idx(glyphPrompt) && idx(glyphPrompt) < idx("test-model")) {
+		t.Fatalf("frame order should be text, busy row, prompt, footer: %q", out)
+	}
+}
+
+func TestRenderLive_StripLoaderKeepsTokenReadout(t *testing.T) {
+	m := streamingModel(t)
+	m.stream.SetLoaderStyle(LoaderStyleStrip)
+	m.partial = "some answer text"
+	m.turnOutChars = 400
+	out := stripANSI(m.renderLive(20))
+	if !strings.Contains(out, "some answer text") || !strings.Contains(out, "↓") {
+		t.Fatalf("strip style should keep text + token readout below it: %q", out)
+	}
+	if strings.Contains(out, interruptHint) {
+		t.Fatalf("strip style has no busy row: %q", out)
+	}
+}
+
+func TestParseLoaderStyle_SpinnerStripPhased(t *testing.T) {
+	cases := map[string]LoaderStyle{
+		"":        LoaderStyleDefault,
+		"spinner": LoaderStyleDefault,
+		"strip":   LoaderStyleStrip,
+		"tokens":  LoaderStyleStrip,
+		"phased":  LoaderStylePhased,
+		"braille": LoaderStylePhased,
+	}
+	for in, want := range cases {
+		if got := ParseLoaderStyle(in); got != want {
+			t.Errorf("ParseLoaderStyle(%q) = %v, want %v", in, got, want)
+		}
+	}
+}

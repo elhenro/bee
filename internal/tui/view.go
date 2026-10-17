@@ -2,7 +2,6 @@ package tui
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -83,11 +82,7 @@ func (m Model) View() string {
 	// sight — clip head-side ourselves and surface a `… +N above` header.
 	intro := m.renderIntro()
 	warn := m.renderWarning()
-	var ctxBar string
-	if m.showContextBar {
-		ctxBar = m.renderContextBar()
-	}
-	midBudget := liveBudget(m.height, intro, bot, status, warn, ctxBar)
+	midBudget := liveBudget(m.height, intro, bot, status, warn)
 	mid := m.renderLive(midBudget)
 	var parts []string
 	if intro != "" {
@@ -96,14 +91,13 @@ func (m Model) View() string {
 	if mid != "" {
 		parts = append(parts, mid)
 	}
-	parts = append(parts, bot, status)
 	if warn != "" {
 		parts = append(parts, warn)
 	}
-	if ctxBar != "" {
-		parts = append(parts, ctxBar)
-	}
-	frame := strings.Join(parts, "\n")
+	parts = append(parts, bot, status)
+	// a tab jumps the cursor without erasing the cells it passes, so a
+	// redrawn row would keep stale characters under it. Spaces never do.
+	frame := expandTabs(strings.Join(parts, "\n"))
 	if m.approval.Active {
 		return m.padFrameLR(overlayCenter(frame, m.approval.View(), m.width))
 	}
@@ -144,112 +138,6 @@ func (m Model) View() string {
 	// picker renders inline above the input bar (see renderBottomBar) — same
 	// flush-left dense layout as the slash palette.
 	return m.padFrameLR(frame)
-}
-
-// renderLive returns the live in-progress slice — streaming partial while
-// a turn is in flight, or the latest error line. Past messages are NOT
-// rendered here; they live in terminal scrollback. Empty string when idle
-// with no error, so the live region collapses to just top + bottom bars.
-// maxRows caps the streaming partial to the tail when budget > 0; bubbletea
-// inline can't render above the cursor, so without clipping a long partial
-// would hide its newest tokens off the bottom of the visible region.
-func (m Model) renderLive(maxRows int) string {
-	var parts []string
-	if m.state == StateStreaming {
-		// feed the default token-stream loader the live turn figures. input
-		// tokens come from the cost tracker's last real event (context sent);
-		// output is the live char count this turn.
-		in := 0
-		out := m.turnOutChars
-		if m.costs != nil {
-			in = m.costs.LastInput()
-			// queen/hive mode runs on sub-engines, so no main-loop deltas bump
-			// turnOutChars — fall back to the cost-tracker output accrued this
-			// turn so the "↓" figure isn't stuck at 0.
-			if d := m.costs.Total().Output - m.turnStartOutput; d > out {
-				out = d
-			}
-		}
-		m.stream.SetLoaderStats(LoaderStats{
-			InTokens: in,
-			OutChars: out,
-			// smoothed rate — caps the 1-tick flash on first batch and on the
-			// reasoning→answer transition. Raw m.loaderRate is kept for the
-			// tok/s window; this one drives visible particle density.
-			Rate:     int(m.loaderRateEMA + 0.5),
-			RateTokS: m.loaderRateTokS,
-			Seed:     m.loaderSeed,
-			ShowIn:   m.showLoaderIn,
-			ShowOut:  m.showLoaderOut,
-			ShowRate: m.showLoaderRate,
-		})
-		// reasoning streams above the answer in a dim/italic block. Same
-		// styling as the finalized BlockThinking block so the live view
-		// matches the persisted scrollback. Empty while thoughts hidden
-		// or no thinking deltas arrived yet.
-		if think := m.thinkPartial; think != "" && m.showThoughts {
-			parts = append(parts, m.stream.RenderThinkingPartial(think))
-		}
-		// progressive flush may have pushed a prefix of m.partial to scroll-
-		// back already; only render what's still live.
-		visible := m.partial
-		if n := len(m.streamFlushed); n > 0 && n <= len(m.partial) {
-			visible = m.partial[n:]
-		}
-		if len(m.pendingTools) > 0 && visible == "" {
-			// tools dispatching: show one swarm per in-flight call instead of
-			// the generic full-width loader, so a batch reads as N bees.
-			parts = append(parts, m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame))
-		} else {
-			// the persistent token strip occupies one row below the text;
-			// reserve it from the clip budget so the live region height stays
-			// stable and the input bar doesn't drift. Pre-token (empty
-			// visible) the strip is the loader head already, so it's only
-			// appended once text flows.
-			var strip string
-			if visible != "" {
-				strip = m.stream.RenderTokenStrip(m.loaderFrame)
-			}
-			clip := maxRows
-			if strip != "" && clip > 1 {
-				clip--
-			}
-			out := m.stream.RenderStreaming(visible, m.loaderFrame)
-			if clip > 0 && visible != "" {
-				out = m.stream.ClipStreamingTail(out, clip)
-			}
-			parts = append(parts, out)
-			if strip != "" {
-				parts = append(parts, strip)
-			}
-		}
-	}
-	// tutorial typewriter: render the faked assistant reply in the live region
-	// using the real stream renderer so it looks like a genuine turn.
-	if m.tutorial.active && m.tutorial.typing {
-		parts = append(parts, m.stream.RenderStreaming(m.tutorial.typed, m.loaderFrame))
-	}
-	if m.compacting || m.handoffing {
-		parts = append(parts, m.stream.RenderCompacting(m.loaderFrame))
-	}
-	// queued mid-compact: a plain-text submit landed while /compact was
-	// running. Render it inline below the compacting animation with the
-	// same blue rail+body the live region uses for sent user messages, so
-	// the queued text reads as "your turn, held until done" and stays
-	// visibly stuck to the input bar until onCompactDone drains it.
-	if m.compacting && m.queuedMidCompact != "" {
-		parts = append(parts, m.renderQueuedMidCompact())
-	}
-	if m.state == StateError && m.lastErr != "" {
-		parts = append(parts, m.renderErrorBlock(m.lastErr))
-	}
-	if m.escalate.Active {
-		parts = append(parts, m.escalate.View())
-	}
-	if m.planmode.Active {
-		parts = append(parts, m.planmode.View())
-	}
-	return strings.Join(parts, "\n")
 }
 
 // renderQueuedMidCompact paints a plain-text submit that landed while
@@ -351,81 +239,6 @@ func wrapHanging(s string, n int) []string {
 		out = append(out, s)
 	}
 	return out
-}
-
-// renderBottomBar shows just the input by default. Hints surface only when
-// the user presses `?` (m.showHelp). A staged-image indicator pops above the
-// input line whenever the user has Ctrl+I'd an image but not yet submitted.
-// Horizontal rules frame the input above and below at full terminal width.
-func (m Model) renderBottomBar() string {
-	var quitHint string
-	if m.quitArmed {
-		quitHint = lipgloss.NewStyle().Foreground(accentHoney).Render("press ctrl+d again to quit") + "\n"
-	}
-	var staged string
-	n := len(m.pendingImages)
-	if len(m.pendingImage) > 0 {
-		n++
-	}
-	if n > 0 {
-		staged = m.styles.Dim.Render(fmt.Sprintf("📎 %d image(s) staged — submit to attach", n)) + "\n"
-	}
-	var palette string
-	if m.palette.Active {
-		palette = m.palette.View() + "\n"
-	}
-	var picker string
-	if m.picker != nil && m.picker.Active() {
-		picker = m.picker.View() + "\n"
-	}
-	var atp string
-	if m.atpicker.Active {
-		atp = m.atpicker.View() + "\n"
-	}
-	var history string
-	if m.history.Active {
-		history = m.history.View() + "\n"
-	}
-	// shell-mode visual: when buffer starts with `!` the user is about to
-	// dispatch a shell command, not a chat turn. Tint the typed text honey
-	// and bold the prompt so the mode is unmistakable. `m` is a value copy
-	// so the mutation is scoped to this render.
-	val := m.input.Value()
-	if strings.HasPrefix(val, "!") {
-		honey := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
-		// CursorLine wins over Text on whichever row the cursor sits, so we
-		// must set both — otherwise the active line stays default-colored.
-		m.input.FocusedStyle.Prompt = honey
-		m.input.FocusedStyle.Text = honey
-		m.input.FocusedStyle.CursorLine = honey
-		m.input.BlurredStyle.Prompt = honey
-		m.input.BlurredStyle.Text = honey
-		m.input.BlurredStyle.CursorLine = honey
-		// textarea caches an unexported *Style pointer at Focus()/Blur() time;
-		// value-copying the Model leaves that pointer aimed at the *original*
-		// FocusedStyle (in the outer Model), so the mutations above wouldn't
-		// take effect on View(). Re-focusing re-points the cached style to
-		// our local copy. Discard the returned cmd (cursor uses Static mode).
-		_ = m.input.Focus()
-	} else if m.role == "queen" {
-		// mastermind tier: prompt + typed text glow rainbow, cycling per
-		// glowFrame. Shell-mode `!` above keeps precedence. Same re-Focus
-		// trick as the shell block — the cached style pointer must be
-		// re-pointed at this value copy for the per-frame color to land.
-		glow := lipgloss.NewStyle().Foreground(rainbowColorForFrame(m.glowFrame)).Bold(true)
-		m.input.FocusedStyle.Prompt = glow
-		m.input.FocusedStyle.Text = glow
-		m.input.FocusedStyle.CursorLine = glow
-		m.input.BlurredStyle.Prompt = glow
-		m.input.BlurredStyle.Text = glow
-		m.input.BlurredStyle.CursorLine = glow
-		_ = m.input.Focus()
-	}
-	if !m.showHelp {
-		return quitHint + staged + palette + picker + atp + history + m.input.View()
-	}
-	hint := fmt.Sprintf("role:%s · caveman:%s · ^P model · ^R history · ^W ws · ← agents · ^H hive · ^/ caveman · ^I image · shift+↵/^J newline · shift+tab role · alt+y yolo · ^O expand output · ? hide · esc cancel · ^V verbose", m.role, string(m.caveLvl))
-	return quitHint + staged + palette + picker + atp + history + m.input.View() + "\n" + m.styles.BottomBar.Render(hint)
 }
 
 // overlayCenter draws modal beneath base, centered to width. bubbletea has no

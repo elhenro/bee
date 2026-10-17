@@ -38,7 +38,7 @@ type ApprovalDecisionMsg struct {
 // ApprovalModel is a self-contained component embedded in the main Model.
 // When Active is false it renders nothing.
 type ApprovalModel struct {
-	styles  Styles
+	styles  *Styles
 	keys    KeyMap
 	Active  bool
 	Request ApprovalRequest
@@ -57,7 +57,7 @@ func (m *ApprovalModel) SetWidth(w int) {
 
 // NewApprovalModel returns a fresh, inactive modal.
 func NewApprovalModel(styles Styles, keys KeyMap) ApprovalModel {
-	return ApprovalModel{styles: styles, keys: keys}
+	return ApprovalModel{styles: &styles, keys: keys}
 }
 
 // SetOutput wires the engine-facing channel. Pass nil to detach.

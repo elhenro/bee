@@ -30,7 +30,7 @@ type AtPickerDismissedMsg struct{}
 func NewAtPicker(root string) AtPickerModel {
 	ti := textinput.New()
 	ti.Placeholder = "filter…"
-	ti.Prompt = "› "
+	ti.Prompt = " › "
 	ti.Focus()
 	return AtPickerModel{input: ti, root: root, matches: FuzzyFiles(root, "")}
 }
@@ -98,11 +98,11 @@ func (p AtPickerModel) View() string {
 	glyph := lipgloss.NewStyle().Foreground(accentHoney)
 
 	var b strings.Builder
-	b.WriteString(glyph.Render("@") + " " + p.input.View())
+	b.WriteString(" " + glyph.Render("@") + " " + p.input.View())
 	b.WriteString("\n")
 
 	if len(p.matches) == 0 {
-		b.WriteString(dim.Render("  no matches"))
+		b.WriteString(dim.Render("   no matches"))
 		return b.String()
 	}
 
@@ -127,15 +127,15 @@ func (p AtPickerModel) View() string {
 	overflowBelow := total - end
 
 	if overflowAbove > 0 {
-		b.WriteString(dim.Render("  ↑ " + strconv.Itoa(overflowAbove) + " more"))
+		b.WriteString(dim.Render("   ↑ " + strconv.Itoa(overflowAbove) + " more"))
 		b.WriteString("\n")
 	}
 	for i := start; i < end; i++ {
 		var line strings.Builder
 		if i == p.selected {
-			line.WriteString(selMark.Render("›"))
+			line.WriteString(" " + selMark.Render(glyphSel))
 		} else {
-			line.WriteString(" ")
+			line.WriteString("  ")
 		}
 		line.WriteString(" ")
 		ns := nameNorm
@@ -153,7 +153,7 @@ func (p AtPickerModel) View() string {
 		}
 	}
 	if overflowBelow > 0 {
-		b.WriteString(dim.Render("  ↓ " + strconv.Itoa(overflowBelow) + " more"))
+		b.WriteString(dim.Render("   ↓ " + strconv.Itoa(overflowBelow) + " more"))
 	}
 	return b.String()
 }

@@ -28,12 +28,12 @@ func fg(c string) lipgloss.Style { return lipgloss.NewStyle().Foreground(lipglos
 
 // Pre-built styles. Public so 3A may compose without redefining.
 var (
-	StyleActive   = fg(ColorHoneyGold).Bold(true)
-	StyleAwaiting = fg(ColorAccent).Bold(true)
-	StyleIdle     = fg(ColorAmber)
-	StyleDone     = fg(ColorDim)
-	StyleFailed   = fg(ColorDanger).Bold(true)
-	StyleLabel    = fg(ColorMuted)
+	StyleActive   = lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
+	StyleAwaiting = lipgloss.NewStyle().Foreground(semWarning).Bold(true)
+	StyleIdle     = lipgloss.NewStyle().Foreground(accentBee)
+	StyleDone     = lipgloss.NewStyle().Foreground(fgOyster)
+	StyleFailed   = lipgloss.NewStyle().Foreground(semError).Bold(true)
+	StyleLabel    = lipgloss.NewStyle().Foreground(fgSquid)
 )
 
 // HexRow renders a strip of hexagons + names, capped to width cells.

@@ -22,7 +22,7 @@ const (
 
 // UpdatePrompt is the four-button modal surfaced when Probe finds main ahead.
 type UpdatePrompt struct {
-	styles Styles
+	styles *Styles
 	Active bool
 	Info   update.Info
 	// focus is the highlighted button: 0=later 1=now 2=always 3=never
@@ -31,7 +31,7 @@ type UpdatePrompt struct {
 
 // NewUpdatePrompt returns an inactive prompt.
 func NewUpdatePrompt(styles Styles) UpdatePrompt {
-	return UpdatePrompt{styles: styles}
+	return UpdatePrompt{styles: &styles}
 }
 
 // Show opens the modal with the probed info.

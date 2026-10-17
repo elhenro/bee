@@ -36,7 +36,7 @@ type rateSample struct {
 // Model is the bubbletea root model for bee's interactive REPL.
 type Model struct {
 	// chrome
-	styles Styles
+	styles *Styles // shared by pointer: Model is copied by value on every Update/View call
 	keys   KeyMap
 	width  int
 	height int

@@ -9,14 +9,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// LoaderStyle selects which braille animation runs while waiting on the
-// first token. Default is the phased pipeline (chill → swarm → orbit →
-// ripple → starfield) which evolves the longer the wait runs. Named
-// values pin a single painter.
+// LoaderStyle selects how a running turn signals work. Default is the busy
+// row: one spinner line with elapsed time, token figures and the interrupt
+// hint (see RenderSpinner). Every other value pins a braille animation
+// (BEE_LOADER=<name>): a single painter, the phased pipeline that evolves
+// the longer the wait runs, or the token-stream strip.
 type LoaderStyle int
 
 const (
-	LoaderStyleDefault   LoaderStyle = iota // phased: pulse → swarm → orbit → ripple → starfield
+	LoaderStyleDefault   LoaderStyle = iota // busy-row spinner
 	LoaderStylePulse                        // centered bee, gentle wing flap
 	LoaderStyleSwarm                        // multi-particle swarm, scales with width
 	LoaderStyleWave                         // layered sine waves
@@ -45,15 +46,21 @@ const (
 	LoaderStyleQueen                        // queen + 4 attendants procession
 	LoaderStyleDrip                         // fat honey droplet + accumulating pool
 	LoaderStyleMarathon                     // bees racing toward finish line
+	LoaderStylePhased                       // pulse → swarm → orbit → ripple → starfield, by wait time
+	LoaderStyleStrip                        // particle token stream + live in/out readout
 )
 
-// ParseLoaderStyle maps BEE_LOADER values to a style. Unset / "random" /
-// unknown → phased default. Legacy aliases (swarm/comb/dance/drip) map
-// to their nearest braille equivalent so old configs keep working.
+// ParseLoaderStyle maps BEE_LOADER values to a style. Unset / unknown → the
+// busy-row spinner. Legacy aliases (swarm/comb/dance/drip) map to their
+// nearest braille equivalent so old configs keep working.
 func ParseLoaderStyle(s string) LoaderStyle {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "default", "phased", "auto":
+	case "", "default", "spinner", "auto":
 		return LoaderStyleDefault
+	case "phased", "braille":
+		return LoaderStylePhased
+	case "strip", "stream", "tokens":
+		return LoaderStyleStrip
 	case "swarm", "bee", "bees":
 		return LoaderStyleSwarm
 	case "pulse", "bee-flap":
@@ -160,7 +167,7 @@ func (r *StreamRenderer) pulseStyle(nf int) lipgloss.Style {
 // so we deduct those before clamping. Tiny terminals fall back to the
 // minimum cell count.
 func (r *StreamRenderer) loaderCells() int {
-	prefix := 3 // glyph + 2 spaces
+	prefix := 4 // glyph + 2 spaces + right margin
 	if !r.compact {
 		prefix++ // outer gutter
 	}
@@ -179,7 +186,7 @@ func (r *StreamRenderer) renderLoader(frame int) string {
 	if nf < 0 {
 		nf = -nf
 	}
-	if r.isDefaultLoader() {
+	if r.isStripLoader() {
 		return r.tokenStripInner(nf)
 	}
 	cells := r.loaderCells()
@@ -188,13 +195,18 @@ func (r *StreamRenderer) renderLoader(frame int) string {
 	return r.pulseStyle(nf).Render(art)
 }
 
-// isDefaultLoader reports whether the active style is the token-stream
-// default (vs a pinned named BEE_LOADER painter).
+// isDefaultLoader reports whether the active style is the busy-row spinner
+// (vs a pinned BEE_LOADER animation).
 func (r *StreamRenderer) isDefaultLoader() bool {
 	return r.loaderStyle == LoaderStyleDefault
 }
 
-// tokenStripInner composes the default loader row: the seeded particle
+// isStripLoader reports whether the token-stream strip is pinned.
+func (r *StreamRenderer) isStripLoader() bool {
+	return r.loaderStyle == LoaderStyleStrip
+}
+
+// tokenStripInner composes the strip loader row: the seeded particle
 // stream on the left and the live in/out readout right-aligned. The readout
 // claims a width budget first; the stream fills whatever cells remain. On a
 // dim terminal the stream alternates accent/dim via pulseStyle; the readout
@@ -237,12 +249,12 @@ func (r *StreamRenderer) tokenStripInner(nf int) string {
 	return body + "  " + r.styles.Dim.Render(readout)
 }
 
-// RenderTokenStrip returns the persistent default-loader strip for the
-// active turn, gutter-applied, ready to append below the streaming text.
-// Empty for pinned named styles (they animate only pre-token) — the caller
-// then renders nothing extra.
+// RenderTokenStrip returns the persistent token strip for the active turn,
+// gutter-applied, ready to append below the streaming text. Empty unless the
+// strip style is pinned (other pinned styles animate only pre-token) — the
+// caller then renders nothing extra.
 func (r *StreamRenderer) RenderTokenStrip(frame int) string {
-	if !r.isDefaultLoader() {
+	if !r.isStripLoader() {
 		return ""
 	}
 	nf := frame

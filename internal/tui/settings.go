@@ -29,23 +29,23 @@ var settingsRows = []settingsRow{
 	{key: "show_thoughts", label: "agent thoughts", desc: "chain-of-thought reasoning blocks"},
 	{key: "show_nudges", label: "nudge messages", desc: "self-nudge recovery messages in the transcript"},
 	{key: "show_recap", label: "post-turn recap", desc: "one-line side-LLM summary + next step after each turn (extra tokens)"},
-	{key: "compact", label: "compact layout", desc: "drop gutter + inter-turn blank + user tint + OSC 133"},
-	{key: "show_context_bar", label: "context bar", desc: "thin context-fill strip at the bottom edge"},
+	{key: "compact", label: "compact layout", desc: "dense layout: no gutter, no blank rows between turns, no user panel"},
+	{key: "show_context_bar", label: "context gauge", desc: "fill the prompt's bottom rule as the context window fills"},
 	{key: "highlight", label: "syntax highlight", desc: "color code in diffs, file content, and bash commands"},
 	{key: "shell_bang_silent", label: "!shell stays local", desc: "!cmd runs without forwarding output to the LLM (!! inverts)"},
 	{key: "show_banner", label: "intro animation", desc: "braille startup animation (applies on next launch)"},
-	{key: "show_loader", label: "loader animation", desc: "braille loader + caret while the model is generating"},
-	{key: "show_bee", label: "top-bar: bee glyph", desc: "🐝 emoji on the top status line"},
-	{key: "show_context_pct", label: "top-bar: context %", desc: "percent label next to the bee glyph"},
-	{key: "show_model", label: "top-bar: model name", desc: "active provider/model label"},
-	{key: "show_cwd", label: "top-bar: cwd", desc: "current working directory"},
-	{key: "show_effort", label: "top-bar: effort", desc: "role + reasoning-budget chips (worker · t:max)"},
-	{key: "show_turn_timer", label: "top-bar: turn timer", desc: "⏱ live elapsed while working + final time after"},
-	{key: "show_git_branch", label: "top-bar: git branch", desc: "⎇ current git branch (when cwd is in a repo)"},
-	{key: "show_total_tokens", label: "top-bar: total tokens", desc: "Σ session tokens (input+output) next to cost"},
-	{key: "show_loader_in", label: "loader: input tokens", desc: "↑ input-token figure in the generating strip"},
-	{key: "show_loader_out", label: "loader: output tokens", desc: "↓ output-token figure in the generating strip"},
-	{key: "show_loader_rate", label: "loader: tok/s", desc: "average generation throughput in the generating strip"},
+	{key: "show_loader", label: "spinner animation", desc: "animated spinner while the model is generating (off = static mark)"},
+	{key: "show_bee", label: "status: bee mark", desc: "⬢ mark beside the context figure in the status line"},
+	{key: "show_context_pct", label: "status: context %", desc: "context-window fill label (ctx 12%)"},
+	{key: "show_model", label: "status: model name", desc: "active provider/model label"},
+	{key: "show_cwd", label: "status: cwd", desc: "current working directory"},
+	{key: "show_effort", label: "status: effort", desc: "role + reasoning-budget chips (worker, t:max)"},
+	{key: "show_turn_timer", label: "status: turn timer", desc: "how long the last turn took (long turns only)"},
+	{key: "show_git_branch", label: "status: git branch", desc: "⎇ current git branch (when cwd is in a repo)"},
+	{key: "show_total_tokens", label: "status: total tokens", desc: "session tokens (input+output) next to cost"},
+	{key: "show_loader_in", label: "loader: input tokens", desc: "↑ input-token figure on the busy row"},
+	{key: "show_loader_out", label: "loader: output tokens", desc: "↓ output-token figure on the busy row"},
+	{key: "show_loader_rate", label: "loader: tok/s", desc: "generation throughput on the busy row"},
 	// outer_pad_lr is the int row: cycles 0..8, render as `[N]`.
 	{key: "outer_pad_lr", label: "outer padding (L/R)", desc: "blank cells left+right around TUI (int 0-8, 0=off; enter cycles)", isInt: true},
 }
@@ -99,7 +99,7 @@ const outerPadMax = 8
 func NewSettingsPane() *SettingsPane {
 	ti := textinput.New()
 	ti.Placeholder = "type to filter…"
-	ti.Prompt = "› "
+	ti.Prompt = " › "
 	ti.CharLimit = 64
 	p := &SettingsPane{
 		filter:     ti,
@@ -126,7 +126,7 @@ func NewSettingsPane() *SettingsPane {
 func (p *SettingsPane) Open() bool { return p != nil && p.open }
 
 // SettingsSnapshot is the live values handed to Show. Grouped into a struct
-// because the top-bar toggles pushed the positional-arg list past readable.
+// because the status-line toggles pushed the positional-arg list past readable.
 type SettingsSnapshot struct {
 	Verbose         bool
 	ShowThoughts    bool

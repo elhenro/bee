@@ -71,9 +71,15 @@ func TestRenderTurnTimer_LiveAndFinal(t *testing.T) {
 	}
 	m.state = StateStreaming
 	m.turnStartedAt = time.Now().Add(-3500 * time.Millisecond)
+	// the default loader's busy row ticks the live elapsed; the footer stays quiet.
+	if got := m.renderTurnTimer(); got != "" {
+		t.Errorf("live (default loader): got %q want empty", got)
+	}
+	// pinned braille loaders have no elapsed readout, so the footer carries it.
+	m.stream.SetLoaderStyle(LoaderStyleSwarm)
 	got := stripANSI(m.renderTurnTimer())
 	if !strings.Contains(got, "s") {
-		t.Errorf("live: got %q want timer chip", got)
+		t.Errorf("live (pinned loader): got %q want timer chip", got)
 	}
 }
 

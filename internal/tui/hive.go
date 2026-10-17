@@ -157,7 +157,7 @@ func (h *Hive) Render(width int) string {
 // bees followed by a list of recent sessions.
 func (h *Hive) RenderFull(width, height int) string {
 	title := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorAccent)).
+		Foreground(accentHoney).
 		Bold(true).
 		Render("⬢ Hive · all bees")
 	var b strings.Builder
@@ -237,7 +237,7 @@ func renderHexCard(b Bee) string {
 		Padding(0, 2).
 		MarginRight(2).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(ColorAmber)).
+		BorderForeground(bgIron).
 		Render(body)
 }
 

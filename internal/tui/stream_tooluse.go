@@ -49,36 +49,6 @@ func (r *StreamRenderer) renderEscalate(u types.ToolUse) string {
 	return strings.Join(out, "\n") + "\n"
 }
 
-// renderToolUse renders the compact card: name  args-summary. Lilac
-// name so tool activity reads as a distinct lane vs honey-AI prose and
-// blue-user input. Args are omitted entirely (no trailing whitespace)
-// when the tool was called with no input.
-//
-// File-mutation tools (edit / hashline_edit / apply_patch / write) skip
-// the json summary and instead drop a colored diff card under the header
-// so the reader sees the change itself, not `{"new":"...","old":"..."}`.
-func (r *StreamRenderer) renderToolUse(u types.ToolUse) string {
-	if u.Name == "escalate" {
-		return r.renderEscalate(u)
-	}
-	name := r.styles.ToolName.Render(u.Name)
-	if header, body, ok := r.renderEditPreview(u); ok {
-		head := fmt.Sprintf("%s  %s", name, header)
-		if body == "" {
-			return head + "\n"
-		}
-		return head + "\n" + body + "\n"
-	}
-	args := summarizeToolArgs(u.Name, u.Input, r.argsBudget(u.Name))
-	if args == "" {
-		return fmt.Sprintf("%s\n", name)
-	}
-	if u.Name == "bash" && r.highlight {
-		return fmt.Sprintf("%s  %s\n", name, r.hlLang(args, "bash"))
-	}
-	return fmt.Sprintf("%s  %s\n", name, r.styles.ToolArgs.Render(args))
-}
-
 // summarizeToolArgs routes per-tool pretty summaries before falling back to
 // the generic json/single-key path. bash gets its `command` pulled out bare
 // (tool name already says "bash", so `command:` prefix would be redundant)

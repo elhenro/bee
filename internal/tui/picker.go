@@ -96,7 +96,7 @@ func NewPicker(cfg config.Config) *Picker {
 	sp.Style = lipgloss.NewStyle().Foreground(colorHoney)
 	ti := textinput.New()
 	ti.Placeholder = "type to filter…"
-	ti.Prompt = "› "
+	ti.Prompt = " › "
 	ti.CharLimit = 64
 	ti.Focus()
 	return &Picker{

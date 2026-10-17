@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/charmbracelet/lipgloss"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -175,8 +176,8 @@ func TestRenderMessage_UserText(t *testing.T) {
 		Content: []types.ContentBlock{{Type: types.BlockText, Text: "hello bee"}},
 	}
 	out := stripANSI(r.RenderMessage(m))
-	if !strings.Contains(out, "┃") {
-		t.Fatalf("missing you rail in %q", out)
+	if !strings.Contains(out, glyphUser) {
+		t.Fatalf("missing you bar in %q", out)
 	}
 	if !strings.Contains(out, "hello bee") {
 		t.Fatalf("missing text in %q", out)
@@ -205,11 +206,12 @@ func TestRenderMessage_AssistantWithToolUse(t *testing.T) {
 	if strings.Contains(out, "go test") {
 		t.Fatalf("tool_use card should be suppressed on the assistant turn: %q", out)
 	}
-	// neither assistant prose nor the tool block should carry a glyph prefix.
-	for _, glyph := range []string{"⬢", "◇"} {
-		if strings.Contains(out, glyph) {
-			t.Fatalf("unexpected glyph %q on assistant turn in %q", glyph, out)
-		}
+	// prose hangs under the bee marker; the suppressed tool block adds no glyph.
+	if !strings.Contains(out, glyphBee) {
+		t.Fatalf("assistant prose should carry the bee marker in %q", out)
+	}
+	if strings.Contains(out, glyphTool) {
+		t.Fatalf("tool bullet must not appear on the assistant turn: %q", out)
 	}
 }
 
@@ -249,8 +251,8 @@ func TestRenderMessage_PairedCallAndOutput(t *testing.T) {
 
 func TestRenderMessage_ToolResultTruncates(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
-	// build a result with previewLinesCompact*2 lines to force the clamp
-	totalLines := previewLinesCompact * 2
+	// build a result with previewDefault*3 lines to force the clamp
+	totalLines := previewDefault * 3
 	var b strings.Builder
 	for i := 0; i < totalLines; i++ {
 		b.WriteString("line\n")
@@ -263,14 +265,15 @@ func TestRenderMessage_ToolResultTruncates(t *testing.T) {
 		}}},
 	}
 	out := stripANSI(r.RenderMessage(m))
-	// overflow signalled inline as `+N more`, no dedicated truncation row
-	wantMore := fmt.Sprintf("+%d more", totalLines-previewLinesCompact)
+	// overflow signalled as a trailing `… +N lines` row
+	wantMore := fmt.Sprintf("+%d lines", totalLines-previewDefault)
 	if !strings.Contains(out, wantMore) {
 		t.Fatalf("expected %q overflow marker: %q", wantMore, out)
 	}
-	// at most previewLinesCompact "line" tokens shown (default compact mode)
-	if got := strings.Count(out, "line"); got > previewLinesCompact {
-		t.Fatalf("expected ≤%d line previews, got %d in %q", previewLinesCompact, got, out)
+	// exactly previewDefault preview rows shown before the marker; "lines"
+	// in the marker itself contains "line", hence the -1.
+	if got := strings.Count(out, "line") - 1; got != previewDefault {
+		t.Fatalf("expected %d line previews, got %d in %q", previewDefault, got, out)
 	}
 }
 
@@ -283,8 +286,8 @@ func TestRenderMessage_CallCardAndOutputSeparated(t *testing.T) {
 	r.RenderMessage(types.Message{
 		Role: types.RoleAssistant,
 		Content: []types.ContentBlock{
-			{Type: types.BlockText, Text: "Now reading the file."},
-			{Type: types.BlockToolUse, Use: &types.ToolUse{ID: "u1", Name: "read", Input: map[string]any{"path": "/tmp/x"}}},
+			{Type: types.BlockText, Text: "Now listing the dir."},
+			{Type: types.BlockToolUse, Use: &types.ToolUse{ID: "u1", Name: "bash", Input: map[string]any{"command": "ls /tmp/x"}}},
 		},
 	})
 	out := stripANSI(r.RenderMessage(types.Message{
@@ -296,7 +299,7 @@ func TestRenderMessage_CallCardAndOutputSeparated(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("expected call card and output on separate rows, got: %q", body)
 	}
-	if !strings.Contains(lines[0], "read") {
+	if !strings.Contains(lines[0], "Bash") {
 		t.Fatalf("row 0 should hold the call card: %q", lines[0])
 	}
 	if !strings.Contains(lines[1], "file body") {
@@ -397,9 +400,9 @@ func TestSummarizeArgs_SingleKeyDropsJSON(t *testing.T) {
 		in   map[string]any
 		want string
 	}{
-		{map[string]any{"pattern": "needle"}, "pattern: needle"},
-		{map[string]any{"path": "internal/tui"}, "path: internal/tui"},
-		{map[string]any{"cmd": "go test"}, "cmd: go test"},
+		{map[string]any{"pattern": "needle"}, "needle"},
+		{map[string]any{"path": "internal/tui"}, "internal/tui"},
+		{map[string]any{"cmd": "go test"}, "go test"},
 	}
 	for _, c := range cases {
 		if got := summarizeArgs(c.in, argsSummaryCompact); got != c.want {
@@ -410,8 +413,12 @@ func TestSummarizeArgs_SingleKeyDropsJSON(t *testing.T) {
 
 func TestSummarizeArgs_UnknownKeyKeepsJSON(t *testing.T) {
 	got := summarizeArgs(map[string]any{"weird_key": "v"}, argsSummaryCompact)
-	if !strings.HasPrefix(got, "{") {
-		t.Fatalf("expected JSON fallback for unknown key, got %q", got)
+	if got != "weird_key=v" {
+		t.Fatalf("expected key=value fallback for unknown key, got %q", got)
+	}
+	got = summarizeArgs(map[string]any{"glob": "*.go", "path": "a b", "n": 3}, argsSummaryCompact)
+	if got != `glob=*.go n=3 path="a b"` {
+		t.Fatalf("expected sorted key=value pairs, got %q", got)
 	}
 }
 
@@ -442,7 +449,7 @@ func TestSummarizeBash_AppendsCwd(t *testing.T) {
 
 func TestSummarizeBash_FallsBackForNonBash(t *testing.T) {
 	got := summarizeToolArgs("read", map[string]any{"path": "x.go"}, argsSummaryCompact)
-	if got != "path: x.go" {
+	if got != "x.go" {
 		t.Fatalf("want generic single-key path, got %q", got)
 	}
 }
@@ -610,11 +617,11 @@ func TestRenderToolResult_BashErrorSurfacesCmd(t *testing.T) {
 		}}},
 	}
 	plain := stripANSI(r.RenderMessage(res))
-	if !strings.Contains(plain, "$ "+cmd) {
+	if !strings.Contains(plain, "Bash  "+cmd) {
 		t.Fatalf("missing failed-cmd header in %q", plain)
 	}
-	if !strings.Contains(plain, "(exit 1)") {
-		t.Fatalf("missing exit tag in %q", plain)
+	if !strings.Contains(plain, "exit 1") {
+		t.Fatalf("missing exit row in %q", plain)
 	}
 }
 
@@ -644,7 +651,7 @@ func TestRenderToolResult_RefusedSurfacesCmdYellow(t *testing.T) {
 		}}},
 	}
 	plain := stripANSI(r.RenderMessage(res))
-	if !strings.Contains(plain, "$ "+cmd) {
+	if !strings.Contains(plain, "Bash  "+cmd) {
 		t.Fatalf("missing refused-cmd header in %q", plain)
 	}
 	if !strings.Contains(plain, "refused by user") {
@@ -667,7 +674,7 @@ func TestRenderToolUse_EditShowsDiffNotJSON(t *testing.T) {
 		}}},
 	}
 	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
-	for _, want := range []string{"edit", "README.md", "- alpha", "+ beta"} {
+	for _, want := range []string{"Update", "README.md", "- alpha", "+ beta"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
@@ -688,7 +695,7 @@ func TestRenderToolUse_ApplyPatchColorsHunkLines(t *testing.T) {
 		}}},
 	}
 	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
-	for _, want := range []string{"apply_patch", "x.go", "-old", "+new", "@@"} {
+	for _, want := range []string{"Patch", "x.go", "-old", "+new", "@@"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
@@ -707,7 +714,7 @@ func TestRenderToolUse_WriteListsContentLines(t *testing.T) {
 		}}},
 	}
 	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
-	for _, want := range []string{"write", "out.txt", "+ one", "+ two", "2 lines"} {
+	for _, want := range []string{"Write", "out.txt", "+ one", "+ two", "+2"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
@@ -811,7 +818,7 @@ func TestRenderToolUse_EditCompactCapsLongDiff(t *testing.T) {
 		}}},
 	}
 	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
-	if !strings.Contains(out, "more") {
+	if !strings.Contains(out, "lines") || !strings.Contains(out, glyphMore) {
 		t.Fatalf("compact diff should signal overflow: %q", out)
 	}
 }
@@ -853,20 +860,30 @@ func TestRenderLoader_AllNamedPaintersAnimate(t *testing.T) {
 	}
 }
 
-// loader-with-content path should NOT prepend the gap newline (gap is
-// loader-only).
-func TestRenderStreaming_PartialDoesNotPrependBlankLine(t *testing.T) {
+// live prose opens with one blank row (the paragraph gap before the marker) in
+// clean mode and none in compact mode, matching the committed message.
+func TestRenderStreaming_PartialLeadingGap(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	out := stripANSI(r.RenderStreaming("hello", 0))
-	if strings.HasPrefix(out, "\n") {
-		t.Fatalf("partial render should not start with blank line: %q", out)
+	if !strings.HasPrefix(out, "\n ") || strings.HasPrefix(out, "\n\n") {
+		t.Fatalf("clean partial should open with exactly one blank row: %q", out)
+	}
+	if !strings.Contains(out, glyphBee+" hello") {
+		t.Fatalf("partial should hang under the bee marker: %q", out)
+	}
+	r.SetCompact(true)
+	if out := stripANSI(r.RenderStreaming("hello", 0)); strings.HasPrefix(out, "\n") {
+		t.Fatalf("compact partial should not start with a blank row: %q", out)
 	}
 }
 
-// caret must animate across frames so in-stream pauses (model reasoning,
-// slow deltas) still visibly signal liveness. Static caret looks stuck.
+// a pinned braille loader keeps its animated caret so in-stream pauses (model
+// reasoning, slow deltas) still visibly signal liveness. The default loader
+// moves that signal to the busy row, so the text itself must not change per
+// frame (and can therefore cache).
 func TestRenderStreaming_PartialCaretAnimatesAcrossFrames(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
+	r.SetLoaderStyle(LoaderStyleSwarm)
 	seen := map[string]bool{}
 	for f := 0; f < 10; f++ {
 		out := stripANSI(r.RenderStreaming("hello", f))
@@ -874,6 +891,16 @@ func TestRenderStreaming_PartialCaretAnimatesAcrossFrames(t *testing.T) {
 	}
 	if len(seen) < 5 {
 		t.Fatalf("expected caret to cycle across frames, got %d unique renders: %v", len(seen), seen)
+	}
+}
+
+func TestRenderStreaming_DefaultLoaderTextIsFrameIndependent(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	first := r.RenderStreaming("hello", 0)
+	for f := 1; f < 10; f++ {
+		if got := r.RenderStreaming("hello", f); got != first {
+			t.Fatalf("default loader text changed at frame %d: %q vs %q", f, got, first)
+		}
 	}
 }
 
@@ -930,40 +957,35 @@ func TestClipStreamingTail_WrapsLongLines(t *testing.T) {
 	}
 }
 
-// Long thought lines wrap to the terminal width instead of overflowing —
-// bubbletea's inline renderer hard-truncates rows wider than the terminal,
-// so an unwrapped line would show only its head in the live region.
 func TestRenderThinkingPartial_WrapsLongLines(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 40)
 	r.SetShowThoughts(true)
 	long := strings.Repeat("word ", 30) // ~150 chars on one logical line
 	got := stripANSI(r.RenderThinkingPartial(long))
 	for _, ln := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
-		if len(ln) > 40 {
-			t.Fatalf("thought row exceeds width 40: %d cols %q", len(ln), ln)
+		if w := lipgloss.Width(ln); w > 40 {
+			t.Fatalf("thought row exceeds width 40: %d cols %q", w, ln)
 		}
 	}
-	// only the first visual row carries the `·` glyph.
+	// only the first visual row carries the `✻` marker.
 	rows := strings.Split(strings.TrimRight(got, "\n"), "\n")
 	if len(rows) < 2 {
 		t.Fatalf("expected wrapped thought to span multiple rows, got %d", len(rows))
 	}
-	if !strings.Contains(rows[0], "·") {
-		t.Fatalf("first row should carry the · glyph: %q", rows[0])
+	if !strings.Contains(rows[0], glyphThink) {
+		t.Fatalf("first row should carry the %s marker: %q", glyphThink, rows[0])
 	}
-	if strings.Contains(rows[1], "·") {
-		t.Fatalf("continuation row should not repeat the · glyph: %q", rows[1])
+	if strings.Contains(rows[1], glyphThink) {
+		t.Fatalf("continuation row should not repeat the %s marker: %q", glyphThink, rows[1])
 	}
 }
 
-// RenderStreamingChunk drops caret + leading blank but keeps gutter, so a
-// settled head chunk emitted via tea.Println slots cleanly above the still-
-// streaming tail. Trailing newlines get trimmed (tea.Println adds its own).
 func TestRenderStreamingChunk_GutterNoCaret(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	got := stripANSI(r.RenderStreamingChunk("line one\nline two\n", false))
-	if strings.HasPrefix(got, "\n") {
-		t.Fatalf("chunk should not have leading newline: %q", got)
+	// clean mode opens each chunk with the paragraph gap, like the committed message.
+	if !strings.HasPrefix(got, "\n ") {
+		t.Fatalf("chunk should open with a blank row then the gutter: %q", got)
 	}
 	if strings.HasSuffix(got, "\n") {
 		t.Fatalf("chunk should not have trailing newline (tea.Println adds it): %q", got)
@@ -974,6 +996,14 @@ func TestRenderStreamingChunk_GutterNoCaret(t *testing.T) {
 	// caret glyphs from animatedCaret must not bleed into the chunk path.
 	if strings.Contains(got, "⠇") || strings.Contains(got, "⢿") {
 		t.Fatalf("chunk should not include streaming caret: %q", got)
+	}
+	// the first chunk carries the marker; continuations hang under blank space.
+	if !strings.Contains(got, glyphBee+" line one") {
+		t.Fatalf("first chunk should carry the bee marker: %q", got)
+	}
+	r.SetContinuation(true)
+	if cont := stripANSI(r.RenderStreamingChunk("line three", false)); strings.Contains(cont, glyphBee) {
+		t.Fatalf("continuation chunk must not repeat the marker: %q", cont)
 	}
 }
 

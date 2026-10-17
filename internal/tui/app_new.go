@@ -20,8 +20,8 @@ import (
 // want a custom set should call WithCommands on the returned Model.
 func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level) Model {
 	ti := textarea.New()
-	ti.Placeholder = ""
-	ti.Prompt = "› "
+	ti.Placeholder = "Ask anything…"
+	ti.Prompt = promptFirst
 	ti.ShowLineNumbers = false
 	ti.CharLimit = 16384
 	ti.SetHeight(1)
@@ -30,12 +30,16 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 	// flush like the old textinput.
 	ti.FocusedStyle.Base = lipgloss.NewStyle()
 	ti.BlurredStyle.Base = lipgloss.NewStyle()
-	ti.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ti.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	// cursor line shares the text color: the textarea paints the active row with
+	// CursorLine instead of Text, so a bare style would dim the row you type on.
+	ti.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(fgButter)
+	ti.BlurredStyle.CursorLine = lipgloss.NewStyle().Foreground(fgButter)
 	ti.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(colorHoney)
 	ti.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(colorHoney)
-	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(colorDim)
-	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(colorDim)
+	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(fgOyster)
+	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(fgOyster)
+	ti.FocusedStyle.Text = lipgloss.NewStyle().Foreground(fgButter)
+	ti.BlurredStyle.Text = lipgloss.NewStyle().Foreground(fgButter)
 	ti.Focus()
 	ti.Cursor.SetMode(cursor.CursorStatic)
 	// enter is reserved for submit (handleKey catches it before Update).
@@ -76,7 +80,7 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 	}
 
 	return Model{
-		styles:          styles,
+		styles:          &styles,
 		keys:            keys,
 		state:           StateIdle,
 		input:           ti,

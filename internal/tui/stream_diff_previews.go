@@ -13,9 +13,8 @@ func (r *StreamRenderer) previewWrite(in map[string]any) (string, string, bool) 
 	if path == "" {
 		return "", "", true
 	}
-	header := r.styles.DiffPath.Render(shortenPath(path))
 	all := splitKeepEmpty(content)
-	header += "  " + r.styles.DiffMeta.Render(fmt.Sprintf("(write, %d lines)", len(all)))
+	header := r.styles.DiffPath.Render(shortenPath(path)) + "  " + r.diffStats(len(all), 0)
 	lines := make([]string, 0, len(all))
 	for _, l := range all {
 		lines = append(lines, r.diffSign("+", expandTabs(l), path, r.styles.DiffAdd))

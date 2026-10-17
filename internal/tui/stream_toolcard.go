@@ -1,0 +1,257 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/elhenro/bee/internal/types"
+)
+
+// colors a call's bullet: pending while it runs, then green/red/amber
+type toolOutcome int
+
+const (
+	outcomeDone toolOutcome = iota
+	outcomeFail
+	outcomeRefused
+	outcomePending
+)
+
+// preview budgets in result rows; reads collapse to a count (the model
+// needed the content, you rarely do), verbose lifts every cap
+const (
+	previewBash    = 5
+	previewDefault = 3
+	previewError   = 6
+)
+
+func (r *StreamRenderer) bullet(o toolOutcome) string {
+	switch o {
+	case outcomeFail:
+		return r.styles.ToolFail.Render(glyphTool)
+	case outcomeRefused:
+		return r.styles.Warn.Render(glyphTool)
+	case outcomePending:
+		if (r.pendingFrame/4)%2 == 1 {
+			return r.styles.Dim.Render(glyphTool)
+		}
+		return r.styles.Mark.Render(glyphTool)
+	default:
+		return r.styles.ToolOK.Render(glyphTool)
+	}
+}
+
+// lead of a result's first row
+func (r *StreamRenderer) connector() string {
+	return "  " + r.styles.ToolRail.Render(glyphResult) + "  "
+}
+
+// header row plus, for file mutations, the diff body; a failed edit drops
+// the diff, the error is the story, not the change that didn't land
+func (r *StreamRenderer) callParts(u types.ToolUse, o toolOutcome) (head, body string) {
+	prefix := r.bullet(o) + " " + r.styles.ToolName.Render(toolTitle(u.Name))
+	if h, b, ok := r.renderEditPreview(u); ok {
+		if h != "" {
+			prefix += "  " + h
+		}
+		if o == outcomeFail || o == outcomeRefused {
+			b = ""
+		}
+		return prefix, b
+	}
+	args := summarizeToolArgs(u.Name, u.Input, r.argsBudget(u.Name))
+	switch {
+	case args == "":
+		return prefix, ""
+	case u.Name == "bash" && r.highlight:
+		return prefix + "  " + r.hlLang(args, "bash"), ""
+	}
+	return prefix + "  " + r.styles.ToolArgs.Render(args), ""
+}
+
+// bare call card; used for escalate and calls without a result
+func (r *StreamRenderer) renderToolUse(u types.ToolUse) string {
+	if u.Name == "escalate" {
+		return r.renderEscalate(u)
+	}
+	head, body := r.callParts(u, outcomeDone)
+	if body == "" {
+		return head + "\n"
+	}
+	return head + "\n" + body + "\n"
+}
+
+// call above its result so batched calls read call → output → call →
+// output; the use comes from r.toolUses (indexed by RenderMessage), orphan
+// results render bare
+func (r *StreamRenderer) pairedToolResult(res types.ToolResult) string {
+	use, ok := r.toolUses[res.UseID]
+	if !ok {
+		return r.renderToolResult(res)
+	}
+	// escalate renders its full card from the use side already.
+	if use.Name == "escalate" {
+		return ""
+	}
+	v := r.viewResult(use, res)
+	head, diff := r.callParts(use, outcomeFor(res, v))
+	out := head + "\n"
+	if diff != "" {
+		out += diff + "\n"
+	}
+	if body := r.resultBody(use, true, res, v); body != "" {
+		out += body + "\n"
+	}
+	return out
+}
+
+// just the result rows
+func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
+	use, ok := r.toolUses[res.UseID]
+	v := r.viewResult(use, res)
+	body := r.resultBody(use, ok, res, v)
+	if body == "" {
+		return ""
+	}
+	return body + "\n"
+}
+
+// result cleaned for display
+type resultView struct {
+	lines   []string
+	total   int  // bytes of cleaned payload, for the "+N lines · size" hint
+	refused bool // blocked by safety/approval rather than failed
+}
+
+// strips ansi/control bytes and guard nudges, drops blank rows, flags
+// refusals ("refused…" from shell/safety, "denied by" from write filters):
+// blocked, not broken
+func (r *StreamRenderer) viewResult(use types.ToolUse, res types.ToolResult) resultView {
+	content := res.Content
+	if use.Name == "read" && !res.IsError {
+		// the soft "unchanged since your earlier read" note is a model-only
+		// nudge appended to the real content; hide it from the human view.
+		content = strings.TrimRight(strings.TrimSuffix(strings.TrimRight(content, "\n"),
+			"(note: unchanged since your earlier read this session)"), "\n")
+	}
+	clean := expandTabs(ansi.Strip(content))
+	if !r.showNudges {
+		clean = stripGuardPrefixes(clean)
+	}
+	lines := compactLines(clean)
+	refused := res.IsError && len(lines) > 0 &&
+		(strings.HasPrefix(lines[0], "refused") || strings.Contains(lines[0], "denied by"))
+	return resultView{lines: lines, total: len(clean), refused: refused}
+}
+
+func outcomeFor(res types.ToolResult, v resultView) toolOutcome {
+	switch {
+	case v.refused:
+		return outcomeRefused
+	case res.IsError:
+		return outcomeFail
+	}
+	return outcomeDone
+}
+
+// result rows a tool earns, -1 = no cap
+func (r *StreamRenderer) previewRows(name string, isErr bool) int {
+	switch {
+	case r.verbose:
+		return -1
+	case isErr:
+		return previewError
+	case name == "read":
+		return 0
+	case name == "bash":
+		return previewBash
+	}
+	return previewDefault
+}
+
+// rows hanging off a call; edit successes return "" (the diff says it all,
+// the text is model-only bookkeeping)
+func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.ToolResult, v resultView) string {
+	if haveUse && !res.IsError && isEditTool(use.Name) {
+		return ""
+	}
+	if len(v.lines) == 0 {
+		return ""
+	}
+	style := r.styles.ToolPrev
+	switch {
+	case v.refused:
+		style = r.styles.Warn
+	case res.IsError:
+		style = r.styles.Error
+	}
+	n := r.previewRows(use.Name, res.IsError)
+	w := r.textWidth(resultIndent)
+
+	var rows []string
+	switch {
+	case n == 0:
+		rows = []string{style.Render(readSummary(len(v.lines), v.total))}
+	default:
+		shown := v.lines
+		if n > 0 && len(shown) > n {
+			shown = shown[:n]
+		}
+		hl := r.readHighlighter(use, haveUse, res)
+		for _, ln := range shown {
+			ln = shortenPathsInline(ln)
+			row := style.Render(ln)
+			if hl != nil {
+				row = hl(ln)
+			}
+			if r.verbose {
+				rows = append(rows, strings.Split(wrapText(row, w), "\n")...)
+			} else {
+				rows = append(rows, clipLine(row, w))
+			}
+		}
+		if hidden := len(v.lines) - len(shown); hidden > 0 {
+			more := fmt.Sprintf("%s +%d lines", glyphMore, hidden)
+			if v.total >= 1000 {
+				more += " " + glyphSep + " " + humanBytes(v.total)
+			}
+			rows = append(rows, r.styles.Dim.Render(more))
+		}
+	}
+	return hang(strings.Join(rows, "\n"), r.connector(), strings.Repeat(" ", resultIndent))
+}
+
+// the one-row digest a file read collapses to
+func readSummary(lines, bytes int) string {
+	s := fmt.Sprintf("%d lines", lines)
+	if lines == 1 {
+		s = "1 line"
+	}
+	if bytes >= 1000 {
+		s += " " + glyphSep + " " + humanBytes(bytes)
+	}
+	return s
+}
+
+// per-row highlighter for verbose reads (nil otherwise), lexer from the path
+func (r *StreamRenderer) readHighlighter(use types.ToolUse, haveUse bool, res types.ToolResult) func(string) string {
+	if !r.verbose || !r.highlight || res.IsError || !haveUse || use.Name != "read" {
+		return nil
+	}
+	path, _ := use.Input["path"].(string)
+	if path == "" {
+		return nil
+	}
+	return func(s string) string { return r.hl(s, path) }
+}
+
+// file-mutation tools whose call card carries a diff
+func isEditTool(name string) bool {
+	switch name {
+	case "edit", "hashline_edit", "apply_patch", "write":
+		return true
+	}
+	return false
+}

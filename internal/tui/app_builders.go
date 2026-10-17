@@ -267,6 +267,6 @@ var _ SkillsLister = (*skills.Registry)(nil)
 // Approval modal is rebuilt because it holds its own copy of the keys.
 func (m Model) WithKeyMap(km KeyMap) Model {
 	m.keys = km
-	m.approval = NewApprovalModel(m.styles, km)
+	m.approval = NewApprovalModel(*m.styles, km)
 	return m
 }

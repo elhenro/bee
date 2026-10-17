@@ -163,7 +163,7 @@ func (p *RewindPicker) View(width, height int) string {
 
 func (p *RewindPicker) viewList(width, height int) string {
 	title := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorAccent)).
+		Foreground(accentHoney).
 		Bold(true).
 		Render("⬢ Rewind")
 	if len(p.entries) == 0 {
@@ -189,7 +189,7 @@ func (p *RewindPicker) viewList(width, height int) string {
 func (p *RewindPicker) viewMode(width, height int) string {
 	e := p.entries[p.selected]
 	title := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorAccent)).
+		Foreground(accentHoney).
 		Bold(true).
 		Render("⬢ Rewind to: " + e.Preview)
 	var b strings.Builder

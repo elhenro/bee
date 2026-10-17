@@ -36,7 +36,7 @@ func (p *Picker) View() string {
 	if p.focus == colModels {
 		hint += " · ^r refresh"
 	}
-	return strings.Join([]string{crumb, p.filter.View(), body, dim.Render(hint)}, "\n")
+	return strings.Join([]string{" " + crumb, p.filter.View(), body, " " + dim.Render(hint)}, "\n")
 }
 
 // renderActive renders whichever stage is focused.
@@ -77,10 +77,10 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 	selMark := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 	nameSel := lipgloss.NewStyle().Foreground(fgButter).Bold(true)
 	nameNorm := lipgloss.NewStyle().Foreground(fgSmoke)
-	gs := lipgloss.NewStyle().Foreground(accentBee)
+	gs := lipgloss.NewStyle().Foreground(fgSquid)
 
 	if len(matches) == 0 {
-		return dim.Render("  no matches")
+		return dim.Render("   no matches")
 	}
 
 	total := len(matches)
@@ -103,7 +103,7 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 
 	var b strings.Builder
 	if start > 0 {
-		b.WriteString(dim.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString(dim.Render(fmt.Sprintf("   ↑ %d more", start)))
 		b.WriteString("\n")
 	}
 	for i := start; i < end; i++ {
@@ -112,9 +112,9 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 
 		var line strings.Builder
 		if i == sel {
-			line.WriteString(selMark.Render("›"))
+			line.WriteString(" " + selMark.Render(glyphSel))
 		} else {
-			line.WriteString(" ")
+			line.WriteString("  ")
 		}
 		line.WriteString(" ")
 		line.WriteString(gs.Render(glyph))
@@ -154,7 +154,7 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 		}
 	}
 	if end < total {
-		b.WriteString(dim.Render(fmt.Sprintf("  ↓ %d more", total-end)))
+		b.WriteString(dim.Render(fmt.Sprintf("   ↓ %d more", total-end)))
 	}
 	return b.String()
 }

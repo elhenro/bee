@@ -121,7 +121,7 @@ func (w *Workspace) View(width, height int) string {
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(ColorAmber)).
+		BorderForeground(bgIron).
 		Width(width-2).
 		Height(bodyHeight).
 		Padding(0, 1).
@@ -145,7 +145,7 @@ func (w *Workspace) header(width int) string {
 		label = "…" + label[len(label)-(width-3):]
 	}
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorAccent)).
+		Foreground(accentHoney).
 		Bold(true).
 		Render(label)
 }

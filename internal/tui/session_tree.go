@@ -165,7 +165,7 @@ func (t *SessionTree) View(width, height int) string {
 		return ""
 	}
 	title := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorAccent)).
+		Foreground(accentHoney).
 		Bold(true).
 		Render("⬢ Session tree")
 	if t.root == nil {
@@ -270,7 +270,7 @@ func boxModal(body string, width, height int) string {
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(ColorAccent)).
+		BorderForeground(bgIron).
 		Padding(0, 1).
 		Width(width - 2).
 		Height(height - 2).

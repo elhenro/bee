@@ -173,8 +173,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		// re-size text input to fit
-		m.input.SetWidth(max(0, msg.Width-4))
-		m.stream = NewStreamRenderer(m.styles, max(40, msg.Width-2))
+		m.input.SetWidth(max(0, msg.Width-2))
+		m.stream = NewStreamRenderer(*m.styles, max(40, msg.Width))
 		m.stream.SetVerbose(m.verbose)
 		m.stream.SetShowThoughts(m.showThoughts)
 		m.stream.SetShowNudges(m.showNudges)

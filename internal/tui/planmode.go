@@ -35,7 +35,7 @@ type planOption struct {
 // fresh session carrying just the plan) in one keystroke. Inactive = renders
 // nothing.
 type PlanModeModel struct {
-	styles  Styles
+	styles  *Styles
 	Active  bool
 	options []planOption
 	focus   int
@@ -44,7 +44,7 @@ type PlanModeModel struct {
 
 // NewPlanModeModel returns a fresh, inactive picker.
 func NewPlanModeModel(styles Styles) PlanModeModel {
-	return PlanModeModel{styles: styles}
+	return PlanModeModel{styles: &styles}
 }
 
 // SetWidth records the terminal width so View can wrap option rows.

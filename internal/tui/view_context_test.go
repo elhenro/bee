@@ -9,7 +9,7 @@ import (
 	"github.com/elhenro/bee/internal/llm"
 )
 
-// fresh TUI, no events recorded: the hex chip is just the bee, no %.
+// fresh TUI, no events recorded: the context chip is just the bee mark, no %.
 func TestRenderContextHex_Fresh(t *testing.T) {
 	llm.ResetLiveContextLengths()
 	defer llm.ResetLiveContextLengths()
@@ -18,7 +18,7 @@ func TestRenderContextHex_Fresh(t *testing.T) {
 	if strings.Contains(got, "%") || strings.Contains(got, "?") {
 		t.Errorf("fresh: hex should not show %% or ?, got %q", got)
 	}
-	if !strings.Contains(got, "🐝") {
+	if !strings.Contains(got, glyphBee) {
 		t.Errorf("fresh: hex should show bee, got %q", got)
 	}
 }
@@ -55,7 +55,7 @@ func TestRenderContextHex_UnknownModelWithEvents(t *testing.T) {
 	if strings.Contains(got, "%") {
 		t.Errorf("unknown model: hex should not show %%, got %q", got)
 	}
-	if !strings.Contains(got, "🐝") {
+	if !strings.Contains(got, glyphBee) {
 		t.Errorf("unknown model: hex should still show bee, got %q", got)
 	}
 }
@@ -85,10 +85,10 @@ func TestRenderContextBar_Fresh(t *testing.T) {
 	defer llm.ResetLiveContextLengths()
 	m := NewModel(nil, "/tmp/work", "gpt-4o-mini", "workspace-write", caveman.Default).WithCostTracker(cost.New())
 	m.width = 40
-	got := stripANSI(m.renderContextBar())
-	// stripANSI leaves raw runes; the bar should be 40 ─ glyphs.
-	if r := []rune(got); len(r) != 40 {
-		t.Errorf("fresh: bar width = %d, want 40", len(r))
+	got := strings.TrimLeft(stripANSI(m.renderContextBar()), " ")
+	// the rule is inset by the outer gutter: ruleWidth ─ glyphs after a margin.
+	if r := []rune(got); len(r) != m.ruleWidth() {
+		t.Errorf("fresh: bar width = %d, want %d", len(r), m.ruleWidth())
 	}
 	for _, r := range got {
 		if r != '─' {
@@ -107,14 +107,14 @@ func TestRenderContextBar_KnownModelFills(t *testing.T) {
 	m := NewModel(nil, "/tmp/work", "gpt-4o-mini", "workspace-write", caveman.Default).WithCostTracker(tr)
 	m.width = 40
 	got := stripANSI(m.renderContextBar())
-	// 25% of 40 = 10 fill chars (━), 30 rest chars (─).
+	// 25% of the 38-cell inset rule = 9.5 → 10 fill chars (━), 28 rest (─).
 	fills := strings.Count(got, "━")
 	rests := strings.Count(got, "─")
 	if fills != 10 {
 		t.Errorf("known 25%%: fill count = %d, want 10", fills)
 	}
-	if rests != 30 {
-		t.Errorf("known 25%%: rest count = %d, want 30", rests)
+	if rests != m.ruleWidth()-10 {
+		t.Errorf("known 25%%: rest count = %d, want %d", rests, m.ruleWidth()-10)
 	}
 }
 
@@ -129,12 +129,12 @@ func TestRenderContextBar_UnknownModelShowsQuestion(t *testing.T) {
 	tr.Record("openrouter", modelID, 12_345, 1_000)
 	m := NewModel(nil, "/tmp/work", modelID, "workspace-write", caveman.Default).WithCostTracker(tr)
 	m.width = 40
-	got := stripANSI(m.renderContextBar())
+	got := strings.TrimLeft(stripANSI(m.renderContextBar()), " ")
 	if !strings.HasPrefix(got, "?") {
 		t.Errorf("unknown: bar should start with ?, got %q", got)
 	}
-	if r := []rune(got); len(r) != 40 {
-		t.Errorf("unknown: bar width = %d, want 40", len(r))
+	if r := []rune(got); len(r) != m.ruleWidth() {
+		t.Errorf("unknown: bar width = %d, want %d", len(r), m.ruleWidth())
 	}
 	// no ━ — the fill is suppressed because we don't know the cap.
 	if strings.Contains(got, "━") {

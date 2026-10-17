@@ -38,7 +38,7 @@ type HistoryPickerModel struct {
 func NewHistoryPicker() HistoryPickerModel {
 	ti := textinput.New()
 	ti.Placeholder = "type to filter history…"
-	ti.Prompt = "› "
+	ti.Prompt = " › "
 	ti.CharLimit = 256
 	ti.Focus()
 	return HistoryPickerModel{input: ti}
@@ -128,9 +128,9 @@ func (p HistoryPickerModel) View() string {
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
 	headBold := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 
-	crumb := headBold.Render("history") + dim.Render("  ⌃r search past prompts")
+	crumb := " " + headBold.Render("history") + dim.Render("  ⌃r search past prompts")
 
-	body := renderRows(p.matches, p.selected, p.input.Value(), "›", w, func(idx int) (string, string) {
+	body := renderRows(p.matches, p.selected, p.input.Value(), glyphSep, w, func(idx int) (string, string) {
 		entry := p.entries[idx]
 		// keep first line only; mark continuation so user knows the prompt is multi-line.
 		// fuzzy match indices beyond the cut are dropped by renderRows' nameLen guard.
@@ -143,7 +143,7 @@ func (p HistoryPickerModel) View() string {
 	})
 
 	hint := "enter pick · esc cancel · ↑↓ nav · ⌃r next"
-	return strings.Join([]string{crumb, p.input.View(), body, dim.Render(hint)}, "\n")
+	return strings.Join([]string{crumb, p.input.View(), body, " " + dim.Render(hint)}, "\n")
 }
 
 // ---- on-disk history ----

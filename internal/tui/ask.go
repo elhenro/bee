@@ -15,7 +15,7 @@ import (
 // Model; renders nothing when inactive. Communicates the pick back through the
 // engine-facing channel, mirroring ApprovalModel.
 type AskModel struct {
-	styles   Styles
+	styles   *Styles
 	Active   bool
 	useID    string
 	question ask.Question
@@ -33,7 +33,7 @@ func NewAskModel(styles Styles) AskModel {
 	ti := textinput.New()
 	ti.Placeholder = "type your own answer…"
 	ti.CharLimit = 400
-	return AskModel{styles: styles, input: ti}
+	return AskModel{styles: &styles, input: ti}
 }
 
 // SetOutput wires the engine-facing channel. Pass nil to detach.

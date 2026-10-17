@@ -6,38 +6,30 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
-// RenderMessage formats a single message for the scrollback. Glyph and the
-// first body line share one row; continuation lines indent under the body
-// column. Dense by design — `▸ yo yo` reads as one unit.
+// one message for scrollback:
 //
-// Each ContentBlock renders independently; results are right-trimmed and
-// joined on a single newline so neighbouring blocks never collide on the
-// same row (the original concat-without-separator caused text to share a
-// line with the following tool card). Interior blank runs are collapsed
-// so glamour padding or stray `\n\n\n` from the model can't spill
-// hundreds of empty rows into terminal scrollback.
+//	▎ your turn                   honey bar on a warm panel
+//	⬢ the answer                  marker column, prose hangs under it
+//	● Read  path                  tool call, bullet colored by outcome
+//	  ⎿  20 lines                 result hangs off its call
+//
+// blank runs collapse so glamour padding or a stray `\n\n\n` can't spill
+// empty rows. consecutive tool messages stack tight so a batch reads as one
+// tree; everything else gets a blank above.
 func (r *StreamRenderer) RenderMessage(m types.Message) string {
-	// hide synthetic [nudge] user messages unless explicitly enabled. the
-	// loop still injects + persists these turns; we only suppress the visual
-	// row so the user isn't distracted by recovery prods.
+	// synthetic [nudge] turns are hidden unless show_nudges; the loop still
+	// injects and persists them
 	if !r.showNudges && isNudgeMessage(m) {
 		return ""
 	}
-	// inline shell records (from `!cmd` / `!!cmd`) get a dedicated styled
-	// rendering instead of the role-glyph + prose layout.
+	// `!cmd` / `!!cmd` records get their own layout
 	if tb := firstTextBlock(m); tb != nil {
 		if cmd, out, isErr, ok := parseInlineShell(tb.Text); ok {
-			body := r.renderInlineShell(cmd, out, isErr)
-			if r.compact {
-				return body
-			}
-			return "\n" + applyGutter(body)
+			r.afterTool = false
+			return r.frame(r.renderInlineShell(cmd, out, isErr), false, false)
 		}
 	}
-	glyph := r.roleGlyph(m.Role)
-
-	// pre-pass: index tool-use blocks so a later renderToolResult can look up
-	// the originating command (used by the bash error-card path).
+	// index tool uses so a later result can find its call
 	for _, b := range m.Content {
 		if b.Type == types.BlockToolUse && b.Use != nil {
 			if r.toolUses == nil {
@@ -47,104 +39,101 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 		}
 	}
 
-	parts := make([]string, 0, len(m.Content))
-	for _, b := range m.Content {
-		var rendered string
-		switch b.Type {
-		case types.BlockText:
-			rendered = r.renderText(b.Text)
-		case types.BlockThinking:
-			rendered = r.renderThinking(b.Text)
-		case types.BlockToolUse:
-			// tool_use cards render paired with their result in the tool
-			// message (see BlockToolResult) so call + output read as one
-			// unit even when the model batches several calls in one turn.
-			// Suppress the bare call line here to avoid showing it twice.
-			// escalate is the exception: its result is suppressed, so its
-			// card must render from the use side.
-			if b.Use != nil && b.Use.Name == "escalate" {
-				rendered = r.renderToolUse(*b.Use)
-			}
-		case types.BlockToolResult:
-			if b.Result != nil {
-				rendered = r.pairedToolResult(*b.Result)
-			}
+	switch m.Role {
+	case types.RoleUser:
+		body := m.Display
+		if body == "" {
+			body = joinText(m)
 		}
-		rendered = strings.TrimRight(rendered, "\n")
-		if rendered == "" {
-			continue
-		}
-		parts = append(parts, rendered)
-	}
-
-	bodyStr := collapseBlankRuns(strings.Trim(strings.Join(parts, "\n"), "\n"))
-
-	// render-only override: a slash skill stores the expanded body in Content
-	// (so the model gets it) but sets Display to the typed command so the
-	// bubble reads "/plan build X", not the whole prompt template.
-	if m.Role == types.RoleUser && m.Display != "" {
-		bodyStr = m.Display
-	}
-
-	var rendered string
-	if m.Role == types.RoleUser {
-		rail := r.styles.UserRail.Render("┃")
-		// drop the role glyph: rail + bold-blue body is enough to anchor
-		// the turn and reads like a quoted prompt. body color matches the
-		// rail so the whole block reads as one unit.
-		bodyDecorate := func(s string) string { return r.styles.UserBody.Render(s) }
-		if bodyStr == "" {
-			rendered = rail
-		} else {
-			bodyLines := strings.Split(bodyStr, "\n")
-			bodyLines[0] = rail + " " + bodyDecorate(bodyLines[0])
-			for i := 1; i < len(bodyLines); i++ {
-				bodyLines[i] = rail + " " + bodyDecorate(bodyLines[i])
-			}
-			rendered = strings.Join(bodyLines, "\n")
-		}
-	} else if m.Role == types.RoleAssistant {
-		// assistant turns render without a role glyph — the user prompt
-		// above already anchors the conversation, and stripping the prefix
-		// gives prose full column width without a leading hex distraction.
-		if bodyStr == "" {
+		r.afterTool = false
+		return r.frame(r.renderUser(body), true, false)
+	case types.RoleAssistant:
+		body := r.assistantBody(m)
+		if body == "" {
 			return ""
 		}
-		rendered = bodyStr
-	} else if bodyStr == "" {
-		rendered = glyph
-	} else if glyph == "" {
-		rendered = bodyStr
-	} else {
-		rendered = glyph + " " + indentContinuation(bodyStr, "  ")
+		r.afterTool = false
+		return r.frame(body, true, false)
+	default:
+		body := r.toolBody(m)
+		if body == "" {
+			return ""
+		}
+		tight := r.afterTool
+		r.afterTool = true
+		return r.frame(body, false, tight)
 	}
-
-	// compact mode skips the spacing layer entirely (no gutter, no OSC
-	// 133 zones, no leading blank). Useful on small terminals or for users
-	// who prefer a denser layout.
-	if r.compact {
-		return rendered
-	}
-
-	rendered = applyGutter(rendered)
-
-	// OSC 133 wraps finalized user/assistant turns. Tool messages stay
-	// un-wrapped — they're sub-content the terminal shouldn't bookmark.
-	if m.Role == types.RoleUser || m.Role == types.RoleAssistant {
-		rendered = osc133Start + rendered + osc133End
-	}
-
-	// Leading blank line above every message — `Spacer(1)` so each
-	// turn breathes vertically. tea.Println adds the trailing \n.
-	return "\n" + rendered
 }
 
-// collapseBlankRuns squeezes 2+ consecutive blank/whitespace-only lines into
-// a single blank. Markdown rendering (glamour) and the model itself both
-// like to pad with multiple blanks; in scrollback every blank is a wasted
-// row, so cap the run at one. A line is "blank" iff every rune is space or
-// tab (after ANSI strip via the surrounding pipeline). Preserves content
-// lines verbatim — only whitespace runs get touched.
+// text and thinking blocks. tool calls render paired with their result in
+// the tool message, except escalate (its result is suppressed)
+func (r *StreamRenderer) assistantBody(m types.Message) string {
+	var parts []string
+	for _, b := range m.Content {
+		var s string
+		switch b.Type {
+		case types.BlockText:
+			if strings.TrimSpace(b.Text) != "" {
+				s = r.renderAssistant(r.renderText(b.Text))
+				r.cont = false // only the first block continues a flushed head
+			}
+		case types.BlockThinking:
+			s = r.renderThinking(b.Text)
+		case types.BlockToolUse:
+			if b.Use != nil && b.Use.Name == "escalate" {
+				s = r.renderToolUse(*b.Use)
+			}
+		}
+		if s = strings.TrimRight(s, "\n"); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return collapseBlankRuns(strings.Trim(strings.Join(parts, "\n\n"), "\n"))
+}
+
+// one card per result, stacked tight
+func (r *StreamRenderer) toolBody(m types.Message) string {
+	var parts []string
+	for _, b := range m.Content {
+		if b.Type != types.BlockToolResult || b.Result == nil {
+			continue
+		}
+		if s := strings.TrimRight(r.pairedToolResult(*b.Result), "\n"); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return collapseBlankRuns(strings.Trim(strings.Join(parts, "\n"), "\n"))
+}
+
+// text blocks as typed
+func joinText(m types.Message) string {
+	var parts []string
+	for _, b := range m.Content {
+		if b.Type == types.BlockText {
+			parts = append(parts, b.Text)
+		}
+	}
+	return strings.Trim(strings.Join(parts, "\n"), "\n")
+}
+
+// spacing layer: gutter, OSC 133 zone marks (shell-integration terminals
+// jump between turns), blank row above (tight skips it); compact skips all
+func (r *StreamRenderer) frame(s string, zone, tight bool) string {
+	if r.compact {
+		return s
+	}
+	s = applyGutter(s)
+	if zone {
+		s = osc133Start + s + osc133End
+	}
+	if tight {
+		return s
+	}
+	return "\n" + s
+}
+
+// squeezes runs of blank lines to one; glamour and models over-pad and
+// every blank in scrollback is a wasted row
 func collapseBlankRuns(s string) string {
 	if s == "" {
 		return s
@@ -163,24 +152,20 @@ func collapseBlankRuns(s string) string {
 	return strings.Join(out, "\n")
 }
 
-// roleGlyph returns the single-glyph role marker. Label dropped — colored
-// glyph alone disambiguates speaker without eating a row.
 func (r *StreamRenderer) roleGlyph(role types.Role) string {
 	switch role {
 	case types.RoleUser:
-		return r.styles.RoleYou.Render("▸")
+		return r.styles.RoleYou.Render(glyphUser)
 	case types.RoleAssistant:
-		return r.styles.RoleBee.Render("⬢")
+		return r.styles.Mark.Render(glyphBee)
 	case types.RoleTool:
 		return ""
 	default:
-		return r.styles.Dim.Render("·")
+		return r.styles.Dim.Render(glyphSep)
 	}
 }
 
-// indentContinuation leaves the first line as-is and prefixes every later
-// line with indent. Used so multi-line bodies align under the body column,
-// not the role glyph.
+// indent every line after the first
 func indentContinuation(s, indent string) string {
 	if s == "" {
 		return ""

@@ -14,13 +14,6 @@ import (
 const argsSummaryCompact = 40
 const argsSummaryVerbose = 120
 
-// previewLinesCompact sets the tool-output preview height for compact mode.
-// Raised from 1 → 5 so short shell output (typical 2-4 lines: build ok,
-// test ok, ls of a small dir) renders in full instead of getting collapsed
-// to `+N more`. Verbose mode bypasses the cap entirely — every non-blank
-// line of the tool output renders.
-const previewLinesCompact = 5
-
 // OSC 133 prompt-zone marks. Terminals with shell integration (iTerm,
 // Ghostty, wezterm) let cmd+↑/↓ jump between user/assistant turns in
 // scrollback. Terminals without integration see them as silent escapes.
@@ -77,6 +70,12 @@ type StreamRenderer struct {
 	// the bare "exit N" preview). Populated lazily as RenderMessage walks
 	// each turn.
 	toolUses map[string]types.ToolUse
+	// last rendered message was a tool card: the next one stacks tight
+	afterTool bool
+	// reply already printed its marker (progressive flush), no second ⬢
+	cont bool
+	// pulse phase of in-flight call bullets
+	pendingFrame int
 	// compactingVariant selects one of the three /compact swarm animations.
 	// Picked at frame 0 of each compacting run, sticks for the duration.
 	compactingVariant int
@@ -93,12 +92,27 @@ type StreamRenderer struct {
 	cachedStreamFrame   int
 	cachedStreamOutput  string
 	cachedStreamValid   bool
+
+	// streamMarkdown cache: render of the last settled prefix
+	settledSrc string
+	settledOut string
 }
 
 // invalidateStreamCache drops the cached streaming render so the next
 // RenderStreaming call rebuilds from source. Called by setters that change
 // rendering output and from SetCompact (gutter changes layout).
-func (r *StreamRenderer) invalidateStreamCache() { r.cachedStreamValid = false }
+func (r *StreamRenderer) invalidateStreamCache() {
+	r.cachedStreamValid = false
+	r.settledSrc, r.settledOut = "", ""
+}
+
+// next text continues a reply whose head is already in scrollback
+func (r *StreamRenderer) SetContinuation(v bool) {
+	if r.cont != v {
+		r.cont = v
+		r.invalidateStreamCache()
+	}
+}
 
 // SetLoaderStyle picks which pre-token loader animation to render.
 func (r *StreamRenderer) SetLoaderStyle(s LoaderStyle) {
@@ -172,7 +186,7 @@ func (r *StreamRenderer) diffSign(sign string, content string, path string, sign
 	if sign == "-" {
 		bg = r.styles.DiffDelBg
 	}
-	return bg.Render(preserveBgAcrossResets(inner))
+	return bg.Render(preserveBgAcrossResets(padTo(inner, r.textWidth(resultIndent))))
 }
 
 // preserveBgAcrossResets rewrites bare `\x1b[0m` SGR resets inside s so they
@@ -194,25 +208,13 @@ func (r *StreamRenderer) SetCompact(v bool) {
 	r.invalidateStreamCache()
 }
 
-// argsSummary returns the rune budget for tool-input summaries.
-func (r *StreamRenderer) argsSummary() int {
-	if r.verbose {
-		return argsSummaryVerbose
-	}
-	return argsSummaryCompact
-}
-
-// argsBudget computes a width-aware rune budget for the tool-card args
-// summary. Card looks like `<name>  <key>: <value>`; we give the value
-// the rest of the row instead of a fixed 40 chars — the old cap was hiding
-// bash commands like `cmd: find /Users/userX/web/b…` before the
-// actual interesting flags showed up. Floor at argsSummaryCompact so narrow
-// terminals still get something readable; verbose mode raises the ceiling
-// but still respects width.
+// rune budget for a call row's args: the rest of the line, so a bash
+// command shows its real flags; floors at argsSummaryCompact, verbose
+// raises the ceiling
 func (r *StreamRenderer) argsBudget(toolName string) int {
-	// name + 2 spaces + key (~9 "command: ") = ~12 overhead
-	const overhead = 12
-	b := r.width - overhead - len(toolName)
+	// gutter + bullet + space + two-space gap + right margin
+	const overhead = 6
+	b := r.width - overhead - len(toolTitle(toolName))
 	if b < argsSummaryCompact {
 		b = argsSummaryCompact
 	}
@@ -222,23 +224,14 @@ func (r *StreamRenderer) argsBudget(toolName string) int {
 	return b
 }
 
-// previewLines returns the per-tool-result row budget. Verbose returns -1
-// meaning "no cap" — the caller skips truncation when negative.
-func (r *StreamRenderer) previewLines() int {
-	if r.verbose {
-		return -1
-	}
-	return previewLinesCompact
-}
-
 // RenderMessageDetail renders m with the tool-output cap forced full (no cap)
 // or collapsed (compact preview), independent of the persistent verbose flag.
 // Used by the ctrl+o re-print toggle. Restores verbose afterward.
 func (r *StreamRenderer) RenderMessageDetail(m types.Message, full bool) string {
-	prev := r.verbose
-	r.verbose = full
+	prev, prevTool := r.verbose, r.afterTool
+	r.verbose, r.afterTool = full, false
 	out := r.RenderMessage(m)
-	r.verbose = prev
+	r.verbose, r.afterTool = prev, prevTool
 	return out
 }
 
@@ -249,26 +242,18 @@ func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 	if width <= 0 {
 		width = 80
 	}
-	// WithAutoStyle would query the terminal via OSC 11; the reply leaks
-	// into bubbletea's input pipe in altscreen mode and ends up typed in
-	// the textinput. Pick standard style explicitly from the already-set
-	// lipgloss flag (cmd/bee/tui.go decides this pre-program from
-	// BEE_THEME / COLORFGBG).
-	gStyle := "dark"
-	if !lipgloss.HasDarkBackground() {
-		gStyle = "light"
-	}
+	// no WithAutoStyle: its OSC 11 reply leaks into the input; follow the
+	// lipgloss flag cmd/bee/tui.go set from BEE_THEME / COLORFGBG
 	// WithPreservedNewLines keeps model's intentional line breaks (lists,
 	// short prose lines) instead of collapsing them into one paragraph.
 	// WithEmoji expands `:sparkles:` shortcodes — cheap delight.
-	// Wrap at width-2 so the 2-col continuation indent we add downstream
-	// doesn't push the longest glamour line past the terminal right edge.
-	wrap := width - 2
+	// gutter + marker column + right margin
+	wrap := width - 4
 	if wrap < 20 {
 		wrap = width
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle(gStyle),
+		glamour.WithStyles(markdownStyle(lipgloss.HasDarkBackground())),
 		glamour.WithWordWrap(wrap),
 		glamour.WithPreservedNewLines(),
 		glamour.WithEmoji(),
@@ -287,11 +272,3 @@ func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 		loaderStyle:  ParseLoaderStyle(envLoaderStyle()),
 	}
 }
-
-
-
-
-
-
-
-

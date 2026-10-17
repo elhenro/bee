@@ -58,13 +58,17 @@ func (m *Model) flush() tea.Cmd {
 	for _, msg := range pending {
 		// strip the already-flushed head off the first matching assistant
 		// turn so its prefix doesn't render twice in scrollback.
+		cont := false
 		if prefix != "" && msg.Role == types.RoleAssistant {
 			if stripped, ok := stripTextPrefix(msg, prefix); ok {
 				msg = stripped
+				cont = true
 			}
 			prefix = ""
 		}
+		m.stream.SetContinuation(cont)
 		rendered := m.stream.RenderMessage(msg)
+		m.stream.SetContinuation(false)
 		// renderer may return empty for filtered messages (e.g. hidden
 		// [nudge] turns); skip those so we don't blit a stray blank row.
 		if rendered == "" {
@@ -80,7 +84,7 @@ func (m *Model) flush() tea.Cmd {
 		if w < 4 {
 			w = 80
 		}
-		rendered = ansi.Hardwrap(rendered, w, true)
+		rendered = ansi.Hardwrap(expandTabs(rendered), w, true)
 		// RenderMessage already emits one leading "\n" in non-compact mode
 		// so each turn has a single blank-line gap; stacking another here
 		// produced double-blanks between every message in scrollback.
@@ -154,11 +158,7 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 	bot := m.renderBottomBar()
 	status := m.renderTopBar()
 	warn := m.renderWarning()
-	var ctxBar string
-	if m.showContextBar {
-		ctxBar = m.renderContextBar()
-	}
-	budget := liveBudget(m.height, intro, bot, status, warn, ctxBar)
+	budget := liveBudget(m.height, intro, bot, status, warn) - m.busyRows()
 	if budget <= 0 {
 		return nil
 	}
@@ -179,13 +179,14 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 	startOpen := m.streamFenceOpen
 	endOpen := fenceTransitionsAfter(head, startOpen)
 	styleMarkdown := !startOpen && !endOpen
+	m.stream.SetContinuation(m.streamFlushed != "")
 	chunk := m.stream.RenderStreamingChunk(head, styleMarkdown)
 	m.streamFlushed += head
 	m.streamFenceOpen = endOpen
 	if chunk == "" {
 		return nil
 	}
-	return tea.Println(chunk)
+	return tea.Println(expandTabs(chunk))
 }
 
 // stripTextPrefix returns a copy of msg with the leading prefix removed

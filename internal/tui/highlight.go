@@ -5,18 +5,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/chroma/v2"
-	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
-	"github.com/alecthomas/chroma/v2/styles"
-)
-
-// chroma style + formatter pinned at startup. terminal256 is the widest
-// safe target (most macOS/linux TTYs); the truecolor formatter clashes with
-// some legacy terms by emitting 24-bit sequences they render as garbage.
-// "monokai" stays readable on both light and dark backgrounds.
-var (
-	hlStyle     = styles.Get("monokai")
-	hlFormatter = formatters.Get("terminal256")
 )
 
 // HighlightCode returns content with ANSI syntax-highlight escapes wrapped
@@ -24,7 +13,7 @@ var (
 // "diff"…) or "" to auto-detect by content. On any failure it returns the
 // input unchanged — never errors out of a render path.
 func HighlightCode(content, lang string) string {
-	if content == "" || hlStyle == nil || hlFormatter == nil {
+	if content == "" {
 		return content
 	}
 	var lex chroma.Lexer
@@ -43,7 +32,7 @@ func HighlightCode(content, lang string) string {
 		return content
 	}
 	var b strings.Builder
-	if err := hlFormatter.Format(&b, hlStyle, it); err != nil {
+	if err := hlFormatter().Format(&b, hlStyle(), it); err != nil {
 		return content
 	}
 	return b.String()

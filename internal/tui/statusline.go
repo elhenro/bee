@@ -31,27 +31,33 @@ type statusItem struct {
 var statusRegistry = map[string]statusItem{
 	"context":       {id: "context", align: alignLeft, draw: func(m Model) string { return m.renderContextHex() }},
 	"model":         {id: "model", align: alignLeft, draw: drawStatusModel},
-	"cwd":           {id: "cwd", align: alignLeft, draw: drawStatusCwd},
-	"git_branch":    {id: "git_branch", align: alignLeft, draw: drawStatusGitBranch},
-	"session_title": {id: "session_title", align: alignLeft, draw: drawStatusSessionTitle},
-	"cost":          {id: "cost", align: alignLeft, draw: drawStatusCost},
-	"total_tokens":  {id: "total_tokens", align: alignLeft, draw: drawStatusTotalTokens},
+	"role":          {id: "role", align: alignLeft, draw: drawStatusRole},
+	"effort":        {id: "effort", align: alignLeft, draw: drawStatusEffort},
+	"yolo":          {id: "yolo", align: alignLeft, draw: func(m Model) string { return m.renderYoloBadge() }},
 	"goal":          {id: "goal", align: alignLeft, draw: drawStatusGoal},
+	"session_title": {id: "session_title", align: alignLeft, draw: drawStatusSessionTitle},
+	"cwd":           {id: "cwd", align: alignRight, draw: drawStatusCwd},
+	"git_branch":    {id: "git_branch", align: alignRight, draw: drawStatusGitBranch},
+	"cost":          {id: "cost", align: alignRight, draw: drawStatusCost},
+	"total_tokens":  {id: "total_tokens", align: alignRight, draw: drawStatusTotalTokens},
 	"turn_timer":    {id: "turn_timer", align: alignRight, draw: func(m Model) string { return m.renderTurnTimer() }},
-	"yolo":          {id: "yolo", align: alignRight, draw: func(m Model) string { return m.renderYoloBadge() }},
-	"role":          {id: "role", align: alignRight, draw: drawStatusRole},
-	"effort":        {id: "effort", align: alignRight, draw: drawStatusEffort},
+	"hints":         {id: "hints", align: alignRight, draw: drawStatusHints},
 }
 
-// defaultStatusLineIDs reproduces bee's historical top bar: identity/context
-// on the left, safety + reasoning chips pinned right. Used when the config
-// key is absent (nil), as opposed to an explicit empty list which hides the
-// line entirely.
+// default footer: what you're talking to on the left, where and how much on
+// the right, a contextual key hint last. used when the config key is absent
+// (nil); an explicit empty list hides the line
 func defaultStatusLineIDs() []string {
 	return []string{
-		"context", "model", "cwd", "git_branch", "cost", "total_tokens", "goal",
-		"turn_timer", "yolo", "role", "effort",
+		"context", "model", "role", "effort", "yolo", "goal",
+		"cwd", "git_branch", "cost", "total_tokens", "turn_timer", "hints",
 	}
+}
+
+// shed order (first goes first) when the footer doesn't fit; identity items
+// (context, model, role, safety) truncate instead
+var statusDropOrder = []string{
+	"hints", "total_tokens", "turn_timer", "git_branch", "cwd", "cost", "goal", "session_title",
 }
 
 // resolveStatusLine turns a configured id list into the ordered ids to draw.
@@ -88,11 +94,16 @@ func (m Model) statusLineAllOff() bool {
 		!m.showEffort && !m.showTurnTimer && !m.showGitBranch && !m.showTotalTokens
 }
 
-// renderStatusLine composes the configured items into one width-fitting row.
-// Empty items drop out. The first right-aligned item opens the gap that
-// right-aligns the remainder, so the visible order always equals the
-// configured order. Width is measured with lipglossWidth (ANSI-aware) and
-// overflow is clipped with truncateVisible so styling never miscounts cells.
+// one drawn item and its edge
+type statusPart struct {
+	id    string
+	text  string
+	right bool
+}
+
+// configured items as one width-fitting row. the first right-aligned item
+// opens the gap that pushes the rest right, so visible order = configured
+// order. too wide: shed items in statusDropOrder before truncating
 func (m Model) renderStatusLine() string {
 	if m.statusLine == nil && m.statusLineAllOff() {
 		return ""
@@ -101,46 +112,72 @@ func (m Model) renderStatusLine() string {
 	if len(ids) == 0 {
 		return ""
 	}
-	var left, right []string
+	var parts []statusPart
 	rightOpen := false
 	for _, id := range ids {
 		it := statusRegistry[id]
 		if it.align == alignRight {
 			rightOpen = true
 		}
-		s := it.draw(m)
-		if s == "" {
-			continue
-		}
-		if rightOpen {
-			right = append(right, s)
-		} else {
-			left = append(left, s)
+		if s := it.draw(m); s != "" {
+			parts = append(parts, statusPart{id: id, text: s, right: rightOpen})
 		}
 	}
-	l := strings.Join(left, "  ")
-	r := strings.Join(right, "  ")
-	switch {
-	case l == "" && r == "":
+	if len(parts) == 0 {
 		return ""
-	case m.width <= 0:
-		if l == "" {
-			return r
-		}
-		if r == "" {
-			return l
-		}
-		return l + "  " + r
 	}
-	pad := m.width - lipglossWidth(l) - lipglossWidth(r)
-	if pad < 1 {
-		pad = 1
+	if m.width <= 0 {
+		return statusJoin(parts, 0)
 	}
-	line := l + strings.Repeat(" ", pad) + r
+	avail := m.width - 2 // gutter on both sides
+	for _, id := range statusDropOrder {
+		if lipglossWidth(statusJoin(parts, 0)) <= avail {
+			break
+		}
+		parts = statusWithout(parts, id)
+	}
+	line := " " + statusJoin(parts, avail)
 	if lipglossWidth(line) > m.width {
 		line = truncateVisible(line, m.width)
 	}
 	return line
+}
+
+// left | right; width <= 0 measures the natural width without padding
+func statusJoin(parts []statusPart, width int) string {
+	var left, right []string
+	for _, p := range parts {
+		if p.right {
+			right = append(right, p.text)
+		} else {
+			left = append(left, p.text)
+		}
+	}
+	l, r := strings.Join(left, "  "), strings.Join(right, "  ")
+	switch {
+	case r == "":
+		return l
+	case l == "":
+		if width > 0 {
+			return strings.Repeat(" ", max(0, width-lipglossWidth(r))) + r
+		}
+		return r
+	}
+	pad := 2
+	if width > 0 {
+		pad = max(2, width-lipglossWidth(l)-lipglossWidth(r))
+	}
+	return l + strings.Repeat(" ", pad) + r
+}
+
+func statusWithout(parts []statusPart, id string) []statusPart {
+	out := parts[:0:0]
+	for _, p := range parts {
+		if p.id != id {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // drawStatusModel renders the provider-qualified model label.
@@ -148,7 +185,7 @@ func drawStatusModel(m Model) string {
 	if !m.showModel {
 		return ""
 	}
-	return m.styles.Dim.Render(m.displayModel())
+	return m.styles.Key.Render(m.displayModel())
 }
 
 // drawStatusCwd renders the $HOME-shortened working directory.
@@ -156,7 +193,7 @@ func drawStatusCwd(m Model) string {
 	if !m.showCwd {
 		return ""
 	}
-	return m.styles.Dim.Render(prettyCwd(m.cwd))
+	return m.styles.Dim.Render(shortCwd(prettyCwd(m.cwd), 32))
 }
 
 // drawStatusGitBranch renders the current branch, or "" outside a repo.
@@ -165,7 +202,7 @@ func drawStatusGitBranch(m Model) string {
 		return ""
 	}
 	if br := gitBranch(m.cwd); br != "" {
-		return m.styles.Dim.Render("⎇ " + br)
+		return m.styles.Dim.Render(glyphBranch + " " + br)
 	}
 	return ""
 }
@@ -206,7 +243,7 @@ func drawStatusTotalTokens(m Model) string {
 	}
 	tot := m.costs.Total()
 	if n := tot.Input + tot.Output; n > 0 {
-		return m.styles.Dim.Render("Σ" + tokensHuman(n))
+		return m.styles.Dim.Render(tokensHuman(n) + " tok")
 	}
 	return ""
 }
@@ -218,6 +255,18 @@ func drawStatusGoal(m Model) string {
 		return m.styles.Dim.Render("◎ " + gl)
 	}
 	return ""
+}
+
+// contextual key hint, far right: what's useful now, not a manual. hidden
+// mid-turn (the busy row has it) and while a picker owns the keys
+func drawStatusHints(m Model) string {
+	if m.state == StateStreaming || m.showHelp || m.pickerOpen() {
+		return ""
+	}
+	if m.input.Value() != "" {
+		return m.hints([][2]string{{"enter", "send"}, {"shift+↵", "newline"}})
+	}
+	return m.hints([][2]string{{"/", "commands"}, {"@", "files"}, {"?", "help"}})
 }
 
 // drawStatusRole renders the active-role chip (gated by the effort toggle).

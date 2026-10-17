@@ -7,21 +7,41 @@ import (
 )
 
 func (r *StreamRenderer) renderText(s string) string {
-	if r.md == nil || s == "" {
+	if s == "" {
 		return s
+	}
+	s = expandTabs(s) // before wrapping, so width math sees the real cells
+	if r.md == nil {
+		return wrapText(s, r.textWidth(markIndent))
 	}
 	// short-circuit: glamour's document margin and surrounding blank lines
 	// turn "Yo." into "  Yo." sandwiched in blanks. Plain text gets returned
 	// raw; only invoke glamour when there's actual markdown to style.
 	if !needsMarkdown(s) {
-		return s
+		return wrapText(s, r.textWidth(markIndent))
 	}
 	s = rewriteShellSessionFences(s)
 	out, err := r.md.Render(s)
 	if err != nil {
 		return s
 	}
-	return dedent(strings.Trim(out, "\n"))
+	return trimBlankLines(dedent(out))
+}
+
+// trimBlankLines drops leading and trailing rows that are blank once styling
+// is stripped. glamour pads blocks (code fences, quotes) with rows of bare
+// spaces and SGR resets that a plain Trim("\n") misses; left in, they stack
+// on the paragraph gap the message frame already adds.
+func trimBlankLines(s string) string {
+	lines := strings.Split(s, "\n")
+	start, end := 0, len(lines)
+	for start < end && strings.TrimSpace(ansi.Strip(lines[start])) == "" {
+		start++
+	}
+	for end > start && strings.TrimSpace(ansi.Strip(lines[end-1])) == "" {
+		end--
+	}
+	return strings.Join(lines[start:end], "\n")
 }
 
 // needsMarkdown is a crude marker check — fences, inline code, leading list/

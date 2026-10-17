@@ -70,19 +70,17 @@ func parseInlineShell(text string) (cmd, output string, isErr, ok bool) {
 
 // renderInlineShell styles an inline shell record:
 //
-//	$ ls            (honey-bold prompt + honey-bold cmd)
-//	▎ file1.go      (honey rail + body output, ANSI-stripped, indented)
-//	▎ file2.go
+//	$ ls                  honey prompt + command
+//	  ⎿  file1.go         output hangs off it, ANSI-stripped
+//	     file2.go
 //
-// Glyph is replaced by the `$` prompt; output spans full width without the
-// 4-line preview clip tool cards use. Whole card is honey-themed so it reads
-// at a glance as "this came from !cmd / !!cmd" rather than blending into
-// regular prose.
+// Output spans every row (no preview clip like tool cards): you asked for it.
+// The honey prompt reads at a glance as "this came from !cmd / !!cmd" rather
+// than blending into regular prose.
 func (r *StreamRenderer) renderInlineShell(cmd, output string, isErr bool) string {
 	honey := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
-	rail := lipgloss.NewStyle().Foreground(accentHoney).Render("▎")
 	header := honey.Render("$ " + cmd) // single styled span keeps coloring contiguous
-	clean := ansi.Strip(strings.TrimRight(output, "\n"))
+	clean := expandTabs(ansi.Strip(strings.TrimRight(output, "\n")))
 	if clean == "" {
 		return header
 	}
@@ -90,12 +88,12 @@ func (r *StreamRenderer) renderInlineShell(cmd, output string, isErr bool) strin
 	if isErr {
 		bodyStyle = r.styles.Error
 	}
-	// prefix each output line with a honey rail so the block reads as a card.
+	w := r.textWidth(resultIndent)
 	lines := strings.Split(clean, "\n")
 	for i, ln := range lines {
-		lines[i] = rail + " " + bodyStyle.Render(ln)
+		lines[i] = bodyStyle.Render(clipLine(sanitizeControl(ln), w))
 	}
-	return header + "\n" + strings.Join(lines, "\n")
+	return header + "\n" + hang(strings.Join(lines, "\n"), r.connector(), strings.Repeat(" ", resultIndent))
 }
 
 // isNudgeMessage reports whether m is a synthetic recovery nudge emitted by

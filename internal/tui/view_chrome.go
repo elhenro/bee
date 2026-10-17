@@ -32,11 +32,15 @@ func (m Model) renderTurnTimer() string {
 		return ""
 	}
 	if m.state == StateStreaming && !m.turnStartedAt.IsZero() {
-		d := time.Since(m.turnStartedAt)
-		return m.styles.RoleBee.Render(formatElapsed(d))
+		// the busy row ticks it; only pinned loaders need it here
+		if m.stream != nil && m.stream.isDefaultLoader() {
+			return ""
+		}
+		return m.styles.RoleBee.Render(formatElapsed(time.Since(m.turnStartedAt)))
 	}
-	if m.lastTurnDuration > 0 {
-		return m.styles.Dim.Render(formatElapsed(m.lastTurnDuration))
+	// a bare "0.8s" says nothing: long turns only
+	if m.lastTurnDuration >= 3*time.Second {
+		return m.styles.Dim.Render("took " + formatElapsed(m.lastTurnDuration))
 	}
 	return ""
 }
@@ -66,6 +70,14 @@ func formatElapsed(d time.Duration) string {
 	hrs := int(d / time.Hour)
 	mins := int((d % time.Hour) / time.Minute)
 	return fmt.Sprintf("%dh %02dm", hrs, mins)
+}
+
+// formatElapsed without decimals, so a ticking row doesn't strobe
+func formatClock(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	return fmt.Sprintf("%dm %02ds", int(d/time.Minute), int((d%time.Minute)/time.Second))
 }
 
 // formatUSD picks a precision that keeps small per-turn figures readable:

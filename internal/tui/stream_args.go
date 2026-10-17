@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -21,11 +23,38 @@ func summarizeArgs(in map[string]any, budget int) string {
 	if s, ok := summarizeSingleKey(in); ok {
 		return truncateRunes(s, budget)
 	}
-	b, err := json.Marshal(shortenPathishValues(in))
-	if err != nil {
-		return "{...}"
+	return truncateRunes(formatKV(shortenPathishValues(in)), budget)
+}
+
+// formatKV renders a tool input as `key=value key=value`, keys sorted so the
+// row is stable across renders. Strings with spaces are quoted; everything
+// else goes through json so booleans, numbers and nested values stay legible.
+func formatKV(in map[string]any) string {
+	keys := make([]string, 0, len(in))
+	for k := range in {
+		keys = append(keys, k)
 	}
-	return truncateRunes(string(b), budget)
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		var v string
+		switch x := in[k].(type) {
+		case string:
+			v = x
+			if strings.ContainsAny(v, " \t") {
+				v = strconv.Quote(v)
+			}
+		default:
+			b, err := json.Marshal(x)
+			if err != nil {
+				v = "?"
+			} else {
+				v = string(b)
+			}
+		}
+		parts = append(parts, k+"="+v)
+	}
+	return strings.Join(parts, " ")
 }
 
 // shortenPathishValues returns a shallow copy of in with values for path-ish
@@ -78,13 +107,13 @@ func summarizeSingleKey(in map[string]any) (string, bool) {
 			case pathBearing[k]:
 				val = shortenPathsInline(val)
 			}
-			return k + ": " + val, true
+			return val, true
 		default:
 			b, err := json.Marshal(x)
 			if err != nil {
 				return "", false
 			}
-			return k + ": " + string(b), true
+			return string(b), true
 		}
 	}
 	return "", false

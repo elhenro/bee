@@ -7,22 +7,19 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// RenderStreaming returns the partial-text view while the model emits deltas.
-// frame drives both the pre-token loader animation (empty partial) and the
-// trailing caret animation (non-empty partial) — see animatedCaret for the
-// rationale: a static caret looked "stopped" during in-stream pauses
-// (reasoning, slow tool-call generation, network stalls between deltas).
+// partial-text view while the model streams. with the default loader it's
+// text only (the busy row is separate), so it caches across ticks; pinned
+// braille loaders also draw their pre-token animation and caret here.
 //
-// The partial is rendered as RAW text (not glamour-markdown). Re-rendering a
-// growing buffer through glamour on every delta reflows word-wrap and shifts
-// indent as markdown tokens (`-`, `*`, ```` ``` ````) come into being mid-
-// stream — visually the text "jumps" and indentation breaks. Markdown styling
-// is applied once the turn finishes in RenderMessage. Continuation lines are
-// indented 2 cols so they align under the body column, not the role glyph.
+// the tail paragraph is raw: re-rendering a growing buffer through glamour
+// reflows wrap and indent as markdown tokens appear mid-stream. settled
+// paragraphs are styled (streamMarkdown).
 func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
-	// short-circuit when nothing changed since the last call. View() fires
-	// on every key/tick/window event; without this the full markdown +
-	// gutter pass runs ~120Hz on a 50KB partial during streaming.
+	if r.isDefaultLoader() {
+		frame = 0
+	}
+	// View fires on every key/tick/window event; skip the wrap pass when
+	// nothing changed
 	if r.cachedStreamValid && r.cachedStreamPartial == partial && r.cachedStreamFrame == frame {
 		return r.cachedStreamOutput
 	}
@@ -36,46 +33,88 @@ func (r *StreamRenderer) RenderStreaming(partial string, frame int) string {
 
 func (r *StreamRenderer) renderStreamingUncached(partial string, frame int) string {
 	if partial == "" {
-		// no right caret while loading — keeps the row visually minimal.
-		// blank line above so loader breathes; user prompt isn't squashed
-		// against animation. Loader animation alone signals "bee working" —
-		// the prefix ⬢ was redundant with the animated braille payload.
-		var head string
+		if r.isDefaultLoader() {
+			return "" // the busy row carries the wait
+		}
+		// pinned painter: the art alone says "working"
+		head := r.styles.Mark.Render(glyphBee)
 		if r.showLoader {
 			head = r.renderLoader(frame)
-		} else {
-			head = r.styles.RoleBee.Render("⬢")
 		}
-		if r.compact {
-			return "\n" + head
-		}
-		return "\n" + outerGutter + head
+		return "\n" + r.gutter(head)
 	}
 	// trim trailing whitespace so the caret sits flush with the last visible
 	// char instead of floating on an indented blank line under the prose.
-	trimmed := strings.TrimRight(partial, " \t\n")
-	var body string
-	if r.showLoader {
-		body = trimmed + " " + r.animatedCaret(frame)
-	} else {
-		body = trimmed
+	// tabs skip cells without erasing them: redrawn rows would keep stale
+	// characters under a tab
+	body := expandTabs(strings.TrimRight(partial, " \t\n"))
+	if body == "" {
+		return ""
 	}
+	if r.isDefaultLoader() {
+		return r.proseBlock(r.streamMarkdown(body))
+	}
+	if r.showLoader {
+		body += " " + r.animatedCaret(frame)
+	}
+	return r.proseBlock(wrapText(body, r.textWidth(markIndent)))
+}
+
+// finished paragraphs (up to the last blank line outside a fence) go
+// through glamour as one document, the one being typed stays raw. the
+// settled part re-renders only when a paragraph lands, not per delta
+func (r *StreamRenderer) streamMarkdown(text string) string {
+	settled, tail := splitSettled(text)
+	var out string
+	if settled != "" {
+		if r.settledSrc != settled {
+			r.settledSrc, r.settledOut = settled, r.renderText(settled)
+		}
+		out = r.settledOut
+	}
+	if tail = strings.TrimSpace(tail); tail != "" {
+		if out != "" {
+			out += "\n\n"
+		}
+		out += wrapText(tail, r.textWidth(markIndent))
+	}
+	return out
+}
+
+// cut after the last paragraph break outside a ``` fence; before = settled,
+// after = still being written
+func splitSettled(text string) (settled, tail string) {
+	fence, cut, off := false, 0, 0
+	lines := strings.Split(text, "\n")
+	for i, ln := range lines {
+		if strings.HasPrefix(strings.TrimLeft(ln, " \t"), "```") {
+			fence = !fence
+		}
+		off += len(ln) + 1
+		if !fence && i > 0 && strings.TrimSpace(ln) == "" && strings.TrimSpace(lines[i-1]) != "" {
+			cut = off
+		}
+	}
+	if cut <= 0 || cut > len(text) {
+		return "", text
+	}
+	return strings.TrimRight(text[:cut], "\n"), text[cut:]
+}
+
+// marker, gutter and, outside compact, the blank row above
+func (r *StreamRenderer) proseBlock(body string) string {
+	body = r.gutter(r.renderAssistant(body))
 	if r.compact {
 		return body
 	}
-	return applyGutter(body)
+	return "\n" + body
 }
 
-// RenderStreamingChunk formats a settled head of a streaming partial for
-// emission to terminal scrollback via tea.Println. Mirrors RenderStreaming's
-// gutter treatment but drops the trailing caret (the cursor isn't here
-// anymore) and the leading blank row (rest of the partial keeps streaming
-// in the live region right below). Used by the progressive-flush path so
-// the head of a long response stays readable while the tail keeps growing.
+// settled head of a streaming partial for tea.Println (progressive flush):
+// same marker/gutter/blank row as the live view, no caret.
 //
-// styleMarkdown=true routes the chunk through glamour so prose paragraphs
-// keep their headings, lists, bold, and link styling once they hit scroll-
-// back. Callers pass false when the chunk straddles an open ``` fence —
+// styleMarkdown=true runs glamour so headings, lists and links survive
+// into scrollback; callers pass false when the chunk straddles an open ``` fence:
 // partial code blocks render unpredictably through glamour, and raw output
 // preserves any inline ANSI the model already painted (git log colors,
 // chroma highlight, etc).
@@ -84,14 +123,10 @@ func (r *StreamRenderer) RenderStreamingChunk(chunk string, styleMarkdown bool) 
 	if chunk == "" {
 		return ""
 	}
-	body := chunk
 	if styleMarkdown {
-		body = r.renderText(chunk)
+		return r.proseBlock(r.renderText(chunk))
 	}
-	if r.compact {
-		return body
-	}
-	return applyGutter(body)
+	return r.proseBlock(chunk)
 }
 
 // fenceTransitionsAfter returns the fence-open state that results from
