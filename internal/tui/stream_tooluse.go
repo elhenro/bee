@@ -100,7 +100,7 @@ func summarizeSearch(in map[string]any, budget int) (string, bool) {
 		return "", false
 	}
 	out := pat
-	if p, ok := in["path"].(string); ok && p != "" {
+	if p, ok := in["path"].(string); ok && narrowsScope(p) {
 		out += "  · " + shortenPath(p)
 	}
 	if g, ok := in["glob"].(string); ok && g != "" {
@@ -117,6 +117,11 @@ func summarizeSearch(in map[string]any, budget int) (string, bool) {
 	return truncateRunes(out, budget), true
 }
 
+// the workspace root is the default scope, so naming it adds only noise
+func narrowsScope(path string) bool {
+	return path != "" && path != "." && path != "./"
+}
+
 // summarizeGlob renders a glob tool call with the filename pattern leading.
 // Optional `path` trails as `· <path>`. Returns (_, false) when name is
 // missing so the caller falls back to the generic summary.
@@ -126,7 +131,7 @@ func summarizeGlob(in map[string]any, budget int) (string, bool) {
 		return "", false
 	}
 	out := name
-	if p, ok := in["path"].(string); ok && p != "" {
+	if p, ok := in["path"].(string); ok && narrowsScope(p) {
 		out += "  · " + shortenPath(p)
 	}
 	return truncateRunes(out, budget), true

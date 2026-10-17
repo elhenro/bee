@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -24,16 +25,16 @@ const diffContextLines = 1
 // gofmt visual width and stays readable on narrow terminals.
 const diffTabWidth = 4
 
-// renderEditPreview turns a file-mutation tool call into a pretty
-// `path` header + colored diff body. Returns (header, body, true) when u
-// is one of: edit, hashline_edit, apply_patch, write. Body uses the lilac
-// tool-rail so it groups visually under the call card; +/- lines get
-// green/red. Returns ("", "", false) for every other tool so the caller
-// can fall back to the plain json summary path.
-func (r *StreamRenderer) renderEditPreview(u types.ToolUse) (string, string, bool) {
+// renderEditPreview turns a file-mutation tool call into a `path` header +
+// colored diff body. Returns (header, body, true) when u is one of: edit,
+// hashline_edit, apply_patch, write; changed rows get a green/red wash.
+// Returns ("", "", false) for every other tool so the caller can fall back to
+// the plain args summary. anchor is the file line an edit landed on, 0 when
+// unknown (numbers are then left off).
+func (r *StreamRenderer) renderEditPreview(u types.ToolUse, anchor int) (string, string, bool) {
 	switch u.Name {
 	case "edit":
-		return r.previewEdit(u.Input)
+		return r.previewEdit(u.Input, anchor)
 	case "hashline_edit":
 		return r.previewHashlineEdit(u.Input)
 	case "apply_patch":
@@ -45,73 +46,50 @@ func (r *StreamRenderer) renderEditPreview(u types.ToolUse) (string, string, boo
 }
 
 // previewEdit renders the edit tool as a real LCS-based line diff so the
-// reader sees only the actual changes — not the whole `old` payload followed
+// reader sees only the actual changes, not the whole `old` payload followed
 // by the whole `new` payload. Unchanged context is dimmed and collapses to a
 // `⋯ +K unchanged` marker when long. Header carries `+adds −dels` stats so
 // the change scale reads at a glance.
 //
 //	path  +3 −2  (occ 2)
-//	▎   <context line>
-//	▎ - <removed>
-//	▎ + <added>
-//	▎ ⋯ +12 unchanged
-//	▎   <context line>
-func (r *StreamRenderer) previewEdit(in map[string]any) (string, string, bool) {
+//	17   <context line>
+//	18 - <removed>
+//	18 + <added>
+func (r *StreamRenderer) previewEdit(in map[string]any, anchor int) (string, string, bool) {
 	path, _ := in["path"].(string)
 	oldStr, _ := in["old"].(string)
 	newStr, _ := in["new"].(string)
 	if path == "" {
 		return "", "", true
 	}
-	oldLines := splitKeepEmpty(oldStr)
-	newLines := splitKeepEmpty(newStr)
-	ops := lineDiff(oldLines, newLines)
+	ops := lineDiff(splitKeepEmpty(oldStr), splitKeepEmpty(newStr))
 	adds, dels := countDiffOps(ops)
-	hunks := collapseToHunks(ops, diffContextLines)
+	if anchor > 0 {
+		numberOps(ops, anchor)
+	}
+	rows := layoutRows(collapseToHunks(ops, diffContextLines))
 
 	header := r.styles.DiffPath.Render(shortenPath(path))
 	if occ, ok := numericField(in["occurrence"]); ok && occ != 1 {
 		header += "  " + r.styles.DiffMeta.Render(fmt.Sprintf("(occ %d)", occ))
 	}
 	header += "  " + r.diffStats(adds, dels)
-	return header, r.diffBody(r.renderDiffOps(hunks, path)), true
+	return header, r.diffCard([]diffBlock{{path: path, rows: rows}}), true
 }
 
-// renderDiffOps turns post-collapse edit ops into styled rail lines. Context
-// (`=`) is dimmed and signless so changes pop; gap markers ride DiffMeta.
-// Trailing empty context (`=`-blank) is dropped — splitKeepEmpty preserves
-// the empty entry after a trailing newline and there's no value in rendering
-// an empty dimmed row at the end of every diff.
-func (r *StreamRenderer) renderDiffOps(ops []editOp, path string) []string {
-	for len(ops) > 0 {
-		last := ops[len(ops)-1]
-		if last.kind == '=' && last.text == "" {
-			ops = ops[:len(ops)-1]
-			continue
-		}
-		break
+// the file line an edit landed on, read off the edit tool's own echo
+// (`# region 1 → lines 17-19`); 0 when the call failed or the echo is gone
+func editAnchor(use types.ToolUse, res types.ToolResult) int {
+	if use.Name != "edit" || res.IsError {
+		return 0
 	}
-	out := make([]string, 0, len(ops))
-	for _, op := range ops {
-		switch op.kind {
-		case '+':
-			out = append(out, r.diffSign("+", expandTabs(op.text), path, r.styles.DiffAdd))
-		case '-':
-			out = append(out, r.diffSign("-", expandTabs(op.text), path, r.styles.DiffDel))
-		case '=':
-			out = append(out, r.diffContext(expandTabs(op.text)))
-		case '~':
-			out = append(out, r.styles.DiffMeta.Render("⋯ "+op.text))
-		}
+	if m := editRegion.FindStringSubmatch(res.Content); m != nil {
+		return atoi(m[1])
 	}
-	return out
+	return 0
 }
 
-// diffContext styles an unchanged context line: 2-space gutter (aligns with
-// `+ ` / `- `) and dimmed content so the eye skims past it to the changes.
-func (r *StreamRenderer) diffContext(content string) string {
-	return r.styles.Dim.Render("  " + content)
-}
+var editRegion = regexp.MustCompile(`# region 1 → lines (\d+)`)
 
 // diffStats renders the `+N −M` header badge with semantic colors. Symmetric
 // minus uses U+2212 (true minus) not hyphen so it visually balances the `+`.
@@ -127,30 +105,6 @@ func (r *StreamRenderer) diffStats(adds, dels int) string {
 		return r.styles.DiffMeta.Render("(no change)")
 	}
 	return strings.Join(parts, " ")
-}
-
-// styled diff rows hung off the call header, capped outside verbose via
-// balancedTrim so both `-` and `+` rows stay represented (a head cap could
-// hide the additions entirely)
-func (r *StreamRenderer) diffBody(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	hidden := 0
-	if !r.verbose && len(lines) > diffPreviewLinesCompact {
-		hidden = len(lines) - diffPreviewLinesCompact
-		lines = balancedTrim(lines, diffPreviewLinesCompact)
-	}
-	w := r.textWidth(resultIndent)
-	rows := make([]string, len(lines))
-	for i, ln := range lines {
-		rows[i] = clipLine(ln, w)
-	}
-	body := strings.Join(rows, "\n")
-	if hidden > 0 {
-		body += "\n" + r.styles.Dim.Render(fmt.Sprintf("%s +%d lines", glyphMore, hidden))
-	}
-	return hang(body, r.connector(), strings.Repeat(" ", resultIndent))
 }
 
 // splitKeepEmpty splits on \n preserving trailing empty entries. Avoids the

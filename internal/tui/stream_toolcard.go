@@ -51,10 +51,11 @@ func (r *StreamRenderer) connector() string {
 }
 
 // header row plus, for file mutations, the diff body; a failed edit drops
-// the diff, the error is the story, not the change that didn't land
-func (r *StreamRenderer) callParts(u types.ToolUse, o toolOutcome) (head, body string) {
+// the diff, the error is the story, not the change that didn't land. anchor
+// numbers an edit's rows (0 = unknown)
+func (r *StreamRenderer) callParts(u types.ToolUse, o toolOutcome, anchor int) (head, body string) {
 	prefix := r.bullet(o) + " " + r.styles.ToolName.Render(toolTitle(u.Name))
-	if h, b, ok := r.renderEditPreview(u); ok {
+	if h, b, ok := r.renderEditPreview(u, anchor); ok {
 		if h != "" {
 			prefix += "  " + h
 		}
@@ -78,7 +79,7 @@ func (r *StreamRenderer) renderToolUse(u types.ToolUse) string {
 	if u.Name == "escalate" {
 		return r.renderEscalate(u)
 	}
-	head, body := r.callParts(u, outcomeDone)
+	head, body := r.callParts(u, outcomeDone, 0)
 	if body == "" {
 		return head + "\n"
 	}
@@ -98,7 +99,7 @@ func (r *StreamRenderer) pairedToolResult(res types.ToolResult) string {
 		return ""
 	}
 	v := r.viewResult(use, res)
-	head, diff := r.callParts(use, outcomeFor(res, v))
+	head, diff := r.callParts(use, outcomeFor(res, v), editAnchor(use, res))
 	out := head + "\n"
 	if diff != "" {
 		out += diff + "\n"

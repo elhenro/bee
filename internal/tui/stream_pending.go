@@ -24,7 +24,7 @@ func (r *StreamRenderer) RenderPendingTools(uses []types.ToolUse, frame int) str
 		if u.Name == "escalate" {
 			continue
 		}
-		head, _ := r.callParts(u, outcomePending)
+		head, _ := r.callParts(u, outcomePending, 0)
 		lines = append(lines, clipLine(head, r.width-2))
 	}
 	if len(lines) == 0 {

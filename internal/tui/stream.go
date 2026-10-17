@@ -169,26 +169,6 @@ func (r *StreamRenderer) hlLang(content, lang string) string {
 	return HighlightCode(content, lang)
 }
 
-// diffSign renders one diff line as `<prefix-styled> <highlighted-content>`.
-// When highlight is off, falls back to wrapping the whole line in the prefix
-// style — preserves the pre-feature look exactly. Result wraps in a soft
-// green/red background so the eye locks onto changed rows the same way it
-// does in github/gitlab diffs — `+`/`-` characters alone are easy to miss
-// when scanning a long block.
-func (r *StreamRenderer) diffSign(sign string, content string, path string, signStyle lipgloss.Style) string {
-	var inner string
-	if !r.highlight {
-		inner = signStyle.Render(sign + " " + content)
-	} else {
-		inner = signStyle.Render(sign) + " " + HighlightCode(content, langFromPath(path))
-	}
-	bg := r.styles.DiffAddBg
-	if sign == "-" {
-		bg = r.styles.DiffDelBg
-	}
-	return bg.Render(preserveBgAcrossResets(padTo(inner, r.textWidth(resultIndent))))
-}
-
 // preserveBgAcrossResets rewrites bare `\x1b[0m` SGR resets inside s so they
 // reset every attribute *except* the background color. Chroma terminates each
 // highlighted token with a full reset, which kills any outer Background()

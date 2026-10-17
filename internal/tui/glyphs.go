@@ -16,6 +16,7 @@ const (
 	glyphSel    = "❯" // selected picker row
 	glyphSep    = "·" // inline separator in status rows and hints
 	glyphMore   = "…"
+	glyphGap    = "⋯" // unchanged lines skipped inside a diff
 )
 
 // verbs for built-in tools; unknown ids (user tools, skills) render as-is

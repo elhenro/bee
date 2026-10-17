@@ -4,10 +4,13 @@ import "fmt"
 
 // editOp is one step in a line-level diff: kind ∈ {'=','+','-','~'} where
 // '~' marks a synthetic gap line ("⋯ +K unchanged") emitted by the
-// collapser. text is the line content (or marker payload for '~').
+// collapser. text is the line content (or marker payload for '~'). old/new
+// are the file line numbers each side stood at before this step (0 = not
+// numbered); see numberOps.
 type editOp struct {
-	kind byte
-	text string
+	kind     byte
+	text     string
+	old, new int
 }
 
 // diffMaxCells caps the LCS DP grid so a runaway edit (e.g. write of a huge
@@ -27,10 +30,10 @@ func lineDiff(a, b []string) []editOp {
 	if n*m > diffMaxCells {
 		out := make([]editOp, 0, n+m)
 		for _, l := range a {
-			out = append(out, editOp{'-', l})
+			out = append(out, editOp{kind: '-', text: l})
 		}
 		for _, l := range b {
-			out = append(out, editOp{'+', l})
+			out = append(out, editOp{kind: '+', text: l})
 		}
 		return out
 	}
@@ -56,24 +59,43 @@ func lineDiff(a, b []string) []editOp {
 	for i < n && j < m {
 		switch {
 		case a[i] == b[j]:
-			out = append(out, editOp{'=', a[i]})
+			out = append(out, editOp{kind: '=', text: a[i]})
 			i++
 			j++
 		case dp[i+1][j] >= dp[i][j+1]:
-			out = append(out, editOp{'-', a[i]})
+			out = append(out, editOp{kind: '-', text: a[i]})
 			i++
 		default:
-			out = append(out, editOp{'+', b[j]})
+			out = append(out, editOp{kind: '+', text: b[j]})
 			j++
 		}
 	}
 	for ; i < n; i++ {
-		out = append(out, editOp{'-', a[i]})
+		out = append(out, editOp{kind: '-', text: a[i]})
 	}
 	for ; j < m; j++ {
-		out = append(out, editOp{'+', b[j]})
+		out = append(out, editOp{kind: '+', text: b[j]})
 	}
 	return out
+}
+
+// numberOps stamps ops with line numbers counted up from start, the file line
+// the first step sits on (the old and new side begin on the same line because
+// everything above an edit is untouched)
+func numberOps(ops []editOp, start int) {
+	o, n := start, start
+	for i := range ops {
+		ops[i].old, ops[i].new = o, n
+		switch ops[i].kind {
+		case '=':
+			o++
+			n++
+		case '-':
+			o++
+		case '+':
+			n++
+		}
+	}
 }
 
 // countDiffOps tallies real adds/dels (ignoring '=' context and '~' markers)
@@ -123,12 +145,12 @@ func collapseToHunks(ops []editOp, ctx int) []editOp {
 		switch {
 		case idx == 0 && len(gap) > ctx:
 			hidden := len(gap) - ctx
-			out = append(out, editOp{'~', fmt.Sprintf("+%d unchanged above", hidden)})
+			out = append(out, editOp{kind: '~', text: fmt.Sprintf("+%d unchanged above", hidden)})
 			gap = gap[len(gap)-ctx:]
 		case idx > 0 && len(gap) > 2*ctx:
 			hidden := len(gap) - 2*ctx
 			out = append(out, gap[:ctx]...)
-			out = append(out, editOp{'~', fmt.Sprintf("+%d unchanged", hidden)})
+			out = append(out, editOp{kind: '~', text: fmt.Sprintf("+%d unchanged", hidden)})
 			gap = gap[len(gap)-ctx:]
 		}
 		out = append(out, gap...)
@@ -139,61 +161,9 @@ func collapseToHunks(ops []editOp, ctx int) []editOp {
 	if len(tail) > ctx {
 		hidden := len(tail) - ctx
 		out = append(out, tail[:ctx]...)
-		out = append(out, editOp{'~', fmt.Sprintf("+%d unchanged below", hidden)})
+		out = append(out, editOp{kind: '~', text: fmt.Sprintf("+%d unchanged below", hidden)})
 	} else {
 		out = append(out, tail...)
 	}
 	return out
-}
-
-// balancedTrim keeps the first `keep` lines but, when the slice starts with
-// a long run of `-`-styled deletions, reserves the back half of the budget
-// for whatever follows so additions/context don't get squeezed out. Style
-// detection is heuristic: the diffSign output always begins with the styled
-// sign char (`+`/`-`) inside an ANSI escape, so we walk the visible bytes
-// after `\x1b[…m` for the first printable byte.
-func balancedTrim(lines []string, keep int) []string {
-	if keep <= 0 || len(lines) <= keep {
-		return lines
-	}
-	leadDel := 0
-	for _, l := range lines {
-		if firstVisible(l) != '-' {
-			break
-		}
-		leadDel++
-	}
-	if leadDel <= keep/2 {
-		return lines[:keep]
-	}
-	half := keep / 2
-	tailNeed := keep - half
-	out := make([]string, 0, keep)
-	out = append(out, lines[:half]...)
-	out = append(out, lines[len(lines)-tailNeed:]...)
-	return out
-}
-
-// firstVisible returns the first non-ANSI printable byte of s, or 0 if
-// none. Walks past `\x1b[…m` escape sequences without parsing them — only
-// the m terminator matters. Used by balancedTrim to peek at the sign of a
-// styled diff line.
-func firstVisible(s string) byte {
-	i := 0
-	for i < len(s) {
-		if s[i] != 0x1b {
-			return s[i]
-		}
-		i++
-		if i < len(s) && s[i] == '[' {
-			i++
-		}
-		for i < len(s) && s[i] != 'm' {
-			i++
-		}
-		if i < len(s) {
-			i++
-		}
-	}
-	return 0
 }

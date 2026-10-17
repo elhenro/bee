@@ -695,9 +695,15 @@ func TestRenderToolUse_ApplyPatchColorsHunkLines(t *testing.T) {
 		}}},
 	}
 	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
-	for _, want := range []string{"Patch", "x.go", "-old", "+new", "@@"} {
+	for _, want := range []string{"Patch", "x.go", "1 - old", "1 + new", "+1", "−1"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
+		}
+	}
+	// the card is a diff, not the patch text: no file or hunk headers
+	for _, bad := range []string{"@@", "diff --git", "---", "+++"} {
+		if strings.Contains(out, bad) {
+			t.Fatalf("patch header %q leaked into card: %q", bad, out)
 		}
 	}
 }
@@ -714,7 +720,7 @@ func TestRenderToolUse_WriteListsContentLines(t *testing.T) {
 		}}},
 	}
 	out := stripANSI(r.renderToolUse(*m.Content[0].Use))
-	for _, want := range []string{"Write", "out.txt", "+ one", "+ two", "+2"} {
+	for _, want := range []string{"Write", "out.txt", "1 + one", "2 + two", "+2"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
