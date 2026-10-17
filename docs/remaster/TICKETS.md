@@ -610,7 +610,7 @@ Design reference (read-only, do not vendor): the minimax-code modules named in e
 - **status:** todo · **priority:** P1 · **size:** M · **owner:** builder
 - **depends:** — · **blocks:** —
 - **Why:** Changes to prompts, reminders, and compaction are exactly the ones that silently regress the tiny profile bee is built for.
-- **Scope:** `internal/bench/`, CI workflow; `docs/remaster/KANBAN.md` metrics.
+- **Scope:** `internal/bench/`, CI workflow; bench metrics.
 - **Approach:** Record the M0 baseline (score + wall-clock). Add a gate that fails when the tiny-profile bench score drops below baseline minus a small tolerance. Gate runs on prompt/loop/convention changes.
 - **AC:**
   - [ ] Baseline recorded in the board before the first E2/E3 ticket lands.

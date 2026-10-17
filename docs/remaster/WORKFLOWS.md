@@ -1,6 +1,6 @@
 # bee Remaster — Agent Workflows
 
-This is the operating manual for agents working the [KANBAN](./KANBAN.md). Read it once in full before pulling a card. It defines roles, the ticket lifecycle, the gates every change must pass, and the rules that let multiple agents work the same repo without stepping on each other.
+This is the operating manual for agents working the remaster tickets in [TICKETS.md](./TICKETS.md). Read it once in full before pulling a card. It defines roles, the ticket lifecycle, the gates every change must pass, and the rules that let multiple agents work the same repo without stepping on each other.
 
 ---
 
