@@ -199,16 +199,22 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 	}
 }
 
+// maxLoadHold caps how long an agent waits on load. Agents are separate
+// processes and cannot see their siblings, so a time cap is what keeps a busy
+// machine from starving them.
+const maxLoadHold = 10 * time.Minute
+
 // holdForLoad keeps a fresh agent from starting its first turn while the
 // machine is oversubscribed, and says so on the overview row.
 func holdForLoad(ctx context.Context, ratio float64, base bgreg.Status) {
+	deadline := time.Now().Add(maxLoadHold)
 	_ = sysload.Wait(ctx, ratio, func(perCore float64) {
 		s := base
 		s.State = bgreg.StateActive
 		s.LastResponse = fmt.Sprintf("waiting: load %.1f per core is above %.1f", perCore, ratio)
 		s.UpdatedAt = time.Now().UTC()
 		_ = bgreg.Write(s)
-	})
+	}, func() bool { return time.Now().After(deadline) })
 }
 
 // failAgentCommit marks the agent as failed when the auto-commit step can't

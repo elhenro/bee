@@ -6,6 +6,7 @@ package hive
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type Pool struct {
 	Pheromone *Pheromone
 	// Throttle holds each worker's start while the machine is oversubscribed.
 	Throttle Throttle
+	running  atomic.Int32 // workers past the throttle, for its sibling check
 
 	mu      sync.Mutex
 	Workers []*Worker
@@ -110,11 +112,18 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 
 			// recheck after acquire (cancellation may have raced), then let
 			// the load throttle hold the start.
-			if ctx.Err() != nil || p.Throttle.wait(ctx) != nil {
+			if ctx.Err() != nil {
 				p.markCanceled(w)
 				results <- canceledResult(w, ctx.Err())
 				return
 			}
+			end, err := p.Throttle.start(ctx, &p.running)
+			if err != nil {
+				p.markCanceled(w)
+				results <- canceledResult(w, ctx.Err())
+				return
+			}
+			defer end()
 
 			p.markRunning(w)
 			res := runOne(ctx, w, i, ph)

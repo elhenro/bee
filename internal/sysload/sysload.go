@@ -26,16 +26,18 @@ func PerCore() (float64, bool) {
 }
 
 // Wait blocks while load per core is above ratio. ratio <= 0 or an unknown
-// load returns at once. onHold fires once, on the first poll that holds, so
-// callers can say why nothing is starting. Returns ctx.Err() on cancel.
-func Wait(ctx context.Context, ratio float64, onHold func(perCore float64)) error {
+// load returns at once, and so does a poll where release (optional) reports
+// true: callers use it so a hold slows work down without starving it. onHold
+// fires once, on the first poll that holds, so callers can say why nothing is
+// starting. Returns ctx.Err() on cancel.
+func Wait(ctx context.Context, ratio float64, onHold func(perCore float64), release func() bool) error {
 	if ratio <= 0 {
 		return nil
 	}
 	held := false
 	for {
 		l, ok := PerCore()
-		if !ok || l <= ratio {
+		if !ok || l <= ratio || (release != nil && release()) {
 			return nil
 		}
 		if !held && onHold != nil {

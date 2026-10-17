@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -106,6 +107,7 @@ type Queen struct {
 	Pheromone *Pheromone
 	// Throttle holds each worker's start while the machine is oversubscribed.
 	Throttle Throttle
+	running  atomic.Int32 // workers past the throttle, for its sibling check
 }
 
 // QueenResult is the aggregate of one Queen.Run.
@@ -247,10 +249,12 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 				return
 			}
 			defer func() { <-sem }()
-			if err := q.Throttle.wait(ctx); err != nil {
+			end, err := q.Throttle.start(ctx, &q.running)
+			if err != nil {
 				results[idx] = Result{WorkerID: fmt.Sprintf("w%d", idx), Name: fmt.Sprintf("worker-%d", idx), Task: st.Task, Err: err}
 				return
 			}
+			defer end()
 			locks[widx].Lock()
 			defer locks[widx].Unlock()
 
@@ -298,11 +302,13 @@ func (q *Queen) dispatchFactory(ctx context.Context, plan []SubTask) ([]Result, 
 				return
 			}
 			defer func() { <-sem }()
-			if err := q.Throttle.wait(ctx); err != nil {
+			end, err := q.Throttle.start(ctx, &q.running)
+			if err != nil {
 				base.Err = err
 				results[idx] = base
 				return
 			}
+			defer end()
 
 			runner, done, err := q.WorkerFor(idx, st)
 			if err != nil {
