@@ -34,6 +34,8 @@ const (
 	MergeStateMerging  MergeState = "merging"
 	MergeStateMerged   MergeState = "merged"
 	MergeStateConflict MergeState = "conflict"
+	// MergeStateBlocked: retry budget spent, a human has to look.
+	MergeStateBlocked MergeState = "blocked"
 )
 
 type Status struct {
@@ -58,6 +60,13 @@ type Status struct {
 	ConflictMsg  string     `json:"conflict_msg,omitempty"`
 	InputTokens  int        `json:"input_tokens,omitempty"`
 	OutputTokens int        `json:"output_tokens,omitempty"`
+
+	// retry budgets. Hops count red verifies (real defects) and never reset;
+	// Resumes count restarts without a DONE and reset on DONE. HandinSHA is
+	// HEAD at the last DONE.
+	Hops      int    `json:"hops,omitempty"`
+	Resumes   int    `json:"resumes,omitempty"`
+	HandinSHA string `json:"handin_sha,omitempty"`
 }
 
 const currentSchema = 2

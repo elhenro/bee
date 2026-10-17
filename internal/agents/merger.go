@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/elhenro/bee/internal/bgreg"
+	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/gate"
 	"github.com/elhenro/bee/internal/zzz"
 )
 
@@ -19,20 +21,22 @@ type MergeAttempt struct {
 	SessionID string
 	OK        bool
 	Conflict  bool
+	Red       bool // verify failed on the rebased tree
 	Err       error
 	Output    string
 }
 
-// TryMerge attempts to rebase an agent's branch onto MergeBase and FF-merge
-// the result back into MergeBase. The merge lock is held for the full
-// rebase+FF window so concurrent agents serialize through this.
+// TryMerge rebases an agent's branch onto MergeBase, runs the repo's verify
+// gate on the rebased tree, and fast-forwards MergeBase. The merge lock is
+// held for the whole window so agents serialize, like a single merge queue.
 //
-// Outcomes:
-//   - ok=true: branch merged into main.
-//   - conflict=true: rebase hit conflict; an inbox message was posted to the
-//     agent to ask it to resolve. Status flips to awaiting.
-//   - err != nil with neither flag: something unexpected; status preserved.
-func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status) MergeAttempt {
+// Bounces go back to the agent through Resume:
+//   - conflict: mechanical, free of hops.
+//   - red verify: a real defect, costs a hop; past sw.Hops() the agent is
+//     blocked for a human.
+//   - HEAD moved during verify: nobody verified that commit, so the merge is
+//     skipped and the next tick verifies again. Free.
+func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.SwarmConfig) MergeAttempt {
 	res := MergeAttempt{SessionID: st.SessionID}
 	if st.Branch == "" || st.WorktreePath == "" {
 		res.Err = errors.New("missing branch or worktree")
@@ -53,40 +57,48 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status) MergeAttemp
 	// flip state to merging via CAS-style Update so a concurrent agent write
 	// can't clobber the transition. Same pattern for every subsequent write
 	// in this function.
-	_ = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
-		s.MergeState = bgreg.MergeStateMerging
-		return nil
-	})
+	setMerge(st.SessionID, bgreg.MergeStateMerging, "")
 
 	// fetch is best-effort: local-only repos have no origin.
 	_ = zzz.Fetch(repoRoot, "origin")
 
-	// rebase agent branch onto main inside the worktree.
-	rebaseErr := zzz.Rebase(st.WorktreePath, MergeBase)
-	if rebaseErr != nil {
-		conflictedFiles := parseConflictFiles(rebaseErr.Error())
-		_ = zzz.RebaseAbort(st.WorktreePath)
-
-		_ = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
-			s.MergeState = bgreg.MergeStateConflict
-			s.ConflictMsg = rebaseErr.Error()
-			s.State = bgreg.StateAwaiting
-			return nil
-		})
-
-		// auto-retrigger the agent with a conflict-resolution prompt.
-		var fileList string
-		if len(conflictedFiles) > 0 {
-			fileList = " Conflicting files:\n- " + strings.Join(conflictedFiles, "\n- ")
+	if rebaseErr := zzz.Rebase(st.WorktreePath, MergeBase); rebaseErr != nil {
+		// git prints CONFLICT lines on stdout, which the error does not carry,
+		// so ask for the unmerged paths before the abort clears them.
+		files := unmergedFiles(st.WorktreePath)
+		if len(files) == 0 {
+			files = parseConflictFiles(rebaseErr.Error())
 		}
-		msg := fmt.Sprintf(
-			"Your branch %s could not rebase onto %s.%s\n\nPlease check `git status`, resolve the conflicts in your worktree (%s), commit, and end your reply with DONE: <summary>. The coordinator will retry the merge automatically.",
-			st.Branch, MergeBase, fileList, st.WorktreePath,
-		)
-		_ = bgreg.InboxAppend(st.SessionID, msg)
-
+		_ = zzz.RebaseAbort(st.WorktreePath)
 		res.Conflict = true
 		res.Output = rebaseErr.Error()
+		setMerge(st.SessionID, bgreg.MergeStateConflict, rebaseErr.Error())
+		_, res.Err = Resume(repoRoot, st, conflictFeedback(st, files), sw.Resumes())
+		return res
+	}
+
+	pinned, err := zzz.HeadSHA(st.WorktreePath)
+	if err != nil {
+		setMerge(st.SessionID, bgreg.MergeStateUnmerged, err.Error())
+		res.Err = err
+		return res
+	}
+	// read the gate from the main checkout: the agent's branch must not be
+	// able to weaken its own gate.
+	v, err := gate.Run(ctx, st.WorktreePath, gate.Commands(repoRoot, sw.Verify), sw.VerifyTimeout())
+	if err != nil {
+		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "verify: "+err.Error())
+		res.Err = err
+		return res
+	}
+	if !v.OK {
+		res.Red = true
+		res.Output = v.Summary()
+		res.Err = bounceRed(repoRoot, st, v.Summary(), sw)
+		return res
+	}
+	if head, _ := zzz.HeadSHA(st.WorktreePath); head != pinned {
+		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "commits landed while verify ran, verifying again")
 		return res
 	}
 
@@ -94,11 +106,7 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status) MergeAttemp
 	if err := zzz.MergeFF(repoRoot, MergeBase, st.Branch); err != nil {
 		// rare: usually means base advanced between rebase and merge; flip
 		// back to unmerged and let the next tick retry.
-		_ = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
-			s.MergeState = bgreg.MergeStateUnmerged
-			s.ConflictMsg = "ff-merge failed: " + err.Error()
-			return nil
-		})
+		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "ff-merge failed: "+err.Error())
 		res.Err = err
 		return res
 	}
@@ -112,6 +120,44 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status) MergeAttemp
 	})
 	res.OK = true
 	return res
+}
+
+// bounceRed spends a hop on a red verify and sends the output back, or blocks
+// the agent once the hop budget is gone.
+func bounceRed(repoRoot string, st bgreg.Status, summary string, sw config.SwarmConfig) error {
+	hops := st.Hops + 1
+	_ = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
+		s.Hops = hops
+		return nil
+	})
+	if hops > sw.Hops() {
+		Block(st.SessionID, fmt.Sprintf("verify red %d times, last: %s", hops, firstLine(summary)))
+		return nil
+	}
+	st.Hops = hops
+	msg := fmt.Sprintf("Your branch %s was rebased onto %s and the verify gate failed (hop %d/%d):\n\n%s\n\nFix it in your worktree (%s), commit, and end your reply with DONE: <summary>.",
+		st.Branch, MergeBase, hops, sw.Hops(), summary, st.WorktreePath)
+	_, err := Resume(repoRoot, st, msg, sw.Resumes())
+	return err
+}
+
+func conflictFeedback(st bgreg.Status, files []string) string {
+	var fileList string
+	if len(files) > 0 {
+		fileList = " Conflicting files:\n- " + strings.Join(files, "\n- ")
+	}
+	return fmt.Sprintf(
+		"Your branch %s could not rebase onto %s.%s\n\nRebase it onto %s in your worktree (%s), resolve the conflicts, commit, and end your reply with DONE: <summary>. The coordinator retries the merge automatically.",
+		st.Branch, MergeBase, fileList, MergeBase, st.WorktreePath,
+	)
+}
+
+func setMerge(id string, ms bgreg.MergeState, msg string) {
+	_ = bgreg.Update(id, func(s *bgreg.Status) error {
+		s.MergeState = ms
+		s.ConflictMsg = msg
+		return nil
+	})
 }
 
 // parseConflictFiles plucks file paths out of a `git rebase` error. Looks
@@ -132,10 +178,9 @@ func parseConflictFiles(s string) []string {
 	return out
 }
 
-// MergerLoop wakes every interval and tries to merge any agent that's done
-// but not yet merged. Caller cancels via ctx. Fully autonomous — no manual
-// retry channel; the user attaches via `bee back` to resolve conflicts.
-func MergerLoop(ctx context.Context, repoRoot string, interval time.Duration) {
+// MergerLoop wakes every interval, merges agents that signalled DONE and
+// resumes agents whose process died mid-task. Caller cancels via ctx.
+func MergerLoop(ctx context.Context, repoRoot string, interval time.Duration, sw config.SwarmConfig) {
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
@@ -146,12 +191,12 @@ func MergerLoop(ctx context.Context, repoRoot string, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			scan(ctx, repoRoot, "")
+			scan(ctx, repoRoot, "", sw)
 		}
 	}
 }
 
-func scan(ctx context.Context, repoRoot, only string) {
+func scan(ctx context.Context, repoRoot, only string, sw config.SwarmConfig) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -163,35 +208,36 @@ func scan(ctx context.Context, repoRoot, only string) {
 		if only != "" && s.SessionID != only {
 			continue
 		}
-		if !mergeable(s) {
-			continue
+		switch {
+		case mergeable(s):
+			TryMerge(ctx, repoRoot, s, sw)
+		case crashed(s):
+			_, _ = Resume(repoRoot, s, "Your process stopped before it finished. Continue the task from where the branch is now.", sw.Resumes())
 		}
-		TryMerge(ctx, repoRoot, s)
 	}
 }
 
-// mergeable returns true when the agent is in a state we should attempt to
-// merge. Done + (unmerged | conflict) qualifies; merging is already in
-// flight elsewhere; merged is finished.
+// mergeable is true for an agent that signalled DONE on an unmerged branch.
+// A conflict or red verify hands the work back through Resume, so an agent
+// in any other state is either working or waiting for a human.
 func mergeable(s bgreg.Status) bool {
-	if s.Branch == "" || s.WorktreePath == "" {
+	if s.Branch == "" || s.WorktreePath == "" || s.State != bgreg.StateDone {
 		return false
 	}
-	if s.MergeState == bgreg.MergeStateMerged {
+	switch s.MergeState {
+	case bgreg.MergeStateMerged, bgreg.MergeStateBlocked:
 		return false
+	case bgreg.MergeStateMerging:
+		// "merging" is in flight only while a live coordinator holds the merge
+		// lock. A crashed coordinator leaves the state behind forever otherwise;
+		// retrying is safe because rebase+ff-merge are idempotent.
+		return !mergeLockHeld()
 	}
-	// "merging" is in flight only while a live coordinator holds the merge
-	// lock. A crashed coordinator leaves the state behind forever otherwise;
-	// retrying is safe because rebase+ff-merge are idempotent.
-	if s.MergeState == bgreg.MergeStateMerging && mergeLockHeld() {
-		return false
-	}
-	// agent must have signalled done OR be in conflict (user requested retry)
-	if s.State == bgreg.StateDone {
-		return true
-	}
-	if s.MergeState == bgreg.MergeStateConflict {
-		return true
-	}
-	return false
+	return true
+}
+
+// crashed is an agent-mode session marked active whose process is gone. PID 0
+// means the spawner has not recorded the child yet.
+func crashed(s bgreg.Status) bool {
+	return s.WorktreePath != "" && s.State == bgreg.StateActive && s.PID > 0 && !pidAlive(s.PID)
 }

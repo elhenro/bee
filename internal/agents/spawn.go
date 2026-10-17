@@ -47,9 +47,10 @@ Rules:
     BLOCKED: <reason>
 - If you need clarification mid-flight, end with:
     NEEDS-INPUT: <question>
-- The coordinator will rebase your branch onto main and fast-forward merge it
-  once you signal DONE. If the rebase conflicts, you will be re-prompted with
-  the conflicting files. Resolve them, commit, and signal DONE again.
+- Once you signal DONE the coordinator rebases your branch onto main, runs
+  the repo's verify commands and fast-forward merges it. If the rebase
+  conflicts or verify fails you are restarted with the details. Fix it,
+  commit, and signal DONE again.
 
 Task:
 `
@@ -88,49 +89,6 @@ func Spawn(opts SpawnOpts) (SpawnResult, error) {
 		return SpawnResult{}, fmt.Errorf("worktree add: %w", err)
 	}
 
-	self, err := os.Executable()
-	if err != nil {
-		_ = zzz.WorktreeRemove(opts.RepoRoot, wt, true)
-		return SpawnResult{}, fmt.Errorf("resolve self: %w", err)
-	}
-
-	logPath, err := logFilePath(id)
-	if err != nil {
-		_ = zzz.WorktreeRemove(opts.RepoRoot, wt, true)
-		return SpawnResult{}, err
-	}
-	logF, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		_ = zzz.WorktreeRemove(opts.RepoRoot, wt, true)
-		return SpawnResult{}, fmt.Errorf("open log: %w", err)
-	}
-
-	// spawned agents run unattended + auto-approve (--yes), so they confine to
-	// the workspace by default (--safe → workspace-write): file tools stay
-	// in-tree, secret paths are blocked, and the OS sandbox confines shell.
-	args := []string{"run", "--headless", "--bg-loop", "--session", id, "--yes", "--safe"}
-	if opts.Model != "" {
-		args = append(args, "--model", opts.Model)
-	}
-	if opts.Provider != "" {
-		args = append(args, "--provider", opts.Provider)
-	}
-	args = append(args, "--", agentPreamble+prompt)
-
-	cmd := exec.Command(self, args...)
-	cmd.Dir = wt
-	cmd.Stdout = logF
-	cmd.Stderr = logF
-	cmd.Stdin = nil
-	cmd.Env = append(os.Environ(),
-		"BEE_AGENT_WORKTREE=1",
-		"BEE_AGENT_BRANCH="+branch,
-		"BEE_AGENT_REPO_ROOT="+opts.RepoRoot,
-	)
-	detach(cmd)
-
-	// write initial status BEFORE start so the overview row shows up
-	// instantly even if the child hasn't booted yet.
 	pre := bgreg.Status{
 		SchemaV:      2,
 		SessionID:    id,
@@ -145,25 +103,18 @@ func Spawn(opts SpawnOpts) (SpawnResult, error) {
 		StartedAt:    time.Now().UTC(),
 		UpdatedAt:    time.Now().UTC(),
 	}
+	// write initial status BEFORE start so the overview row shows up
+	// instantly even if the child hasn't booted yet.
 	_ = bgreg.Write(pre)
 
-	if err := cmd.Start(); err != nil {
-		_ = logF.Close()
+	pid, logPath, err := launch(opts.RepoRoot, pre, agentPreamble+prompt)
+	if err != nil {
 		_ = bgreg.Remove(id)
 		_ = zzz.WorktreeRemove(opts.RepoRoot, wt, true)
-		return SpawnResult{}, fmt.Errorf("start child: %w", err)
+		return SpawnResult{}, err
 	}
-	pid := cmd.Process.Pid
-
-	// update status with PID
 	pre.PID = pid
 	_ = bgreg.Write(pre)
-
-	if err := cmd.Process.Release(); err != nil {
-		// non-fatal; child is already running
-		fmt.Fprintf(os.Stderr, "agents.Spawn: release: %v\n", err)
-	}
-	_ = logF.Close()
 
 	return SpawnResult{
 		SessionID:    id,
@@ -172,6 +123,66 @@ func Spawn(opts SpawnOpts) (SpawnResult, error) {
 		PID:          pid,
 		LogPath:      logPath,
 	}, nil
+}
+
+// startAgent starts the detached child and returns its pid. Swapped in tests
+// so they never run a real bee.
+var startAgent = func(cmd *exec.Cmd) (int, error) {
+	detach(cmd)
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	// reap in the background: an unreaped child stays a zombie that still
+	// answers signal 0, so a crashed agent would look alive to the merger.
+	go func() { _ = cmd.Wait() }()
+	return cmd.Process.Pid, nil
+}
+
+// launch re-execs bee in headless bg-loop mode for st's session, rooted at its
+// worktree. Spawn and Resume share it so a resumed agent runs exactly like a
+// fresh one.
+func launch(repoRoot string, st bgreg.Status, msg string) (int, string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return 0, "", fmt.Errorf("resolve self: %w", err)
+	}
+	logPath, err := logFilePath(st.SessionID)
+	if err != nil {
+		return 0, "", err
+	}
+	logF, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, "", fmt.Errorf("open log: %w", err)
+	}
+	defer func() { _ = logF.Close() }()
+
+	// spawned agents run unattended + auto-approve (--yes), so they confine to
+	// the workspace by default (--safe → workspace-write): file tools stay
+	// in-tree, secret paths are blocked, and the OS sandbox confines shell.
+	args := []string{"run", "--headless", "--bg-loop", "--session", st.SessionID, "--yes", "--safe"}
+	if st.Model != "" {
+		args = append(args, "--model", st.Model)
+	}
+	if st.Provider != "" {
+		args = append(args, "--provider", st.Provider)
+	}
+	args = append(args, "--", msg)
+
+	cmd := exec.Command(self, args...)
+	cmd.Dir = st.WorktreePath
+	cmd.Stdout = logF
+	cmd.Stderr = logF
+	cmd.Stdin = nil
+	cmd.Env = append(os.Environ(),
+		"BEE_AGENT_WORKTREE=1",
+		"BEE_AGENT_BRANCH="+st.Branch,
+		"BEE_AGENT_REPO_ROOT="+repoRoot,
+	)
+	pid, err := startAgent(cmd)
+	if err != nil {
+		return 0, "", fmt.Errorf("start child: %w", err)
+	}
+	return pid, logPath, nil
 }
 
 // logFilePath returns ~/.bee/sessions/bg/<id>.log, creating the dir.

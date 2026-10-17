@@ -179,6 +179,8 @@ func renderRow(r row, selected bool, width int, prefs Prefs) string {
 		switch r.Status.MergeState {
 		case bgreg.MergeStateConflict:
 			badge = badStyle.Render("⚠ conflict")
+		case bgreg.MergeStateBlocked:
+			badge = badStyle.Render("⛔ blocked")
 		case bgreg.MergeStateMerged:
 			badge = goodStyle.Render("✓ merged")
 		case bgreg.MergeStateMerging:
@@ -198,6 +200,10 @@ func renderRow(r row, selected bool, width int, prefs Prefs) string {
 	}
 
 	peek := strings.TrimSpace(r.Status.LastResponse)
+	// a blocked agent's last reply is stale; the reason is what needs a human.
+	if r.Status.MergeState == bgreg.MergeStateBlocked && r.Status.ConflictMsg != "" {
+		peek = "blocked: " + r.Status.ConflictMsg
+	}
 	if peek == "" {
 		peek = dimStyle.Render("(no response yet)")
 	} else {

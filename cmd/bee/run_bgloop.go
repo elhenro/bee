@@ -5,13 +5,16 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/agents"
 	"github.com/elhenro/bee/internal/bgreg"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/sentinel"
+	"github.com/elhenro/bee/internal/sysload"
 	"github.com/elhenro/bee/internal/zzz"
 )
 
@@ -51,12 +54,21 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 			base.Model = existing.Model
 		}
 		base.MergeState = existing.MergeState
+		// retry budgets and the last bounce reason survive a resume
+		base.Hops = existing.Hops
+		base.Resumes = existing.Resumes
+		base.ConflictMsg = existing.ConflictMsg
+		base.HandinSHA = existing.HandinSHA
 	}
 	if agentMode && base.Branch == "" {
 		base.Branch = branch
 	}
 	if agentMode && base.MergeState == "" {
 		base.MergeState = bgreg.MergeStateUnmerged
+	}
+
+	if agentMode {
+		holdForLoad(ctx, eng.Cfg.Swarm.MaxLoadRatio, base)
 	}
 
 	msg := firstMsg
@@ -131,6 +143,16 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 				s.State = bgreg.StateDone
 				// zero-change run has nothing to merge — skip the unmerged limbo
 				// and tear down the worktree+branch right away.
+				// a DONE is the agent's handin: proof of life resets the
+				// resume budget, HEAD is what the merger will verify.
+				s.Resumes = 0
+				s.ConflictMsg = ""
+				s.HandinSHA, _ = zzz.HeadSHA(eng.Cwd)
+				// a resumed agent may only have rebased, so judge by commits
+				// ahead of the base, not by whether this process committed.
+				if n, aerr := agents.Ahead(eng.Cwd); aerr == nil {
+					hadCommit = hadCommit || n > 0
+				}
 				if hadCommit {
 					s.MergeState = bgreg.MergeStateUnmerged
 				} else {
@@ -175,6 +197,18 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		}
 		msg = next
 	}
+}
+
+// holdForLoad keeps a fresh agent from starting its first turn while the
+// machine is oversubscribed, and says so on the overview row.
+func holdForLoad(ctx context.Context, ratio float64, base bgreg.Status) {
+	_ = sysload.Wait(ctx, ratio, func(perCore float64) {
+		s := base
+		s.State = bgreg.StateActive
+		s.LastResponse = fmt.Sprintf("waiting: load %.1f per core is above %.1f", perCore, ratio)
+		s.UpdatedAt = time.Now().UTC()
+		_ = bgreg.Write(s)
+	})
 }
 
 // failAgentCommit marks the agent as failed when the auto-commit step can't
