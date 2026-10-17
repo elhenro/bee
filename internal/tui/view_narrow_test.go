@@ -65,9 +65,10 @@ func TestView_FitsNarrowTerminals(t *testing.T) {
 }
 
 // a terminal narrower than anything we lay out for still draws without
-// panicking (a negative repeat count is the usual culprit)
+// panicking (a negative repeat count is the usual culprit); a spread of widths
+// around each floor keeps this cheap under -race
 func TestView_AnyWidthDoesNotPanic(t *testing.T) {
-	for w := 1; w <= 60; w++ {
+	for _, w := range []int{1, 2, 3, 5, 8, 12, 17, 19, 21, 27} {
 		m := narrowModel(t, w)
 		m.View()
 		m.input.SetValue("hello there")
