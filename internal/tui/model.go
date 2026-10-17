@@ -361,6 +361,9 @@ type Model struct {
 	// View() never renders past messages — they live in native scrollback.
 	// flush() emits the slice m.messages[printedCount:] and advances this.
 	printedCount int
+	// scroll orders everything that goes to scrollback; shared by pointer
+	// like styles, so every copy of the Model queues into the same line
+	scroll *scrollback
 
 	// costs is the per-session usage/dollar accumulator shared with the
 	// engine. Read for the top-bar total and the /cost monitor pane.

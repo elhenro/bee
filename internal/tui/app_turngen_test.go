@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -128,7 +127,7 @@ func TestPrintNotice_RendersAQuietLine(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("no cmd")
 	}
-	got := stripANSI(fmt.Sprintf("%+v", cmd()))
+	got := stripANSI(printedText(cmd))
 	if !strings.Contains(got, "interrupted") || strings.Contains(got, "(") {
 		t.Fatalf("printed %q", got)
 	}

@@ -147,7 +147,7 @@ func (m Model) onGoalEvalDone(msg goalEvalDoneMsg) (tea.Model, tea.Cmd) {
 		m.goalGen++
 		line := lipgloss.NewStyle().Foreground(fgOyster).Italic(true).
 			Render("goal: eval error (" + msg.err.Error() + "), stopped")
-		return m, tea.Println(line)
+		return m, m.scroll.print(line)
 	}
 	if msg.v.Met {
 		m.goal.Clear()
@@ -171,7 +171,7 @@ func (m Model) onGoalEvalDone(msg goalEvalDoneMsg) (tea.Model, tea.Cmd) {
 	cond := m.goal.Condition
 	notice := lipgloss.NewStyle().Foreground(fgOyster).Italic(true).
 		Render("goal not met (" + msg.v.Reason + ") — continuing")
-	flushed := tea.Println(notice)
+	flushed := m.scroll.print(notice)
 	nm, subCmd := m.submit(goal.Continuation(cond, msg.v.Reason))
 	return nm, tea.Batch(flushed, subCmd)
 }

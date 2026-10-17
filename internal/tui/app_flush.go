@@ -9,11 +9,12 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
-// flush emits tea.Println for every message in m.messages[printedCount:]
+// flush queues every message in m.messages[printedCount:] for scrollback
 // and advances printedCount. The returned Cmd is nil when there's nothing
 // new. Inline-mode bubbletea prints those lines above the live region so
 // they fall into the terminal's native scrollback — selectable, copyable,
-// and unaffected by our redraws.
+// and unaffected by our redraws. Printing goes through m.scroll, which keeps
+// the order of separate updates (see scrollback).
 //
 // printedCount can exceed len(m.messages) after a session swap or fork
 // that resets the slice; in that case we re-anchor it without emitting.
@@ -36,10 +37,10 @@ func (m *Model) flush() tea.Cmd {
 	// turnDone — the user wouldn't see their prompt until generation
 	// finished. Fast-forward: push the settled banner now, then proceed so
 	// messages slot in below it.
-	var introCmd tea.Cmd
+	var texts []string
 	if m.introActive || m.introDone {
 		if m.width > 0 {
-			introCmd = tea.Println(renderIntroPlaceholder(m.width, introPulseFrames))
+			texts = append(texts, renderIntroPlaceholder(m.width, introPulseFrames))
 		}
 		m.introActive = false
 		m.introFrames = nil
@@ -51,10 +52,6 @@ func (m *Model) flush() tea.Cmd {
 	m.printedCount = len(m.messages)
 	prefix := m.pendingFlushedPrefix
 	m.pendingFlushedPrefix = ""
-	cmds := make([]tea.Cmd, 0, len(pending)+1)
-	if introCmd != nil {
-		cmds = append(cmds, introCmd)
-	}
 	for _, msg := range pending {
 		// strip the already-flushed head off the first matching assistant
 		// turn so its prefix doesn't render twice in scrollback.
@@ -91,12 +88,9 @@ func (m *Model) flush() tea.Cmd {
 		// RenderMessage already emits one leading "\n" in non-compact mode
 		// so each turn has a single blank-line gap; stacking another here
 		// produced double-blanks between every message in scrollback.
-		cmds = append(cmds, tea.Println(rendered))
+		texts = append(texts, rendered)
 	}
-	if len(cmds) == 1 {
-		return cmds[0]
-	}
-	return tea.Sequence(cmds...)
+	return m.scroll.print(texts...)
 }
 
 // a one-off scrollback line that never enters m.messages: a turn result
@@ -111,7 +105,7 @@ func (m *Model) printNotice(text string) tea.Cmd {
 	if w < 4 {
 		w = 80
 	}
-	return tea.Println(ansi.Hardwrap(expandTabs(rendered), w, true))
+	return m.scroll.print(ansi.Hardwrap(expandTabs(rendered), w, true))
 }
 
 // commitFlushed transfers any progressively-flushed prefix from the active
@@ -204,7 +198,7 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 	if chunk == "" {
 		return nil
 	}
-	return tea.Println(expandTabs(chunk))
+	return m.scroll.print(expandTabs(chunk))
 }
 
 // stripTextPrefix returns a copy of msg with the leading prefix removed

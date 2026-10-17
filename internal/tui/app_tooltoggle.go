@@ -27,7 +27,7 @@ func (m Model) toggleLastToolOutput() (tea.Model, tea.Cmd) {
 		w = 80
 	}
 	rendered = ansi.Hardwrap(rendered, w, true)
-	return m, tea.Println(rendered)
+	return m, m.scroll.print(rendered)
 }
 
 // lastToolResultMessage walks messages backward for the latest one carrying a

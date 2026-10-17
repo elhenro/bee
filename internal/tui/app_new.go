@@ -98,6 +98,7 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		planmode:        NewPlanModeModel(styles),
 		updatePrompt:    NewUpdatePrompt(styles),
 		stream:          NewStreamRenderer(styles, 80),
+		scroll:          &scrollback{},
 		cmds:            reg,
 		palette:         NewPalette(reg, nil),
 		tree:            NewSessionTree(),

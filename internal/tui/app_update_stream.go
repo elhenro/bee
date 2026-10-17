@@ -314,7 +314,7 @@ func (m Model) onRecapReady(msg recapReadyMsg) (tea.Model, tea.Cmd) {
 		Foreground(fgOyster).
 		Italic(true).
 		Render(body)
-	return m, tea.Println(line)
+	return m, m.scroll.print(line)
 }
 
 // isEscalate reports whether err is the loop's escalate sentinel (the model
@@ -340,7 +340,7 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	// error-resume cmd, populated in the error branch when the watchdog arms.
 	var errResumeCmd tea.Cmd
 	// a note for scrollback that is not part of the message list
-	var noteCmd tea.Cmd
+	var note string // printed after the turn's messages, so it is queued after the flush
 	// snapCmd, populated on a clean finish, snapshots the work-tree for rewind.
 	var snapCmd tea.Cmd
 	switch {
@@ -372,7 +372,7 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.interrupted {
 			m.interrupted = false
-			noteCmd = m.printNotice("(interrupted)")
+			note = "(interrupted)"
 		}
 		m.commitFlushed()
 		m.partial = ""
@@ -433,8 +433,8 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	// turn finished/cancelled/errored — no tools left in flight.
 	m.pendingTools = nil
 	flushCmd := m.flush()
-	if noteCmd != nil {
-		flushCmd = tea.Sequence(flushCmd, noteCmd)
+	if note != "" {
+		flushCmd = tea.Batch(flushCmd, m.printNotice(note))
 	}
 	// kick off the top-bar cost flash when a fresh event landed. Diff
 	// the call-count against the previous turn so multi-iteration loops
@@ -532,7 +532,7 @@ func (m Model) onIntroTick(_ introTickMsg) (tea.Model, tea.Cmd) {
 			m.tutorialPending = false
 			m.tutorial = tutorialState{active: true, phase: tutPhaseGate}
 		}
-		return m, tea.Println(banner)
+		return m, m.scroll.print(banner)
 	}
 	return m, nil
 }
