@@ -92,6 +92,8 @@ Three roles control how the agent thinks and acts. Cycle with `shift+tab` in the
 
 Worker is the default workhorse. Scout is for "tell me what to do" before you commit. Queen for big multi-step tasks that benefit from parallel execution.
 
+Hive workers stay aligned the way a colony does, through shared state rather than chatter. Every worker carries a pheromone card in its prompt: the goal verbatim, the plan, and one status row per sibling, refreshed each turn as siblings finish. The card is mirrored to `~/.bee/sessions/hive/<id>.pheromone.md` so you can watch a run from another terminal. Each worker also signs an exit contract: it is disposable, and only its `## report` block (status, did, left, next) survives to the queen. A worker that dies mid-task leaves a death report distilled from its transcript instead of a bare error.
+
 ## Handoff
 
 When a small model gets stuck, bee can hand off the task to a bigger model. Call `bee handoff` to generate a rescue brief. The original goal, a terse summary of what was tried, where it got stuck, and the last few turns verbatim. The bigger model takes over and finishes the job without re-reading confused history.

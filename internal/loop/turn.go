@@ -108,6 +108,14 @@ type Engine struct {
 	// tree). Set by the TUI/CLI where the registry builder lives.
 	ToolsForCwd func(cwd string) (*tools.Registry, error)
 
+	// PromptTail, when non-nil, is called at the top of every iteration and its
+	// text is appended to the volatile system-prompt tail, after the prompt-cache
+	// breakpoint. Shared state that changes between turns rides here: the hive
+	// hands each worker its pheromone card through it, so a sibling's finished
+	// report reaches the model next turn without busting the cached static
+	// prefix. Empty string = nothing appended. nil = no tail.
+	PromptTail func() string
+
 	// OnceAllowTools force-allows plan-only tools (e.g. ask_user) for the next
 	// Run, regardless of the active role. A prompt skill sets it from its
 	// frontmatter `tools` list so /plan can ask the user even from worker.

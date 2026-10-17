@@ -38,6 +38,9 @@ func (e *Engine) finalSummaryOnCap(ctx context.Context, res *RunResult, sys, sys
 	}
 	res.Messages = append(res.Messages, prompt)
 
+	// the tail (hive contract + pheromone card) stays in place so a capped
+	// worker's close-out still arrives in report shape.
+	sys, sysDynamic = appendPromptTail(sys, sysDynamic, e.promptTail())
 	req := llm.Request{
 		Model:         e.Cfg.DefaultModel,
 		System:        sys,

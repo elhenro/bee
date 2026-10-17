@@ -31,17 +31,7 @@ func (e *Engine) Handoff(ctx context.Context, msgs []types.Message, partial, sta
 // as Compact, so it should run on the small/fast model BEFORE switching.
 func BuildHandoff(ctx context.Context, p llm.Provider, model string, msgs []types.Message, partial, stall string) (string, error) {
 	original := firstUserText(msgs)
-
-	// middle = everything before the verbatim tail; tail stays raw so the big
-	// model sees the exact state it must continue from, not a lossy gloss.
-	var middle, tail []types.Message
-	if len(msgs) > PreserveTail {
-		tail = msgs[len(msgs)-PreserveTail:]
-		middle = msgs[:len(msgs)-PreserveTail]
-	} else {
-		tail = msgs
-	}
-
+	middle, tail := splitTail(msgs)
 	summary, err := summarizeMiddle(ctx, p, model, middle)
 	if err != nil {
 		return "", err
@@ -73,6 +63,46 @@ func BuildHandoff(ctx context.Context, p llm.Provider, model string, msgs []type
 	}
 	b.WriteString("\ntake over and finish the original task.")
 	return strings.TrimSpace(b.String()), nil
+}
+
+// BuildDeathReport renders a run that died before finishing as a `## report`
+// block in the hive contract's shape (see internal/hive): status died with the
+// cause, what was tried (the middle, summarized with p/model) and the last
+// PreserveTail turns verbatim as what the next bee needs. Same distillation
+// path as BuildHandoff with hive framing instead of rescue framing, so a dead
+// worker's learning reaches the queen instead of evaporating with its
+// transcript.
+func BuildDeathReport(ctx context.Context, p llm.Provider, model string, msgs []types.Message, cause error) (string, error) {
+	middle, tail := splitTail(msgs)
+	summary, err := summarizeMiddle(ctx, p, model, middle)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	b.WriteString("## report\nstatus: died\n")
+	if cause != nil {
+		fmt.Fprintf(&b, "cause: %v\n", cause)
+	}
+	b.WriteString("did: ")
+	if summary != "" {
+		b.WriteString(summary)
+	} else {
+		b.WriteString("(nothing recorded before it died)")
+	}
+	b.WriteString("\nleft: unknown, the sub-task was not finished\n")
+	b.WriteString("next: last steps before death:\n")
+	b.WriteString(flattenTail(tail, ""))
+	return strings.TrimSpace(b.String()), nil
+}
+
+// splitTail separates the confused middle from the verbatim tail. The tail
+// stays raw so the reader sees the exact state the run stopped in, not a
+// lossy gloss; the middle is what gets summarized.
+func splitTail(msgs []types.Message) (middle, tail []types.Message) {
+	if len(msgs) > PreserveTail {
+		return msgs[:len(msgs)-PreserveTail], msgs[len(msgs)-PreserveTail:]
+	}
+	return nil, msgs
 }
 
 // summarizeMiddle streams a terse summary of the confused middle. Empty middle

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -27,6 +28,23 @@ func (l lockedRunner) Run(ctx context.Context, msg string) (loop.RunResult, erro
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.r.Run(ctx, msg)
+}
+
+// SetPromptTail forwards the pheromone card to the wrapped engine so a
+// serialized worker still carries the hive state in its prompt.
+func (l lockedRunner) SetPromptTail(f func() string) {
+	if t, ok := l.r.(hive.Tailed); ok {
+		t.SetPromptTail(f)
+	}
+}
+
+// DeathReport forwards to the wrapped engine so a serialized worker that dies
+// still leaves its report.
+func (l lockedRunner) DeathReport(ctx context.Context, msgs []types.Message, cause error) (string, error) {
+	if r, ok := l.r.(hive.Reporter); ok {
+		return r.DeathReport(ctx, msgs, cause)
+	}
+	return "", errors.New("runner cannot report")
 }
 
 // runMastermind drives one mastermind turn: instead of a single engine Run, it
@@ -282,6 +300,12 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		q.Reviewers = reviewers
 		q.Verifier = verifier
 		q.WorkerFor = workerFor
+		// pheromone card: mirrored next to the sessions so the hive can be
+		// watched from another terminal while it runs.
+		if path, perr := hive.PheromonePath(plannerSess.ID()); perr == nil {
+			q.Pheromone = hive.NewPheromone(path)
+			notify("hive: pheromone card at " + path)
+		}
 		q.MaxParallel = workerCount // cap concurrent workers; isolation keeps them safe
 		// sub-task count drives the worker N/M readout: set from the plan in
 		// OnPlan so the denominator is the real sub-task count, not the parallel
@@ -400,7 +424,11 @@ func formatWorker(i int, r hive.Result) string {
 		head += " — " + t
 	}
 	if r.Err != nil {
-		return head + "\n\n_failed: " + r.Err.Error() + "_"
+		out := head + "\n\n_failed: " + r.Err.Error() + "_"
+		if r.Report.Status != "" {
+			out += "\n\n" + r.Report.Render()
+		}
+		return out
 	}
 	body := strings.TrimSpace(r.Final)
 	if body == "" {

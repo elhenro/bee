@@ -294,6 +294,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// suppression requested when effort resolved to off on a model that
 		// nominally reasons. drives the post-turn compliance check below.
 		e.run.thinkingSuppressRequested = resolvedThinking == llm.ThinkingOff && llm.ThinkingApplies(e.Cfg.DefaultModel)
+		// per-turn tail (hive pheromone card): re-evaluated every iteration so
+		// state that moved since the last round is visible this round.
+		reqSys, reqDynamic := appendPromptTail(reqSys, sysDynamic, e.promptTail())
 		wireMsgs := dropEphemeral(res.Messages)
 		if e.run.card != nil {
 			wireMsgs = e.run.card.view(wireMsgs)
@@ -301,7 +304,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		req := llm.Request{
 			Model:              e.Cfg.DefaultModel,
 			System:             reqSys,
-			SystemDynamic:      sysDynamic,
+			SystemDynamic:      reqDynamic,
 			Messages:           e.applyVisionFallback(ctx, wireMsgs),
 			Tools:              specs,
 			Stream:             true,

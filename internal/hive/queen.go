@@ -100,6 +100,10 @@ type Queen struct {
 	WorkerFor func(idx int, sub SubTask) (r Runner, done func(err error), err error)
 	// Hooks observes progress for a live UI. Zero value = no observation.
 	Hooks Hooks
+	// Pheromone is the shared state card every worker carries in its prompt
+	// (goal, plan, sibling status). nil = Run allocates an in-memory one; set
+	// NewPheromone(path) to mirror it to disk as well.
+	Pheromone *Pheromone
 }
 
 // QueenResult is the aggregate of one Queen.Run.
@@ -133,6 +137,10 @@ func (q *Queen) Run(ctx context.Context, task string) (QueenResult, error) {
 		// fallback: planner returned nothing useful; treat as single-task.
 		plan = []SubTask{{Role: RoleBuilder, Task: task}}
 	}
+	if q.Pheromone == nil {
+		q.Pheromone = NewPheromone("")
+	}
+	q.Pheromone.Reset(task, plan)
 	q.Hooks.plan(plan)
 
 	results, err := q.dispatch(ctx, plan)
@@ -240,22 +248,7 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 			locks[widx].Lock()
 			defer locks[widx].Unlock()
 
-			q.Hooks.workerStart(idx, st)
-			started := time.Now().UTC()
-			out, err := w.Run(ctx, st.Task)
-			ended := time.Now().UTC()
-			r := Result{
-				WorkerID: fmt.Sprintf("w%d", idx),
-				Name:     fmt.Sprintf("worker-%d", idx),
-				Task:     st.Task,
-				Started:  started,
-				Ended:    ended,
-			}
-			if err != nil {
-				r.Err = err
-			} else {
-				r.Final = out.FinalText
-			}
+			r := q.runSub(ctx, idx, st, w)
 			results[idx] = r
 			q.Hooks.workerDone(idx, r)
 		}(i, widx, worker, sub)
@@ -307,17 +300,9 @@ func (q *Queen) dispatchFactory(ctx context.Context, plan []SubTask) ([]Result, 
 				return
 			}
 
-			q.Hooks.workerStart(idx, st)
-			base.Started = time.Now().UTC()
-			out, runErr := runner.Run(ctx, st.Task)
-			base.Ended = time.Now().UTC()
-			if runErr != nil {
-				base.Err = runErr
-			} else {
-				base.Final = out.FinalText
-			}
+			base = q.runSub(ctx, idx, st, runner)
 			if done != nil {
-				done(runErr) // merge-back / cleanup; failed runs are discarded
+				done(base.Err) // merge-back / cleanup; failed runs are discarded
 			}
 			results[idx] = base
 			q.Hooks.workerDone(idx, base)
@@ -329,6 +314,37 @@ func (q *Queen) dispatchFactory(ctx context.Context, plan []SubTask) ([]Result, 
 		return results, ctx.Err()
 	}
 	return results, nil
+}
+
+// runSub drives one sub-task on a runner: attaches the pheromone tail (when
+// the runner can carry one), marks the row running, runs, builds the exit
+// report and marks the row finished so siblings see the outcome next turn.
+// Both dispatch paths share it; the caller owns per-engine locking.
+func (q *Queen) runSub(ctx context.Context, idx int, st SubTask, r Runner) Result {
+	if st.Role == "" {
+		st.Role = RoleBuilder // legacy string-array plans carry no role
+	}
+	if t, ok := r.(Tailed); ok {
+		t.SetPromptTail(q.Pheromone.Tail(idx, st))
+	}
+	q.Pheromone.Start(idx)
+	q.Hooks.workerStart(idx, st)
+	res := Result{
+		WorkerID: fmt.Sprintf("w%d", idx),
+		Name:     fmt.Sprintf("worker-%d", idx),
+		Task:     st.Task,
+		Started:  time.Now().UTC(),
+	}
+	out, err := r.Run(ctx, st.Task)
+	res.Ended = time.Now().UTC()
+	if err != nil {
+		res.Err = err
+	} else {
+		res.Final = out.FinalText
+	}
+	res.Report = reportFor(ctx, r, out, err)
+	q.Pheromone.Finish(idx, res)
+	return res
 }
 
 // review asks the Critic to read the plan + worker outputs and emit a short
@@ -387,7 +403,13 @@ func writePlanAndResults(b *strings.Builder, plan []SubTask, results []Result) {
 		}
 		fmt.Fprintf(b, "## Sub-task %d (role: %s)\n%s\n\n### Result\n", i+1, role, st.Task)
 		if r.Err != nil {
-			fmt.Fprintf(b, "(error: %v)\n\n", r.Err)
+			// a dead worker's death report is the only trace of its work.
+			fmt.Fprintf(b, "(error: %v)\n", r.Err)
+			if r.Report.Status != "" {
+				b.WriteString(r.Report.Render())
+				b.WriteString("\n")
+			}
+			b.WriteString("\n")
 			continue
 		}
 		b.WriteString(strings.TrimSpace(r.Final))

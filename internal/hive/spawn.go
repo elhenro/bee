@@ -66,11 +66,20 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 	results := make(chan Result, len(p.Workers))
 	workers := p.snapshotWorkers()
 
+	// one card for the fan-out: no queen plan, so each worker's task is a row
+	// and siblings see each other's reports as they land.
+	ph := NewPheromone("")
+	plan := make([]SubTask, len(workers))
+	for i, w := range workers {
+		plan[i] = SubTask{Task: w.Task}
+	}
+	ph.Reset("", plan)
+
 	sem := make(chan struct{}, p.MaxConcurrency)
 	var wg sync.WaitGroup
 
-	for _, w := range workers {
-		w := w
+	for i, w := range workers {
+		i, w := i, w
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -94,7 +103,7 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 			}
 
 			p.markRunning(w)
-			res := runOne(ctx, w)
+			res := runOne(ctx, w, i, ph)
 			p.markEnded(w, res.Err)
 			results <- res
 		}()
@@ -107,11 +116,12 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 	return results
 }
 
-// runOne executes a single worker's Engine.Run, capturing timing and the
-// final assistant text. A nil Engine is a programmer error and produces
-// an error Result rather than panicking. Tests inject a Runner via the
+// runOne executes a single worker's Engine.Run, capturing timing, the final
+// assistant text and the exit report, and keeps the worker's row on the
+// shared card current. A nil Engine is a programmer error and produces an
+// error Result rather than panicking. Tests inject a Runner via the
 // runWorker hook (see spawn_test.go).
-func runOne(ctx context.Context, w *Worker) Result {
+func runOne(ctx context.Context, w *Worker, idx int, ph *Pheromone) Result {
 	started := time.Now().UTC()
 	r := Result{
 		WorkerID: w.ID,
@@ -125,12 +135,18 @@ func runOne(ctx context.Context, w *Worker) Result {
 		r.Ended = time.Now().UTC()
 		return r
 	}
+	if t, ok := runner.(Tailed); ok {
+		t.SetPromptTail(ph.Tail(idx, SubTask{Task: w.Task}))
+	}
+	ph.Start(idx)
 	run, err := runner.Run(ctx, w.Task)
 	r.Ended = time.Now().UTC()
 	r.Final = run.FinalText
 	if err != nil {
 		r.Err = err
 	}
+	r.Report = reportFor(ctx, runner, run, err)
+	ph.Finish(idx, r)
 	return r
 }
 

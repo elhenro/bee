@@ -54,6 +54,9 @@ func Summary(results []Result) string {
 			tag = "err"
 			final = r.Err.Error()
 		}
+		if r.Report.Status != "" {
+			final = r.Report.Line()
+		}
 		dur := r.Ended.Sub(r.Started).Round(time.Millisecond)
 		fmt.Fprintf(&b, "[%s] %s (%s): %s\n", tag, r.Name, dur, final)
 	}

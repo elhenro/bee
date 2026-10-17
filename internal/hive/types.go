@@ -38,12 +38,15 @@ type Worker struct {
 }
 
 // Result is what a Worker emits on completion. Final is the final assistant
-// text; Err is non-nil if the run failed.
+// text; Err is non-nil if the run failed. Report is the worker's exit brief:
+// parsed from Final on a clean exit, distilled from the transcript on a dead
+// one (see report.go).
 type Result struct {
 	WorkerID string
 	Name     string
 	Task     string
 	Final    string
+	Report   Report
 	Err      error
 	Started  time.Time
 	Ended    time.Time

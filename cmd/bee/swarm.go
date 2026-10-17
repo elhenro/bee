@@ -150,6 +150,12 @@ func runSwarm(args []string) {
 	}
 
 	q := hivepkg.NewQueen(planner, workers)
+	// pheromone card: every worker carries the goal, plan and sibling status
+	// in its prompt; the mirror file lets a second terminal watch the hive.
+	if path, perr := hivepkg.PheromonePath(plannerSess.ID()); perr == nil {
+		q.Pheromone = hivepkg.NewPheromone(path)
+		fmt.Fprintf(os.Stderr, "swarm: pheromone card at %s\n", path)
+	}
 
 	fmt.Fprintln(os.Stderr, "swarm: decomposing task...")
 	res, err := q.Run(ctx, task)
