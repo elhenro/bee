@@ -1,7 +1,7 @@
 package safety
 
 import (
-	"path/filepath"
+	"path"
 	"strings"
 )
 
@@ -121,8 +121,10 @@ func CommandName(word string) string {
 	if !strings.Contains(word, "/") {
 		return word
 	}
-	if filepath.IsAbs(word) && trustedBinDirs[filepath.Dir(word)] {
-		return filepath.Base(word)
+	// shell words are slash paths on every host, so path not filepath:
+	// filepath treats "/bin/ls" as relative on windows
+	if path.IsAbs(word) && trustedBinDirs[path.Dir(word)] {
+		return path.Base(word)
 	}
 	return ""
 }
