@@ -346,3 +346,27 @@ func TestDrive_HardErrorRetries(t *testing.T) {
 		t.Errorf("want failed, got %s", run.Status)
 	}
 }
+
+// identical replies in a row are no progress even when each iteration writes
+// something, but only the streak stops the run, never a completion claim.
+func TestDrive_IdenticalRepliesStall(t *testing.T) {
+	run, repo := setupDriveTest(t)
+	turns := make([]stubTurn, 10)
+	for i := range turns {
+		turns[i] = stubTurn{text: "tweaking the thing", write: map[string]string{"f.txt": strings.Repeat("x", i+1)}, in: 5, out: 2}
+	}
+	runner := &stubRunner{dir: repo, turns: turns}
+	cfg := Config{MaxIterations: 20}
+	if err := Drive(context.Background(), nil, runner, cfg, run, &stubUI{}); err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != StatusFailed {
+		t.Errorf("want failed (no progress), got %s cause=%q", run.Status, run.StopCause)
+	}
+	if run.IterCount != 3 {
+		t.Errorf("should stop at 3 identical replies, ran %d iters", run.IterCount)
+	}
+	if !strings.Contains(run.StopCause, "identical replies") {
+		t.Errorf("cause should name the streak, got %q", run.StopCause)
+	}
+}

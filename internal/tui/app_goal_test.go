@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/elhenro/bee/internal/goal"
+	"github.com/elhenro/bee/internal/types"
 )
 
 func TestHandleGoalSetActivatesAndStreams(t *testing.T) {
@@ -45,5 +49,33 @@ func TestGoalShowDoesNotActivate(t *testing.T) {
 	got := out.(Model)
 	if got.goal.Active {
 		t.Fatalf("show should not activate a goal")
+	}
+}
+
+// the same not-met reply three turns running stops the goal with a typed
+// no-progress reason instead of spinning to the turn cap.
+func TestGoalStopsOnIdenticalReplies(t *testing.T) {
+	m := newTestModel(t)
+	m.goal.Set("fix the lint", 0, time.Now())
+	m.goalGen = 1
+	reply := types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockText, Text: "still on it"}}}
+	m.messages = append(m.messages, reply)
+	notMet := goalEvalDoneMsg{gen: 1, v: goal.Verdict{Reason: "lint still failing"}}
+	for i := 0; i < goal.MaxIdenticalReplies-1; i++ {
+		out, _ := m.onGoalEvalDone(notMet)
+		m = out.(Model)
+		if !m.goal.Active {
+			t.Fatalf("goal stopped early at turn %d", i+1)
+		}
+		m.goalGen = 1
+	}
+	out, _ := m.onGoalEvalDone(notMet)
+	got := out.(Model)
+	if got.goal.Active {
+		t.Fatal("goal still active after identical-reply streak")
+	}
+	last := got.messages[len(got.messages)-1].Content[0].Text
+	if !strings.HasPrefix(last, goal.StoppedPrefix) || !strings.Contains(last, "identical replies") {
+		t.Fatalf("stop message = %q", last)
 	}
 }

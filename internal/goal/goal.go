@@ -52,6 +52,7 @@ type State struct {
 	TokenBaseline int // cumulative session tokens at set time
 	LastReason    string
 	Caps          Caps
+	Replies       ReplyStreak // identical-reply no-progress signal
 }
 
 // Set activates a goal, resetting counters and timestamps. tokenBaseline is the
@@ -63,6 +64,7 @@ func (s *State) Set(cond string, tokenBaseline int, now time.Time) {
 	s.Turns = 0
 	s.TokenBaseline = tokenBaseline
 	s.LastReason = ""
+	s.Replies = ReplyStreak{}
 }
 
 // Clear zeroes everything; Active becomes false.

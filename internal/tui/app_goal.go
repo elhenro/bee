@@ -158,6 +158,16 @@ func (m Model) onGoalEvalDone(msg goalEvalDoneMsg) (tea.Model, tea.Cmd) {
 		})
 		return m, m.flush()
 	}
+	if m.goal.Replies.Observe(lastAssistantText(m.messages)) {
+		reason := goal.StalledReason(m.goal.Replies.Count())
+		m.goal.Clear()
+		m.goalGen++
+		m.messages = append(m.messages, types.Message{
+			Role:    types.RoleAssistant,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: goal.StoppedPrefix + reason + ")"}},
+		})
+		return m, m.flush()
+	}
 	cond := m.goal.Condition
 	notice := lipgloss.NewStyle().Foreground(fgOyster).Italic(true).
 		Render("goal not met (" + msg.v.Reason + ") — continuing")

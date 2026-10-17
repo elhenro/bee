@@ -118,6 +118,10 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 			fmt.Fprintln(os.Stderr, goal.AchievedPrefix+v.Reason)
 			break
 		}
+		if st.Replies.Observe(res.FinalText) {
+			fmt.Fprintln(os.Stderr, goal.StoppedPrefix+goal.StalledReason(st.Replies.Count())+")")
+			break
+		}
 		stalledStreak, prevReason = stalledStep(stalledStreak, prevReason, v.Reason)
 		if stalledStreak >= maxStalledContinuations {
 			fmt.Fprintf(os.Stderr, goal.StoppedPrefix+"no progress after %d continuations: %s)\n", stalledStreak, v.Reason)

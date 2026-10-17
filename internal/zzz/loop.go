@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/elhenro/bee/internal/cost"
+	"github.com/elhenro/bee/internal/goal"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/sentinel"
 )
@@ -122,6 +123,7 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 	var pendingNotes []string
 	consecutiveFails := 0
 	consecutiveNoops := 0
+	var replies goal.ReplyStreak
 	maxFails := cfgMaxConsecutiveFails(cfg)
 	maxNoops := cfgMaxConsecutiveNoops(cfg)
 	// priorTokens captures totals already on disk before this engine instance
@@ -242,6 +244,11 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 				run.StopCause = fmt.Sprintf("%d consecutive failures", consecutiveFails)
 				goto finish
 			}
+		}
+		if replies.Observe(res.Subject) {
+			run.Status = StatusFailed
+			run.StopCause = goal.StalledReason(replies.Count())
+			goto finish
 		}
 		if err != nil && errors.Is(err, context.Canceled) {
 			run.Status = StatusAborted
