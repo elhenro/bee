@@ -75,7 +75,7 @@ func (r *StreamRenderer) assistantBody(m types.Message) string {
 		case types.BlockText:
 			if strings.TrimSpace(b.Text) != "" {
 				s = r.renderAssistant(r.renderText(b.Text))
-				r.cont = false // only the first block continues a flushed head
+				r.SetContinuation(false) // only the first block continues a flushed head
 			}
 		case types.BlockThinking:
 			s = r.renderThinking(b.Text)

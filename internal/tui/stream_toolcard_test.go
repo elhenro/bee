@@ -212,3 +212,21 @@ func TestToolTitle(t *testing.T) {
 		t.Fatal("unknown tools keep their id so nothing is hidden")
 	}
 }
+
+func TestSearchRow_SplitsPathFromMatch(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(prev)
+	r := NewStreamRenderer(DefaultStyles(), 100)
+	hit, bare := r.searchRow("a/b.go:17:  ReadTimeout: 5"), r.searchRow("no-location line")
+	if stripANSI(hit) != "a/b.go:17:  ReadTimeout: 5" || stripANSI(bare) != "no-location line" {
+		t.Fatalf("text must survive the split: %q %q", stripANSI(hit), stripANSI(bare))
+	}
+	// path:line and the match are separate styled spans; a bare row is one
+	if got := strings.Count(hit, "\x1b[0m"); got != 2 {
+		t.Fatalf("hit row should carry two styles, got %d: %q", got, hit)
+	}
+	if got := strings.Count(bare, "\x1b[0m"); got != 1 {
+		t.Fatalf("bare row should carry one style, got %d: %q", got, bare)
+	}
+}

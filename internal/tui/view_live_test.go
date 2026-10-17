@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -156,5 +158,37 @@ func TestParseLoaderStyle_SpinnerStripPhased(t *testing.T) {
 		if got := ParseLoaderStyle(in); got != want {
 			t.Errorf("ParseLoaderStyle(%q) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+func TestResize_KeepsToolCallIndexForLateResults(t *testing.T) {
+	m := newTestModel(t)
+	m.stream.RenderMessage(useMsg("u1", "bash", map[string]any{"command": "make"}))
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = updated.(Model)
+	out := stripANSI(m.stream.RenderMessage(resultMsg("u1", "ok", false)))
+	if !strings.Contains(out, "Bash  make") {
+		t.Fatalf("result after a resize lost its call header: %q", out)
+	}
+}
+
+func TestRenderLive_LongReasoningStaysInsideBudget(t *testing.T) {
+	m := streamingModel(t)
+	m.showThoughts = true
+	var b strings.Builder
+	for i := 0; i < 200; i++ {
+		b.WriteString("thinking about the next step\n")
+	}
+	m.thinkPartial = b.String()
+	rows := strings.Count(m.renderLive(14), "\n") + 1
+	if rows > 14 {
+		t.Fatalf("live region is %d rows, budget 14", rows)
+	}
+	if out := stripANSI(m.renderLive(14)); !strings.Contains(out, "lines above") {
+		t.Fatalf("clipped reasoning should say how much is hidden: %q", out)
+	}
+	m.partial = "and the answer so far"
+	if rows := strings.Count(m.renderLive(14), "\n") + 1; rows > 14 {
+		t.Fatalf("with text too: %d rows, budget 14", rows)
 	}
 }

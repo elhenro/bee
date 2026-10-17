@@ -2,8 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/elhenro/bee/internal/types"
@@ -203,8 +205,11 @@ func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.T
 		for _, ln := range shown {
 			ln = shortenPathsInline(ln)
 			row := style.Render(ln)
-			if hl != nil {
+			switch {
+			case hl != nil:
 				row = hl(ln)
+			case haveUse && use.Name == "search" && !res.IsError:
+				row = r.searchRow(ln)
 			}
 			if r.verbose {
 				rows = append(rows, strings.Split(wrapText(row, w), "\n")...)
@@ -221,6 +226,17 @@ func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.T
 		}
 	}
 	return hang(strings.Join(rows, "\n"), r.connector(), strings.Repeat(" ", resultIndent))
+}
+
+var searchHit = regexp.MustCompile(`^(\S+?:\d+:)(.*)$`)
+
+// `path:line:` stays subtle, the matched text steps up to the secondary tone
+func (r *StreamRenderer) searchRow(ln string) string {
+	m := searchHit.FindStringSubmatch(ln)
+	if m == nil {
+		return r.styles.ToolPrev.Render(ln)
+	}
+	return r.styles.ToolPrev.Render(m[1]) + lipgloss.NewStyle().Foreground(fgSmoke).Render(m[2])
 }
 
 // the one-row digest a file read collapses to

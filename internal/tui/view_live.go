@@ -84,7 +84,20 @@ func (m Model) renderStreamingParts(maxRows int) []string {
 	var parts []string
 	// reasoning streams above the answer, styled like the committed block
 	if think := m.thinkPartial; think != "" && m.showThoughts {
-		parts = append(parts, m.stream.RenderThinkingPartial(think))
+		block := m.stream.RenderThinkingPartial(think)
+		if maxRows > 0 {
+			// share the budget with the answer text; reasoning alone may use it all
+			room := maxRows - m.busyRows()
+			if visible != "" {
+				room /= 2
+			} else {
+				room--
+			}
+			if room >= 3 {
+				block = m.stream.ClipStreamingTail(block, room)
+			}
+		}
+		parts = append(parts, block)
 	}
 	if !m.stream.isDefaultLoader() {
 		return append(parts, m.renderLegacyLoader(visible, maxRows))
