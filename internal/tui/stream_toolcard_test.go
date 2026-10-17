@@ -255,3 +255,25 @@ func TestExpandTabs_AlignsToStops(t *testing.T) {
 		t.Fatalf("plain text changed: %q", got)
 	}
 }
+
+func TestRenderMessage_UIEchoIsAQuietNotice(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	note := ephemeral("(image staged: 12 KB)")
+	out := stripANSI(r.RenderMessage(note))
+	if !strings.Contains(out, glyphSep+" image staged: 12 KB") {
+		t.Fatalf("notice missing or still parenthesized: %q", out)
+	}
+	if strings.Contains(out, glyphBee) || strings.Contains(out, "(") {
+		t.Fatalf("notice wears the assistant marker or parens: %q", out)
+	}
+	// real assistant text keeps its marker, even when it happens to be parenthetical
+	real := types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockText, Text: "(done)"}}}
+	if out := stripANSI(r.RenderMessage(real)); !strings.Contains(out, glyphBee) {
+		t.Fatalf("real assistant text lost its marker: %q", out)
+	}
+	// ephemeral command output is the app speaking to you: marker stays
+	listing := ephemeral("/init, /compact\n/model")
+	if out := stripANSI(r.RenderMessage(listing)); !strings.Contains(out, glyphBee) {
+		t.Fatalf("command output lost its marker: %q", out)
+	}
+}

@@ -5,6 +5,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/elhenro/bee/internal/types"
 )
 
 // your turn: honey bar on a warm panel running to the right edge; compact
@@ -39,6 +41,28 @@ func (r *StreamRenderer) renderAssistant(body string) string {
 		first = "  "
 	}
 	return hang(body, first, "  ")
+}
+
+// a UI echo (slash confirmation, staged image, queue note): the app talking
+// about itself, so quiet text under a dot instead of the assistant marker
+func (r *StreamRenderer) renderNotice(s string) string {
+	lines := strings.Split(wrapText(expandTabs(s), r.textWidth(markIndent)), "\n")
+	for i, ln := range lines {
+		lines[i] = r.styles.Dim.Render(ln)
+	}
+	return hang(strings.Join(lines, "\n"), r.styles.Dim.Render(glyphSep)+" ", "  ")
+}
+
+// the text of a parenthetical one-line UI echo, `(/new done)` -> `/new done`
+func noticeText(m types.Message) (string, bool) {
+	if !m.Ephemeral || m.Role != types.RoleAssistant || len(m.Content) != 1 || m.Content[0].Type != types.BlockText {
+		return "", false
+	}
+	t := strings.TrimSpace(m.Content[0].Text)
+	if len(t) < 3 || t[0] != '(' || t[len(t)-1] != ')' || strings.Contains(t, "\n") {
+		return "", false
+	}
+	return t[1 : len(t)-1], true
 }
 
 // live variant of renderThinking, gutter-applied to match scrollback

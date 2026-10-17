@@ -28,9 +28,24 @@ func RegisterBuiltins(r *Registry) {
 		Description:    "list slash commands",
 		AllowDuringRun: true,
 		Run: func(_ context.Context, _ []string, _ Side) (string, error) {
-			return "/init, /compact, /model, /effort, /settings, /tools, /browser, /vision, /resume, /new, /clear, /copy, /tree, /cost, /usage, /fork, /clone, /login, /logout, /bg, /agent, /attach, /goal, /tutorial, /edit, /vim, /term, /remote-control, /stop, /watchdog, /handoff, /quit, /exit, /help", nil
+			return helpText(r), nil
 		},
 	})
+}
+
+// one `/name  description` row per registered command, so the list can't
+// drift from what the registry actually holds
+func helpText(r *Registry) string {
+	cmds := r.List()
+	w := 0
+	for _, c := range cmds {
+		w = max(w, len(c.Name))
+	}
+	rows := make([]string, len(cmds))
+	for i, c := range cmds {
+		rows[i] = strings.TrimRight("/"+padRight(c.Name, w)+"  "+c.Description, " ")
+	}
+	return strings.Join(rows, "\n")
 }
 
 func padRight(s string, n int) string {

@@ -48,6 +48,10 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 		r.afterTool = false
 		return r.frame(r.renderUser(body), true, false)
 	case types.RoleAssistant:
+		if note, ok := noticeText(m); ok {
+			r.afterTool = false
+			return r.frame(r.renderNotice(note), false, false)
+		}
 		body := r.assistantBody(m)
 		if body == "" {
 			return ""

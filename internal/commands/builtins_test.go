@@ -644,6 +644,22 @@ func TestBuiltin_Help(t *testing.T) {
 			t.Errorf("help missing %q in %q", want, out)
 		}
 	}
+	// every registered command is listed, with its description, one row each
+	rows := strings.Split(out, "\n")
+	if len(rows) != len(r.List()) {
+		t.Fatalf("help has %d rows for %d commands:\n%s", len(rows), len(r.List()), out)
+	}
+	for _, c := range r.List() {
+		var found bool
+		for _, row := range rows {
+			if strings.HasPrefix(row, "/"+c.Name+" ") || row == "/"+c.Name {
+				found = strings.Contains(row, c.Description)
+			}
+		}
+		if !found {
+			t.Errorf("no row for /%s with %q in:\n%s", c.Name, c.Description, out)
+		}
+	}
 }
 
 func TestBuiltin_Tree(t *testing.T) {
@@ -1022,6 +1038,19 @@ func TestBuiltins_NilSideSafe(t *testing.T) {
 	for _, c := range r.List() {
 		if _, err := c.Run(context.Background(), nil, nil); err != nil {
 			t.Errorf("%s panicked/errored on nil side: %v", c.Name, err)
+		}
+	}
+}
+
+// the listing is shown as plain text, so a backtick or tag-like <arg> in a
+// description would flip the whole block through the markdown renderer and
+// swallow the placeholders
+func TestBuiltin_HelpHasNoMarkdownTriggers(t *testing.T) {
+	r := NewRegistry()
+	RegisterBuiltins(r)
+	for _, c := range r.List() {
+		if strings.Contains(c.Description, "`") {
+			t.Errorf("/%s description has a backtick: %q", c.Name, c.Description)
 		}
 	}
 }
