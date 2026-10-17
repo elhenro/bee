@@ -60,7 +60,7 @@ type tickMsg time.Time
 func newModel(repoRoot string) model {
 	ti := textarea.New()
 	ti.Placeholder = "type a task and press enter to spawn an agent…"
-	ti.Prompt = "› "
+	ti.Prompt = "❯ "
 	ti.ShowLineNumbers = false
 	ti.CharLimit = 8192
 	ti.SetHeight(1)
@@ -293,7 +293,7 @@ func (m model) View() string {
 			if sec.kind == secErrors {
 				style = errSectionStyle
 			}
-			label := style.Render(fmt.Sprintf(" ▸ %s (%d)", sec.kind.title(), len(sec.rows)))
+			label := " " + style.Render(sec.kind.title()) + dimStyle.Render(fmt.Sprintf(" · %d", len(sec.rows)))
 			label += dimStyle.Render(sectionHint(sec))
 			b.WriteString(label)
 			b.WriteString("\n")

@@ -160,14 +160,15 @@ func sectionHint(sec section) string {
 func renderRow(r row, selected bool, width int, prefs Prefs) string {
 	marker := "  "
 	if selected {
-		marker = cursorStyle.Render("▸ ")
+		marker = cursorStyle.Render("❯ ")
 	}
 	state := stateGlyph(r.Status)
-	task := truncate(r.Status.Task, 36)
+	tw := taskWidth(width)
+	task := truncate(r.Status.Task, tw)
 	elapsed := humanDuration(r.Status.StartedAt, r.Status.FinishedAt)
 	tokens := fmt.Sprintf("↑%s ↓%s", humanK(r.Status.InputTokens), humanK(r.Status.OutputTokens))
 
-	line1 := fmt.Sprintf("%s%s %-36s  %-9s  %-12s", marker, state, task, elapsed, tokens)
+	line1 := fmt.Sprintf("%s%s %-*s  %-9s  %-12s", marker, state, tw, task, elapsed, tokens)
 	if prefs.ShowChip {
 		model := shortModel(r.Status.Model)
 		line1 += "  " + modelChipStyle.Render("["+model+"]")
@@ -200,9 +201,19 @@ func renderRow(r row, selected bool, width int, prefs Prefs) string {
 	if peek == "" {
 		peek = dimStyle.Render("(no response yet)")
 	} else {
-		peek = "      › " + dimStyle.Render(truncateLines(peek, width-10, 1))
+		peek = "    " + dimStyle.Render("⎿  "+truncateLines(peek, width-10, 1))
 	}
 	return line1 + "\n" + peek
+}
+
+// task column: what's left of the fixed columns (state, time, tokens, model
+// chip, badge), clamped so a wide terminal doesn't strand the numbers far
+// from the title and a narrow one still shows a few words
+func taskWidth(width int) int {
+	if width <= 0 {
+		return 36
+	}
+	return min(max(width-66, 24), 56)
 }
 
 // stateGlyph is the leading dot indicating live state.

@@ -57,3 +57,12 @@ func TestRenderRowUsesFinishedAtForCompletedDuration(t *testing.T) {
 		t.Fatalf("renderRow should show finished duration, got %q", out)
 	}
 }
+
+func TestTaskWidth_ClampsToTheTerminal(t *testing.T) {
+	cases := map[int]int{0: 36, 40: 24, 100: 34, 110: 44, 300: 56}
+	for width, want := range cases {
+		if got := taskWidth(width); got != want {
+			t.Fatalf("taskWidth(%d) = %d, want %d", width, got, want)
+		}
+	}
+}
