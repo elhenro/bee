@@ -43,7 +43,21 @@ type Skill struct {
 
 	// kind=recipe
 	Steps []RecipeStep
+	// Runtime is set when every recipe step carries a Kind: bee then executes
+	// the steps in Go (tool/shell) and hands only bee steps to a model, instead
+	// of folding the list into a prompt for the model to walk.
+	Runtime bool
 }
+
+// StepKind selects how a runtime recipe step executes. Empty means the legacy
+// prompt-walked step: the model reads the step and decides what to call.
+type StepKind string
+
+const (
+	StepTool  StepKind = "tool"  // run a registered tool with literal args, no model
+	StepShell StepKind = "shell" // run a command through the gated bash tool
+	StepBee   StepKind = "bee"   // one bounded model turn driven by a prompt template
+)
 
 // RecipeStep is one ordered step in a recipe skill. ID is optional (the
 // parser auto-assigns step-N when empty) but useful when a later step's
@@ -61,6 +75,20 @@ type RecipeStep struct {
 	// OnFailure: step id to jump to if Tool fails. "escalate" = call the
 	// escalate tool. Empty = abort the recipe.
 	OnFailure string
+
+	// runtime-only fields (Kind != ""). Templates may reference {{args}},
+	// {{argv.N}} and {{<step-id>}} for an earlier step's output; inside Run
+	// each value is shell-quoted on substitution.
+	Kind   StepKind
+	Run    string   // kind=shell: the command line
+	Prompt string   // kind=bee: the prompt template
+	Tools  []string // kind=bee: optional tool allowlist for that turn
+	// Next routes after success: "" = following step, "stop" = finish ok,
+	// "escalate" = finish and hand back to the user, or a step id.
+	Next string
+	// FailIf is a regexp; a step whose output matches it counts as failed
+	// even when the tool itself succeeded. Lets a bee step branch by answer.
+	FailIf string
 }
 
 // Executor runs a skill non-interactively given the user message + ambient

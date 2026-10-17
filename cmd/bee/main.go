@@ -332,12 +332,14 @@ func dispatchSkill(name string, rest []string) bool {
 	if !ok {
 		return false
 	}
-	// prompt and recipe skills run in the TUI when stdio is interactive so
-	// the user sees thoughts + tool cards live and can steer. exec skills
-	// are auto-registered as tools and don't have a "bee <name>" form
-	// worth seeding the TUI with. Piped/redirected stdio stays headless so
+	// prompt and legacy recipe skills run in the TUI when stdio is
+	// interactive so the user sees thoughts + tool cards live and can steer.
+	// exec skills are auto-registered as tools and don't have a "bee <name>"
+	// form worth seeding the TUI with; a runtime recipe executes in Go and
+	// stays headless. Piped/redirected stdio stays headless so
 	// `bee research foo > out.md` and scripts keep working.
-	if (s.Kind == skills.KindPrompt || s.Kind == skills.KindRecipe) && stdioIsInteractive() {
+	modelWalked := s.Kind == skills.KindPrompt || (s.Kind == skills.KindRecipe && !s.Runtime)
+	if modelWalked && stdioIsInteractive() {
 		seed := "/" + name
 		if joined := strings.TrimSpace(strings.Join(rest, " ")); joined != "" {
 			seed += " " + joined

@@ -185,16 +185,22 @@ func runHeadlessReal(args []string) {
 		}
 	}
 
+	var recipeSkill *skills.Skill
 	if *skillName != "" {
 		s, ok := skillReg.Get(*skillName)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "bee run: unknown skill %q\n", *skillName)
 			os.Exit(2)
 		}
-		// prompt-kind: prepend body to user message. recipe is handled the
-		// same way (recipeBuild folds the steps into Body at parse time).
-		// exec-kind skills are registered as callable tools above.
-		if (s.Kind == skills.KindPrompt || s.Kind == skills.KindRecipe) && s.Body != "" {
+		switch {
+		case s.Kind == skills.KindRecipe && s.Runtime:
+			// runtime recipe: executed in Go once the engine exists; the
+			// positional args feed its templates rather than a user message.
+			recipeSkill = &s
+		case (s.Kind == skills.KindPrompt || s.Kind == skills.KindRecipe) && s.Body != "":
+			// prompt-kind: prepend body to user message. a legacy recipe is
+			// handled the same way (recipeBuild folds the steps into Body).
+			// exec-kind skills are registered as callable tools above.
 			if userMsg == "" {
 				userMsg = s.Body
 			} else {
@@ -240,6 +246,17 @@ func runHeadlessReal(args []string) {
 		eng.JSONEmitter = jsonmode.New(os.Stdout)
 		// text deltas already routed through emitter; suppress raw writes.
 		eng.Stdout = io.Discard
+	}
+
+	if recipeSkill != nil {
+		if code := runRecipeHeadless(eng, *recipeSkill, fs.Args()); code != 0 {
+			roll.Close()
+			if c, ok := app.(*approval.Cache); ok {
+				c.Flush()
+			}
+			os.Exit(code)
+		}
+		return
 	}
 
 	if *bgLoop {

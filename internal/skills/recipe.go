@@ -14,6 +14,13 @@ type recipeStepRaw struct {
 	Tool        string         `yaml:"tool"`
 	Args        map[string]any `yaml:"args"`
 	OnFailure   string         `yaml:"on_failure"`
+	// runtime step fields; see RecipeStep.
+	Kind   string   `yaml:"kind"`
+	Run    string   `yaml:"run"`
+	Prompt string   `yaml:"prompt"`
+	Tools  []string `yaml:"tools"`
+	Next   string   `yaml:"next"`
+	FailIf string   `yaml:"fail_if"`
 }
 
 // recipeBuild validates the raw step list and folds it into the Skill. Called
@@ -51,6 +58,12 @@ func recipeBuild(s *Skill, raw []recipeStepRaw, knownTools map[string]bool) erro
 			Tool:        r.Tool,
 			Args:        r.Args,
 			OnFailure:   r.OnFailure,
+			Kind:        StepKind(strings.ToLower(strings.TrimSpace(r.Kind))),
+			Run:         strings.TrimSpace(r.Run),
+			Prompt:      strings.TrimSpace(r.Prompt),
+			Tools:       r.Tools,
+			Next:        strings.TrimSpace(r.Next),
+			FailIf:      r.FailIf,
 		})
 	}
 	// validate OnFailure references resolve. allow empty + "escalate"
@@ -65,6 +78,18 @@ func recipeBuild(s *Skill, raw []recipeStepRaw, knownTools map[string]bool) erro
 		}
 	}
 	s.Steps = steps
+	// a recipe whose every step names a kind runs in Go; the model only sees
+	// the bee steps. mixed lists are rejected so a typo never silently demotes
+	// a deterministic step to a model-walked one.
+	runtime, err := runtimeKinds(steps, ids, knownTools)
+	if err != nil {
+		return err
+	}
+	if runtime {
+		s.Runtime = true
+		s.Body = renderRuntimeBody(*s)
+		return nil
+	}
 	// fold the steps into Body so existing prompt-skill rendering picks the
 	// recipe up without engine changes. recipes show as a numbered checklist
 	// the model walks through; the explicit "if step N fails ..." line gives
