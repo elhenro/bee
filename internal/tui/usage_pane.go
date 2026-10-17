@@ -105,7 +105,7 @@ func (u *UsagePane) View(width, height int) string {
 		b.WriteString(renderUsageFallback(u.tracker, inner))
 		b.WriteString("\n")
 		b.WriteString(StyleLabel.Render("esc close"))
-		return boxModal(b.String(), width, height)
+		return boxModal(b.String(), width)
 	}
 
 	w := u.win[u.window]
@@ -113,7 +113,7 @@ func (u *UsagePane) View(width, height int) string {
 		b.WriteString(StyleLabel.Render("  (no usage in this window)"))
 		b.WriteString("\n\n")
 		b.WriteString(usageFooter())
-		return boxModal(b.String(), width, height)
+		return boxModal(b.String(), width)
 	}
 
 	b.WriteString(renderUsageHeadline(w.Total, winLabels[u.window]))
@@ -131,5 +131,5 @@ func (u *UsagePane) View(width, height int) string {
 		b.WriteString("\n")
 	}
 	b.WriteString(usageFooter())
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }

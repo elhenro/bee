@@ -125,5 +125,5 @@ func (p *EffortPane) View(width, height int) string {
 
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ pick · enter set · esc close"))
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }

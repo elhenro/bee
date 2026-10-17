@@ -117,7 +117,7 @@ func (c *CostPane) View(width, height int) string {
 		Render("⬢ Cost monitor")
 
 	if c.tracker == nil {
-		return boxModal(title+"\n\n"+StyleLabel.Render("(no tracker wired)"), width, height)
+		return boxModal(title+"\n\n"+StyleLabel.Render("(no tracker wired)"), width)
 	}
 
 	prov, model := c.activeFilter()
@@ -136,7 +136,7 @@ func (c *CostPane) View(width, height int) string {
 	b.WriteString(c.renderBreakdown(width - 6))
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("tab cycle filter · j/k pick · 0 clear · esc close"))
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }
 
 // renderFilterChips shows which dimension is active and the selected value.

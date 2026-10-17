@@ -136,7 +136,7 @@ func (p *ResumePicker) View(width, height int) string {
 		Render("⬢ Resume session")
 	if len(p.entries) == 0 {
 		body := StyleLabel.Render("(no past sessions)")
-		return boxModal(title+"\n\n"+body+"\n\n"+StyleLabel.Render("esc close"), width, height)
+		return boxModal(title+"\n\n"+body+"\n\n"+StyleLabel.Render("esc close"), width)
 	}
 	inner := width - 4
 	if inner < 30 {
@@ -158,7 +158,7 @@ func (p *ResumePicker) View(width, height int) string {
 	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ nav · enter resume · esc close"))
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }
 
 type rowRange struct{ start, end int }

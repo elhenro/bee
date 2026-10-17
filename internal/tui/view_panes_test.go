@@ -9,7 +9,7 @@ import (
 
 func TestBoxRows_ClipsInsteadOfWrapping(t *testing.T) {
 	long := strings.Repeat("word ", 30)
-	out := boxRows("title\n"+long+"\nshort", 40, 8)
+	out := boxRows("title\n"+long+"\nshort", 40)
 	rows := strings.Split(out, "\n")
 	for _, ln := range rows {
 		if w := lipgloss.Width(ln); w != 40 {

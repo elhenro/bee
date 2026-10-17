@@ -50,7 +50,7 @@ func (p *LoginPane) View(width, height int) string {
 	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ pick · enter login/enter key · d remove · r refresh · esc close"))
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }
 
 // viewInput renders the api-key entry sub-mode.
@@ -73,7 +73,7 @@ func (p *LoginPane) viewInput(width, height int) string {
 	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("enter save · esc cancel"))
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }
 
 // renderLoginRow draws one provider row with cursor marker, name, default

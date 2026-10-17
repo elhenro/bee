@@ -170,7 +170,7 @@ func (t *SessionTree) View(width, height int) string {
 		Render("⬢ Session tree")
 	if t.root == nil {
 		body := StyleLabel.Render("(no messages yet)")
-		return boxModal(title+"\n\n"+body, width, height)
+		return boxModal(title+"\n\n"+body, width)
 	}
 
 	activePath := map[string]bool{}
@@ -184,7 +184,7 @@ func (t *SessionTree) View(width, height int) string {
 	t.renderNode(&b, t.root, "", true, true, activePath, width-4)
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ nav · enter switch · f fork · c clone · esc close"))
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }
 
 func (t *SessionTree) renderNode(b *strings.Builder, n *types.MessageNode, prefix string, isLast, isRoot bool, active map[string]bool, width int) {
@@ -259,29 +259,26 @@ func firstText(m types.Message) string {
 	return ""
 }
 
-func boxModal(body string, width, height int) string {
+func boxModal(body string, width int) string {
 	if width < 20 {
 		width = 20
 	}
-	if height < 6 {
-		height = 6
-	}
+	// hugs its content: a pane of ten rows is ten rows, not a screen
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(bgIron).
 		Padding(0, 1).
 		Width(width - 2).
-		Height(height - 2).
 		Render(body)
 }
 
 // like boxModal for rows of aligned columns: each row clips to the box
 // instead of wrapping, which would shear the columns
-func boxRows(body string, width, height int) string {
+func boxRows(body string, width int) string {
 	inner := max(width, 20) - 4 // border and padding
 	lines := strings.Split(body, "\n")
 	for i, ln := range lines {
 		lines[i] = clipLine(ln, inner)
 	}
-	return boxModal(strings.Join(lines, "\n"), width, height)
+	return boxModal(strings.Join(lines, "\n"), width)
 }

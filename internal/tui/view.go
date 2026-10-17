@@ -112,32 +112,38 @@ func (m Model) View() string {
 	}
 	// palette, atpicker, picker, history all render inline above the input in
 	// renderBottomBar — no extra overlay needed for any picker-style flow.
-	if m.tree != nil && m.tree.Open() {
-		return m.padFrameLR(overlayCenter(frame, m.tree.View(m.width, m.height), m.width))
+	// panes below replace the live region while open and hug their content.
+	if pane, ok := m.openPane(); ok {
+		return m.padFrameLR(pane)
 	}
-	if m.resume != nil && m.resume.Open() {
-		return m.padFrameLR(overlayCenter(frame, m.resume.View(m.width, m.height), m.width))
+	return m.padFrameLR(frame)
+}
+
+// the view of the first open full pane, if any. centered modal panes share
+// Open()+View(w,h); a nil *Pane stored in the interface stays safe, every
+// Open() is nil-receiver guarded. add a pane by appending it to the slice, not
+// a new branch.
+func (m Model) openPane() (string, bool) {
+	switch {
+	case m.tree != nil && m.tree.Open():
+		return m.tree.View(m.width, m.height), true
+	case m.resume != nil && m.resume.Open():
+		return m.resume.View(m.width, m.height), true
+	case m.rewind != nil && m.rewind.Open():
+		return m.rewind.View(m.width, m.height), true
 	}
-	if m.rewind != nil && m.rewind.Open() {
-		return m.padFrameLR(overlayCenter(frame, m.rewind.View(m.width, m.height), m.width))
-	}
-	// centered modal panes share Open()+View(w,h); render the first open one.
-	// a nil *Pane stored in the interface stays safe — every Open() is
-	// nil-receiver guarded. add a pane by appending it here, not a new branch.
 	for _, p := range []centerPane{m.costPane, m.usagePane, m.loginPane, m.rolePane, m.effortPane, m.settingsPane, m.toolsPane} {
 		if p.Open() {
-			return m.padFrameLR(overlayCenter(frame, p.View(m.width, m.height), m.width))
+			return p.View(m.width, m.height), true
 		}
 	}
-	if m.agentView != nil && m.agentView.IsOpen() {
-		return m.padFrameLR(overlayCenter(frame, m.agentView.Render(m.width, m.height), m.width))
+	switch {
+	case m.agentView != nil && m.agentView.IsOpen():
+		return m.agentView.Render(m.width, m.height), true
+	case m.hive != nil && m.hive.Expanded():
+		return m.hive.RenderFull(m.width, m.height), true
 	}
-	if m.hive != nil && m.hive.Expanded() {
-		return m.padFrameLR(overlayCenter(frame, m.hive.RenderFull(m.width, m.height), m.width))
-	}
-	// picker renders inline above the input bar (see renderBottomBar) — same
-	// flush-left dense layout as the slash palette.
-	return m.padFrameLR(frame)
+	return "", false
 }
 
 // renderQueuedMidCompact paints a plain-text submit that landed while

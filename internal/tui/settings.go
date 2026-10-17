@@ -472,7 +472,7 @@ func (p *SettingsPane) View(width, height int) string {
 
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("type filter · ↑/↓ pick · enter/tab toggle · esc close · saved to ~/.bee/config.toml"))
-	return boxRows(b.String(), width, height)
+	return boxRows(b.String(), width)
 }
 
 // highlightLabel renders label with matched runes accented, then pads the

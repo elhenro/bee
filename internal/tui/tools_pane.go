@@ -92,7 +92,7 @@ func (p *ToolsPane) View(width, height int) string {
 	if len(p.rows) == 0 {
 		b.WriteString(StyleLabel.Render("(no tools registered)"))
 		b.WriteString("\n")
-		return boxModal(b.String(), width, height)
+		return boxModal(b.String(), width)
 	}
 
 	nameWidth := 0
@@ -129,7 +129,7 @@ func (p *ToolsPane) View(width, height int) string {
 
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ pick · enter/space toggle · esc close · /tools add NAME CMD adds new"))
-	return boxRows(b.String(), width, height)
+	return boxRows(b.String(), width)
 }
 
 // truncateOneLine collapses to one line and hard-trims to max runes.

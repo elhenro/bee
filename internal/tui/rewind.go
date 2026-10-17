@@ -168,7 +168,7 @@ func (p *RewindPicker) viewList(width, height int) string {
 		Render("⬢ Rewind")
 	if len(p.entries) == 0 {
 		body := StyleLabel.Render("(no checkpoints yet)")
-		return boxModal(title+"\n\n"+body+"\n\n"+StyleLabel.Render("esc close"), width, height)
+		return boxModal(title+"\n\n"+body+"\n\n"+StyleLabel.Render("esc close"), width)
 	}
 	inner := width - 4
 	if inner < 30 {
@@ -183,7 +183,7 @@ func (p *RewindPicker) viewList(width, height int) string {
 	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ nav · enter pick · esc close"))
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }
 
 func (p *RewindPicker) viewMode(width, height int) string {
@@ -210,7 +210,7 @@ func (p *RewindPicker) viewMode(width, height int) string {
 	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ choose · enter restore · esc back"))
-	return boxModal(b.String(), width, height)
+	return boxModal(b.String(), width)
 }
 
 func renderRewindRow(e RewindEntry, selected bool, width int) string {
