@@ -269,6 +269,10 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		return nil
 	}
 
+	// provider builder: the hive puts workers and reviewers on their own
+	// [swarm] model tier through it.
+	eng.ProviderFor = buildProvider
+
 	// tools-for-cwd closure: queen mode calls this to root an isolated worker
 	// engine at its own git worktree so file tools target the worktree instead
 	// of the shared cwd. Same builder as Rebuild, just parameterized on path.

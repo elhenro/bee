@@ -104,6 +104,8 @@ type Queen struct {
 	// (goal, plan, sibling status). nil = Run allocates an in-memory one; set
 	// NewPheromone(path) to mirror it to disk as well.
 	Pheromone *Pheromone
+	// Throttle holds each worker's start while the machine is oversubscribed.
+	Throttle Throttle
 }
 
 // QueenResult is the aggregate of one Queen.Run.
@@ -245,6 +247,10 @@ func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) 
 				return
 			}
 			defer func() { <-sem }()
+			if err := q.Throttle.wait(ctx); err != nil {
+				results[idx] = Result{WorkerID: fmt.Sprintf("w%d", idx), Name: fmt.Sprintf("worker-%d", idx), Task: st.Task, Err: err}
+				return
+			}
 			locks[widx].Lock()
 			defer locks[widx].Unlock()
 
@@ -292,6 +298,11 @@ func (q *Queen) dispatchFactory(ctx context.Context, plan []SubTask) ([]Result, 
 				return
 			}
 			defer func() { <-sem }()
+			if err := q.Throttle.wait(ctx); err != nil {
+				base.Err = err
+				results[idx] = base
+				return
+			}
 
 			runner, done, err := q.WorkerFor(idx, st)
 			if err != nil {

@@ -20,6 +20,8 @@ type Pool struct {
 	// PheromonePath mirrors it to disk.
 	Goal      string
 	Pheromone *Pheromone
+	// Throttle holds each worker's start while the machine is oversubscribed.
+	Throttle Throttle
 
 	mu      sync.Mutex
 	Workers []*Worker
@@ -106,8 +108,9 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 			}
 			defer func() { <-sem }()
 
-			// recheck after acquire — cancellation may have raced.
-			if ctx.Err() != nil {
+			// recheck after acquire (cancellation may have raced), then let
+			// the load throttle hold the start.
+			if ctx.Err() != nil || p.Throttle.wait(ctx) != nil {
 				p.markCanceled(w)
 				results <- canceledResult(w, ctx.Err())
 				return

@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/hive"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
@@ -155,8 +156,9 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		// — planner, every worker, reviewers — renders live in scrollback
 		// instead of an opaque spinner. The curated phase cards (plan, per-worker
 		// summary, review) still land on top via emit.
-		spawn := func(label string) (*loop.Engine, *session.Rollout, error) {
-			eng, sess, err := hive.SpawnWorker(planner, label)
+		spawnTier := hiveSpawner(planner, notify)
+		spawn := func(label string, tier config.ModelTier) (*loop.Engine, *session.Rollout, error) {
+			eng, sess, err := spawnTier(label, tier)
 			if err == nil {
 				eng.Costs = planner.Costs
 				wireHivePumps(eng, live, stream, think, progress)
@@ -169,7 +171,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		// read/search tools, but an accidental edit/write/apply_patch call fails
 		// rather than mutating the tree during what should be observation only.
 		spawnObserver := func(label string) (*loop.Engine, *session.Rollout, error) {
-			eng, sess, err := spawn(label)
+			eng, sess, err := spawn(label, planner.Cfg.Swarm.Reviewer)
 			if err == nil && eng.Tools != nil {
 				eng.Tools = eng.Tools.Without("write", "edit", "apply_patch", "hashline_edit", "knowledge_write")
 			}
@@ -185,7 +187,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 
 		// planner clone carries the conversation so decompose + synthesize have
 		// context; workers stay focused on their single sub-task (no history).
-		plannerEng, plannerSess, err := spawn("planner")
+		plannerEng, plannerSess, err := spawn("planner", config.ModelTier{})
 		if err != nil {
 			return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: planner: %w", err)}
 		}
@@ -206,7 +208,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		// worker streams its activity live into scrollback via the shared live
 		// channel so the user sees what each one does, not just a spinner.
 		workerFor := func(idx int, st hive.SubTask) (hive.Runner, func(error), error) {
-			eng, sess, err := spawn(fmt.Sprintf("worker-%d", idx))
+			eng, sess, err := spawn(fmt.Sprintf("worker-%d", idx), planner.Cfg.Swarm.Worker)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -307,6 +309,10 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 			notify("hive: pheromone card at " + path)
 		}
 		q.MaxParallel = workerCount // cap concurrent workers; isolation keeps them safe
+		q.Throttle = hiveThrottle(planner.Cfg, notify)
+		if n := tierNotice(planner.Cfg); n != "" {
+			notify(n)
+		}
 		// sub-task count drives the worker N/M readout: set from the plan in
 		// OnPlan so the denominator is the real sub-task count, not the parallel
 		// cap — else a 5-task plan with a cap of 3 prints "worker 5/3".

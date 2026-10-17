@@ -108,6 +108,11 @@ type Engine struct {
 	// tree). Set by the TUI/CLI where the registry builder lives.
 	ToolsForCwd func(cwd string) (*tools.Registry, error)
 
+	// ProviderFor, when non-nil, builds a provider for another provider/model
+	// pair. The hive uses it to put workers and reviewers on their own model
+	// tier. nil = every spawned engine shares Provider.
+	ProviderFor func(cfg config.Config) (llm.Provider, error)
+
 	// PromptTail, when non-nil, is called at the top of every iteration and its
 	// text is appended to the volatile system-prompt tail, after the prompt-cache
 	// breakpoint. Shared state that changes between turns rides here: the hive

@@ -88,6 +88,7 @@ func runFan(args []string) {
 	}
 
 	pool := hivepkg.NewPool(*maxConc)
+	pool.Throttle = cliThrottle("fan", cfg)
 	// pheromone card: the shared task heads it, one row per target, mirrored
 	// so a second terminal can watch a wide fan-out.
 	pool.Goal = *task
@@ -251,6 +252,18 @@ func expandGlobs(patterns []string) ([]string, error) {
 // bee gets isolated state — that's the whole point of fan-out. Memory is
 // intentionally skipped here to keep the fan-out cheap; revisit if users
 // want shared learning across workers.
+// cliThrottle holds hive worker starts on an oversubscribed machine and says
+// so on stderr.
+func cliThrottle(cmd string, cfg config.Config) hivepkg.Throttle {
+	ratio := cfg.Swarm.MaxLoadRatio
+	return hivepkg.Throttle{
+		MaxLoadRatio: ratio,
+		OnHold: func(l float64) {
+			fmt.Fprintf(os.Stderr, "%s: load %.1f/core over %.1f, holding a worker\n", cmd, l, ratio)
+		},
+	}
+}
+
 func newWorkerEngine(prov llm.Provider, reg *tools.Registry, cfg config.Config, cwd string) (*loop.Engine, *session.Rollout, error) {
 	sessID := uuid.NewString()
 	roll, err := session.Open(sessID)

@@ -102,10 +102,19 @@ func runSwarm(args []string) {
 		return
 	}
 
-	// workers: same provider, possibly smaller model
-	workerCfg := cfg
+	// workers: --worker-model on the same provider wins, else the [swarm]
+	// worker tier, else the planner's model.
+	workerCfg, workerProv := cfg, prov
 	if *workerModel != "" {
 		workerCfg.DefaultModel = *workerModel
+	} else if tier := cfg.Swarm.Worker; !tier.IsZero() {
+		tcfg := tier.Apply(cfg)
+		if tp, terr := buildProvider(tcfg); terr == nil {
+			workerCfg, workerProv = tcfg, tp
+			fmt.Fprintf(os.Stderr, "swarm: workers on %s\n", hivepkg.TierLabel(cfg, tier))
+		} else {
+			fmt.Fprintf(os.Stderr, "swarm: worker tier %s unavailable (%v), using %s\n", hivepkg.TierLabel(cfg, tier), terr, cfg.DefaultModel)
+		}
 	}
 	workers := make([]hivepkg.Runner, 0, *nWorkers)
 	closers := make([]io.Closer, 0, *nWorkers)
@@ -140,7 +149,7 @@ func runSwarm(args []string) {
 			}
 			workerReg = reg
 		}
-		eng, sess, err := newEngine(prov, workerReg, skillReg, workerCfg, workerCwd, io.Discard, fmt.Sprintf("worker-%d", i))
+		eng, sess, err := newEngine(workerProv, workerReg, skillReg, workerCfg, workerCwd, io.Discard, fmt.Sprintf("worker-%d", i))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "bee swarm: worker %d session: %v\n", i, err)
 			os.Exit(1)
@@ -150,6 +159,7 @@ func runSwarm(args []string) {
 	}
 
 	q := hivepkg.NewQueen(planner, workers)
+	q.Throttle = cliThrottle("swarm", cfg)
 	// pheromone card: every worker carries the goal, plan and sibling status
 	// in its prompt; the mirror file lets a second terminal watch the hive.
 	if path, perr := hivepkg.PheromonePath(plannerSess.ID()); perr == nil {
