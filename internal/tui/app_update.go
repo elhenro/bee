@@ -198,6 +198,12 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// a word that lands in one read ("up", "enter", "tab") spells a key's
+		// name, so bindings would fire on it. feed it a rune at a time, as if
+		// keyed in. bracketed pastes stay whole
+		if len(msg.Runes) > 1 && msg.Type == tea.KeyRunes && !msg.Paste && !msg.Alt {
+			return m.typeRunes(msg.Runes)
+		}
 		nm, cmd := m.handleKey(msg)
 		// palette filter mirrors the main input. Close palette if the user
 		// backspaced past the leading "/".
