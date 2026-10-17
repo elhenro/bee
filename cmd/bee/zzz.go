@@ -128,6 +128,7 @@ func runZzz(args []string) {
 		NotesTailIters:      *notesTail,
 		VerifyTimeout:       cfg.Swarm.VerifyTimeout(),
 		MaxHops:             cfg.Swarm.Hops(),
+		SandboxScope:        cfg.Sandbox.Scope,
 	}
 	if !*noGate {
 		zCfg.Verify = zzzGate(cfg)

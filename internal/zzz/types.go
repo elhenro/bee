@@ -39,6 +39,9 @@ type Config struct {
 	Verify        []string
 	VerifyTimeout time.Duration // per command; 0 → 10m
 	MaxHops       int
+	// SandboxScope confines the gate like the engine's own shell: verify runs
+	// code the model wrote.
+	SandboxScope string
 }
 
 // Run is the persisted metadata for one overnight session.

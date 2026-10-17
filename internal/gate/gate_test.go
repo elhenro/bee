@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/elhenro/bee/internal/sandbox"
 )
 
 // unixOnly skips tests that need sh and flock.
@@ -40,7 +42,7 @@ func TestCommandsRepoFileWinsOverFallback(t *testing.T) {
 func TestRunStopsAtFirstFailure(t *testing.T) {
 	unixOnly(t)
 	dir := t.TempDir()
-	res, err := Run(context.Background(), dir, []string{"true", "echo boom; exit 3", "touch ran"}, time.Minute)
+	res, err := Run(context.Background(), dir, []string{"true", "echo boom; exit 3", "touch ran"}, Opts{Timeout: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,10 +59,10 @@ func TestRunStopsAtFirstFailure(t *testing.T) {
 
 func TestRunGreenAndEmpty(t *testing.T) {
 	unixOnly(t)
-	if res, _ := Run(context.Background(), t.TempDir(), nil, time.Minute); !res.OK {
+	if res, _ := Run(context.Background(), t.TempDir(), nil, Opts{Timeout: time.Minute}); !res.OK {
 		t.Fatal("no commands is a green gate")
 	}
-	res, err := Run(context.Background(), t.TempDir(), []string{"true", "true"}, time.Minute)
+	res, err := Run(context.Background(), t.TempDir(), []string{"true", "true"}, Opts{Timeout: time.Minute})
 	if err != nil || !res.OK || res.Ran != 2 {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
@@ -70,7 +72,7 @@ func TestRunTimeoutKillsGroup(t *testing.T) {
 	unixOnly(t)
 	start := time.Now()
 	// the child sleep must die with the shell or Wait blocks on the pipe
-	res, err := Run(context.Background(), t.TempDir(), []string{"sleep 30 & sleep 30"}, 200*time.Millisecond)
+	res, err := Run(context.Background(), t.TempDir(), []string{"sleep 30 & sleep 30"}, Opts{Timeout: 200 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,5 +112,34 @@ func TestHeavyLockSerializes(t *testing.T) {
 	wg.Wait()
 	if maxInside != 1 {
 		t.Fatalf("heavy lock let %d holders in at once", maxInside)
+	}
+}
+
+func TestCommandsEmptyFileFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dir, ".bee"), 0o755)
+	if err := os.WriteFile(filepath.Join(dir, File), []byte("# all gone\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Commands(dir, []string{"go test ./..."}); len(got) != 1 {
+		t.Fatalf("an emptied gate file must not disable the gate, got %v", got)
+	}
+}
+
+// verify runs author code, so it must stay inside the author's sandbox.
+func TestRunConfinedScopeBlocksOutsideWrites(t *testing.T) {
+	unixOnly(t)
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec probe; linux needs bwrap")
+	}
+	outside := filepath.Join(os.Getenv("HOME"), ".bee-gate-escape-probe")
+	_ = os.Remove(outside)
+	t.Cleanup(func() { _ = os.Remove(outside) })
+	res, err := Run(context.Background(), t.TempDir(), []string{"touch " + outside}, Opts{Timeout: time.Minute, Scope: sandbox.WorkspaceWrite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, serr := os.Stat(outside); serr == nil || res.OK {
+		t.Fatalf("confined gate wrote outside the workspace (res=%+v)", res)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/elhenro/bee/internal/gate"
+	"github.com/elhenro/bee/internal/sandbox"
 )
 
 const (
@@ -36,7 +37,10 @@ func gateTree(ctx context.Context, cfg Config, run *Run, r *IterationResult, ui 
 		return true
 	}
 	ui.SetPhase("verify")
-	res, err := gate.Run(ctx, run.RepoRoot, cfg.Verify, cfgVerifyTimeout(cfg))
+	res, err := gate.Run(ctx, run.RepoRoot, cfg.Verify, gate.Opts{
+		Timeout: cfgVerifyTimeout(cfg),
+		Scope:   sandbox.Scope(cfg.SandboxScope),
+	})
 	if err != nil {
 		r.Status = IterFailed
 		r.Err = fmt.Errorf("verify: %w", err)

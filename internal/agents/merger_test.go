@@ -234,3 +234,30 @@ func TestMergeableRequiresDone(t *testing.T) {
 		t.Fatal("done agent must be mergeable")
 	}
 }
+
+func TestUntrackedFilesBounceWithoutHop(t *testing.T) {
+	f := newFixture(t)
+	if err := os.WriteFile(filepath.Join(f.wt, "makes_tests_pass.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := TryMerge(context.Background(), f.repo, f.status(t), config.SwarmConfig{Verify: []string{"true"}})
+	s := f.status(t)
+	if res.OK || s.Hops != 0 || len(f.starts) != 1 || !strings.Contains(f.starts[0], "untracked") {
+		t.Fatalf("ok=%v hops=%d starts=%v", res.OK, s.Hops, f.starts)
+	}
+}
+
+func TestBranchEditingGateBlocks(t *testing.T) {
+	f := newFixture(t)
+	_ = os.MkdirAll(filepath.Join(f.wt, ".bee"), 0o755)
+	commit(t, f.wt, ".bee/verify", "true\n")
+	mainBefore := git(t, f.repo, "rev-parse", "main")
+	res := TryMerge(context.Background(), f.repo, f.status(t), config.SwarmConfig{Verify: []string{"true"}})
+	s := f.status(t)
+	if res.OK || s.MergeState != bgreg.MergeStateBlocked || len(f.starts) != 0 {
+		t.Fatalf("ok=%v merge=%s starts=%d", res.OK, s.MergeState, len(f.starts))
+	}
+	if git(t, f.repo, "rev-parse", "main") != mainBefore {
+		t.Fatal("a gate edit must not reach main without a human")
+	}
+}

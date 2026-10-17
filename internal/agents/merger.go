@@ -77,7 +77,17 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 		return res
 	}
 
-	pinned, err := zzz.HeadSHA(st.WorktreePath)
+	// untracked files would sit in the tree verify sees but never merge
+	if clean, cerr := zzz.IsClean(st.WorktreePath); cerr != nil || !clean {
+		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "worktree not clean")
+		_, res.Err = Resume(repoRoot, st, dirtyFeedback(st), sw.Resumes())
+		return res
+	}
+	if touchesGate(st.WorktreePath) {
+		Block(st.SessionID, "branch edits "+gate.File+", a human must review the gate change")
+		return res
+	}
+	pinned, err := gitOut(st.WorktreePath, "rev-parse", "HEAD")
 	if err != nil {
 		setMerge(st.SessionID, bgreg.MergeStateUnmerged, err.Error())
 		res.Err = err
@@ -85,7 +95,7 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 	}
 	// read the gate from the main checkout: the agent's branch must not be
 	// able to weaken its own gate.
-	v, err := gate.Run(ctx, st.WorktreePath, gate.Commands(repoRoot, sw.Verify), sw.VerifyTimeout())
+	v, err := gate.Run(ctx, st.WorktreePath, gate.Commands(repoRoot, sw.Verify), gate.Opts{Timeout: sw.VerifyTimeout(), Scope: agentScope})
 	if err != nil {
 		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "verify: "+err.Error())
 		res.Err = err
@@ -97,13 +107,13 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 		res.Err = bounceRed(repoRoot, st, v.Summary(), sw)
 		return res
 	}
-	if head, _ := zzz.HeadSHA(st.WorktreePath); head != pinned {
+	if head, _ := gitOut(st.WorktreePath, "rev-parse", "HEAD"); head != pinned || !branchAt(repoRoot, st.Branch, pinned) {
 		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "commits landed while verify ran, verifying again")
 		return res
 	}
 
-	// FF-merge agent branch back into main from the main repo dir.
-	if err := zzz.MergeFF(repoRoot, MergeBase, st.Branch); err != nil {
+	// FF-merge the verified commit itself, not whatever the branch names now.
+	if err := zzz.MergeFF(repoRoot, MergeBase, pinned); err != nil {
 		// rare: usually means base advanced between rebase and merge; flip
 		// back to unmerged and let the next tick retry.
 		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "ff-merge failed: "+err.Error())
@@ -139,6 +149,10 @@ func bounceRed(repoRoot string, st bgreg.Status, summary string, sw config.Swarm
 		st.Branch, MergeBase, hops, sw.Hops(), summary, st.WorktreePath)
 	_, err := Resume(repoRoot, st, msg, sw.Resumes())
 	return err
+}
+
+func dirtyFeedback(st bgreg.Status) string {
+	return fmt.Sprintf("Your worktree (%s) has uncommitted or untracked files, so it cannot be verified and merged. Commit what belongs to the task, delete the rest, and end your reply with DONE: <summary>.", st.WorktreePath)
 }
 
 func conflictFeedback(st bgreg.Status, files []string) string {
