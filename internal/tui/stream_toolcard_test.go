@@ -277,3 +277,20 @@ func TestRenderMessage_UIEchoIsAQuietNotice(t *testing.T) {
 		t.Fatalf("command output lost its marker: %q", out)
 	}
 }
+
+// the args budget floors at a few words, which overshoots a narrow terminal;
+// the head row still has to fit or it wraps and tears the left edge
+func TestCallRow_NeverWrapsOnANarrowTerminal(t *testing.T) {
+	for _, w := range []int{30, 44, 60} {
+		r := NewStreamRenderer(DefaultStyles(), w)
+		use := types.ToolUse{ID: "b", Name: "bash", Input: map[string]any{
+			"command": "gofmt -l . && go vet ./... && go build ./... && go test ./...",
+		}}
+		out := r.frame(strings.TrimRight(r.renderToolUse(use), "\n"), false, true)
+		for _, ln := range strings.Split(out, "\n") {
+			if got := lipgloss.Width(ln); got > w {
+				t.Fatalf("width %d: call row is %d cells: %q", w, got, stripANSI(ln))
+			}
+		}
+	}
+}

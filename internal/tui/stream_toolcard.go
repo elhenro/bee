@@ -54,6 +54,9 @@ func (r *StreamRenderer) connector() string {
 // the diff, the error is the story, not the change that didn't land. anchor
 // numbers an edit's rows (0 = unknown)
 func (r *StreamRenderer) callParts(u types.ToolUse, o toolOutcome, anchor int) (head, body string) {
+	// the args budget has a floor so a narrow terminal still shows a few
+	// words, which can overshoot the row: clip, a wrapped head tears the left edge
+	defer func() { head = clipLine(head, r.textWidth(0)) }()
 	prefix := r.bullet(o) + " " + r.styles.ToolName.Render(toolTitle(u.Name))
 	if h, b, ok := r.renderEditPreview(u, anchor); ok {
 		if h != "" {
