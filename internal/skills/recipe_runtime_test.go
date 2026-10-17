@@ -58,6 +58,8 @@ func TestParse_RuntimeRecipeErrors(t *testing.T) {
 		"unknown kind":  head + "  - id: a\n    kind: magic\n    description: a\n---\n",
 		"bad next":      head + "  - id: a\n    kind: shell\n    description: a\n    run: ls\n    next: zz\n---\n",
 		"bad fail_if":   head + "  - id: a\n    kind: shell\n    description: a\n    run: ls\n    fail_if: '('\n---\n",
+		"single-quoted": head + "  - id: a\n    kind: shell\n    description: a\n    run: echo '{{args}}'\n---\n",
+		"double-quoted": head + "  - id: a\n    kind: shell\n    description: a\n    run: echo \"x {{args}}\"\n---\n",
 	}
 	for name, src := range cases {
 		if _, err := Parse("r.md", []byte(src)); err == nil {
@@ -74,5 +76,23 @@ func TestParse_LegacyRecipeStaysPromptWalked(t *testing.T) {
 	}
 	if s.Runtime || !strings.Contains(s.Body, "Follow these steps in order") {
 		t.Fatalf("legacy recipe changed: runtime=%v body=%q", s.Runtime, s.Body)
+	}
+}
+
+func TestPlaceholderInQuotes(t *testing.T) {
+	cases := map[string]bool{
+		"echo {{args}}":               false,
+		"echo 'lit' {{args}}":         false,
+		"echo \"it's\" {{args}}":      false,
+		"echo \\\"{{args}}":           false,
+		"echo '{{args}}'":             true,
+		"echo \"{{args}}\"":           true,
+		"echo 'a' 'b {{x}}'":          true,
+		"grep -rn {{argv.0}} '{{s}}'": true,
+	}
+	for run, want := range cases {
+		if got := placeholderInQuotes(run); got != want {
+			t.Errorf("%q: got %v want %v", run, got, want)
+		}
 	}
 }
