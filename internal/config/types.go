@@ -54,6 +54,7 @@ type Config struct {
 	Waggle     WaggleConfig              `toml:"waggle"`
 	TUI        TUIConfig                 `toml:"tui"`
 	Cron       CronConfig                `toml:"cron"`
+	Swarm      SwarmConfig               `toml:"swarm"`
 	Providers  map[string]ProviderConfig `toml:"providers"`
 	Profiles   map[string]Profile        `toml:"profiles"`
 

@@ -53,7 +53,9 @@ func Defaults() Config {
 			MaxResumes:   3,
 		},
 		// procedure memory on by default; disable with [waggle] enabled = false.
-		Waggle:        WaggleConfig{Enabled: true},
+		Waggle: WaggleConfig{Enabled: true},
+		// hold new workers while the box is oversubscribed (load per core > 2).
+		Swarm:         SwarmConfig{MaxLoadRatio: 2.0},
 		ShowBanner:    true,
 		ShowLoader:    true,
 		TutorialDone:  false,
