@@ -1,6 +1,11 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+)
 
 // TestRainbowColorForFrame_Cycles verifies the glow helper sweeps the hue wheel
 // and wraps: distinct colors across a cycle, and frame N == frame N+period.
@@ -29,5 +34,37 @@ func TestRainbowColorForFrame_Cycles(t *testing.T) {
 		if len(s) != 7 || s[0] != '#' {
 			t.Errorf("frame %d color = %q, want #RRGGBB", f, s)
 		}
+	}
+}
+
+// the 256 color cube has no quiet dark green or red, so without truecolor a
+// diff wash would be a saturated slab: the wash is dropped, not quantized
+func TestWash_TruecolorOnly(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	if got := wash(bgDiffAddHl).Render("x"); got == "x" {
+		t.Fatalf("truecolor wash rendered no background: %q", got)
+	}
+	for _, p := range []termenv.Profile{termenv.ANSI256, termenv.ANSI} {
+		lipgloss.SetColorProfile(p)
+		if got := wash(bgDiffAddHl).Render("x"); got != "x" {
+			t.Fatalf("profile %v kept a wash: %q", p, got)
+		}
+	}
+}
+
+func TestUserPanel_NeutralLiftWithoutTruecolor(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	if got := userPanel(); got != bgUserHl {
+		t.Fatalf("truecolor panel = %+v, want the warm tint", got)
+	}
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	if got := userPanel(); got == bgUserHl {
+		t.Fatal("256 color panel kept the truecolor tint, which quantizes below the terminal background")
 	}
 }

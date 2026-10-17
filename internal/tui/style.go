@@ -13,6 +13,7 @@ import (
 	"math"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // Layered neutrals, mirrored for light mode so the same role (faint /
@@ -61,6 +62,27 @@ var (
 	semWarning  = lipgloss.AdaptiveColor{Light: "#8A6A00", Dark: "#E6C35C"}
 	semError    = lipgloss.AdaptiveColor{Light: "#C0203F", Dark: "#EE6A82"}
 )
+
+// a quiet background tint, truecolor only. the 256 color cube has no dark
+// subtle green or red, so those terminals get the nearest slab (a saturated
+// block behind every changed row): better to drop the wash and let the sign
+// and number carry the change
+func wash(c lipgloss.AdaptiveColor) lipgloss.Style {
+	if lipgloss.ColorProfile() != termenv.TrueColor {
+		return lipgloss.NewStyle()
+	}
+	return lipgloss.NewStyle().Background(c)
+}
+
+// the warm panel behind your turns. 256 color terminals get a neutral lift
+// instead: the cube's nearest match to the truecolor tint sinks below the
+// terminal background and reads as a black bar
+func userPanel() lipgloss.AdaptiveColor {
+	if lipgloss.ColorProfile() == termenv.TrueColor {
+		return bgUserHl
+	}
+	return lipgloss.AdaptiveColor{Light: "230", Dark: "236"}
+}
 
 // Aliases kept so existing callers (caveman cycle, etc.) compile without churn.
 var (
@@ -141,8 +163,8 @@ func DefaultStyles() Styles {
 
 		DiffAdd:   lipgloss.NewStyle().Foreground(semSuccess),
 		DiffDel:   lipgloss.NewStyle().Foreground(semError),
-		DiffAddBg: lipgloss.NewStyle().Background(bgDiffAddHl),
-		DiffDelBg: lipgloss.NewStyle().Background(bgDiffDelHl),
+		DiffAddBg: wash(bgDiffAddHl),
+		DiffDelBg: wash(bgDiffDelHl),
 		DiffPath:  lipgloss.NewStyle().Foreground(fgSmoke),
 		DiffMeta:  lipgloss.NewStyle().Foreground(fgOyster),
 
@@ -164,9 +186,9 @@ func DefaultStyles() Styles {
 		Body:      lipgloss.NewStyle().Foreground(fgAsh),
 
 		// your turns: honey bar on a warm panel, body-colored text.
-		UserBubble: lipgloss.NewStyle().Background(bgUserHl),
-		UserRail:   lipgloss.NewStyle().Foreground(accentHoney).Background(bgUserHl),
-		UserBody:   lipgloss.NewStyle().Foreground(fgButter).Background(bgUserHl),
+		UserBubble: lipgloss.NewStyle().Background(userPanel()),
+		UserRail:   lipgloss.NewStyle().Foreground(accentHoney).Background(userPanel()),
+		UserBody:   lipgloss.NewStyle().Foreground(fgButter).Background(userPanel()),
 
 		Rule:     lipgloss.NewStyle().Foreground(bgCharcoal),
 		Key:      lipgloss.NewStyle().Foreground(fgSmoke),
