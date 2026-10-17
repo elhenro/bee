@@ -55,6 +55,7 @@ var reservedSubcommands = map[string]bool{
 	"agents":         true,
 	"remote-control": true,
 	"zzz":            true,
+	"cron":           true,
 	"doctor":         true,
 	"browse":         true,
 	"version":        true,
@@ -102,6 +103,8 @@ func main() {
 		runRemoteControl(os.Args[2:])
 	case "zzz":
 		runZzz(os.Args[2:])
+	case "cron":
+		runCron(os.Args[2:])
 	case "doctor":
 		runDoctor(os.Args[2:])
 	case "bench":
@@ -152,6 +155,7 @@ usage:
   bee zzz --list                     list overnight runs
   bee zzz --resume <id>              resume an aborted run
   bee zzz --gc [--gc-max-age <d>] [--gc-keep <n>]  prune terminal runs + bg sessions
+  bee cron ls|run <name>|daemon      scheduled jobs from [[cron.jobs]] in config
   bee doctor [--json]       preflight: dirs, sandbox, provider creds
   bee explore <target>      trace a file/symbol/concept and print a markdown map
   bee research <topic>      deep multi-source web research, structured report

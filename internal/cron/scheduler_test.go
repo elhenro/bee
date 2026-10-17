@@ -212,3 +212,22 @@ func settleGoroutines(want int) int {
 	}
 	return runtime.NumGoroutine()
 }
+
+// first run follows the schedule: a job whose expression does not match the
+// current minute must not fire on the first tick after start.
+func TestSchedulerFirstRunHonorsSchedule(t *testing.T) {
+	reg := NewRegistry()
+	if _, err := reg.Add(JobSpec{Name: "yearly", Schedule: "0 0 1 1 *"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	clk := &fakeClock{now: time.Date(2026, 3, 1, 12, 30, 0, 0, time.UTC)}
+	sc := New(clk, nil, reg.Jobs())
+	defer sc.Shutdown()
+	if n := sc.Tick(clk.Now()); n != 0 {
+		t.Fatalf("yearly job fired %d runs on first tick, want 0", n)
+	}
+	clk.Set(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
+	if n := sc.Tick(clk.Now()); n != 1 {
+		t.Fatalf("yearly job launched %d runs at its minute, want 1", n)
+	}
+}

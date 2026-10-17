@@ -53,6 +53,7 @@ type Config struct {
 	Watchdog   WatchdogConfig            `toml:"watchdog"`
 	Waggle     WaggleConfig              `toml:"waggle"`
 	TUI        TUIConfig                 `toml:"tui"`
+	Cron       CronConfig                `toml:"cron"`
 	Providers  map[string]ProviderConfig `toml:"providers"`
 	Profiles   map[string]Profile        `toml:"profiles"`
 

@@ -49,10 +49,20 @@ func New(clock Clock, runner Runner, jobs []*Job) *Scheduler {
 	now := clock.Now()
 	for _, j := range s.jobs {
 		if j.nextDue.IsZero() {
-			j.nextDue = now
+			j.nextDue = firstDue(j.Schedule, now)
 		}
 	}
 	return s
+}
+
+// firstDue seeds a job's first run from its schedule, not from process
+// start: a job fires immediately only when the current minute matches, so a
+// yearly job is not run on every restart.
+func firstDue(sched *Schedule, now time.Time) time.Time {
+	if next := sched.Next(now.Add(-time.Minute)); !next.IsZero() {
+		return next
+	}
+	return now.AddDate(100, 0, 0)
 }
 
 // SetInterval overrides the Start poll interval. Values <= 0 are ignored.
