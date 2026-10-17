@@ -13,6 +13,14 @@ import (
 type Pool struct {
 	MaxConcurrency int
 
+	// Goal and Pheromone shape the card every worker carries (pheromone.go).
+	// Goal heads the card; under one, rows show each worker's Name, since the
+	// task is then the goal applied per target and only the name tells rows
+	// apart. A nil Pheromone keeps the card in memory; one built with a
+	// PheromonePath mirrors it to disk.
+	Goal      string
+	Pheromone *Pheromone
+
 	mu      sync.Mutex
 	Workers []*Worker
 }
@@ -66,14 +74,17 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 	results := make(chan Result, len(p.Workers))
 	workers := p.snapshotWorkers()
 
-	// one card for the fan-out: no queen plan, so each worker's task is a row
-	// and siblings see each other's reports as they land.
-	ph := NewPheromone("")
+	// one card for the fan-out: no queen plan, so each worker is a row and
+	// siblings see each other's reports as they land.
+	ph := p.Pheromone
+	if ph == nil {
+		ph = NewPheromone("")
+	}
 	plan := make([]SubTask, len(workers))
 	for i, w := range workers {
-		plan[i] = SubTask{Task: w.Task}
+		plan[i] = SubTask{Task: p.rowLabel(w)}
 	}
-	ph.Reset("", plan)
+	ph.Reset(p.Goal, plan)
 
 	sem := make(chan struct{}, p.MaxConcurrency)
 	var wg sync.WaitGroup
@@ -114,6 +125,15 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 		close(results)
 	}()
 	return results
+}
+
+// rowLabel is a worker's row on the card: its Name under a shared Goal, else
+// its full Task.
+func (p *Pool) rowLabel(w *Worker) string {
+	if p.Goal != "" && w.Name != "" {
+		return w.Name
+	}
+	return w.Task
 }
 
 // runOne executes a single worker's Engine.Run, capturing timing, the final

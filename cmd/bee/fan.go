@@ -88,6 +88,13 @@ func runFan(args []string) {
 	}
 
 	pool := hivepkg.NewPool(*maxConc)
+	// pheromone card: the shared task heads it, one row per target, mirrored
+	// so a second terminal can watch a wide fan-out.
+	pool.Goal = *task
+	if path, perr := hivepkg.PheromonePath(uuid.NewString()); perr == nil {
+		pool.Pheromone = hivepkg.NewPheromone(path)
+		fmt.Fprintf(os.Stderr, "fan: pheromone card at %s\n", path)
+	}
 	rolls := make([]*session.Rollout, 0, len(workers))
 	worktrees := make([]*worktree.Worktree, 0, len(workers))
 	defer func() {

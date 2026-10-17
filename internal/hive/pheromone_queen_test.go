@@ -3,6 +3,8 @@ package hive
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -161,5 +163,36 @@ func TestPool_ReportAndCard(t *testing.T) {
 	}
 	if s := Summary(results); !strings.Contains(s, "blocked: needs creds") {
 		t.Errorf("Summary lacks the report line:\n%s", s)
+	}
+}
+
+// TestPool_GoalHeadsCardAndMirrors checks a fan-out with a shared goal shows
+// the goal once and labels rows by worker name, and that a card with a path
+// is mirrored to disk with every finished report.
+func TestPool_GoalHeadsCardAndMirrors(t *testing.T) {
+	w := &tailedRunner{out: "## report\nstatus: done\ndid: linted"}
+	runnerHook = func(*Worker) Runner { return w }
+	defer func() { runnerHook = nil }()
+
+	path := filepath.Join(t.TempDir(), "run.pheromone.md")
+	p := NewPool(1)
+	p.Goal = "lint every file"
+	p.Pheromone = NewPheromone(path)
+	p.Submit(&Worker{ID: "1", Name: "a.go", Task: "lint every file on file a.go"})
+	p.Submit(&Worker{ID: "2", Name: "b.go", Task: "lint every file on file b.go"})
+	if n := len(Collect(p.Run(context.Background()))); n != 2 {
+		t.Fatalf("results = %d", n)
+	}
+	if !strings.Contains(w.seen, "goal: lint every file") || !strings.Contains(w.seen, "2. b.go [") || strings.Contains(w.seen, "on file") {
+		t.Errorf("pool tail under a goal:\n%s", w.seen)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"goal: lint every file", "1. a.go [done: linted]", "### bee 1", "### bee 2"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("mirror lacks %q:\n%s", want, data)
+		}
 	}
 }
