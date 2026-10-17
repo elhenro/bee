@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/elhenro/bee/internal/types"
@@ -41,5 +42,24 @@ func TestNonEphemeral_DropsUIOnlyEchoes(t *testing.T) {
 func TestNonEphemeral_Empty(t *testing.T) {
 	if got := nonEphemeral(nil); len(got) != 0 {
 		t.Fatalf("expected empty, got %+v", got)
+	}
+}
+
+// text typed mid-turn echoes as your own turn with a tag for what happens to
+// it, and stays out of the history the model sees
+func TestUserEcho_RendersAsYourTurnAndStaysOutOfHistory(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 80)
+	echo := userEcho("also add a test", "steering")
+	out := stripANSI(r.RenderMessage(echo))
+	for _, want := range []string{glyphUser, "also add a test", "steering"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, glyphBee) {
+		t.Fatalf("a typed echo must not wear the assistant marker: %q", out)
+	}
+	if got := nonEphemeral([]types.Message{echo}); len(got) != 0 {
+		t.Fatalf("echo leaked into model history: %+v", got)
 	}
 }

@@ -70,12 +70,19 @@ func (m Model) handleFollowUp() (tea.Model, tea.Cmd) {
 	}
 	m.input.Reset()
 	m.queue = append(m.queue, text)
-	m.messages = append(m.messages, types.Message{
-		Role:      types.RoleAssistant,
-		Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(queued: " + text + ")"}},
-		Ephemeral: true,
-	})
+	m.messages = append(m.messages, userEcho(text, "queued"))
 	return m, m.flush()
+}
+
+// scrollback echo of text you typed mid-turn: your turn's bar and panel, a
+// quiet tag saying what happens to it. never sent to the model as typed
+func userEcho(text, tag string) types.Message {
+	return types.Message{
+		Role:      types.RoleUser,
+		Content:   []types.ContentBlock{{Type: types.BlockText, Text: text}},
+		Display:   text + "  " + glyphSep + " " + tag,
+		Ephemeral: true,
+	}
 }
 
 // handleSteer pushes the current input into the engine's SteerCh so the
@@ -97,11 +104,7 @@ func (m Model) handleSteer() (tea.Model, tea.Cmd) {
 	}
 	select {
 	case m.eng.SteerCh <- text:
-		m.messages = append(m.messages, types.Message{
-			Role:      types.RoleAssistant,
-			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(steering: " + text + ")"}},
-			Ephemeral: true,
-		})
+		m.messages = append(m.messages, userEcho(text, "steering"))
 	default:
 		m.messages = append(m.messages, types.Message{
 			Role:      types.RoleAssistant,
