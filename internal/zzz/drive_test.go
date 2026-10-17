@@ -187,8 +187,9 @@ func TestDrive_NoopDoesNotCountAsFail(t *testing.T) {
 	if len(run.Commits) != 1 {
 		t.Errorf("want 1 commit, got %d", len(run.Commits))
 	}
-	// noop and committed iterations both keep their forage span.
-	if want := []bool{true, true, true}; !equalBools(runner.marks, want) {
+	// noops keep their forage span; an ungated commit leaves its span
+	// unverified, so no mutating route is learned from untested work.
+	if want := []bool{true, true}; !equalBools(runner.marks, want) {
 		t.Errorf("outcome marks: got %v want %v", runner.marks, want)
 	}
 }

@@ -32,6 +32,13 @@ type Config struct {
 	// NotesTailIters caps how many prior iteration sections are echoed into
 	// the next prompt. 0 → default (5). Negative → unlimited (legacy).
 	NotesTailIters int
+
+	// Verify is the gate every change must pass before it is committed. Empty
+	// commits unverified (legacy). A red gate keeps the change for the next
+	// iteration to fix, up to MaxHops (0 → 3) times, then drops it.
+	Verify        []string
+	VerifyTimeout time.Duration // per command; 0 → 10m
+	MaxHops       int
 }
 
 // Run is the persisted metadata for one overnight session.
@@ -54,6 +61,8 @@ type Run struct {
 	PushedCommits   []string  `json:"pushed_commits,omitempty"`
 	PushFailedIters []int     `json:"push_failed_iters,omitempty"`
 	StopCause       string    `json:"stop_cause,omitempty"`
+	// Hops counts red verifies on the change currently waiting uncommitted.
+	Hops int `json:"hops,omitempty"`
 }
 
 // TokenStat is the running tally across all iterations.
@@ -66,9 +75,10 @@ type TokenStat struct {
 // IterationResult summarises one pass through the loop.
 type IterationResult struct {
 	Iter      int
-	Status    string // "committed" | "reset" | "failed" | "noop"
+	Status    string // "committed" | "reset" | "failed" | "noop" | "repair"
 	Subject   string
 	CommitSHA string
+	Verified  bool // committed through a green verify gate
 	Tokens    TokenStat
 	DiffStat  string
 	Err       error
@@ -96,6 +106,9 @@ const (
 	IterReset     = "reset"
 	IterFailed    = "failed"
 	IterNoop      = "noop"
+	// IterRepair: verify went red, the change stays uncommitted for the next
+	// iteration to fix.
+	IterRepair = "repair"
 
 	ModeBranch   = "branch"
 	ModeCurrent  = "current"

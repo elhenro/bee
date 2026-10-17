@@ -203,6 +203,10 @@ func (m *Model) touchPhase(p string) {
 	switch p {
 	case "noop":
 		last.status = "noop"
+	case "verify-red":
+		last.status = "repair"
+	case "verify-dropped":
+		last.status = "reset"
 	case "agent-blocked", "hard-error", "commit-fail":
 		last.status = "failed"
 	}

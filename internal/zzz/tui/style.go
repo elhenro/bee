@@ -45,7 +45,8 @@ var (
 // phaseGlyph maps iteration status to a bee/flower icon in the timeline.
 // honey-jar for a successful commit (bee made the honey), busy-bee while
 // foraging, empty flower for noop (visited but no nectar), wilted for
-// reset, splat for failure, sprout for not-yet-started.
+// reset, splat for failure, plaster for a red verify being repaired, sprout
+// for not-yet-started.
 func phaseGlyph(status string) string {
 	switch status {
 	case "committed":
@@ -54,6 +55,8 @@ func phaseGlyph(status string) string {
 		return "🐝"
 	case "noop":
 		return "🍃"
+	case "repair":
+		return "🩹"
 	case "reset":
 		return "🥀"
 	case "failed":
@@ -72,7 +75,7 @@ func phaseColor(status string) lipgloss.Style {
 		return styDim
 	case "reset", "failed":
 		return styError
-	case "running":
+	case "running", "repair":
 		return styBee
 	}
 	return stySmoke

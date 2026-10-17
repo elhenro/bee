@@ -63,6 +63,7 @@ func runZzz(args []string) {
 	maxFails := fs.Int("max-consecutive-fails", 0, "end run after N consecutive failed iters (0=default 3)")
 	retries := fs.Int("hard-error-retries", 0, "engine.Run retries per iter on transient errors (0=default 3)")
 	notesTail := fs.Int("notes-tail", 0, "include only last N prior-iter sections in prompts (0=default 5, <0=unlimited)")
+	noGate := fs.Bool("no-gate", false, "commit without running the verify gate (.bee/verify or [swarm] verify)")
 	agents := fs.Int("agents", 1, "queen mode: run N headless worker bees in parallel worktrees on the same objective")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
@@ -125,6 +126,11 @@ func runZzz(args []string) {
 		MaxConsecutiveFails: *maxFails,
 		HardErrorRetries:    *retries,
 		NotesTailIters:      *notesTail,
+		VerifyTimeout:       cfg.Swarm.VerifyTimeout(),
+		MaxHops:             cfg.Swarm.Hops(),
+	}
+	if !*noGate {
+		zCfg.Verify = zzzGate(cfg)
 	}
 
 	if (*yes || *yolo) && !*wantWorktree && !isResume {

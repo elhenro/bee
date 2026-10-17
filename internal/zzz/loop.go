@@ -209,8 +209,9 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 
 		// DONE wins regardless of iter shape — an agent that says "objective
 		// already complete" without touching files must not be force-looped.
-		if sentinel.IsDone(res.Subject) {
-			markOutcome(eng, res.Status == IterCommitted || res.Status == IterNoop)
+		// a red tree is not done: the repair iteration runs first.
+		if sentinel.IsDone(res.Subject) && res.Status != IterRepair {
+			markIter(eng, res)
 			if res.Status == IterCommitted {
 				run.Commits = append(run.Commits, res.CommitSHA)
 				_ = AppendNote(run.ID, iter, res.Subject, res.DiffStat)
@@ -226,7 +227,7 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 
 		switch res.Status {
 		case IterCommitted:
-			markOutcome(eng, true)
+			markIter(eng, res)
 			consecutiveFails = 0
 			consecutiveNoops = 0
 			run.Commits = append(run.Commits, res.CommitSHA)
@@ -244,7 +245,7 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 			// already happened) and track the streak so a model that only ever
 			// surveys can't spin to MaxIterations committing nothing.
 			// nothing mutated, so the span holds only reads: keep them.
-			markOutcome(eng, true)
+			markIter(eng, res)
 			consecutiveFails = 0
 			consecutiveNoops++
 			_ = AppendNote(run.ID, iter, "noop — no file changes this iteration", res.Subject)
@@ -253,8 +254,11 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 				run.StopCause = fmt.Sprintf("%d consecutive no-op iterations (model made no changes)", consecutiveNoops)
 				goto finish
 			}
+		case IterRepair:
+			// bounded by the hop budget, not the fail streak
+			consecutiveNoops = 0
 		case IterReset, IterFailed:
-			markOutcome(eng, false)
+			markIter(eng, res)
 			consecutiveFails++
 			if consecutiveFails >= maxFails {
 				run.Status = StatusFailed
@@ -360,8 +364,12 @@ func runOneIteration(ctx context.Context, eng Runner, cfg Config, run *Run, iter
 	}
 	if clean {
 		r.Status = IterNoop
+		run.Hops = 0 // a reverted change takes its red verifies with it
 		ui.SetPhase("noop")
 		return r, nil
+	}
+	if !gateTree(ctx, cfg, run, &r, ui) {
+		return r, r.Err
 	}
 
 	ui.SetPhase("commit")
