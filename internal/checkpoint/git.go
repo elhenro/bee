@@ -60,8 +60,10 @@ func (s *Store) nextStamp() string {
 }
 
 // commitState stages the whole work-tree and commits when it changed; when
-// nothing changed it reuses HEAD. Returns the resulting state's full+short sha.
-func (s *Store) commitState(msg string) (full, short string, err error) {
+// nothing changed it reuses HEAD, unless fresh asks for an empty commit of its
+// own (a snapshot needs its own commit date, see Snapshot). Returns the
+// resulting state's full+short sha.
+func (s *Store) commitState(msg string, fresh bool) (full, short string, err error) {
 	if _, err = s.git("add", "-A"); err != nil {
 		return
 	}
@@ -69,7 +71,7 @@ func (s *Store) commitState(msg string) (full, short string, err error) {
 	if err != nil {
 		return
 	}
-	if !changed && s.hasHead() {
+	if !changed && !fresh && s.hasHead() {
 		if full, err = s.headSHA(true); err != nil {
 			return
 		}
@@ -79,7 +81,7 @@ func (s *Store) commitState(msg string) (full, short string, err error) {
 	args := append([]string{}, commitIdentity...)
 	args = append(args, "commit", "-m", msg)
 	if !changed {
-		args = append(args, "--allow-empty") // first commit in an empty dir
+		args = append(args, "--allow-empty") // first commit, or a fresh snapshot of an unchanged tree
 	}
 	// strictly increasing whole-second dates keep creatordate sort stable even
 	// for snapshots taken in the same wall-clock second.

@@ -67,13 +67,16 @@ func TestSnapshotChangesAndDedup(t *testing.T) {
 		t.Fatalf("diffstat = %q err %v", stat, err)
 	}
 
-	// unchanged tree reuses the same commit for a new message id.
+	// unchanged tree gets its own commit (own date) with the same content.
 	sha3, err := s.Snapshot("m3", "")
 	if err != nil {
 		t.Fatalf("snap m3: %v", err)
 	}
-	if sha3 != sha2 {
-		t.Fatalf("nothing-changed snapshot should reuse %s, got %s", sha2, sha3)
+	if sha3 == sha2 {
+		t.Fatalf("nothing-changed snapshot must not reuse %s", sha2)
+	}
+	if stat, err := s.DiffStat(sha2, sha3); err != nil || stat != "" {
+		t.Fatalf("unchanged snapshot differs: %q err %v", stat, err)
 	}
 }
 

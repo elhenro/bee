@@ -10,14 +10,16 @@ import (
 func snapRef(msgID string) string { return "refs/bee/snap/" + msgID }
 
 // Snapshot records the current work-tree as the code state for msgID and
-// returns the short sha. An unchanged tree reuses the existing commit.
+// returns the short sha. An unchanged tree still gets its own empty commit:
+// List and Prune order snapshots by commit date, and a ref reusing an older
+// commit would sort as old and be pruned while it is the newest turn.
 func (s *Store) Snapshot(msgID, label string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if label == "" {
 		label = "snapshot"
 	}
-	full, short, err := s.commitState(label)
+	full, short, err := s.commitState(label, true)
 	if err != nil {
 		return "", err
 	}
@@ -41,7 +43,7 @@ func (s *Store) SnapshotFor(msgID string) (string, bool) {
 // snapshotUndo commits the current work-tree under refs/bee/undo so a restore
 // can be undone. Caller holds the lock.
 func (s *Store) snapshotUndo() (string, error) {
-	full, short, err := s.commitState("undo-snapshot")
+	full, short, err := s.commitState("undo-snapshot", false)
 	if err != nil {
 		return "", err
 	}
