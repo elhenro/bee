@@ -9,6 +9,7 @@ import (
 
 	"github.com/elhenro/bee/internal/beehome"
 	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/herdr"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/prompt"
@@ -30,6 +31,8 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	if e.Stdout == nil {
 		e.Stdout = os.Stdout
 	}
+	// tell the hosting herdr pane a turn is running (no-op outside herdr)
+	defer herdr.Begin(e.herdrSession())()
 	// flush the batched rollout fsync at the turn boundary so a completed Run is
 	// durable even though per-message Append no longer fsyncs (see Rollout.Flush).
 	if e.Sessions != nil {

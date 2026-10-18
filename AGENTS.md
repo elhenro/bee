@@ -181,6 +181,7 @@ default_model = "deepseek-chat"
 
 - **`internal/remote/`** — the `bee remote-control` web relay: `server.go` serves a small control UI, `sse.go` streams turn events, `lan.go` resolves the LAN address, `qr.go` renders the connect URL as a terminal QR code.
 
+- **`internal/herdr/`** — reports bee's state to the Herdr terminal multiplexer hosting it, like Herdr's built-in agent integrations: `pane.report_agent` (`working` / `blocked` / `idle`, `agent=bee`, `source=herdr:bee`) over `$HERDR_SOCKET_PATH`, plus the session id/path and `resume_argv=[bee back <id>]` so Herdr can restore the pane after a restart; `pane.release_agent` on exit. Herdr has no screen recognizer for bee, so without it a bee pane is a plain shell. `Reporter` folds concurrent engines into one pane state (any block, else any running turn, else idle) and one sender goroutine delivers the latest state (coalescing; `idle` is held 600ms so back-to-back turns don't flash done). Hooks: `Engine.Run` (`herdr.Begin`; only the engine with `HostSession` reports its session, so hive/fan workers share state but not identity), `herdr.WrapApprover` / `WrapAsker` around the interactive approver and asker (below the decision cache, so cached grants don't flash blocked), `Ready`/`Close` in `cmd/bee/tui.go`, `Close` in `run.go`. No-op outside a Herdr pane, in a process with neither stdin nor stdout on a terminal (a `bee run` inside another agent's shell tool must not overwrite that agent's pane state, and detached `bg`/`agents` children stay quiet), on Windows, and with `BEE_HERDR=0`; `BEE_HERDR=1` skips the terminal check.
 - **`internal/ask/`** — backs the `ask_user` tool: poses a multiple-choice question and blocks until the user picks. Mirrors the approval gate — TUI surfaces an interactive picker, headless runs auto-resolve so nothing hangs.
 
 - **`internal/goal/`** — powers the `/goal` completion-condition loop: keep running turns until a fast model judges a user-specified condition met. Pure state + bookkeeping, no `llm` import.
@@ -235,6 +236,7 @@ default_model = "deepseek-chat"
 | `BEE_MODEL` | Override config `default_model`. |
 | `BEE_PROFILE` | Override config `profile` (`tiny`/`normal`/`large`/`auto`). |
 | `BEE_CAVEMAN` | Override caveman level. |
+| `BEE_HERDR` | `0` disables Herdr pane reporting; `1` forces it without a terminal on stdin/stdout. |
 | `BEE_STREAM_STALL_SECONDS` | Override the streaming idle-stall window (default 600s). `<=0` disables the watchdog. |
 | `BEE_TEST_PROVIDER` | `stub` for canned replies, `scripted` for fixture-driven runs. |
 | `BEE_TEST_SCRIPT` | Path to scripted fixture when `BEE_TEST_PROVIDER=scripted`. |

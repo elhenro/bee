@@ -14,6 +14,7 @@ import (
 	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/ask"
 	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/herdr"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/sandbox"
 	"github.com/elhenro/bee/internal/tools"
@@ -137,7 +138,7 @@ func buildToolsAsker(cwd string, cfg config.Config, prov llm.Provider, storeDir 
 		return nil, err
 	}
 	if !isDisabledTool(cfg.DisabledTools, "ask_user") {
-		if err := r.Register(ask_user.New(asker)); err != nil {
+		if err := r.Register(ask_user.New(herdr.WrapAsker(asker))); err != nil {
 			return nil, err
 		}
 	}
@@ -191,7 +192,7 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 	// profile-level RequireApprovalKeys bypass the session AllowSession cache:
 	// destructive ops re-prompt every time on tiny so a hallucinating small
 	// model can't snowball one yes into a series of dangerous commands.
-	return approval.NewCacheWithRequire(cli, cfg.Sandbox.CommandAllowlist,
+	return approval.NewCacheWithRequire(herdr.WrapApprover(cli), cfg.Sandbox.CommandAllowlist,
 		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
 }
 

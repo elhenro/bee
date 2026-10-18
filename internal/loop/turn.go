@@ -121,6 +121,12 @@ type Engine struct {
 	// prefix. Empty string = nothing appended. nil = no tail.
 	PromptTail func() string
 
+	// HostSession marks the engine whose rollout identifies the terminal pane
+	// hosting bee (the TUI or a headless run), so a Herdr pane reports that
+	// session for resume. Hive and fan workers leave it false: they share the
+	// pane's working/blocked state but must not overwrite its session.
+	HostSession bool
+
 	// OnceAllowTools force-allows plan-only tools (e.g. ask_user) for the next
 	// Run, regardless of the active role. A prompt skill sets it from its
 	// frontmatter `tools` list so /plan can ask the user even from worker.

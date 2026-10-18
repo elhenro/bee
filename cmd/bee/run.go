@@ -23,6 +23,7 @@ import (
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
+	"github.com/elhenro/bee/internal/herdr"
 	"github.com/elhenro/bee/internal/jsonmode"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/llm"
@@ -222,10 +223,12 @@ func runHeadlessReal(args []string) {
 		os.Exit(1)
 	}
 	defer roll.Close()
+	defer herdr.Close()
 	// os.Exit skips defers: every exit below goes through exit so the session
 	// file closes and pending AllowAlways grants reach disk first.
 	exit := func(code int) {
 		roll.Close()
+		herdr.Close()
 		if c, ok := app.(*approval.Cache); ok {
 			c.Flush()
 		}
@@ -241,17 +244,18 @@ func runHeadlessReal(args []string) {
 	}
 
 	eng := &loop.Engine{
-		Provider: prov,
-		Tools:    reg,
-		Skills:   skillReg,
-		Waggle:   waggleManager(cfg, cwd),
-		Replay:   waggleReplayer(cfg, cwd),
-		Memory:   memStore,
-		Sessions: roll,
-		Cfg:      cfg,
-		Cwd:      cwd,
-		Stdout:   os.Stdout,
-		Costs:    cost.New(),
+		Provider:    prov,
+		Tools:       reg,
+		Skills:      skillReg,
+		Waggle:      waggleManager(cfg, cwd),
+		Replay:      waggleReplayer(cfg, cwd),
+		Memory:      memStore,
+		Sessions:    roll,
+		HostSession: true,
+		Cfg:         cfg,
+		Cwd:         cwd,
+		Stdout:      os.Stdout,
+		Costs:       cost.New(),
 	}
 
 	if *jsonOut {

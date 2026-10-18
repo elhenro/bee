@@ -19,6 +19,7 @@ import (
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
+	"github.com/elhenro/bee/internal/herdr"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/loop"
@@ -158,7 +159,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	storeDir, _ := knowledge.StoreDir()
 	tuiApprover := tui.NewApprover()
 	tuiAsker := tui.NewAsker()
-	app := approval.NewCacheWithRequire(tuiApprover, cfg.Sandbox.CommandAllowlist,
+	app := approval.NewCacheWithRequire(herdr.WrapApprover(tuiApprover), cfg.Sandbox.CommandAllowlist,
 		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
 	defer app.Flush()
 	reg, err := buildToolsAsker(cwd, cfg, prov, storeDir, app, tuiAsker)
@@ -226,16 +227,17 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	warnCh := make(chan string, 8)
 	costs := cost.New()
 	eng := &loop.Engine{
-		Provider: prov,
-		Tools:    reg,
-		Skills:   skillReg,
-		Waggle:   waggleManager(cfg, cwd),
-		Replay:   waggleReplayer(cfg, cwd),
-		Memory:   newKnowledgeAdapter(prov, cfg),
-		Sessions: roll,
-		Cfg:      cfg,
-		Cwd:      cwd,
-		Stdout:   os.Stdout,
+		Provider:    prov,
+		Tools:       reg,
+		Skills:      skillReg,
+		Waggle:      waggleManager(cfg, cwd),
+		Replay:      waggleReplayer(cfg, cwd),
+		Memory:      newKnowledgeAdapter(prov, cfg),
+		Sessions:    roll,
+		HostSession: true,
+		Cfg:         cfg,
+		Cwd:         cwd,
+		Stdout:      os.Stdout,
 		// buffered so a quick burst of Enter-steers from the TUI doesn't
 		// block; loop drains one per iteration anyway.
 		SteerCh:         make(chan string, 4),
@@ -317,9 +319,16 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		}
 	}
 
+	// show bee in the hosting herdr pane right away, not only after the first
+	// turn (no-op outside herdr); os.Exit below skips the deferred release.
+	sessPath, _ := session.Path(sessID)
+	herdr.Ready(herdr.Session{ID: sessID, Path: sessPath})
+	defer herdr.Close()
+
 	if err := tui.RunSeededAsker(context.Background(), eng, cmdReg, km, tuiApprover, tuiAsker, seedPrompt); err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tui: %v\n", err)
 		// os.Exit skips defers: persist the allowlist and sync the rollout first
+		herdr.Close()
 		app.Flush()
 		_ = roll.Close()
 		os.Exit(1)
