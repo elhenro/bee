@@ -39,7 +39,7 @@ func runRemoteControl(args []string) {
 		os.Exit(2)
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadWith(config.Overrides{Provider: *providerName, Model: *model})
 	if err != nil {
 		if os.Getenv("BEE_TEST_PROVIDER") != "" {
 			cfg = config.Defaults()

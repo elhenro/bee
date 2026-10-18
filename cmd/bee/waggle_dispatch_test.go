@@ -98,6 +98,19 @@ func TestBeeWaggleDispatch(t *testing.T) {
 	if !strings.Contains(stderr, "> s1 (shell)") || !strings.Contains(stderr, "> s2 (shell)") {
 		t.Fatalf("recipe progress missing:\n%s", stderr)
 	}
+	// an installed exec skill runs directly instead of going to the model
+	skillsDir := filepath.Join(home, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: say_hi\ntype: exec\ndescription: greet\nexec: [\"bash\", \"-c\", \"echo hi-from-exec\"]\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(skillsDir, "say_hi.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, err = run("say_hi")
+	if err != nil || !strings.Contains(out, "hi-from-exec") {
+		t.Fatalf("installed exec skill: err=%v\nstdout:\n%s\nstderr:\n%s", err, out, stderr)
+	}
 	if _, _, err := run("wag_nope"); err == nil {
 		t.Fatal("unknown waggle should fail")
 	}

@@ -65,8 +65,9 @@ func parseGoalMessage(userMsg string) (cond string, isGoal bool) {
 
 // runGoalHeadless loops eng.Run until a fast model judges cond met, caps are
 // exceeded, an error occurs, or the user cancels. Mirrors the single-run error
-// handling for the first failure.
-func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, sessID, cond string) {
+// handling for the first failure. Returns 1 on that failure (the caller exits
+// after flushing its own state), else 0.
+func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, sessID, cond string) int {
 	var st goal.State
 	st.Set(cond, 0, time.Now())
 	msg := cond
@@ -76,13 +77,13 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 	for {
 		if ctx.Err() != nil {
 			fmt.Fprintln(os.Stderr, "goal: cancelled")
-			return
+			return 0
 		}
 		res, err := eng.Run(ctx, msg)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				fmt.Fprintln(os.Stderr, "goal: cancelled")
-				return
+				return 0
 			}
 			// wedged turn: not fatal. spend the turn, reframe, retry — but give
 			// up after several in a row so a hopeless spiral can't burn the cap.
@@ -103,7 +104,7 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 			}
 			fmt.Fprintf(os.Stderr, "\nbee run: %v\n", err)
 			fmt.Fprintf(os.Stderr, "bee back %s\n", sessID)
-			os.Exit(1)
+			return 1
 		}
 		wedgeStreak = 0
 		st.Tick()
@@ -131,6 +132,7 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 		msg = goal.Continuation(cond, v.Reason)
 	}
 	fmt.Fprintf(os.Stderr, "bee back %s\n", sessID)
+	return 0
 }
 
 // cumTokens reports cumulative session tokens from the engine's cost tracker,

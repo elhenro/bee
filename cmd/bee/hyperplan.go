@@ -80,7 +80,7 @@ func runHyperplan(args []string) {
 		os.Exit(2)
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadWith(config.Overrides{Provider: opts.Provider, Model: opts.Model})
 	if err != nil {
 		if os.Getenv("BEE_TEST_PROVIDER") == "stub" {
 			cfg = config.Defaults()

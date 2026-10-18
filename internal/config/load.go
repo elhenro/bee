@@ -14,12 +14,40 @@ import (
 // Finally, looks up the active provider's EnvKey to populate APIKey; returns
 // a clear error if the key is required but missing.
 func Load() (Config, error) {
+	return LoadWith(Overrides{})
+}
+
+// Overrides are per-invocation choices (CLI flags) that must apply before the
+// profile and API key resolve, so a --provider flag picks that provider's key,
+// auto profile and model rather than the configured default's.
+type Overrides struct {
+	Provider string
+	Model    string
+}
+
+// LoadWith is Load with flag overrides folded in ahead of profile/key
+// resolution. A provider override without a model takes that provider's
+// default_model, since the configured model id belongs to the old provider.
+func LoadWith(o Overrides) (Config, error) {
 	c := Defaults()
+	baseModel := c.DefaultModel
 
 	if err := mergeFile(&c, ConfigPath()); err != nil {
 		return c, err
 	}
+	explicitModel := c.DefaultModel != baseModel
 	mergeEnv(&c)
+	explicitModel = explicitModel || os.Getenv("BEE_MODEL") != ""
+	if !explicitModel {
+		useProviderModel(&c)
+	}
+	if o.Provider != "" && o.Provider != c.DefaultProvider {
+		c.DefaultProvider = o.Provider
+		useProviderModel(&c)
+	}
+	if o.Model != "" {
+		c.DefaultModel = o.Model
+	}
 	migrateLegacyRoleFields(&c)
 	c = ApplyProfile(c)
 
@@ -27,6 +55,14 @@ func Load() (Config, error) {
 		return c, err
 	}
 	return c, nil
+}
+
+// useProviderModel sets the model to the active provider's default_model when
+// that provider declares one.
+func useProviderModel(c *Config) {
+	if m := c.Providers[c.DefaultProvider].DefaultModel; m != "" {
+		c.DefaultModel = m
+	}
 }
 
 // mergeFile decodes the TOML at path (if it exists) into c. A missing file

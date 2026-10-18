@@ -90,7 +90,7 @@ func runHeadlessReal(args []string) {
 		}
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadWith(config.Overrides{Provider: *providerName, Model: *model})
 	if err != nil {
 		// in test mode we synthesize a stub config so missing API keys
 		// don't break the smoke test.
@@ -222,6 +222,15 @@ func runHeadlessReal(args []string) {
 		os.Exit(1)
 	}
 	defer roll.Close()
+	// os.Exit skips defers: every exit below goes through exit so the session
+	// file closes and pending AllowAlways grants reach disk first.
+	exit := func(code int) {
+		roll.Close()
+		if c, ok := app.(*approval.Cache); ok {
+			c.Flush()
+		}
+		os.Exit(code)
+	}
 
 	memStore := newKnowledgeAdapter(prov, cfg)
 
@@ -253,11 +262,7 @@ func runHeadlessReal(args []string) {
 
 	if recipeSkill != nil {
 		if code := runRecipeHeadless(eng, *recipeSkill, fs.Args()); code != 0 {
-			roll.Close()
-			if c, ok := app.(*approval.Cache); ok {
-				c.Flush()
-			}
-			os.Exit(code)
+			exit(code)
 		}
 		return
 	}
@@ -268,7 +273,7 @@ func runHeadlessReal(args []string) {
 		defer stop()
 		if err := runBgLoop(bgCtx, eng, sessID, userMsg); err != nil {
 			fmt.Fprintf(os.Stderr, "bee run: bg-loop: %v\n", err)
-			os.Exit(1)
+			exit(1)
 		}
 		return
 	}
@@ -279,11 +284,13 @@ func runHeadlessReal(args []string) {
 	if cond, isGoal := parseGoalMessage(userMsg); isGoal {
 		if cond == "" {
 			fmt.Fprintln(os.Stderr, "bee: /goal needs a condition in headless mode")
-			os.Exit(0)
+			exit(0)
 		}
 		goalCtx, goalStop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer goalStop()
-		runGoalHeadless(goalCtx, eng, cfg, sessID, cond)
+		if code := runGoalHeadless(goalCtx, eng, cfg, sessID, cond); code != 0 {
+			exit(code)
+		}
 		return
 	}
 
@@ -299,7 +306,7 @@ func runHeadlessReal(args []string) {
 	msg := userMsg
 	var res loop.RunResult
 	for attempt := 0; ; attempt++ {
-		runCtx, cancel := context.WithTimeout(parent, cfg.Watchdog.Timeout())
+		runCtx, cancel := turnContext(parent, cfg.Watchdog)
 		res, err = eng.Run(runCtx, msg)
 		cancel()
 
@@ -337,40 +344,40 @@ func runHeadlessReal(args []string) {
 		// two-strike → distinct exit code so wrappers (zzz, swarm, CI) can
 		// tell "the model wedged on a repeat" apart from generic failures.
 		if errors.Is(err, loop.ErrTwoStrike) {
-			os.Exit(7)
+			exit(7)
 		}
 		// per-tool failure cap → same wedge family as two-strike but
 		// triggered by N failures on the same tool name regardless of args.
 		if errors.Is(err, loop.ErrPerToolFailureCap) {
-			os.Exit(7)
+			exit(7)
 		}
 		// format-strike → model wedged emitting malformed envelopes the
 		// parser can't recognize. distinct from two-strike (which is about
 		// tool errors) — signals "switch model or rephrase prompt".
 		if errors.Is(err, loop.ErrFormatStrike) {
-			os.Exit(7)
+			exit(7)
 		}
 		// repetition loop → model wedged emitting the same text until cut.
 		// same wedge family — signals "switch model or rephrase prompt".
 		if errors.Is(err, loop.ErrRepeatStream) {
-			os.Exit(7)
+			exit(7)
 		}
 		// empty-output loop → model returned whitespace-only turns. same wedge
 		// family — signals "switch model" (often a broken thinking template).
 		if errors.Is(err, loop.ErrEmptyCompletion) {
-			os.Exit(7)
+			exit(7)
 		}
 		// max-iterations after resumes exhausted → same wedge family: the run
 		// kept needing more rounds than the cap allows.
 		if errors.Is(err, loop.ErrMaxIterations) {
-			os.Exit(7)
+			exit(7)
 		}
 		// escalate → another distinct code so the user/CI knows the model
 		// asked for help rather than crashed.
 		if errors.Is(err, loop.ErrEscalate) {
-			os.Exit(8)
+			exit(8)
 		}
-		os.Exit(1)
+		exit(1)
 	}
 	_ = res
 	if !*jsonOut {

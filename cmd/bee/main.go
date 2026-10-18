@@ -330,16 +330,18 @@ func dispatchSkill(name string, rest []string) bool {
 	_ = reg.Load(skills.BaseDir())
 	s, ok := reg.Get(name)
 	if !ok {
-		// crystallized routes: an exec waggle follows directly, a recipe
-		// waggle (shell steps that change state) goes through the headless
-		// engine so each step meets the approval gate.
+		// crystallized routes: a recipe waggle (shell steps that change
+		// state) goes through the headless engine so each step meets the
+		// approval gate.
 		if s, ok = waggleSkill(name); !ok {
 			return false
 		}
-		if s.Kind == skills.KindExec {
-			runExecWaggle(s, rest)
-			return true
-		}
+	}
+	// an exec skill (installed or waggle) runs directly, no model turn: sending
+	// it to the engine as chat would never execute the command.
+	if s.Kind == skills.KindExec {
+		runExecWaggle(s, rest)
+		return true
 	}
 	// prompt and legacy recipe skills run in the TUI when stdio is
 	// interactive so the user sees thoughts + tool cards live and can steer.

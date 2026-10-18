@@ -58,6 +58,10 @@ func resolveSafeDefault(sandboxScope string, safe bool, def string) string {
 	return def
 }
 
+// applyOverrides patches an already-loaded cfg. Provider/model here do not
+// re-resolve the API key or profile: callers that can should pass the flags
+// to config.LoadWith instead (this still covers the test-mode Defaults()
+// fallback and sandbox scope).
 func applyOverrides(cfg *config.Config, model, provName, sandboxScope string) {
 	if model != "" {
 		cfg.DefaultModel = model
