@@ -59,6 +59,10 @@ func bwrapArgs(p Policy) ([]string, error) {
 			"--bind", cwd, cwd,
 			"--chdir", cwd,
 		)
+		// re-mount the hook/config paths read-only over the writable bind.
+		for _, path := range gitProtected(cwd) {
+			base = append(base, "--ro-bind-try", path, path)
+		}
 		// dev-tool caches writable, mirroring the macOS profile: go/npm/cargo
 		// builds write to ~/.cache, ~/go, etc. and fail with EPERM under the
 		// read-only root otherwise. bind-try skips dirs that don't exist.

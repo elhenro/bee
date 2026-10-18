@@ -123,6 +123,14 @@ func macosProfile(p Policy) (string, error) {
 			b.WriteString(fmt.Sprintf("(subpath %q)", d))
 		}
 		b.WriteString(seatbeltWriteOpenTail)
+		// deny after allow: the last matching rule wins in seatbelt.
+		if prot := gitProtected(cwd); len(prot) > 0 {
+			b.WriteString("(deny file-write*")
+			for _, path := range prot {
+				b.WriteString(fmt.Sprintf("\n    (subpath %q)", path))
+			}
+			b.WriteString(")\n")
+		}
 		return b.String(), nil
 	default:
 		return "", fmt.Errorf("sandbox: unsupported scope %q", p.Scope)

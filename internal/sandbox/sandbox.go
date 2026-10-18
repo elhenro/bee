@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 )
 
@@ -13,6 +14,18 @@ var ErrUnsupported = errors.New("sandbox: platform not supported")
 // ErrHelperMissing signals that the OS-level helper (bwrap, sandbox-exec) is
 // not on PATH. The original cmd is returned so the caller can degrade.
 var ErrHelperMissing = errors.New("sandbox: helper binary not found")
+
+// ErrUnknownScope signals a scope string that names no policy. Scope.Confines
+// treats it as confined (file tools refuse paths), so Wrap must not let the
+// shell run bare: it returns a command that refuses instead of cmd.
+var ErrUnknownScope = errors.New("sandbox: unknown scope")
+
+// refuseCmd is a 5-element argv (callers treat 3 or fewer as "nothing wrapped")
+// that prints why and exits without running the model's command.
+func refuseCmd(s Scope) []string {
+	msg := fmt.Sprintf("sandbox: unknown scope %q (want read-only, workspace-write, workspace-write-net or danger-full-access); refusing to run unsandboxed", string(s))
+	return []string{"sh", "-c", `printf '%s\n' "$1" >&2; exit 126`, "bee-sandbox", msg}
+}
 
 // lookPath is indirected for tests. Tests can swap in a stub that returns
 // ErrHelperMissing to exercise the graceful-degrade path.
@@ -28,8 +41,11 @@ func Wrap(p Policy, cmd []string) ([]string, error) {
 	if len(cmd) == 0 {
 		return cmd, errors.New("sandbox: empty command")
 	}
-	if p.Scope == DangerFullAccess {
+	if p.Scope == DangerFullAccess || p.Scope == "" { // "" is unset, unconfined like Confines()
 		return cmd, nil
+	}
+	if !p.Scope.known() {
+		return refuseCmd(p.Scope), fmt.Errorf("%w: %q", ErrUnknownScope, p.Scope)
 	}
 	switch runtime.GOOS {
 	case "darwin":

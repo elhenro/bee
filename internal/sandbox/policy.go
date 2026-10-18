@@ -44,6 +44,15 @@ func (s Scope) Confines() bool {
 	}
 }
 
+// known reports whether s names a scope with a defined policy.
+func (s Scope) known() bool {
+	switch s {
+	case ReadOnly, WorkspaceWrite, WorkspaceWriteNet, DangerFullAccess:
+		return true
+	}
+	return false
+}
+
 // ApprovalMode is the agent-loop policy for escalation prompts.
 type ApprovalMode string
 
