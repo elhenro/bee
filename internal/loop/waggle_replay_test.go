@@ -53,7 +53,7 @@ func TestDispatchTools_ReplayPrefetchesTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bashGot) != 1 || !strings.Contains(bashGot[0], "cat 'b.go'") {
+	if len(bashGot) != 1 || !strings.Contains(bashGot[0], "cat -- 'b.go'") {
 		t.Fatalf("tail not executed via shell: %v", bashGot)
 	}
 	if !strings.Contains(results[1].Content, "B-FILE-CONTENT") || !strings.Contains(results[1].Content, "wag_x") {
