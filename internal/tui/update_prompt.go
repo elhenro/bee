@@ -14,10 +14,10 @@ import (
 type UpdateDecision int
 
 const (
-	UpdateLater     UpdateDecision = iota // close modal; re-check next interval
-	UpdateNow                             // apply now (this session)
-	UpdateAlways                          // persist update_check=auto + apply now
-	UpdateNeverAsk                        // persist update_check=off + stop probing
+	UpdateLater    UpdateDecision = iota // close modal; re-check next interval
+	UpdateNow                            // apply now (this session)
+	UpdateAlways                         // persist update_check=auto + apply now
+	UpdateNeverAsk                       // persist update_check=off + stop probing
 )
 
 // UpdatePrompt is the four-button modal surfaced when Probe finds main ahead.

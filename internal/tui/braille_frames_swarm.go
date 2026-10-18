@@ -75,7 +75,7 @@ func renderBrailleForage(frame, cells int) string {
 		x := (frame + off) % cycle
 		// sine wander on the vertical, phase-shifted per bee.
 		t := float64(frame)*0.2 + float64(i)*0.9
-		y := int(math.Round((math.Sin(t)+1)*0.5*float64(braillePxH-1)))
+		y := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(braillePxH-1)))
 		c.SetPixel(x, y, true)
 		// short trail toward the hive.
 		if x-1 >= 0 {

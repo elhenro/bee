@@ -232,7 +232,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +package x
 `
-	tool := NewWithFilter(dir,nil)
+	tool := NewWithFilter(dir, nil)
 	res, _ := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if res.IsError {
 		t.Fatalf("nil filter must allow: %s", res.Content)
@@ -251,7 +251,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +hi
 `
-	tool := NewWithFilter(dir,regexp.MustCompile(`\.md$`))
+	tool := NewWithFilter(dir, regexp.MustCompile(`\.md$`))
 	res, _ := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if res.IsError {
 		t.Fatalf("md path must pass: %s", res.Content)
@@ -267,7 +267,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +package x
 `
-	tool := NewWithFilter(dir,regexp.MustCompile(`\.md$`))
+	tool := NewWithFilter(dir, regexp.MustCompile(`\.md$`))
 	res, _ := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if !res.IsError {
 		t.Fatalf("want IsError for non-md path")
@@ -385,7 +385,7 @@ new file mode 100644
 @@ -0,0 +1 @@
 +nope
 `
-	tool := NewWithFilter(dir,regexp.MustCompile(`\.md$`))
+	tool := NewWithFilter(dir, regexp.MustCompile(`\.md$`))
 	res, _ := tool.Run(context.Background(), map[string]any{"patch": patch})
 	if !res.IsError {
 		t.Fatalf("want IsError for mixed batch")

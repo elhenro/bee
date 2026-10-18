@@ -201,12 +201,16 @@ func (f *fakeSide) SetShowLoaderOut(bool) error   { return nil }
 func (f *fakeSide) GetShowLoaderOut() bool        { return true }
 func (f *fakeSide) SetShowLoaderRate(bool) error  { return nil }
 func (f *fakeSide) GetShowLoaderRate() bool       { return true }
-func (f *fakeSide) SetOuterPadLR(n int) error        { f.outerPadLR = n; f.outerPadLRSet = true; return f.outerPadLRErr }
-func (f *fakeSide) GetOuterPadLR() int             { return f.outerPadLR }
-func (f *fakeSide) SetShowBanner(bool) error      { return nil }
-func (f *fakeSide) GetShowBanner() bool           { return true }
-func (f *fakeSide) SetShowLoader(bool) error      { return nil }
-func (f *fakeSide) GetShowLoader() bool           { return true }
+func (f *fakeSide) SetOuterPadLR(n int) error {
+	f.outerPadLR = n
+	f.outerPadLRSet = true
+	return f.outerPadLRErr
+}
+func (f *fakeSide) GetOuterPadLR() int       { return f.outerPadLR }
+func (f *fakeSide) SetShowBanner(bool) error { return nil }
+func (f *fakeSide) GetShowBanner() bool      { return true }
+func (f *fakeSide) SetShowLoader(bool) error { return nil }
+func (f *fakeSide) GetShowLoader() bool      { return true }
 
 // OpenSettings returns an error so /settings (no args) falls back to its
 // inline text status — matches the headless-fallback pattern used elsewhere.

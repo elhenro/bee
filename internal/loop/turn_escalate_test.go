@@ -13,9 +13,9 @@ import (
 )
 
 // when the model invokes escalate the engine must:
-//   1. record a tool_result block in the transcript with the reason
-//   2. return ErrEscalate (typed EscalateError) from Run
-//   3. NOT keep iterating after the escalation
+//  1. record a tool_result block in the transcript with the reason
+//  2. return ErrEscalate (typed EscalateError) from Run
+//  3. NOT keep iterating after the escalation
 func TestEngineRun_EscalateToolBailsLoop(t *testing.T) {
 	reg := tools.NewRegistry()
 	reg.Register(escalate.New())

@@ -43,8 +43,8 @@ func New(cfg Config) (tools.Tool, error) {
 // Spec returns the tool specification.
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
-		Name:        "web_search",
-		Description: "Search the web via Brave Search API. Returns top 5 results with title, url, snippet.",
+		Name:          "web_search",
+		Description:   "Search the web via Brave Search API. Returns top 5 results with title, url, snippet.",
 		PromptSnippet: "search web for QUERY → returns top 5 {title, url, snippet}",
 		Schema: map[string]any{
 			"type": "object",

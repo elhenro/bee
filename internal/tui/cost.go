@@ -193,5 +193,3 @@ func (c *CostPane) renderBreakdown(width int) string {
 	b.WriteString(renderTable(c.tracker.ByModel(), width))
 	return b.String()
 }
-
-

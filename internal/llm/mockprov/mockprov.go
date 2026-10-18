@@ -48,9 +48,9 @@ type File struct {
 
 // Scenario is one model turn: a matcher + the events to emit.
 type Scenario struct {
-	Name   string   `json:"name"`
-	Match  Matcher  `json:"match"`
-	Events []Event  `json:"events"`
+	Name   string  `json:"name"`
+	Match  Matcher `json:"match"`
+	Events []Event `json:"events"`
 }
 
 // Matcher constrains which Stream request this scenario accepts. Zero value

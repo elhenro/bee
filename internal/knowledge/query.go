@@ -143,8 +143,8 @@ func ExtractTags(ctx context.Context, p llm.Provider, model, userQuery string) (
 		return nil, nil
 	}
 	req := llm.Request{
-		Model:       model,
-		System:      "You extract short, lowercase, hyphenated keyword tags from a question. No prose, one tag per line, at most three lines.",
+		Model:  model,
+		System: "You extract short, lowercase, hyphenated keyword tags from a question. No prose, one tag per line, at most three lines.",
 		Messages: []types.Message{
 			{Role: types.RoleUser, Content: []types.ContentBlock{
 				{Type: types.BlockText, Text: trimQuery(userQuery)},

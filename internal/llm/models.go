@@ -216,8 +216,8 @@ func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([
 
 	var body struct {
 		Data []struct {
-			ID            string `json:"id"`
-			Name          string `json:"name"`
+			ID   string `json:"id"`
+			Name string `json:"name"`
 			// DisplayName is the anthropic-compat shape some vendors use
 			// (MiniMax returns `display_name` alongside `id`). Falls back to
 			// the ID when both `name` and `display_name` are missing.

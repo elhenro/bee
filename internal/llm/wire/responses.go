@@ -16,14 +16,14 @@ import (
 
 // ResponsesRequest is the request body for POST /responses.
 type ResponsesRequest struct {
-	Model        string             `json:"model"`
-	Instructions string             `json:"instructions,omitempty"`
-	Input        []ResponsesItem    `json:"input"`
-	Tools        []ResponsesTool    `json:"tools,omitempty"`
-	Stream       bool               `json:"stream,omitempty"`
-	MaxOutput    int                `json:"max_output_tokens,omitempty"`
-	Temperature  *float64           `json:"temperature,omitempty"`
-	Reasoning    *ResponsesReason   `json:"reasoning,omitempty"`
+	Model        string           `json:"model"`
+	Instructions string           `json:"instructions,omitempty"`
+	Input        []ResponsesItem  `json:"input"`
+	Tools        []ResponsesTool  `json:"tools,omitempty"`
+	Stream       bool             `json:"stream,omitempty"`
+	MaxOutput    int              `json:"max_output_tokens,omitempty"`
+	Temperature  *float64         `json:"temperature,omitempty"`
+	Reasoning    *ResponsesReason `json:"reasoning,omitempty"`
 	// Store=false keeps the call ephemeral on the server side. The
 	// backend appears to default to false but we set it explicitly.
 	Store *bool `json:"store,omitempty"`

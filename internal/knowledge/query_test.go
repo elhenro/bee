@@ -99,12 +99,12 @@ func TestKindBoost(t *testing.T) {
 		tags []string
 		want int
 	}{
-		"none":         {nil, 0},
-		"guidance":     {[]string{"guidance"}, 2},
-		"personal":     {[]string{"personal"}, 1},
-		"project":      {[]string{"project"}, 0},
-		"external":     {[]string{"external"}, 0},
-		"unrelated":    {[]string{"foo"}, 0},
+		"none":          {nil, 0},
+		"guidance":      {[]string{"guidance"}, 2},
+		"personal":      {[]string{"personal"}, 1},
+		"project":       {[]string{"project"}, 0},
+		"external":      {[]string{"external"}, 0},
+		"unrelated":     {[]string{"foo"}, 0},
 		"mixedTakesMax": {[]string{"personal", "guidance"}, 2},
 	}
 	for name, c := range cases {

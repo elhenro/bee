@@ -4,9 +4,10 @@
 // to the user, and exits.
 //
 // Introspection:
-//   bee bg --list            list background bees
-//   bee bg --tail <id>       follow a background log
-//   bee bg --kill <id>       stop a background bee
+//
+//	bee bg --list            list background bees
+//	bee bg --tail <id>       follow a background log
+//	bee bg --kill <id>       stop a background bee
 package main
 
 import (

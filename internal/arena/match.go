@@ -64,9 +64,9 @@ type Combatant struct {
 
 // Match orchestrates one bee-wars bout end to end.
 type Match struct {
-	ID    string
-	Red   *Combatant
-	Blue  *Combatant
+	ID       string
+	Red      *Combatant
+	Blue     *Combatant
 	Cfg      Config
 	Net      string
 	Image    string

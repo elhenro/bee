@@ -224,4 +224,3 @@ func (p PaletteModel) Update(msg tea.Msg) (PaletteModel, tea.Cmd) {
 	}
 	return p, cmd
 }
-

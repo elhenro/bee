@@ -81,7 +81,7 @@ func TestApprover_PrefersOrigCommandForDisplay(t *testing.T) {
 	tool := NewWithApprover(cap)
 	wrapped := "sandbox-exec -p '(version 1)...' bash -c 'rm -rf ./tmpx'"
 	_, err := tool.Run(context.Background(), map[string]any{
-		"command":        wrapped,
+		"command":       wrapped,
 		"_orig_command": "rm -rf ./tmpx",
 	})
 	if err != nil {

@@ -76,11 +76,11 @@ type Picker struct {
 	providers        []providerItem
 	modelsByProvider map[string][]modelItem
 
-	filter   textinput.Model
-	provQuery string
+	filter     textinput.Model
+	provQuery  string
 	modelQuery string
-	provSel  int
-	modelSel int
+	provSel    int
+	modelSel   int
 
 	loading map[string]bool
 	loadErr map[string]error

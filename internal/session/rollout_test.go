@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 func withTempSessionsDir(t *testing.T) string {

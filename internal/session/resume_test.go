@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 func ckpt(id, preserveFrom, summary string) types.Message {

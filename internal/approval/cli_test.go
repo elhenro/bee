@@ -20,8 +20,8 @@ func TestCLI_AcceptsFirstChar(t *testing.T) {
 		{"d\n", Deny},
 		{"n\n", Deny},
 		{"\n", Deny},
-		{"q\n", Deny},  // unknown -> deny
-		{"", Deny},      // EOF -> deny
+		{"q\n", Deny}, // unknown -> deny
+		{"", Deny},    // EOF -> deny
 	}
 	for _, tc := range cases {
 		t.Run(strings.TrimSpace(tc.in)+"_->_"+decisionName(tc.want), func(t *testing.T) {

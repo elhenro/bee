@@ -75,7 +75,7 @@ func GenerateRecap(ctx context.Context, p llm.Provider, model string, msgs []typ
 		return RecapResult{Err: err}
 	}
 	var (
-		buf    strings.Builder
+		buf       strings.Builder
 		streamErr error
 	)
 	for ev := range ch {

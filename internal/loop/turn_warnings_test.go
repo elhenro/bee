@@ -73,7 +73,7 @@ func TestStallWarning_SuppressedInPlanMode(t *testing.T) {
 
 func TestStallWarning_EscalateAfterIgnored(t *testing.T) {
 	e := warnEngine(3)
-	e.run.warnedStall = true // first nudge already fired
+	e.run.warnedStall = true   // first nudge already fired
 	e.run.noMutationStreak = 6 // 2x threshold
 	blocks := []types.ContentBlock{
 		{Type: types.BlockToolResult, Result: &types.ToolResult{Content: "ok"}},

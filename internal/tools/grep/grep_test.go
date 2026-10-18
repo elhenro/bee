@@ -54,7 +54,7 @@ func TestGrep_GlobShapes(t *testing.T) {
 	}
 	g := New(dir)
 	cases := []struct {
-		glob       string
+		glob                     string
 		wantA, wantTest, wantTxt bool
 	}{
 		{"go", true, true, false},

@@ -13,9 +13,9 @@ func shellSpec() llm.ToolSpec {
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"command": map[string]any{"type": "string"},
+				"command":         map[string]any{"type": "string"},
 				"timeout_seconds": map[string]any{"type": "integer"},
-				"cwd": map[string]any{"type": "string"},
+				"cwd":             map[string]any{"type": "string"},
 			},
 			"required": []string{"command"},
 		},

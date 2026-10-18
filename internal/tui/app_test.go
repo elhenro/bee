@@ -603,8 +603,8 @@ func TestModel_CtrlD_FromPaletteQuits(t *testing.T) {
 // hard-quit chords must always exit, even with buffer content / palette open.
 func TestModel_CtrlC_AlwaysQuits(t *testing.T) {
 	m := newTestModel(t)
-	m.input.SetValue("/exit")          // non-empty buffer
-	m.palette.Show("")                 // palette open
+	m.input.SetValue("/exit") // non-empty buffer
+	m.palette.Show("")        // palette open
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("expected tea.Quit cmd from ctrl+c")

@@ -170,7 +170,7 @@ func TestAssembleEmptySections(t *testing.T) {
 
 func TestAssembleTruncatesRecordBodyTiny(t *testing.T) {
 	cfg := baseCfg()
-	cfg.Profile = "tiny" // MemoryBodyChars=400
+	cfg.Profile = "tiny"                      // MemoryBodyChars=400
 	body := strings.Repeat("ab ", 667)[:2000] // 2000-char word-aligned body
 	recs := []knowledge.Record{{
 		Entry: knowledge.Entry{Name: "big", Modified: time.Now(), Priority: 3},

@@ -56,7 +56,7 @@ func matchForms(cmd string) []string {
 }
 
 // normalizeForMatch approximates bash's own normalization, for matching only:
-// it undoes quote splices (rm'' -rf), backslash splices (r\m), and $IFS
+// it undoes quote splices (rm” -rf), backslash splices (r\m), and $IFS
 // word-splitting (rm$IFS-rf). Heuristic and intentionally lossy; callers must
 // also check the raw form (see matchForms).
 func normalizeForMatch(cmd string) string {

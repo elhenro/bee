@@ -137,7 +137,7 @@ func renderBrailleSnake(frame, cells int) string {
 		t := float64(frame-i) * 0.18
 		x := int(math.Round((math.Sin(t)+1)*0.5*float64(w-1))) - 0
 		// path of head — phase shifts with i so segments lag behind.
-		y := int(math.Round((math.Sin(t*1.5)+1)*0.5*float64(braillePxH-1)))
+		y := int(math.Round((math.Sin(t*1.5) + 1) * 0.5 * float64(braillePxH-1)))
 		if x < 0 || x >= w {
 			continue
 		}

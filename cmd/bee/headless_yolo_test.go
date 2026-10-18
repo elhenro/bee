@@ -12,9 +12,9 @@ import (
 // is set — and reads cfg.Yolo, not the removed cfg.Mode.
 func TestBuildHeadlessApprover_Yolo(t *testing.T) {
 	cases := []struct {
-		name      string
-		cfg       config.Config
-		autoYes   bool
+		name       string
+		cfg        config.Config
+		autoYes    bool
 		wantStatic bool
 	}{
 		{"flag", config.Config{}, true, true},

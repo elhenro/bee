@@ -25,17 +25,17 @@ type Runtime interface {
 
 // ContainerSpec describes one combatant container. Defaults lean hardened.
 type ContainerSpec struct {
-	Name     string
-	Image    string
-	Network  string
-	Alias    string
-	Env      map[string]string
-	Tmpfs    []string
-	Cmd      []string
-	ReadOnly bool
-	MemoryMB int
+	Name      string
+	Image     string
+	Network   string
+	Alias     string
+	Env       map[string]string
+	Tmpfs     []string
+	Cmd       []string
+	ReadOnly  bool
+	MemoryMB  int
 	PidsLimit int
-	Cpus     string
+	Cpus      string
 }
 
 // dockerRunArgs builds the `docker run` argument vector for a spec. The

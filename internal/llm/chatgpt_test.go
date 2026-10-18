@@ -149,7 +149,7 @@ func TestChatGPT_Stream_FunctionCall(t *testing.T) {
 			"arguments": `{"cmd":"ls"}`,
 		})
 		write(map[string]any{
-			"type": "response.completed",
+			"type":     "response.completed",
 			"response": map[string]any{"id": "r", "status": "completed"},
 		})
 	}))

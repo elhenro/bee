@@ -29,8 +29,8 @@ func New(dir string) *Tool {
 // Spec advertises the tool to the model.
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
-		Name:        toolName,
-		Description: "Store a note in bee's knowledge store. Records persist across sessions and are auto-injected into the system prompt on future turns. Use to save preferences, decisions, conventions, or context you want the agent to remember. Max 5 tags, each lowercase-hyphenated (a-z, 0-9, hyphens).",
+		Name:          toolName,
+		Description:   "Store a note in bee's knowledge store. Records persist across sessions and are auto-injected into the system prompt on future turns. Use to save preferences, decisions, conventions, or context you want the agent to remember. Max 5 tags, each lowercase-hyphenated (a-z, 0-9, hyphens).",
 		PromptSnippet: "Save a record to bee's knowledge store",
 		Schema: map[string]any{
 			"type": "object",

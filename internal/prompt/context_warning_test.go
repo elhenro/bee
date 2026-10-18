@@ -7,10 +7,10 @@ import (
 
 func TestFormatContextWarning(t *testing.T) {
 	cases := []struct {
-		name        string
-		in, limit   int
-		wantEmpty   bool
-		wantSubstr  string
+		name       string
+		in, limit  int
+		wantEmpty  bool
+		wantSubstr string
 	}{
 		{"below threshold", 60, 100, true, ""},
 		{"at exactly 70 percent", 70, 100, false, "[context at 70%]"},

@@ -18,12 +18,12 @@ import (
 
 // Options configures the defender service.
 type Options struct {
-	Secret     string                              // vault value, for egress detection + /chat context
-	SecretPath string                              // on-disk vault path (the cmdi/traversal target)
-	Vuln       string                              // "cmdi" | "traversal"
-	Difficulty int                                 // 0 = naive; higher adds filters to bypass
+	Secret     string                                       // vault value, for egress detection + /chat context
+	SecretPath string                                       // on-disk vault path (the cmdi/traversal target)
+	Vuln       string                                       // "cmdi" | "traversal"
+	Difficulty int                                          // 0 = naive; higher adds filters to bypass
 	Chat       func(ctx context.Context, msg string) string // model-backed responder; nil → canned refusal
-	Egress     io.Writer                           // referee corroboration log; nil → discard
+	Egress     io.Writer                                    // referee corroboration log; nil → discard
 }
 
 // Server holds the defender state and serves the attack surface.

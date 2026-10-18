@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 func appendCorruptLine(t *testing.T, sid string) string {

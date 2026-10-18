@@ -296,9 +296,9 @@ func jsonTypeName(v any) string {
 
 // formatSchemaError renders the diagnostic the model sees. Layout:
 //
-//   tool args invalid for "<name>": <problem1>; <problem2>.
-//   accepted args: command:string (required), timeout_seconds:integer, cwd:string
-//   example: <bash>{"command":"ls -la"}</bash>
+//	tool args invalid for "<name>": <problem1>; <problem2>.
+//	accepted args: command:string (required), timeout_seconds:integer, cwd:string
+//	example: <bash>{"command":"ls -la"}</bash>
 //
 // The example is built from required keys with placeholder values picked per
 // schema type. 3B-active local MoEs lock onto literal shapes — the example is

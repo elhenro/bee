@@ -33,10 +33,10 @@ type Approver interface {
 // Cache wraps an inner Approver with session memory + a persistent allowlist.
 // Lookup precedence: requireAlways (bypass) → persistent → session → inner.
 type Cache struct {
-	inner       Approver
-	mu          sync.Mutex
-	session     map[string]bool
-	persistent  map[string]bool
+	inner      Approver
+	mu         sync.Mutex
+	session    map[string]bool
+	persistent map[string]bool
 	// requireAlways lists pattern keys that must always prompt the user, even
 	// when the same key was previously granted AllowSession or AllowAlways.
 	// Use for genuinely destructive ops (rm -rf, git push --force, etc.) on

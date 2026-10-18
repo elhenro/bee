@@ -223,33 +223,33 @@ func Lookup(provider, model string) (Price, bool) {
 // gospel; override via SetPrice if a vendor changes rates mid-session.
 var prices = map[string]Price{
 	// OpenAI
-	"gpt-4o-mini":         {0.15, 0.60},
-	"gpt-4o":              {2.50, 10.00},
-	"o1":                  {15.00, 60.00},
-	"o1-mini":             {3.00, 12.00},
-	"o3-mini":             {1.10, 4.40},
+	"gpt-4o-mini": {0.15, 0.60},
+	"gpt-4o":      {2.50, 10.00},
+	"o1":          {15.00, 60.00},
+	"o1-mini":     {3.00, 12.00},
+	"o3-mini":     {1.10, 4.40},
 	// Anthropic
-	"claude-haiku-4-5":     {1.00, 5.00},
-	"claude-sonnet-4-5":    {3.00, 15.00},
-	"claude-sonnet-4-6":    {3.00, 15.00},
-	"claude-opus-4-7":      {15.00, 75.00},
+	"claude-haiku-4-5":  {1.00, 5.00},
+	"claude-sonnet-4-5": {3.00, 15.00},
+	"claude-sonnet-4-6": {3.00, 15.00},
+	"claude-opus-4-7":   {15.00, 75.00},
 	// DeepSeek
-	"deepseek-v4-flash":    {0.07, 1.10},
-	"deepseek-chat":        {0.27, 1.10},
-	"deepseek-reasoner":    {0.55, 2.19},
+	"deepseek-v4-flash": {0.07, 1.10},
+	"deepseek-chat":     {0.27, 1.10},
+	"deepseek-reasoner": {0.55, 2.19},
 	// Google
-	"gemini-2.0-flash":     {0.10, 0.40},
-	"gemini-2.5-pro":       {1.25, 10.00},
-	"gemini-2.5-flash":     {0.30, 2.50},
+	"gemini-2.0-flash": {0.10, 0.40},
+	"gemini-2.5-pro":   {1.25, 10.00},
+	"gemini-2.5-flash": {0.30, 2.50},
 	// Groq (Llama variants are routed via groq.com)
 	"llama-3.3-70b-versatile": {0.59, 0.79},
 	"llama-3.1-8b-instant":    {0.05, 0.08},
 	// Moonshot Kimi K2 — public list rates (USD/M). OpenRouter ids in the
 	// `moonshotai/kimi-k2*` family strip to `kimi-k2*` via Lookup's path-
 	// suffix fallback, so the bare slugs cover both direct and routed use.
-	"kimi-k2":     {0.60, 2.50},
-	"kimi-k2.5":   {0.60, 2.50},
-	"kimi-k2.6":   {0.60, 2.50},
+	"kimi-k2":   {0.60, 2.50},
+	"kimi-k2.5": {0.60, 2.50},
+	"kimi-k2.6": {0.60, 2.50},
 }
 
 // SetPrice overrides a model's pricing in the active table. Returns the

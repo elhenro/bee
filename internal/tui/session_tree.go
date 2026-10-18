@@ -16,9 +16,9 @@ import (
 // Up/Down, Enter to switch active leaf, F to fork, C to clone, Esc to close.
 type SessionTree struct {
 	root     *types.MessageNode
-	current  string                // active leaf id, highlights main branch
-	selected string                // cursor id (user-highlighted node)
-	flat     []*types.MessageNode  // DFS-flattened nodes, cursor steps along this
+	current  string               // active leaf id, highlights main branch
+	selected string               // cursor id (user-highlighted node)
+	flat     []*types.MessageNode // DFS-flattened nodes, cursor steps along this
 	open     bool
 }
 

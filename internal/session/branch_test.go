@@ -4,15 +4,16 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 // shape:
-//   m1 (root)
-//    └── m2
-//         ├── m3 ── m4
-//         └── m5  (branch)
+//
+//	m1 (root)
+//	 └── m2
+//	      ├── m3 ── m4
+//	      └── m5  (branch)
 func sampleBranchedMessages() []types.Message {
 	return []types.Message{
 		mkMsg("m1", "", types.RoleUser, "root"),

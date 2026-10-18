@@ -89,12 +89,12 @@ func newEngine(p llm.Provider, reg *tools.Registry) (*Engine, *bytes.Buffer) {
 	// disable sandbox wrapping in tests so shell tool input stays inspectable
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	return &Engine{
-		Provider:              p,
-		Tools:                 reg,
-		Memory:                stubMemStore{},
-		Cfg:                   cfg,
-		Cwd:                   ".",
-		Stdout:                buf,
+		Provider: p,
+		Tools:    reg,
+		Memory:   stubMemStore{},
+		Cfg:      cfg,
+		Cwd:      ".",
+		Stdout:   buf,
 	}, buf
 }
 

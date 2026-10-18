@@ -365,14 +365,14 @@ func isProviderRejectErr(err error) bool {
 		return false
 	}
 	markers := []string{
-		"invalid function arguments",          // openai-compat openrouter / minimax
-		"invalid tool_call",                   // openai responses API
-		"invalid tool call",                   // anthropic
-		"tool_call_id",                        // minimax: "<phrase>, tool_call_id: <id>"
-		"invalid_request_error",               // anthropic envelope
-		"invalid parameters",                  // openai envelope
-		"tools.0.function.arguments",          // openai strict mode
-		"invalid_argument",                    // generic
+		"invalid function arguments", // openai-compat openrouter / minimax
+		"invalid tool_call",          // openai responses API
+		"invalid tool call",          // anthropic
+		"tool_call_id",               // minimax: "<phrase>, tool_call_id: <id>"
+		"invalid_request_error",      // anthropic envelope
+		"invalid parameters",         // openai envelope
+		"tools.0.function.arguments", // openai strict mode
+		"invalid_argument",           // generic
 	}
 	for _, m := range markers {
 		if strings.Contains(s, m) {

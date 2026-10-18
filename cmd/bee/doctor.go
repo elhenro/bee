@@ -29,10 +29,10 @@ func setDoctorHTTPClient(c *http.Client) func() {
 }
 
 type check struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"` // ok | warn | fail | info
-	Detail  string `json:"detail"`
-	Remedy  string `json:"remedy,omitempty"`
+	Name   string `json:"name"`
+	Status string `json:"status"` // ok | warn | fail | info
+	Detail string `json:"detail"`
+	Remedy string `json:"remedy,omitempty"`
 }
 
 type report struct {

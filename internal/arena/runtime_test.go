@@ -27,9 +27,9 @@ func hasPair(args []string, flag, val string) bool {
 func TestDockerRunArgsHardening(t *testing.T) {
 	spec := ContainerSpec{
 		Name: "bee-red", Image: "bee-wars:latest", Network: "bee-combat", Alias: "red",
-		Env:   map[string]string{"BEE_WARS_OPPONENT": "http://blue:8080"},
-		Tmpfs: []string{"/opt/vault:size=64k"},
-		Cmd:   []string{"wars-agent"},
+		Env:      map[string]string{"BEE_WARS_OPPONENT": "http://blue:8080"},
+		Tmpfs:    []string{"/opt/vault:size=64k"},
+		Cmd:      []string{"wars-agent"},
 		ReadOnly: true, MemoryMB: 1024, PidsLimit: 256, Cpus: "1",
 	}
 	args := dockerRunArgs(spec)

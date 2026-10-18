@@ -95,12 +95,13 @@ func (m *Model) Steer() <-chan zzz.Steer { return m.steer }
 
 // --- zzz.UI implementation (called from the Drive goroutine) ---
 
-func (m *Model) SetIter(n, max int)         { m.send(iterMsg{n: n, max: max}) }
-func (m *Model) SetPhase(p string)          { m.send(phaseMsg(p)) }
-func (m *Model) SetTokens(t zzz.TokenStat)  { m.send(tokensMsg(t)) }
-func (m *Model) IncCommits()                { m.send(commitsMsg(1)) }
-func (m *Model) Println(msg string)         { m.send(logMsg{level: levelFor(msg), text: msg}) }
-func (m *Model) RenderSummary(r *zzz.Run)   { /* TUI shows summary in finalPanel(); printing is a no-op */ }
+func (m *Model) SetIter(n, max int)        { m.send(iterMsg{n: n, max: max}) }
+func (m *Model) SetPhase(p string)         { m.send(phaseMsg(p)) }
+func (m *Model) SetTokens(t zzz.TokenStat) { m.send(tokensMsg(t)) }
+func (m *Model) IncCommits()               { m.send(commitsMsg(1)) }
+func (m *Model) Println(msg string)        { m.send(logMsg{level: levelFor(msg), text: msg}) }
+func (m *Model) RenderSummary(r *zzz.Run) { /* TUI shows summary in finalPanel(); printing is a no-op */
+}
 
 // Done is called by the launcher after Drive returns so the TUI can show
 // the final panel and let the user dismiss with q.

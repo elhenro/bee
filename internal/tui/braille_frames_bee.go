@@ -25,7 +25,7 @@ func renderBrailleDrunk(frame, cells int) string {
 		x = w - 1
 	}
 	// vertical wobble — drunk bee can't hold altitude either.
-	y := int(math.Round((math.Sin(t*3)+1)*0.5*float64(braillePxH-1)))
+	y := int(math.Round((math.Sin(t*3) + 1) * 0.5 * float64(braillePxH-1)))
 	c.SetPixel(x, y, true)
 	// stagger trail: 3 prior positions, sparser the further back.
 	for k := 1; k <= 3; k++ {
@@ -102,7 +102,7 @@ func renderBrailleConga(frame, cells int) string {
 		}
 		// shared wavy path so the whole line undulates together.
 		t := float64(x)*0.18 - float64(frame)*0.15
-		y := int(math.Round((math.Sin(t)+1)*0.5*float64(braillePxH-1)))
+		y := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(braillePxH-1)))
 		c.SetPixel(x, y, true)
 	}
 	return c.ToBraille()

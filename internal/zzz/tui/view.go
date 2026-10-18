@@ -153,7 +153,7 @@ func (m *Model) finalPanel(w int) string {
 	b.WriteString(stySmoke.Render(fmt.Sprintf("  tokens   : %d in / %d out  $%.4f",
 		r.Tokens.Input, r.Tokens.Output, r.Tokens.USD)) + "\n")
 	b.WriteString(stySmoke.Render(fmt.Sprintf("  duration : %s", dur)) + "\n")
-	b.WriteString(stySmoke.Render("  inspect  : ~/.bee/zzz/runs/"+r.ID+"/"))
+	b.WriteString(stySmoke.Render("  inspect  : ~/.bee/zzz/runs/" + r.ID + "/"))
 	if m.finalEr != nil {
 		b.WriteString("\n")
 		b.WriteString(styError.Render("  error    : " + m.finalEr.Error()))

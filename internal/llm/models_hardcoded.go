@@ -101,10 +101,10 @@ var contextLengths = map[string]int{
 	"llama-3.1-8b-instant":    131072,
 	// MiniMax — openrouter routes "minimax/MiniMax-M*" ids; bare trailing
 	// segment also resolves so a local config with just the model name works.
-	"MiniMax-M2":            200000,
-	"MiniMax-M3":            200000,
-	"minimax/MiniMax-M2":    200000,
-	"minimax/MiniMax-M3":    200000,
+	"MiniMax-M2":         200000,
+	"MiniMax-M3":         200000,
+	"minimax/MiniMax-M2": 200000,
+	"minimax/MiniMax-M3": 200000,
 }
 
 // thinkingModelSubstrings names model families known to honor a reasoning
