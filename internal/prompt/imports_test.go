@@ -170,3 +170,28 @@ func TestExpandImports_FuzzySkipsDotDirsAndSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestExpandImports_CaseVariantSecretDirBlocked(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".ssh", "config"), "HOST_SECRET")
+	for _, in := range []string{"@.SSH/config", "@.Ssh/config", "@.ssh/config"} {
+		if got := expandContextImports(in, dir, map[string]bool{}, 0); strings.Contains(got, "HOST_SECRET") {
+			t.Fatalf("%q leaked: %q", in, got)
+		}
+	}
+}
+
+func TestExpandImports_SymlinkToSecretBlocked(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".ssh", "config"), "HOST_SECRET")
+	writeFile(t, filepath.Join(dir, "docs", "keep.md"), "x")
+	link := filepath.Join(dir, "docs", "notes.md")
+	if err := os.Symlink(filepath.Join(dir, ".ssh", "config"), link); err != nil {
+		t.Skip("symlink unsupported")
+	}
+	for _, in := range []string{"@docs/notes.md", "@notes.md"} {
+		if got := expandContextImports(in, dir, map[string]bool{}, 0); strings.Contains(got, "HOST_SECRET") {
+			t.Fatalf("%q leaked via symlink: %q", in, got)
+		}
+	}
+}

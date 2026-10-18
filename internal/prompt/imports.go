@@ -71,7 +71,7 @@ func resolveImport(baseDir, ref string) (string, string, bool) {
 	} else {
 		exact = filepath.Join(baseDir, ref)
 	}
-	if safety.CheckReadable(exact) != nil {
+	if !pathAllowed(exact) {
 		return "", "", false
 	}
 	if data, ok := readImport(exact); ok {
@@ -86,6 +86,13 @@ func resolveImport(baseDir, ref string) (string, string, bool) {
 	return fuzzyResolve(baseDir, ref)
 }
 
+// pathAllowed runs the secret-path guard on the path as written and
+// lowercased: the segment checks are case-sensitive but case-insensitive
+// filesystems resolve `.SSH` to `.ssh`.
+func pathAllowed(p string) bool {
+	return safety.CheckReadable(p) == nil && safety.CheckReadable(strings.ToLower(p)) == nil
+}
+
 // looksLikePath reports whether ref has a dir separator or a file extension.
 func looksLikePath(ref string) bool {
 	return strings.Contains(ref, "/") || filepath.Ext(ref) != ""
@@ -93,6 +100,12 @@ func looksLikePath(ref string) bool {
 
 // readImport reads path with size cap + binary skip. Empty body returns false.
 func readImport(path string) (string, bool) {
+	// resolve links first so the guard sees, and the read uses, the real target
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil || !pathAllowed(real) {
+		return "", false
+	}
+	path = real
 	info, err := os.Stat(path)
 	if err != nil || info.IsDir() {
 		return "", false
@@ -153,7 +166,7 @@ func walkFuzzy(root string) []string {
 			return nil
 		}
 		rel, _ := filepath.Rel(root, p)
-		if safety.CheckReadable(rel) != nil {
+		if !pathAllowed(rel) {
 			return nil
 		}
 		out = append(out, rel)
