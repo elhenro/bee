@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/elhenro/bee/internal/config"
@@ -26,7 +27,14 @@ func wrapShellInput(input map[string]any, cfg config.SandboxConfig, cwd string) 
 	}
 	wrapped, err := sandbox.Wrap(pol, []string{"bash", "-c", cmdStr})
 	if err != nil {
-		return input
+		// a missing helper or unsupported platform degrades to the bare
+		// command (best-effort hardening). any other failure (unknown scope,
+		// missing cwd) means the scope cannot be applied: refuse instead of
+		// running bare while the file tools think they are confined.
+		if errors.Is(err, sandbox.ErrHelperMissing) || errors.Is(err, sandbox.ErrUnsupported) {
+			return input
+		}
+		wrapped = sandbox.RefuseCmd(err.Error())
 	}
 	if len(wrapped) <= 3 {
 		// nothing actually wrapped; preserve original input shape

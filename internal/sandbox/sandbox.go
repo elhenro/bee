@@ -20,11 +20,15 @@ var ErrHelperMissing = errors.New("sandbox: helper binary not found")
 // shell run bare: it returns a command that refuses instead of cmd.
 var ErrUnknownScope = errors.New("sandbox: unknown scope")
 
-// refuseCmd is a 5-element argv (callers treat 3 or fewer as "nothing wrapped")
-// that prints why and exits without running the model's command.
-func refuseCmd(s Scope) []string {
-	msg := fmt.Sprintf("sandbox: unknown scope %q (want read-only, workspace-write, workspace-write-net or danger-full-access); refusing to run unsandboxed", string(s))
-	return []string{"sh", "-c", `printf '%s\n' "$1" >&2; exit 126`, "bee-sandbox", msg}
+// RefuseCmd is a 5-element argv (callers treat 3 or fewer as "nothing wrapped")
+// that prints reason and exits 126 without running the model's command. Callers
+// use it to fail closed when a confining scope cannot be applied.
+func RefuseCmd(reason string) []string {
+	return []string{"sh", "-c", `printf '%s\n' "$1" >&2; exit 126`, "bee-sandbox", reason}
+}
+
+func unknownScopeCmd(s Scope) []string {
+	return RefuseCmd(fmt.Sprintf("sandbox: unknown scope %q (want read-only, workspace-write, workspace-write-net or danger-full-access); refusing to run unsandboxed", string(s)))
 }
 
 // lookPath is indirected for tests. Tests can swap in a stub that returns
@@ -45,7 +49,7 @@ func Wrap(p Policy, cmd []string) ([]string, error) {
 		return cmd, nil
 	}
 	if !p.Scope.known() {
-		return refuseCmd(p.Scope), fmt.Errorf("%w: %q", ErrUnknownScope, p.Scope)
+		return unknownScopeCmd(p.Scope), fmt.Errorf("%w: %q", ErrUnknownScope, p.Scope)
 	}
 	switch runtime.GOOS {
 	case "darwin":

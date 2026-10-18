@@ -124,12 +124,20 @@ func macosProfile(p Policy) (string, error) {
 		}
 		b.WriteString(seatbeltWriteOpenTail)
 		// deny after allow: the last matching rule wins in seatbelt.
-		if prot := gitProtected(cwd); len(prot) > 0 {
+		g := gitProtected(cwd)
+		if len(g.ReadOnly) > 0 || len(g.ModuleRegex) > 0 {
 			b.WriteString("(deny file-write*")
-			for _, path := range prot {
+			for _, path := range g.ReadOnly {
 				b.WriteString(fmt.Sprintf("\n    (subpath %q)", path))
 			}
+			for _, re := range g.ModuleRegex {
+				b.WriteString("\n    (regex #\"" + re + "\")") // raw literal: no escape processing
+			}
 			b.WriteString(")\n")
+		}
+		// unlink also covers rename-away of the `.git` entry itself.
+		for _, path := range g.Pinned {
+			b.WriteString(fmt.Sprintf("(deny file-write-unlink (literal %q))\n", path))
 		}
 		return b.String(), nil
 	default:

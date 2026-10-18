@@ -26,14 +26,18 @@ func TestUnknownScopeFailsClosed(t *testing.T) {
 
 func TestGitProtected(t *testing.T) {
 	dir := t.TempDir()
-	if got := gitProtected(dir); len(got) != 0 {
-		t.Fatalf("no .git, nothing to protect, got %v", got)
+	if g := gitProtected(dir); len(g.ReadOnly)+len(g.Pinned) != 0 {
+		t.Fatalf("no .git, nothing to protect, got %+v", g)
 	}
 	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got := strings.Join(gitProtected(dir), "\n")
-	if !strings.Contains(got, filepath.Join(".git", "hooks")) || !strings.Contains(got, filepath.Join(".git", "config")) {
+	g := gitProtected(dir)
+	got := strings.Join(g.ReadOnly, "\n")
+	if len(g.Pinned) == 0 || !strings.HasSuffix(g.Pinned[0], ".git") {
+		t.Fatalf("the .git entry must be pinned: %+v", g)
+	}
+	if !strings.Contains(got, filepath.Join(".git", "hooks")) || !strings.Contains(got, filepath.Join(".git", "config")) || !strings.Contains(got, "commondir") {
 		t.Fatalf("hooks/config missing: %q", got)
 	}
 	if strings.Contains(got, "objects") || strings.Contains(got, "refs") || strings.Contains(got, "index") {
@@ -74,6 +78,24 @@ func TestSeatbeltProtectsGitHooksAndConfig(t *testing.T) {
 	}
 	if out, err := run("echo '[core]' >> .git/config"); err == nil {
 		t.Errorf("config write allowed: %s", out)
+	}
+	if out, err := run("mv .git .git-moved"); err == nil {
+		t.Errorf("rename of .git allowed: %s", out)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".git", "modules", "sub", "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run("echo x > .git/modules/sub/hooks/post-checkout"); err == nil {
+		t.Errorf("submodule hook/config write allowed: %s", out)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".git", "modules", "sub2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run("echo x > .git/modules/sub2/config"); err == nil {
+		t.Errorf("new submodule config write allowed: %s", out)
+	}
+	if out, err := run("echo x > .git/commondir"); err == nil {
+		t.Errorf("commondir write allowed: %s", out)
 	}
 	script := "echo x > f.txt && git add f.txt && git -c user.name=t -c user.email=t@t commit -qm init"
 	if out, err := run(script); err != nil {

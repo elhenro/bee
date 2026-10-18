@@ -59,15 +59,21 @@ func bwrapArgs(p Policy) ([]string, error) {
 			"--bind", cwd, cwd,
 			"--chdir", cwd,
 		)
-		// re-mount the hook/config paths read-only over the writable bind.
-		for _, path := range gitProtected(cwd) {
-			base = append(base, "--ro-bind-try", path, path)
-		}
 		// dev-tool caches writable, mirroring the macOS profile: go/npm/cargo
 		// builds write to ~/.cache, ~/go, etc. and fail with EPERM under the
 		// read-only root otherwise. bind-try skips dirs that don't exist.
 		for _, d := range devCacheDirs() {
 			base = append(base, "--bind-try", d, d)
+		}
+		// last, so these mounts sit on top of every writable bind above.
+		// pinning `.git` as its own mount makes rename/unlink of it fail with
+		// EBUSY; the read-only mounts cover hooks, config and friends.
+		g := gitProtected(cwd)
+		for _, path := range g.Pinned {
+			base = append(base, "--bind-try", path, path)
+		}
+		for _, path := range g.ReadOnly {
+			base = append(base, "--ro-bind-try", path, path)
 		}
 		return base, nil
 	default:
