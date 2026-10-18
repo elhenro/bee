@@ -7,6 +7,7 @@ import (
 	_ "image/gif"  // register decoders for DecodeConfig
 	_ "image/jpeg" // register decoders for DecodeConfig
 	_ "image/png"  // register decoders for DecodeConfig
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,19 +30,33 @@ const NotePrefix = "image · "
 // when path is not a supported picture, so the caller falls through to the
 // text path (and its binary refusal). The type comes from the bytes, not the
 // extension: a renamed file is not sent to a provider as an image.
-func readImage(path string, size int64) (res tools.Result, ok bool) {
+func readImage(path string, info os.FileInfo) (res tools.Result, ok bool) {
 	if !imageExts[strings.ToLower(filepath.Ext(path))] {
 		return res, false
 	}
-	if size > maxImageBytes {
-		return tools.Result{
-			Content: fmt.Sprintf("image %s is %s, over the %s limit; downscale it first", path, humanSize(size), humanSize(maxImageBytes)),
-			IsError: true,
-		}, true
+	fail := func(format string, a ...any) (tools.Result, bool) {
+		return tools.Result{Content: fmt.Sprintf(format, a...), IsError: true}, true
 	}
-	data, err := os.ReadFile(path)
+	// a fifo or device named x.png reports size 0 and would block or never end
+	if !info.Mode().IsRegular() {
+		return fail("%s is not a regular file", path)
+	}
+	f, err := os.Open(path)
 	if err != nil {
-		return tools.Result{Content: fmt.Sprintf("read %s: %v", path, err), IsError: true}, true
+		return fail("open %s: %v", path, err)
+	}
+	defer f.Close()
+	// the stat can be stale (file swapped or grown since), so re-check the open
+	// descriptor and bound the read itself rather than trusting a size
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return fail("%s is not a regular file", path)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxImageBytes+1))
+	if err != nil {
+		return fail("read %s: %v", path, err)
+	}
+	if len(data) > maxImageBytes {
+		return fail("image %s is over the %s limit; downscale it first", path, humanSize(maxImageBytes))
 	}
 	mt := http.DetectContentType(data)
 	if mt != "image/png" && mt != "image/jpeg" && mt != "image/gif" && mt != "image/webp" {

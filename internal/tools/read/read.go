@@ -150,7 +150,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		return tools.Result{Content: out}, nil
 	}
 
-	if res, ok := readImage(path, info.Size()); ok {
+	if res, ok := readImage(path, info); ok {
 		return res, nil
 	}
 
