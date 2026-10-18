@@ -78,17 +78,61 @@ func (p *MeteringProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	payload, _ := io.ReadAll(resp.Body)
 
-	if in, outTok, ok := parseUsage(payload); ok {
+	copyHeaders(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	keep := &keepBuf{tail: strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream")}
+	streamBody(w, resp.Body, keep)
+
+	if in, outTok, ok := parseUsage(keep.buf); ok {
 		p.mu.Lock()
 		side.Wallet.Debit(side.Cost.MeterUsage(in, outTok))
 		p.mu.Unlock()
 	}
+}
 
-	copyHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	w.Write(payload)
+const (
+	maxJSONKeep = 8 << 20  // whole-body parse needs the full document
+	maxSSEKeep  = 64 << 10 // the usage chunk rides at the end of the stream
+)
+
+// keepBuf remembers what usage parsing needs: the first maxJSONKeep bytes of a
+// plain body, or the last maxSSEKeep bytes of an event stream.
+type keepBuf struct {
+	buf  []byte
+	tail bool
+}
+
+func (k *keepBuf) add(b []byte) {
+	k.buf = append(k.buf, b...)
+	if k.tail && len(k.buf) > maxSSEKeep {
+		k.buf = append([]byte(nil), k.buf[len(k.buf)-maxSSEKeep:]...)
+	}
+	if !k.tail && len(k.buf) > maxJSONKeep {
+		k.buf = k.buf[:maxJSONKeep]
+	}
+}
+
+// streamBody copies src to w chunk by chunk, flushing so event streams reach
+// the client live, and tees every chunk into keep.
+func streamBody(w http.ResponseWriter, src io.Reader, keep *keepBuf) {
+	fl, _ := w.(http.Flusher)
+	chunk := make([]byte, 32<<10)
+	for {
+		n, err := src.Read(chunk)
+		if n > 0 {
+			keep.add(chunk[:n])
+			if _, werr := w.Write(chunk[:n]); werr != nil {
+				return
+			}
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // splitSide pulls the leading /<name> segment off the path and returns the rest
@@ -102,19 +146,33 @@ func splitSide(p string) (name, rest string) {
 	return p[:i], p[i:]
 }
 
+type usageEnv struct {
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
+}
+
 // parseUsage extracts prompt/completion token counts from an OpenAI-compatible
-// response body (buffered). Returns ok=false when no usage block is present.
+// response: a plain JSON body, or an event stream whose last data chunk with a
+// usage block wins. Returns ok=false when no usage block is present.
 func parseUsage(body []byte) (input, output int, ok bool) {
-	var env struct {
-		Usage *struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-		} `json:"usage"`
+	var env usageEnv
+	if json.Unmarshal(body, &env) == nil && env.Usage != nil {
+		return env.Usage.PromptTokens, env.Usage.CompletionTokens, true
 	}
-	if err := json.Unmarshal(body, &env); err != nil || env.Usage == nil {
-		return 0, 0, false
+	for _, line := range bytes.Split(body, []byte("\n")) {
+		data, found := bytes.CutPrefix(bytes.TrimSpace(line), []byte("data:"))
+		if !found {
+			continue
+		}
+		var e usageEnv
+		// a truncated first line of a tail window fails to parse and is skipped
+		if json.Unmarshal(bytes.TrimSpace(data), &e) == nil && e.Usage != nil {
+			input, output, ok = e.Usage.PromptTokens, e.Usage.CompletionTokens, true
+		}
 	}
-	return env.Usage.PromptTokens, env.Usage.CompletionTokens, true
+	return input, output, ok
 }
 
 // rewriteModel replaces the top-level "model" field so the proxy controls which

@@ -111,3 +111,34 @@ func TestProxyUnknownSideIs404(t *testing.T) {
 		t.Fatalf("unknown side status = %d, want 404", rec.Code)
 	}
 }
+
+func TestParseUsageReadsSSEFinalChunk(t *testing.T) {
+	body := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}\n\n" +
+		"data: [DONE]\n\n"
+	in, out, ok := parseUsage([]byte(body))
+	if !ok || in != 7 || out != 3 {
+		t.Fatalf("in=%d out=%d ok=%v", in, out, ok)
+	}
+}
+
+func TestProxyMetersStreamedResponse(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":20}}\n\ndata: [DONE]\n\n")
+	}))
+	defer up.Close()
+	upURL, _ := url.Parse(up.URL)
+	w := NewWallet(200_000)
+	cost := DefaultCostSchedule()
+	px := NewMeteringProxy(&Side{Name: "red", Upstream: upURL, Wallet: w, Cost: cost})
+	rec := httptest.NewRecorder()
+	px.ServeHTTP(rec, httptest.NewRequest("POST", "/red/v1/chat/completions", strings.NewReader(`{"stream":true}`)))
+	if !strings.Contains(rec.Body.String(), "[DONE]") {
+		t.Fatalf("stream not forwarded: %q", rec.Body.String())
+	}
+	if want := cost.MeterUsage(100, 20); w.Spent != want {
+		t.Fatalf("Spent = %d, want %d", w.Spent, want)
+	}
+}
