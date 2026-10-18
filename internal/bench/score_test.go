@@ -43,9 +43,17 @@ func TestScore_FailedNoCleanStop(t *testing.T) {
 	if !approx(d.Efficiency, 0) {
 		t.Errorf("efficiency = %v, want 0", d.Efficiency)
 	}
-	// 100*(0 + 0.25*0.3 + 0) = 7.5
-	if !approx(total, 7.5) {
-		t.Errorf("total = %v, want 7.5", total)
+	// failed run: format and efficiency bank nothing
+	if !approx(total, 0) {
+		t.Errorf("total = %v, want 0", total)
+	}
+}
+
+func TestScore_FailedCleanRunGetsNoPartialCredit(t *testing.T) {
+	b := Budget{MaxTurns: 10}
+	m := RunMetrics{Turns: 1, ToolCalls: 4, StoppedClean: true}
+	if _, total := Score(b, m, false, DefaultWeights); !approx(total, 0) {
+		t.Errorf("total = %v, want 0", total)
 	}
 }
 

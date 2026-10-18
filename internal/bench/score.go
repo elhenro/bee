@@ -35,7 +35,12 @@ func Score(b Budget, m RunMetrics, succeeded bool, w Weights) (Dims, float64) {
 	d.Format = formatScore(m)
 	d.Efficiency = efficiencyScore(b, m)
 
-	total := 100 * (w.Success*d.Success + w.Format*d.Format + w.Efficiency*d.Efficiency)
+	// format and efficiency only count on a run that worked: a failed run that
+	// used its tools cleanly would otherwise still bank ~38 points
+	total := 100 * w.Success * d.Success
+	if succeeded {
+		total += 100 * (w.Format*d.Format + w.Efficiency*d.Efficiency)
+	}
 	return d, total
 }
 

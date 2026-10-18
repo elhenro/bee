@@ -5,13 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
-
-	"github.com/elhenro/bee/internal/goal"
-	"github.com/elhenro/bee/internal/types"
 )
 
 // Options configures a suite run.
@@ -174,8 +169,15 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx, taskNum, task
 		}
 	}
 
-	stdout, runErr := runBee(ctx, t, opt, sandbox, sessDir)
-	stoppedClean := strings.Contains(stdout, goal.AchievedPrefix)
+	beeHome, err := os.MkdirTemp("", "bee-bench-home-")
+	if err != nil {
+		tr.Err = "mkdir bee home: " + err.Error()
+		return tr
+	}
+	defer os.RemoveAll(beeHome)
+
+	stderr, runErr := runBee(ctx, t, opt, sandbox, sessDir, beeHome)
+	stoppedClean := goalAchieved(stderr)
 
 	msgs, _ := readTranscript(sessDir)
 	m := MetricsFromMessages(msgs, stoppedClean)
@@ -202,7 +204,7 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx, taskNum, task
 	tr.Dims, tr.Score = Score(t.Budget, m, succeeded, opt.Weights)
 	tr.Succeeded = succeeded
 	tr.Metrics = m
-	tr.Reason = verdictReason(stdout, succeeded)
+	tr.Reason = verdictReason(stderr, succeeded)
 	if runErr != nil {
 		tr.Err = runErr.Error()
 	}
@@ -255,85 +257,6 @@ func saveRollout(sessDir, destDir, label, taskID string, runIdx int) error {
 	}
 	name := fmt.Sprintf("%s__%s__r%d.jsonl", label, taskID, runIdx)
 	return os.WriteFile(filepath.Join(destDir, name), data, 0o644)
-}
-
-// runBee spawns the real binary against the task's goal in the sandbox.
-func runBee(ctx context.Context, t Task, opt Options, sandbox, sessDir string) (string, error) {
-	args := []string{"run", "--headless", "--yes"}
-	if opt.Provider != "" {
-		args = append(args, "--provider", opt.Provider)
-	}
-	if opt.Model != "" {
-		args = append(args, "--model", opt.Model)
-	}
-	args = append(args, "/goal "+t.Prompt)
-
-	cctx, cancel := context.WithTimeout(ctx, opt.Timeout)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, opt.BeeBin, args...)
-	cmd.Dir = sandbox
-	cmd.Env = append(os.Environ(),
-		"BEE_SESSIONS_DIR="+sessDir,
-	)
-	if opt.ConfigFile != "" {
-		cmd.Env = append(cmd.Env, "BEE_CONFIG="+opt.ConfigFile)
-	}
-	if opt.Profile != "" {
-		cmd.Env = append(cmd.Env, "BEE_PROFILE="+opt.Profile)
-	}
-	cmd.Env = append(cmd.Env, opt.ExtraEnv...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-// runShell runs a task's setup line. It runs from the invocation cwd (not the
-// empty sandbox) so relative fixture paths like "cp -r bench/fixtures/x $SANDBOX"
-// resolve against the suite. trusted task-suite shell — see checks.go. timeout
-// caps it so a hung setup can't stall the suite (0 = no cap).
-func runShell(ctx context.Context, line, sandbox string, timeout time.Duration) (string, error) {
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-	cmd := exec.CommandContext(ctx, "sh", "-c", strings.ReplaceAll(line, "$SANDBOX", sandbox))
-	cmd.Env = append(os.Environ(), "SANDBOX="+sandbox)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-// readTranscript reads the single session jsonl bee wrote into sessDir.
-func readTranscript(sessDir string) ([]types.Message, error) {
-	entries, err := os.ReadDir(sessDir)
-	if err != nil {
-		return nil, err
-	}
-	for _, e := range entries {
-		if filepath.Ext(e.Name()) == ".jsonl" {
-			return parseJSONL(filepath.Join(sessDir, e.Name()))
-		}
-	}
-	return nil, fmt.Errorf("no session written")
-}
-
-func verdictReason(stdout string, succeeded bool) string {
-	if i := strings.Index(stdout, goal.AchievedPrefix); i >= 0 {
-		return strings.TrimSpace(firstLine(stdout[i+len(goal.AchievedPrefix):]))
-	}
-	if i := strings.Index(stdout, goal.StoppedPrefix); i >= 0 {
-		return strings.TrimSpace(firstLine(stdout[i:]))
-	}
-	if succeeded {
-		return "checks passed"
-	}
-	return "checks failed"
-}
-
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
 }
 
 // meanWallMillis averages per-task wall-clock across the suite. Per-task values
