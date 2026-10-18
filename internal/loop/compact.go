@@ -4,6 +4,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -94,6 +95,16 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 			return msgs, stats, ev.Err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		stats.Duration = time.Since(start)
+		return msgs, stats, err
+	}
+	// a reasoning-only or empty stream would replace the whole history with
+	// a bare marker; fail so the caller keeps the original messages.
+	if strings.TrimSpace(sum.String()) == "" {
+		stats.Duration = time.Since(start)
+		return msgs, stats, errors.New("compact: empty summary")
+	}
 	summaryMsg := types.Message{
 		Role:    types.RoleUser,
 		Content: []types.ContentBlock{{Type: types.BlockText, Text: "[compacted history]\n" + sum.String()}},
@@ -126,20 +137,23 @@ func ShouldAutoCompact(sys string, msgs []types.Message, budget int, threshold f
 }
 
 // ShouldAutoCompactWithUsage trips when input-token usage crosses
-// budget*threshold. When actualInputTokens > 0 (real value from provider's
-// last EventDone usage) we use it directly — most accurate signal we have
-// and works for any provider that reports usage. Falls back to a heuristic
-// estimate over sys + every content block (text, thinking, tool_use input,
-// tool_result content) when no live count is available.
+// budget*threshold. The larger of the provider's last reported input count
+// (accurate for the request it measured, works for any provider that reports
+// usage) and a heuristic estimate over sys + every content block (text,
+// thinking, tool_use input, tool_result content) wins, so content appended
+// after the measured request still counts.
 //
 // budget<=0 or threshold<=0 disables.
 func ShouldAutoCompactWithUsage(sys string, msgs []types.Message, actualInputTokens, budget int, threshold float64) bool {
 	if budget <= 0 || threshold <= 0 {
 		return false
 	}
-	total := actualInputTokens
-	if total <= 0 {
-		total = prompt.EstimateTokens(sys) + defaultTokenEstimator.EstimateMessages(msgs)
+	// the reported count predates messages appended since that request (the
+	// assistant reply and fresh tool results), so never trust it below the
+	// estimate: one huge tool output would otherwise overflow the window.
+	total := prompt.EstimateTokens(sys) + defaultTokenEstimator.EstimateMessages(msgs)
+	if actualInputTokens > total {
+		total = actualInputTokens
 	}
 	return float64(total) > float64(budget)*threshold
 }

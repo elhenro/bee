@@ -151,6 +151,12 @@ type Engine struct {
 	// for a given (model, ctx) pair, and we re-scale on model switch via the
 	// model-id check.
 	profileScaledFor string
+	// profileUnscaled remembers the pre-scale budgets so a model switch to a
+	// smaller window (or a non-scaling model) can restore them.
+	profileUnscaled *unscaledProfile
+	// cardGoal is the last real user ask; a synthetic continuation turn keeps
+	// it as the state card goal instead of replacing it.
+	cardGoal string
 	// warnedThinkingIgnored dedupes the "model ignores thinking suppression"
 	// notice. session-level (NOT reset per Run): the model rarely changes
 	// mid-session, so one warning is enough.

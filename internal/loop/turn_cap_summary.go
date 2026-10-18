@@ -33,19 +33,22 @@ func (e *Engine) finalSummaryOnCap(ctx context.Context, res *RunResult, sys, sys
 			"Stop calling tools. Give a short final summary: what you changed, what is verified working, and what is still left to do."}},
 		Time: time.Now().UTC(),
 	}
-	if err := e.appendMessage(ctx, prompt); err != nil {
-		return
-	}
-	res.Messages = append(res.Messages, prompt)
 
 	// the tail (hive contract + pheromone card) stays in place so a capped
 	// worker's close-out still arrives in report shape.
 	sys, sysDynamic = appendPromptTail(sys, sysDynamic, e.promptTail())
+	// same wire view the loop uses (card when active), then flattened to plain
+	// text: the request carries no tools, and a history holding tool blocks
+	// without tool specs is rejected by some wire formats.
+	wire := dropEphemeral(append(append([]types.Message(nil), res.Messages...), prompt))
+	if e.run != nil && e.run.card != nil {
+		wire = e.run.card.view(wire)
+	}
 	req := llm.Request{
 		Model:         e.Cfg.DefaultModel,
 		System:        sys,
 		SystemDynamic: sysDynamic,
-		Messages:      dropEphemeral(res.Messages),
+		Messages:      flattenToolBlocks(wire),
 		Stream:        true,
 		Temperature:   0,
 	}
@@ -53,10 +56,43 @@ func (e *Engine) finalSummaryOnCap(ctx context.Context, res *RunResult, sys, sys
 	if err != nil || strings.TrimSpace(text) == "" {
 		return
 	}
-	msg.ParentID = lastID(res.Messages)
+	// persist the prompt only now: a failed summary must not leave a
+	// "no more tools will run" instruction in the rollout of a resumable run.
+	if err := e.appendMessage(ctx, prompt); err != nil {
+		return
+	}
+	res.Messages = append(res.Messages, prompt)
+	msg.ParentID = prompt.ID
 	if err := e.appendMessage(ctx, msg); err != nil {
 		return
 	}
 	res.Messages = append(res.Messages, msg)
 	res.FinalText = text
+}
+
+// flattenToolBlocks rewrites msgs as plain text turns: tool calls and results
+// become bracketed text, thinking blocks are dropped, tool-role messages turn
+// into user turns, and adjacent same-role turns merge. Used for requests that
+// ship no tool specs.
+func flattenToolBlocks(msgs []types.Message) []types.Message {
+	out := make([]types.Message, 0, len(msgs))
+	for _, m := range msgs {
+		txt := flattenForSummary(m)
+		if txt == "" {
+			continue
+		}
+		role := m.Role
+		if role == types.RoleTool {
+			role = types.RoleUser
+		}
+		if n := len(out); n > 0 && out[n-1].Role == role {
+			out[n-1].Content = []types.ContentBlock{{Type: types.BlockText, Text: out[n-1].Content[0].Text + "\n" + txt}}
+			continue
+		}
+		out = append(out, types.Message{
+			Role:    role,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: txt}},
+		})
+	}
+	return out
 }

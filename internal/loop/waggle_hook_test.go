@@ -44,8 +44,10 @@ func TestRunOne_CrystallizesRepeatedRoute(t *testing.T) {
 	}
 	ctx := context.Background()
 	for i := 0; i < 2; i++ {
-		e.runOne(ctx, types.ToolUse{ID: "1", Name: "ls", Input: map[string]any{"path": "/p"}})
-		e.runOne(ctx, types.ToolUse{ID: "2", Name: "read", Input: map[string]any{"path": "/p/a.go"}})
+		_, _ = e.dispatchTools(ctx, []types.ToolUse{
+			{ID: "1", Name: "ls", Input: map[string]any{"path": "/p"}},
+			{ID: "2", Name: "read", Input: map[string]any{"path": "/p/a.go"}},
+		})
 	}
 	ents, err := os.ReadDir(store.Dir())
 	if err != nil || len(ents) != 1 {

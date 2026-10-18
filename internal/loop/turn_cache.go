@@ -14,8 +14,9 @@ import (
 
 // sysPromptCacheKey builds a cheap fingerprint of the inputs to prompt.Assemble.
 // inputs include cwd + role + posture + profile + caveman level + tool specs
-// (name+desc lengths) + skill manifest length + record names/sizes + ctx-file
-// paths/lengths. read-only is folded in because it flips the prompt prefix.
+// (name+desc/snippet hashes) + skill manifest hash + record names/body hashes +
+// ctx-file paths/body hashes. content is hashed, not measured: an edit that
+// keeps the length must still bust the cache. read-only is folded in because it flips the prompt prefix.
 // returns "" if any required input is unstable enough to skip caching.
 func sysPromptCacheKey(cfg config.Config, role Role, readOnly bool, specs []llm.ToolSpec, skillManifest string, recs []knowledge.Record, ctxFiles []prompt.ContextFile) string {
 	var b strings.Builder
@@ -34,18 +35,18 @@ func sysPromptCacheKey(cfg config.Config, role Role, readOnly bool, specs []llm.
 	for _, s := range specs {
 		b.WriteString(s.Name)
 		b.WriteByte(':')
-		b.WriteString(strconv.Itoa(len(s.Description)))
+		b.WriteString(contentHash(s.Description))
 		b.WriteByte(':')
-		b.WriteString(strconv.Itoa(len(s.PromptSnippet)))
+		b.WriteString(contentHash(s.PromptSnippet))
 		b.WriteByte(';')
 	}
 	b.WriteByte('|')
-	b.WriteString(strconv.Itoa(len(skillManifest)))
+	b.WriteString(contentHash(skillManifest))
 	b.WriteByte('|')
 	for _, r := range recs {
 		b.WriteString(r.Name)
 		b.WriteByte(':')
-		b.WriteString(strconv.Itoa(len(r.Body)))
+		b.WriteString(contentHash(r.Body))
 		b.WriteByte(':')
 		b.WriteString(strconv.FormatInt(r.Modified.UnixNano(), 10))
 		b.WriteByte(';')
@@ -54,9 +55,15 @@ func sysPromptCacheKey(cfg config.Config, role Role, readOnly bool, specs []llm.
 	for _, f := range ctxFiles {
 		b.WriteString(f.Path)
 		b.WriteByte(':')
-		b.WriteString(strconv.Itoa(len(f.Body)))
+		b.WriteString(contentHash(f.Body))
 		b.WriteByte(';')
 	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:8])
+}
+
+// contentHash is a short digest of s for fingerprinting.
+func contentHash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:6])
 }

@@ -76,10 +76,10 @@ func (e *Engine) describeCached(ctx context.Context, c vision.Client, b types.Co
 	txt, err := c.Describe(ctx, b.Data, b.MediaType, "")
 	if err != nil {
 		e.warnf("vision fallback failed: %v", err)
-		txt = "[image: vision fallback failed: " + err.Error() + "]"
-	} else {
-		txt = "[image description (via " + c.Model + "): " + txt + "]"
+		// not cached: a transient failure or canceled ctx must be retried next turn
+		return "[image: vision fallback failed: " + err.Error() + "]"
 	}
+	txt = "[image description (via " + c.Model + "): " + txt + "]"
 	e.run.visionCache[hkey] = txt
 	return txt
 }

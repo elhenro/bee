@@ -53,18 +53,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// context than the 4k default tiny assumes (sparse MoE: Qwen3-A3B-128k,
 	// etc.). Re-runs on model switch via profileScaledFor sentinel.
 	if e.profileScaledFor != e.Cfg.DefaultModel {
-		if name := config.ResolveAutoProfileForProvider(e.Cfg.DefaultProvider, e.Cfg.DefaultModel); name == "tiny" {
-			if ctxWindow := llm.ContextWindow(e.Cfg.DefaultModel); ctxWindow > 16000 {
-				e.Cfg.Profiles = cloneProfiles(e.Cfg.Profiles)
-				resolved := e.Cfg.Profile
-				if resolved == "auto" {
-					resolved = name
-				}
-				if p, ok := e.Cfg.Profiles[resolved]; ok {
-					e.Cfg.Profiles[resolved] = config.ScaleProfileForContext(p, resolved, ctxWindow)
-				}
-			}
-		}
+		e.rescaleProfile()
 		e.profileScaledFor = e.Cfg.DefaultModel
 	}
 
@@ -199,7 +188,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// wire (see statecard.go). reset every Run so the goal tracks the latest
 	// user ask; the session transcript itself is untouched.
 	if config.ActiveProfile(e.Cfg).StateCard {
-		e.run.card = newStateCard(userText)
+		e.run.card = newStateCard(e.cardGoalFor(userText, e.InitialMessages))
 	} else {
 		e.run.card = nil
 	}
@@ -397,7 +386,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			e.run.emptyCompletionStreak = 0
 		}
 
-		if len(toolUses) == 0 || detectDoneSignal(finalText) {
+		// a done signal alongside tool calls still dispatches them: returning here
+		// would persist tool_use with no tool_result (model believes it ran).
+		if len(toolUses) == 0 {
 			// whitespace-only turn: no text, no reasoning, no tool. nudge once,
 			// then bail with a typed error so the wrapper can surface "switch
 			// model" instead of ending on a blank answer or spinning the budget.
@@ -467,6 +458,19 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// dispatch tools (read-only ones run in parallel, mutators serial)
 		toolResults, err := e.dispatchTools(ctx, toolUses)
 		if err != nil {
+			// canceled mid-batch: persist what ran plus synthetic results so no
+			// tool_use stays orphaned in the rollout. the turn ctx is dead, so
+			// the append must not inherit its cancellation.
+			toolMsg := types.Message{
+				ID:       newID(),
+				ParentID: assistantMsg.ID,
+				Role:     types.RoleTool,
+				Content:  toolResultBlocks(toolResults),
+				Time:     time.Now().UTC(),
+			}
+			if aerr := e.appendMessage(context.WithoutCancel(ctx), toolMsg); aerr == nil {
+				res.Messages = append(res.Messages, toolMsg)
+			}
 			return res, err
 		}
 		if e.run.card != nil {
@@ -513,6 +517,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			esc := e.run.escalateErr
 			e.run.escalateErr = nil
 			return res, &EscalateError{Reason: esc.Reason, NextAction: esc.NextAction, Options: esc.Options}
+		}
+		if detectDoneSignal(finalText) {
+			return res, nil
 		}
 	}
 	// graceful wind-down: one tool-less turn so the user gets a close-out

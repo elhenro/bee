@@ -22,7 +22,9 @@ func (e *Engine) Compact(ctx context.Context) ([]types.Message, CompactStats, er
 	if e.Sessions == nil {
 		return nil, CompactStats{}, nil
 	}
-	msgs, err := session.Read(e.Sessions.ID())
+	// resume view: a raw read would re-summarize history already folded into
+	// an earlier checkpoint.
+	msgs, err := session.ReadResume(e.Sessions.ID())
 	if err != nil {
 		return nil, CompactStats{}, err
 	}
@@ -46,6 +48,9 @@ func compactionModel(cfg config.Config) string {
 // history instead of replaying the full raw log. Returns the in-memory result
 // for the caller to swap into the live message list.
 func (e *Engine) compact(ctx context.Context, msgs []types.Message) ([]types.Message, CompactStats, error) {
+	// ephemeral UI notices are never persisted, so one landing at the preserve
+	// boundary would write an unresolvable PreserveFrom id.
+	msgs = dropEphemeral(msgs)
 	out, stats, err := Compact(ctx, e.Provider, compactionModel(e.Cfg), msgs)
 	if err != nil {
 		return out, stats, err
@@ -62,7 +67,7 @@ func (e *Engine) persistCheckpoint(ctx context.Context, out []types.Message, sta
 		return
 	}
 	preserveFrom := out[1].ID
-	if preserveFrom == "" {
+	if preserveFrom == "" || out[1].Ephemeral {
 		return
 	}
 	marker := types.Message{

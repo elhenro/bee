@@ -144,15 +144,16 @@ func summarizeMiddle(ctx context.Context, p llm.Provider, model string, middle [
 	return strings.TrimSpace(sum.String()), nil
 }
 
-// firstUserText returns the first non-empty user text block — the original task
-// anchor that must survive the handoff losslessly.
+// firstUserText returns the first non-empty user text block the user wrote —
+// the original task anchor that must survive the handoff losslessly.
+// Compaction summaries and loop-injected turns are skipped.
 func firstUserText(msgs []types.Message) string {
 	for _, m := range msgs {
 		if m.Role != types.RoleUser {
 			continue
 		}
 		for _, c := range m.Content {
-			if c.Type == types.BlockText && strings.TrimSpace(c.Text) != "" {
+			if c.Type == types.BlockText && strings.TrimSpace(c.Text) != "" && !isSyntheticUserText(c.Text) {
 				return strings.TrimSpace(c.Text)
 			}
 		}

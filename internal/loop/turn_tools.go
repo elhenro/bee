@@ -14,7 +14,6 @@ import (
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/escalate"
 	"github.com/elhenro/bee/internal/types"
-	"github.com/elhenro/bee/internal/waggle"
 )
 
 // hardResultCapTokens is the universal context-safety floor for a single tool
@@ -37,17 +36,30 @@ var safeParallelTools = map[string]bool{
 // Order in the returned slice matches the input order so UseIDs line up
 // with the original ToolUse blocks. A serial tool acts as a barrier:
 // all in-flight parallel tools complete before it runs, and nothing starts
-// after it until it finishes. ctx cancellation short-circuits.
+// after it until it finishes. ctx cancellation short-circuits, but the
+// returned slice is always complete: tools that never started get a
+// synthetic canceled result, finished ones keep theirs, so the caller can
+// persist a tool message that answers every tool_use.
 func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]types.ToolResult, error) {
 	results := make([]types.ToolResult, len(uses))
+	started := make([]bool, len(uses))
 	var wg sync.WaitGroup
 	flush := func() { wg.Wait() }
+	canceled := func() ([]types.ToolResult, error) {
+		flush()
+		for i, u := range uses {
+			if !started[i] {
+				results[i] = types.ToolResult{UseID: u.ID, Content: "canceled before this tool ran", IsError: true}
+			}
+		}
+		return results, ctx.Err()
+	}
 	for i, u := range uses {
 		if ctx.Err() != nil {
-			flush()
-			return results, ctx.Err()
+			return canceled()
 		}
 		if safeParallelTools[u.Name] {
+			started[i] = true
 			wg.Add(1)
 			go func(idx int, use types.ToolUse) {
 				defer wg.Done()
@@ -58,11 +70,13 @@ func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]typ
 		// mutator / shell — drain pending parallel work first, run serially
 		flush()
 		if ctx.Err() != nil {
-			return results, ctx.Err()
+			return canceled()
 		}
+		started[i] = true
 		results[i] = e.runOneTrapped(ctx, u)
 	}
 	flush()
+	e.observeWaggle(uses, results)
 	e.replayFollow(ctx, uses, results)
 	// universal context-safety floor: independent of the per-tool caps applied
 	// in runOne, no single result (a Go-level error body, replay-appended route
@@ -125,61 +139,6 @@ func (e *Engine) runOneTrapped(ctx context.Context, u types.ToolUse) types.ToolR
 		}
 	}
 	return res
-}
-
-// replayFollow feeds this batch's successful read-only calls to the predictive
-// replayer in input order (the parallel dispatch path can't preserve order, so
-// this runs once, post-flush) and, on a confident prefix match, runs the route's
-// remaining steps and appends the combined output to the call that completed the
-// recognized prefix. Best-effort: never errors the turn.
-func (e *Engine) replayFollow(ctx context.Context, uses []types.ToolUse, results []types.ToolResult) {
-	if e.Replay == nil {
-		return
-	}
-	last := -1
-	for i, u := range uses {
-		if results[i].IsError || !safeParallelTools[u.Name] {
-			continue
-		}
-		e.Replay.Observe(waggle.Call{Tool: u.Name, Args: stringifyArgs(u.Input)})
-		last = i
-	}
-	if last < 0 {
-		return
-	}
-	if block, ok := e.Replay.Follow(ctx, e.replayExec); ok {
-		results[last].Content += block
-	}
-}
-
-// replayExec runs a fully-literal read-only script for the replayer through the
-// host shell tool, so sandbox wrapping, secret redaction and per-tool truncation
-// apply exactly as for a model-issued call. A hardline safety re-check guards
-// against a recorded route that resolves to something dangerous later.
-func (e *Engine) replayExec(ctx context.Context, script string) (string, error) {
-	if e.Tools == nil {
-		return "", errors.New("replay: tools unavailable")
-	}
-	if err := safety.CheckShellCommand(script); err != nil {
-		return "", err
-	}
-	t, ok := e.Tools.Get("bash")
-	if !ok {
-		return "", errors.New("replay: shell tool unavailable")
-	}
-	out, err := t.Run(ctx, wrapShellInput(map[string]any{"command": script}, e.Cfg.Sandbox, e.Cwd))
-	if err != nil {
-		return "", err
-	}
-	if out.IsError {
-		return "", fmt.Errorf("replay step failed: %s", out.Content)
-	}
-	content := out.Content
-	if e.Cfg.Sandbox.Confined() {
-		content = safety.Redact(content)
-	}
-	content, _ = tools.TruncateWithLimit("bash", content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
-	return content, nil
 }
 
 // sanitizeToolInput drops underscore-prefixed keys from model-supplied tool
@@ -254,39 +213,7 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if truncated && e.JSONEmitter != nil {
 		e.JSONEmitter.Emit(jsonmode.Event{Type: "tool_truncated", Name: u.Name, UseID: u.ID})
 	}
-	// feed the forage log so repeated read-only routes can crystallize into
-	// waggles. only successful calls; bash is marked mutating (ambiguous) and so
-	// never crystallizes. best-effort, never affects the turn.
-	if e.Waggle != nil && !out.IsError {
-		e.Waggle.Observe(waggle.Call{
-			Tool:      u.Name,
-			Args:      stringifyArgs(u.Input),
-			Mutates:   !safeParallelTools[u.Name],
-			EstTokens: len(content) / 4,
-		})
-	}
 	return types.ToolResult{UseID: u.ID, Content: content, IsError: out.IsError}, nil
-}
-
-// stringifyArgs flattens a tool's input to string values for the forage log,
-// dropping the loop's internal underscore-prefixed keys (parse diagnostics,
-// sandbox-wrapped command originals).
-func stringifyArgs(in map[string]any) map[string]string {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		if strings.HasPrefix(k, "_") {
-			continue
-		}
-		if s, ok := v.(string); ok {
-			out[k] = s
-		} else {
-			out[k] = fmt.Sprintf("%v", v)
-		}
-	}
-	return out
 }
 
 // allowedNames returns the tool names advertised this turn, sorted, for the
