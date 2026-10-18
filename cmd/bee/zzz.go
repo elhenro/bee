@@ -516,7 +516,7 @@ func readStdinOrEmpty() string {
 func buildZzzDeps(model, provider, sandboxScope, thinking, effort, cavemanLvl string, yes bool) (
 	config.Config, llm.Provider, approval.Approver, *skills.Registry, error,
 ) {
-	cfg, err := config.Load()
+	cfg, err := config.LoadWith(config.Overrides{Provider: provider, Model: model})
 	if err != nil {
 		if os.Getenv("BEE_TEST_PROVIDER") != "" {
 			cfg = config.Defaults()
