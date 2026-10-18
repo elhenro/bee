@@ -79,9 +79,6 @@ type StreamRenderer struct {
 	cont bool
 	// pulse phase of in-flight call bullets
 	pendingFrame int
-	// id of the call the pending bullet is currently painting for; the
-	// dance phase is derived from it so parallel calls hold their own beat
-	pendingID string
 	// compactingVariant selects one of the three /compact swarm animations.
 	// Picked at frame 0 of each compacting run, sticks for the duration.
 	compactingVariant int

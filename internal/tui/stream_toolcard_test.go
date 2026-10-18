@@ -189,20 +189,27 @@ func TestRenderPendingTools_SkipsEscalateAndCaps(t *testing.T) {
 	}
 }
 
-func TestRenderPendingTools_BulletDances(t *testing.T) {
+func TestRenderPendingTools_BulletBreathes(t *testing.T) {
 	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI256) // tests run colorless by default
+	lipgloss.SetColorProfile(termenv.TrueColor) // tests run colorless by default
 	defer lipgloss.SetColorProfile(prev)
 	r := NewStreamRenderer(DefaultStyles(), 100)
 	uses := []types.ToolUse{{ID: "1", Name: "read", Input: map[string]any{"path": "a.go"}}}
-	on, off := r.RenderPendingTools(uses, 0), r.RenderPendingTools(uses, 4)
-	if on == off {
-		t.Fatal("pending bullet should dance between frames")
+	peak, trough := r.RenderPendingTools(uses, 0), r.RenderPendingTools(uses, pendingPulsePeriod/2)
+	if peak == trough {
+		t.Fatal("pending bullet should dim between frames")
 	}
-	// the two dance cells legitimately change; the row after them must not
-	ra, rb := []rune(stripANSI(on)), []rune(stripANSI(off))
-	if string(ra[3:]) != string(rb[3:]) {
-		t.Fatal("dance must not reflow the row")
+	if stripANSI(peak) != stripANSI(trough) {
+		t.Fatal("pulse must only recolor, never reflow the row")
+	}
+}
+
+func TestPulseColor_StaysInRangeAndLoops(t *testing.T) {
+	if pulseColor(0) != pulseColor(pendingPulsePeriod) {
+		t.Fatal("pulse must loop on its period")
+	}
+	if pulseColor(0) == pulseColor(pendingPulsePeriod/2) {
+		t.Fatal("trough must differ from peak")
 	}
 }
 
@@ -211,12 +218,8 @@ func TestRenderPendingTools_BulletSettlesOnOutcome(t *testing.T) {
 	u := types.ToolUse{ID: "u1", Name: "read", Input: map[string]any{"path": "a.go"}}
 	ph, _ := r.callParts(u, outcomePending, 0)
 	dh, _ := r.callParts(u, outcomeDone, 0)
-	pending, done := stripANSI(ph), stripANSI(dh)
-	if !strings.Contains(pending, waggleGlyph(0)) && !strings.Contains(pending, waggleGlyph(1)) {
-		t.Fatalf("pending bullet should be a dance strip: %q", pending)
-	}
-	if !strings.Contains(done, glyphTool) {
-		t.Fatalf("settled bullet should be the static outcome glyph: %q", done)
+	if !strings.Contains(stripANSI(ph), glyphTool) || !strings.Contains(stripANSI(dh), glyphTool) {
+		t.Fatalf("pending and settled bullets share the glyph: %q / %q", ph, dh)
 	}
 }
 

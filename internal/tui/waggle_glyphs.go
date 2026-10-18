@@ -65,18 +65,3 @@ func waggleStrip(frame, cells, offset int) string {
 	}
 	return b.String()
 }
-
-// wagglePendingBullet renders the in-flight tool bullet: a 2-cell dance
-// strip whose phase is derived from the call id so parallel calls each
-// hold their own beat. Settles into the static outcome hex the moment
-// the call resolves (see stream_toolcard bullet()).
-func wagglePendingBullet(id string, frame int) string {
-	seed := 0
-	for _, r := range id {
-		seed = seed*31 + int(r)
-	}
-	if seed < 0 {
-		seed = -seed
-	}
-	return waggleStrip(frame, 2, seed%waggleCycle)
-}
