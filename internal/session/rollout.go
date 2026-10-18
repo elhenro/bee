@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -59,7 +58,26 @@ func Open(id string) (*Rollout, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := terminateTornLine(f); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
 	return &Rollout{id: id, path: p, f: f}, nil
+}
+
+// terminateTornLine ends a last line a crash left without its newline. Without
+// it the next Append glues onto the fragment and both messages are lost.
+func terminateTornLine(f *os.File) error {
+	fi, err := f.Stat()
+	if err != nil || fi.Size() == 0 {
+		return err
+	}
+	var last [1]byte
+	if _, err := f.ReadAt(last[:], fi.Size()-1); err != nil || last[0] == '\n' {
+		return err
+	}
+	_, err = f.Write([]byte{'\n'})
+	return err
 }
 
 // ID returns the session id this rollout writes.
@@ -154,8 +172,7 @@ func readFile(path string) ([]types.Message, error) {
 	}
 	defer f.Close()
 
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
+	sc := newLineScanner(f)
 
 	var out []types.Message
 	for sc.Scan() {
@@ -237,8 +254,7 @@ func readFirstMessage(path string) (types.Message, error) {
 		return m, err
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
+	sc := newLineScanner(f)
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
@@ -319,8 +335,7 @@ func firstUserTextFromFile(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
+	sc := newLineScanner(f)
 	scanned := 0
 	for sc.Scan() {
 		scanned++
@@ -333,7 +348,7 @@ func firstUserTextFromFile(path string) (string, error) {
 		}
 		var m types.Message
 		if err := json.Unmarshal(line, &m); err != nil {
-			return "", err
+			continue // torn or corrupt line: the first user turn may follow
 		}
 		if m.Role != types.RoleUser {
 			continue
