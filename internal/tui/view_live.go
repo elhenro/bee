@@ -63,9 +63,11 @@ func (m Model) loaderStatsNow() LoaderStats {
 		Rate:     int(m.loaderRateEMA + 0.5),
 		RateTokS: m.loaderRateTokS,
 		Seed:     m.loaderSeed,
-		ShowIn:   m.showLoaderIn,
-		ShowOut:  m.showLoaderOut,
-		ShowRate: m.showLoaderRate,
+		// consecutive idle ticks: the busy-row dance reads it as form
+		StallFrames: m.loaderStallFrames,
+		ShowIn:      m.showLoaderIn,
+		ShowOut:     m.showLoaderOut,
+		ShowRate:    m.showLoaderRate,
 	}
 }
 

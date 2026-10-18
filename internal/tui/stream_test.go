@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"github.com/charmbracelet/lipgloss"
 	"fmt"
+	"github.com/charmbracelet/lipgloss"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -30,61 +30,61 @@ func stripANSI(s string) string { return ansi.Strip(s) }
 
 func TestParseLoaderStyle_NamedValues(t *testing.T) {
 	cases := map[string]LoaderStyle{
-		"":         LoaderStyleDefault,
-		"default":  LoaderStyleDefault,
-		"swarm":    LoaderStyleSwarm,
-		"bee":      LoaderStyleSwarm,
-		"pulse":    LoaderStylePulse,
-		"wave":     LoaderStyleWave,
-		"comb":     LoaderStyleWave, // legacy alias
-		"comet":    LoaderStyleComet,
-		"hex":      LoaderStyleHex,
-		"ripple":   LoaderStyleRipple,
-		"rain":     LoaderStyleRain,
-		"drip":     LoaderStyleRain, // legacy alias
-		"honey":    LoaderStyleRain,
-		"orbit":    LoaderStyleOrbit,
-		"dance":    LoaderStyleOrbit, // legacy alias
-		"waggle":   LoaderStyleOrbit,
-		"breath":   LoaderStyleBreath,
-		"stars":    LoaderStyleStars,
-		"cosmic":   LoaderStyleStars,
-		"forage":   LoaderStyleForage,
-		"hive":     LoaderStyleForage,
-		"figure8":  LoaderStyleFigure8,
-		"fig8":     LoaderStyleFigure8,
-		"vortex":   LoaderStyleVortex,
-		"tornado":  LoaderStyleVortex,
-		"gust":     LoaderStyleGust,
-		"wind":     LoaderStyleGust,
-		"scatter":  LoaderStyleScatter,
-		"alarm":    LoaderStyleScatter,
-		"flock":    LoaderStyleFlock,
-		"boids":    LoaderStyleFlock,
-		"dna":      LoaderStyleDNA,
-		"helix":    LoaderStyleDNA,
-		"matrix":   LoaderStyleMatrix,
-		"cascade":  LoaderStyleMatrix,
+		"":          LoaderStyleDefault,
+		"default":   LoaderStyleDefault,
+		"swarm":     LoaderStyleSwarm,
+		"bee":       LoaderStyleSwarm,
+		"pulse":     LoaderStylePulse,
+		"wave":      LoaderStyleWave,
+		"comb":      LoaderStyleWave, // legacy alias
+		"comet":     LoaderStyleComet,
+		"hex":       LoaderStyleHex,
+		"ripple":    LoaderStyleRipple,
+		"rain":      LoaderStyleRain,
+		"drip":      LoaderStyleRain, // legacy alias
+		"honey":     LoaderStyleRain,
+		"orbit":     LoaderStyleOrbit,
+		"dance":     LoaderStyleOrbit, // legacy alias
+		"waggle":    LoaderStyleOrbit,
+		"breath":    LoaderStyleBreath,
+		"stars":     LoaderStyleStars,
+		"cosmic":    LoaderStyleStars,
+		"forage":    LoaderStyleForage,
+		"hive":      LoaderStyleForage,
+		"figure8":   LoaderStyleFigure8,
+		"fig8":      LoaderStyleFigure8,
+		"vortex":    LoaderStyleVortex,
+		"tornado":   LoaderStyleVortex,
+		"gust":      LoaderStyleGust,
+		"wind":      LoaderStyleGust,
+		"scatter":   LoaderStyleScatter,
+		"alarm":     LoaderStyleScatter,
+		"flock":     LoaderStyleFlock,
+		"boids":     LoaderStyleFlock,
+		"dna":       LoaderStyleDNA,
+		"helix":     LoaderStyleDNA,
+		"matrix":    LoaderStyleMatrix,
+		"cascade":   LoaderStyleMatrix,
 		"heartbeat": LoaderStyleHeartbeat,
-		"ekg":      LoaderStyleHeartbeat,
+		"ekg":       LoaderStyleHeartbeat,
 		"lightning": LoaderStyleLightning,
-		"bolt":     LoaderStyleLightning,
-		"snake":    LoaderStyleSnake,
-		"chase":    LoaderStyleSnake,
+		"bolt":      LoaderStyleLightning,
+		"snake":     LoaderStyleSnake,
+		"chase":     LoaderStyleSnake,
 		"fireworks": LoaderStyleFireworks,
-		"burst":    LoaderStyleFireworks,
-		"drunk":    LoaderStyleDrunk,
-		"tipsy":    LoaderStyleDrunk,
-		"jar":      LoaderStyleJar,
-		"trapped":  LoaderStyleJar,
-		"conga":    LoaderStyleConga,
-		"party":    LoaderStyleConga,
-		"queen":    LoaderStyleQueen,
-		"royal":    LoaderStyleQueen,
-		"drip2":    LoaderStyleDrip,
-		"droplet":  LoaderStyleDrip,
-		"marathon": LoaderStyleMarathon,
-		"race":     LoaderStyleMarathon,
+		"burst":     LoaderStyleFireworks,
+		"drunk":     LoaderStyleDrunk,
+		"tipsy":     LoaderStyleDrunk,
+		"jar":       LoaderStyleJar,
+		"trapped":   LoaderStyleJar,
+		"conga":     LoaderStyleConga,
+		"party":     LoaderStyleConga,
+		"queen":     LoaderStyleQueen,
+		"royal":     LoaderStyleQueen,
+		"drip2":     LoaderStyleDrip,
+		"droplet":   LoaderStyleDrip,
+		"marathon":  LoaderStyleMarathon,
+		"race":      LoaderStyleMarathon,
 	}
 	for in, want := range cases {
 		if got := ParseLoaderStyle(in); got != want {
@@ -106,7 +106,7 @@ func TestParseLoaderStyle_RandomInRange(t *testing.T) {
 	// out-of-bounds.
 	for i := 0; i < 40; i++ {
 		s := ParseLoaderStyle("random")
-		if s < LoaderStylePulse || s > LoaderStyleMarathon {
+		if s < LoaderStylePulse || s > LoaderStyleWaggleRun {
 			t.Errorf("ParseLoaderStyle(random) out of named range: %v", s)
 		}
 	}
@@ -124,8 +124,10 @@ func TestRenderLoader_VariantsHaveDistinctOutput(t *testing.T) {
 	comet := stripANSI(r.renderLoader(5))
 	r.SetLoaderStyle(LoaderStyleRain)
 	rain := stripANSI(r.renderLoader(5))
+	r.SetLoaderStyle(LoaderStyleWaggleRun)
+	run := stripANSI(r.renderLoader(5))
 
-	out := []string{swarm, wave, comet, rain}
+	out := []string{swarm, wave, comet, rain, run}
 	for i := 0; i < len(out); i++ {
 		for j := i + 1; j < len(out); j++ {
 			if out[i] == out[j] {

@@ -195,6 +195,14 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 		d = 0
 	}
 	m.loaderRate = d
+	// stall tracker for the busy-row dance: consecutive ticks with no output
+	// growth. Any growth resets it, so the form flips back to the round
+	// dance the moment tokens resume.
+	if d > 0 {
+		m.loaderStallFrames = 0
+	} else {
+		m.loaderStallFrames++
+	}
 	// EMA smooths the 1-tick flash when a provider flushes a large chunk
 	// into a single tick (or when hasThinkingBlock resets the rate between
 	// reasoning and answer). α=0.3 → ~3-tick rise time — fast enough to

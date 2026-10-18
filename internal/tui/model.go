@@ -294,6 +294,12 @@ type Model struct {
 	// loaderSeed varies the procedural particle layout per turn. Rolled on
 	// submit so each generation looks distinct.
 	loaderSeed int64
+	// loaderStallFrames counts consecutive loader ticks with no output
+	// growth; reset on any growth. Drives the busy-row dance form: the bee
+	// loops the round dance while tokens flow and switches to the straight
+	// waggle-run when the stream stalls, so the pattern reports stream
+	// health without a single word of text.
+	loaderStallFrames int
 	// loaderRate is chars produced since the previous loaderTick — the raw
 	// per-tick delta, kept for the tok/s window and for the existing tests.
 	// loaderSampleChars holds the prior sample point. loaderRateEMA is the

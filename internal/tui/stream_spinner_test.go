@@ -25,14 +25,14 @@ func TestRenderSpinner_ShowsVerbElapsedTokensAndHint(t *testing.T) {
 	}
 }
 
-func TestRenderSpinner_GlyphTurnsWithFrame(t *testing.T) {
+func TestRenderSpinner_DanceChangesWithFrame(t *testing.T) {
 	r := spinnerRenderer()
 	seen := map[string]bool{}
-	for f := 0; f < len(spinnerFrames); f++ {
-		seen[strings.TrimSpace(stripANSI(r.RenderSpinner(f, 0)))[:3]] = true
+	for f := 0; f < waggleCycle; f++ {
+		seen[stripANSI(r.RenderSpinner(f, 0))[1:5]] = true
 	}
-	if len(seen) != len(spinnerFrames) {
-		t.Fatalf("expected %d distinct glyphs across a cycle, got %d", len(spinnerFrames), len(seen))
+	if len(seen) != waggleCycle {
+		t.Fatalf("expected %d distinct dance frames across a cycle, got %d", waggleCycle, len(seen))
 	}
 }
 

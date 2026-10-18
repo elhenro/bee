@@ -189,7 +189,7 @@ func TestRenderPendingTools_SkipsEscalateAndCaps(t *testing.T) {
 	}
 }
 
-func TestRenderPendingTools_BulletPulses(t *testing.T) {
+func TestRenderPendingTools_BulletDances(t *testing.T) {
 	prev := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI256) // tests run colorless by default
 	defer lipgloss.SetColorProfile(prev)
@@ -197,10 +197,26 @@ func TestRenderPendingTools_BulletPulses(t *testing.T) {
 	uses := []types.ToolUse{{ID: "1", Name: "read", Input: map[string]any{"path": "a.go"}}}
 	on, off := r.RenderPendingTools(uses, 0), r.RenderPendingTools(uses, 4)
 	if on == off {
-		t.Fatal("pending bullet should change style between pulse phases")
+		t.Fatal("pending bullet should dance between frames")
 	}
-	if stripANSI(on) != stripANSI(off) {
-		t.Fatal("pulse must only restyle, not reflow")
+	// the two dance cells legitimately change; the row after them must not
+	ra, rb := []rune(stripANSI(on)), []rune(stripANSI(off))
+	if string(ra[3:]) != string(rb[3:]) {
+		t.Fatal("dance must not reflow the row")
+	}
+}
+
+func TestRenderPendingTools_BulletSettlesOnOutcome(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 100)
+	u := types.ToolUse{ID: "u1", Name: "read", Input: map[string]any{"path": "a.go"}}
+	ph, _ := r.callParts(u, outcomePending, 0)
+	dh, _ := r.callParts(u, outcomeDone, 0)
+	pending, done := stripANSI(ph), stripANSI(dh)
+	if !strings.Contains(pending, waggleGlyph(0)) && !strings.Contains(pending, waggleGlyph(1)) {
+		t.Fatalf("pending bullet should be a dance strip: %q", pending)
+	}
+	if !strings.Contains(done, glyphTool) {
+		t.Fatalf("settled bullet should be the static outcome glyph: %q", done)
 	}
 }
 

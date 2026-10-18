@@ -89,6 +89,7 @@ var brailleNamedPainters = []braillePainter{
 	{"queen", renderBrailleQueen},
 	{"drip2", renderBrailleDrip},
 	{"marathon", renderBrailleMarathon},
+	{"wagglerun", renderBrailleWaggleRun},
 }
 
 // braillePainterByName looks up a painter by canonical name. Returns nil

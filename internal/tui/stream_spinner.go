@@ -8,11 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// braille dots: one cell, smooth, reads as "working" in any font
-var spinnerFrames = [...]string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 // flavor words for the busy row, one per turn (from the loader seed) so
-// the word holds still while the glyph turns
+// the word holds still while the dance runs
 var spinnerVerbs = [...]string{
 	"Foraging", "Buzzing", "Pollinating", "Humming",
 	"Brewing", "Gathering", "Waggling", "Swarming",
@@ -30,9 +27,12 @@ func (r *StreamRenderer) spinnerVerb() string {
 
 // busy row for a streaming turn:
 //
-//	⠹ Foraging…  12s · ↑ 3.4k · ↓ 340 · esc to interrupt
+//	⣿⣿ Foraging…  12s · ↑ 3.4k · ↓ 340 · esc to interrupt
 //
-// only the glyph turns; with show_loader off it's the static bee mark
+// the lead figures are a 2-cell waggle dance — round loop while tokens
+// flow, waggle-run when the stream stalls, turn-back at cycle edges — so
+// the pattern itself reports how the turn is going. with show_loader off
+// it's the static bee mark
 func (r *StreamRenderer) RenderSpinner(frame int, elapsed time.Duration) string {
 	return r.RenderSpinnerLabel(frame, r.spinnerVerb()+"…", elapsed, interruptHint)
 }
@@ -51,7 +51,14 @@ func (r *StreamRenderer) RenderSpinnerLabel(frame int, label string, elapsed tim
 	}
 	glyph := glyphBee
 	if r.showLoader {
-		glyph = spinnerFrames[frame%len(spinnerFrames)]
+		// two bees, phase-offset. dance form tracks stream health: round
+		// dance while tokens flow, straight waggle-run once the stream
+		// stalls (form encodes state — the point of the dance).
+		base := 0
+		if r.loaderStats.StallFrames >= stallDanceFrames {
+			base = waggleRunStart
+		}
+		glyph = waggleGlyph(frame+base) + waggleGlyph(frame*3+5+base)
 	}
 	row := r.styles.Mark.Render(glyph) + " " + r.styles.Key.Render(label)
 

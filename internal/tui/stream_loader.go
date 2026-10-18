@@ -48,6 +48,7 @@ const (
 	LoaderStyleMarathon                     // bees racing toward finish line
 	LoaderStylePhased                       // pulse → swarm → orbit → ripple → starfield, by wait time
 	LoaderStyleStrip                        // particle token stream + live in/out readout
+	LoaderStyleWaggleRun                    // all bees running left→right, waggle wobble
 )
 
 // ParseLoaderStyle maps BEE_LOADER values to a style. Unset / unknown → the
@@ -117,6 +118,8 @@ func ParseLoaderStyle(s string) LoaderStyle {
 		return LoaderStyleDrip
 	case "marathon", "race", "finish":
 		return LoaderStyleMarathon
+	case "wagglerun", "run", "directed":
+		return LoaderStyleWaggleRun
 	case "random", "rand", "?":
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		return LoaderStyle(1 + r.Intn(len(brailleNamedPainters)))
@@ -338,6 +341,8 @@ func (r *StreamRenderer) painterFor(nf int) func(frame, cells int) string {
 		return renderBrailleDrip
 	case LoaderStyleMarathon:
 		return renderBrailleMarathon
+	case LoaderStyleWaggleRun:
+		return renderBrailleWaggleRun
 	default:
 		return braillePhaseFor(nf)
 	}

@@ -18,6 +18,7 @@ func (r *StreamRenderer) RenderPendingTools(uses []types.ToolUse, frame int) str
 		return ""
 	}
 	r.pendingFrame = frame
+	r.pendingID = "" // set per call inside callParts
 	lines := make([]string, 0, len(uses))
 	for _, u := range uses {
 		// escalate hands control back, it isn't running

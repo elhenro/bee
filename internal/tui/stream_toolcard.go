@@ -36,13 +36,21 @@ func (r *StreamRenderer) bullet(o toolOutcome) string {
 	case outcomeRefused:
 		return r.styles.Warn.Render(glyphTool)
 	case outcomePending:
-		if (r.pendingFrame/4)%2 == 1 {
-			return r.styles.Dim.Render(glyphTool)
-		}
-		return r.styles.Mark.Render(glyphTool)
+		return r.pendingBullet()
 	default:
 		return r.styles.ToolOK.Render(glyphTool)
 	}
+}
+
+// pendingBullet is the in-flight marker: a 2-cell dancing bee pair whose
+// phase is derived from the call id, so parallel calls each hold their own
+// beat. Resolves into the static outcome glyph when the call finishes.
+func (r *StreamRenderer) pendingBullet() string {
+	glyph := glyphTool
+	if r.showLoader {
+		glyph = wagglePendingBullet(r.pendingID, r.pendingFrame)
+	}
+	return r.styles.Mark.Render(glyph)
 }
 
 // lead of a result's first row
@@ -57,6 +65,7 @@ func (r *StreamRenderer) callParts(u types.ToolUse, o toolOutcome, anchor int) (
 	// the args budget has a floor so a narrow terminal still shows a few
 	// words, which can overshoot the row: clip, a wrapped head tears the left edge
 	defer func() { head = clipLine(head, r.textWidth(0)) }()
+	r.pendingID = u.ID
 	prefix := r.bullet(o) + " " + r.styles.ToolName.Render(toolTitle(u.Name))
 	if h, b, ok := r.renderEditPreview(u, anchor); ok {
 		if h != "" {

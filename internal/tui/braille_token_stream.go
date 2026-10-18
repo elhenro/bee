@@ -28,6 +28,10 @@ type LoaderStats struct {
 	// cumulative average.
 	RateTokS float64
 	Seed     int64
+	// StallFrames is the consecutive-tick count with no output growth, fed
+	// by the model's idle tracker. The busy-row dance reads it as form:
+	// round dance while tokens flow, waggle-run when the stream stalls.
+	StallFrames int
 	// figure visibility toggles (/settings). Default true; when all three
 	// are off the readout collapses to empty and only the stream shows.
 	ShowIn   bool
