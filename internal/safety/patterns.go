@@ -13,7 +13,7 @@ type DangerousPattern struct {
 
 var dangerousPatterns = []DangerousPattern{
 	// filesystem
-	{regexp.MustCompile(`\brm\s+(-[^\s]*\s+)*(-[^\s]*r|--recursive\b)`), "rm-recursive", "recursive delete"},
+	{regexp.MustCompile(`\brm\s+(-[^\s]*\s+)*(-[^\s]*[rR]|--recursive\b)`), "rm-recursive", "recursive delete"},
 	{regexp.MustCompile(`\bchmod\s+(-[^\s]*\s+)*(777|666|o\+[rwx]*w|a\+[rwx]*w)\b`), "chmod-world-write", "world-writable permissions"},
 	{regexp.MustCompile(`\bchown\s+(-[^\s]*)?R\s+root\b`), "chown-root", "recursive chown to root"},
 	{regexp.MustCompile(`\bxargs\b.*\brm\b`), "xargs-rm", "xargs piped into rm"},
@@ -71,8 +71,32 @@ var dangerousPatterns = []DangerousPattern{
 	{regexp.MustCompile(`\bscp\b\s+\S+\s+\S+:`), "scp-remote", "copy a file to a remote host via scp"},
 }
 
+// Danger is one matched dangerous pattern.
+type Danger struct {
+	Key  string
+	Desc string
+}
+
+// DetectAllDangerous returns every distinct pattern the command matches, in
+// registry order. A chained command can trip several (`rm -r x && curl|sh`);
+// callers must get approval for each, not just the first.
+func DetectAllDangerous(cmd string) []Danger {
+	forms := matchForms(cmd)
+	var out []Danger
+	for _, p := range dangerousPatterns {
+		for _, c := range forms {
+			if p.Re.MatchString(c) {
+				out = append(out, Danger{p.Key, p.Desc})
+				break
+			}
+		}
+	}
+	return out
+}
+
 // DetectDangerous returns the first matching pattern key + description, or
-// empty strings + false when the command matches no dangerous pattern.
+// empty strings + false when the command matches no dangerous pattern. Use
+// DetectAllDangerous when every match matters.
 func DetectDangerous(cmd string) (key, desc string, matched bool) {
 	for _, c := range matchForms(cmd) {
 		for _, p := range dangerousPatterns {

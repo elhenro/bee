@@ -9,7 +9,7 @@ import (
 // rm -rf / and friends. matches the recursive+force flag pair (in either
 // order, combined or separate) followed by a quoted-or-bare /.
 var rmRfRoot = regexp.MustCompile(
-	`\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*|-[rf]\s+-[rf]|--recursive\s+--force|--force\s+--recursive)\s+(['"]?/\*?['"]?\s*($|;|&|\|))`,
+	`\brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*|-[rRf]\s+-[rRf]|--recursive\s+--force|--force\s+--recursive)\s+(['"]?/\*?['"]?\s*($|;|&|\|))`,
 )
 
 var ddToDisk = regexp.MustCompile(`(?i)\bdd\b[^|]*\bof=/dev/(disk|sd|nvme|hd)`)

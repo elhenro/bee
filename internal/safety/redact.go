@@ -1,14 +1,20 @@
 package safety
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
-// pattern matches a known secret shape. when kind == "env-assign" the regex
-// has three capture groups (name, quote, value) and is rewritten so the value
-// is replaced while the assignment shape stays readable.
+// pattern matches a known secret shape. kinds ending in "-assign" have the
+// groups (name, separator, optional trailer) and are rewritten so only the
+// value is replaced while the assignment shape stays readable.
 type pattern struct {
 	kind string
 	re   *regexp.Regexp
 }
+
+// secretName is the secret-ish identifier part shared by the assign patterns.
+const secretName = `(?:API[_-]?KEY|SECRET(?:[_-]?KEY)?|ACCESS[_-]?TOKEN|AUTH[_-]?TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET)`
 
 var patterns = []pattern{
 	// anthropic before openai: sk-ant-… also matches the openai sk- prefix.
@@ -24,9 +30,15 @@ var patterns = []pattern{
 	{"bearer", regexp.MustCompile(`\bBearer\s+[A-Za-z0-9._-]{20,}`)},
 	// PEM private key block (RSA/EC/OPENSSH/PGP) — redact the whole armored body
 	{"pem-private-key", regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`)},
-	// env-assign: matches NAME=value, NAME="value", NAME='value', or NAME: value.
-	// alternation in the value group avoids RE2's lack of backrefs for quote matching.
-	{"env-assign", regexp.MustCompile(`(?i)\b((?:[A-Z][A-Z0-9_]*)?(?:API[_-]?KEY|SECRET(?:[_-]?KEY)?|ACCESS[_-]?TOKEN|AUTH[_-]?TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET)[A-Z0-9_]*)\s*[:=]\s*(?:"[^"\n]+"|'[^'\n]+'|[^\s"';|&]+)`)},
+	// env-assign: UPPERCASE NAME=value, NAME="value", NAME='value', NAME: value.
+	// case-sensitive on purpose: a lowercase `apiKey := load()` is code, not a
+	// secret. a value may not start with `=` so comparisons never match.
+	{"env-assign", regexp.MustCompile(`\b((?:[A-Z][A-Z0-9_]*)?` + secretName + `[A-Z0-9_]*)([ \t]*(?::=|[:=])[ \t]*)(?:"[^"\n]+"|'[^'\n]+'|[^\s"';|&=][^\s"';|&]*)`)},
+	// kv-assign: any-case names, but only a quoted literal (`password = "x"`)
+	// or a yaml-style bare scalar alone on its line (`secret: foo`). calls and
+	// expressions on the right-hand side stay untouched.
+	{"kv-assign", regexp.MustCompile(`(?i)\b((?:[a-z][a-z0-9_]*)?` + secretName + `[a-z0-9_]*)([ \t]*[:=][ \t]*)(?:"[^"\n]+"|'[^'\n]+')`)},
+	{"kv-assign", regexp.MustCompile(`(?im)\b((?:[a-z][a-z0-9_]*)?` + secretName + `[a-z0-9_]*)([ \t]*:[ \t]*)[a-z0-9_./+-]+([ \t]*\r?$)`)},
 }
 
 // Redact scans text for known secret shapes and replaces matches with a
@@ -38,8 +50,8 @@ func Redact(text string) string {
 	}
 	out := text
 	for _, p := range patterns {
-		if p.kind == "env-assign" {
-			out = p.re.ReplaceAllString(out, "${1}=<REDACTED>")
+		if strings.HasSuffix(p.kind, "-assign") {
+			out = p.re.ReplaceAllString(out, "${1}${2}<REDACTED>${3}")
 			continue
 		}
 		out = p.re.ReplaceAllString(out, "<REDACTED:"+p.kind+">")
