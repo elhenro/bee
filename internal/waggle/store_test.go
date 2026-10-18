@@ -1,6 +1,7 @@
 package waggle
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -47,5 +48,24 @@ func TestStore_WriteAndExists(t *testing.T) {
 	}
 	if !s.Exists("w1") {
 		t.Error("must exist after write")
+	}
+}
+
+func TestStore_WritePrivate(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	s, _ := ProjectStore("/p")
+	if err := s.Write("wag_x", "body"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(s.Dir(), "wag_x.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
+	}
+	ents, _ := os.ReadDir(s.Dir())
+	if len(ents) != 1 {
+		t.Errorf("temp file left behind: %v", ents)
 	}
 }

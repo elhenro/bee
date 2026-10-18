@@ -73,7 +73,7 @@ func TestRenderRecipe_ParsesToRuntimeRecipe(t *testing.T) {
 	if s.Kind != skills.KindRecipe || !s.Runtime || len(s.Steps) != 2 {
 		t.Fatalf("want runtime recipe with 2 steps: kind=%s runtime=%v steps=%d", s.Kind, s.Runtime, len(s.Steps))
 	}
-	if s.Steps[0].Kind != skills.StepShell || s.Steps[0].Run != "grep -rn {{argv.0}} ." {
+	if s.Steps[0].Kind != skills.StepShell || s.Steps[0].Run != "grep -rn -e {{argv.0}} -- ." {
 		t.Errorf("step0: %+v", s.Steps[0])
 	}
 	if s.Steps[1].Run != "go test ./..." || len(s.Exec) != 0 {
@@ -137,5 +137,17 @@ func TestManager_DroppedOutcomeForgetsRoute(t *testing.T) {
 	m.sweep()
 	if n := countMD(t, store.Dir()); n != 0 {
 		t.Fatalf("rolled-back route promoted: %d files", n)
+	}
+}
+
+func TestRender_RefusesSecretBearingRoute(t *testing.T) {
+	secret := "curl -H 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz0123456789' https://x.test"
+	rec := Candidate{Steps: []Call{sh(secret, true), verified(rd("a"))}, Count: 2}
+	if _, ok := RenderRecipe("w", rec, ScopeProject); ok {
+		t.Fatal("recipe route carrying a secret must not be crystallized")
+	}
+	exec := Candidate{Steps: []Call{g("API_KEY=hunter2hunter2", ""), rd("a.go")}, Count: 2}
+	if _, ok := Render("w", exec, ScopeProject); ok {
+		t.Fatal("exec route carrying a secret must not be crystallized")
 	}
 }

@@ -3,6 +3,7 @@ package waggle
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -103,5 +104,36 @@ func TestReplay_WritesLedgerOnFire(t *testing.T) {
 	}
 	if stats["wag_x"].Uses != 1 || stats["wag_x"].Yield <= 0 {
 		t.Errorf("ledger not written on fire: %+v", stats["wag_x"])
+	}
+}
+
+func TestLedger_AppendsSurviveConcurrentCompact(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.jsonl")
+	keep := map[string]bool{"a": true}
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() { defer wg.Done(); _ = NewLedger(path).Append(LedgerEntry{Name: "a", Yield: 1}) }()
+		go func() { defer wg.Done(); _ = CompactLedger(path, keep) }()
+	}
+	wg.Wait()
+	stats, err := ReadLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats["a"].Uses != 20 {
+		t.Errorf("uses = %d, want 20 (append lost to compact)", stats["a"].Uses)
+	}
+}
+
+func TestRecordUse_CountsExplicitFollow(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	s, _ := ProjectStore("/p")
+	if err := RecordUse(s, "wag_a", 12); err != nil {
+		t.Fatal(err)
+	}
+	stats, _ := ReadLedger(s.LedgerPath())
+	if stats["wag_a"].Uses != 1 || stats["wag_a"].Yield != 12 {
+		t.Errorf("stats = %+v", stats["wag_a"])
 	}
 }

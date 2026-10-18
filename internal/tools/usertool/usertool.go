@@ -113,6 +113,9 @@ func truncateOut(b []byte) string {
 	return string(b[:maxOutputBytes]) + truncMarker
 }
 
+// SplitArgs is splitArgs for callers that vet the fields before running.
+func SplitArgs(s string) ([]string, error) { return splitArgs(s) }
+
 // splitArgs parses a POSIX-ish argument string into fields, honoring
 // single quotes, double quotes, and backslash escapes. It does NOT
 // expand variables or globs; values are treated as literal data.

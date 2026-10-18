@@ -15,9 +15,11 @@ import (
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/safety"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/skillexec"
+	"github.com/elhenro/bee/internal/tools/usertool"
 	"github.com/elhenro/bee/internal/waggle"
 )
 
@@ -25,7 +27,8 @@ const toolName = "waggle_lookup"
 
 // Tool is the waggle_lookup tool, bound to one or more scope stores.
 type Tool struct {
-	stores []*waggle.Store
+	stores   []*waggle.Store
+	confined bool // gate path args with the secret-path guard under a confined scope
 }
 
 // New binds the tool to the given stores (typically project + user). nil stores
@@ -41,6 +44,13 @@ func New(stores ...*waggle.Store) *Tool {
 		return nil
 	}
 	return &Tool{stores: keep}
+}
+
+// Confine turns on the secret-path guard for args; set it under a confined
+// sandbox scope. Returns t for chaining.
+func (t *Tool) Confine(confined bool) *Tool {
+	t.confined = confined
+	return t
 }
 
 func (t *Tool) Spec() llm.ToolSpec {
@@ -127,6 +137,9 @@ func (t *Tool) follow(ctx context.Context, name string, in map[string]any) (tool
 	if !validWaggleName(name) {
 		return tools.Result{Content: fmt.Sprintf("invalid waggle name %q", name), IsError: true}, nil
 	}
+	if msg := t.checkArgs(in); msg != "" {
+		return tools.Result{Content: msg, IsError: true}, nil
+	}
 	for _, s := range t.stores {
 		if !s.Exists(name) {
 			continue
@@ -147,7 +160,38 @@ func (t *Tool) follow(ctx context.Context, name string, in map[string]any) (tool
 		if err != nil {
 			return tools.Result{Content: fmt.Sprintf("waggle %q not runnable: %v", name, err), IsError: true}, nil
 		}
-		return tool.Run(ctx, in)
+		res, err := tool.Run(ctx, in)
+		if err == nil && !res.IsError {
+			_ = waggle.RecordUse(s, name, len(res.Content)/4)
+		}
+		return res, err
 	}
 	return tools.Result{Content: fmt.Sprintf("unknown waggle %q (omit name to list)", name), IsError: true}, nil
+}
+
+// checkArgs vets the positional args before they reach a route's command, which
+// has no option terminator for every tool it runs: a dash-leading value would
+// parse as a flag (find -delete) and a leading ! or ( as a find expression.
+// Under a confined scope each arg must also pass the secret-path guard. Returns
+// an error message, or "" when the args are fine.
+func (t *Tool) checkArgs(in map[string]any) string {
+	raw, _ := in["args"].(string)
+	if raw == "" {
+		return ""
+	}
+	fields, err := usertool.SplitArgs(raw)
+	if err != nil {
+		return fmt.Sprintf("args parse error: %v", err)
+	}
+	for _, f := range fields {
+		if strings.HasPrefix(f, "-") || strings.HasPrefix(f, "!") || strings.HasPrefix(f, "(") {
+			return fmt.Sprintf("arg %q may not start with - ! or (; prefix a path with ./", f)
+		}
+		if t.confined {
+			if err := safety.CheckReadable(f); err != nil {
+				return err.Error()
+			}
+		}
+	}
+	return ""
 }

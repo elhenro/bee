@@ -73,7 +73,11 @@ func recipeScriptOf(c Candidate) (script string, cmds []string, ok bool) {
 		}
 		cmds = append(cmds, cmd)
 	}
-	return strings.Join(cmds, "; "), cmds, true
+	script = strings.Join(cmds, "; ")
+	if hasSecret(script) {
+		return "", nil, false
+	}
+	return script, cmds, true
 }
 
 // RenderRecipe builds the recipe-waggle markdown for a candidate with mutating

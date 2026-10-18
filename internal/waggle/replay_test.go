@@ -64,7 +64,7 @@ func TestReplay_FollowsLiteralTail(t *testing.T) {
 	if !ok {
 		t.Fatal("expected replay to fire on matched prefix")
 	}
-	if len(ran) != 1 || !strings.Contains(ran[0], "cat 'b.go'") {
+	if len(ran) != 1 || !strings.Contains(ran[0], "cat -- 'b.go'") {
 		t.Fatalf("tail script wrong: %v", ran)
 	}
 	if !strings.Contains(block, "B-CONTENT") || !strings.Contains(block, "wag_x") {

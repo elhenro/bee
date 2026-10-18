@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	yaml "github.com/goccy/go-yaml"
+
+	"github.com/elhenro/bee/internal/safety"
 )
 
 // Scope decides where a waggle lives and how widely it applies.
@@ -72,8 +74,16 @@ func scriptOf(c Candidate) (script string, params []string, ok bool) {
 		}
 		cmds = append(cmds, cmd)
 	}
-	return strings.Join(cmds, "; "), paramNames, true
+	script = strings.Join(cmds, "; ")
+	if hasSecret(script) {
+		return "", nil, false
+	}
+	return script, paramNames, true
 }
+
+// hasSecret reports whether a mined command carries a secret shape; such a
+// route is never crystallized, since the script is stored and printed verbatim.
+func hasSecret(script string) bool { return safety.Redact(script) != script }
 
 // Render builds the waggle exec-skill markdown for a candidate. It returns
 // ok=false when any step has no deterministic shell translation, so an

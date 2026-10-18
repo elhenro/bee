@@ -8,7 +8,7 @@ func noParams(int, string) string { return "" }
 func TestShellCommand_GrepLiteral(t *testing.T) {
 	c := Call{Tool: "search", Args: map[string]string{"pattern": "foo", "path": "src"}}
 	got, ok := shellCommand(0, c, noParams)
-	if !ok || got != "grep -rn 'foo' 'src'" {
+	if !ok || got != "grep -rn -e 'foo' -- 'src'" {
 		t.Fatalf("got %q ok=%v", got, ok)
 	}
 }
@@ -22,21 +22,21 @@ func TestShellCommand_GrepParam(t *testing.T) {
 		return ""
 	}
 	got, ok := shellCommand(0, c, tok)
-	if !ok || got != `grep -rn "$1" .` {
+	if !ok || got != `grep -rn -e "$1" -- .` {
 		t.Fatalf("got %q ok=%v", got, ok)
 	}
 }
 
 func TestShellCommand_Read(t *testing.T) {
 	got, ok := shellCommand(0, Call{Tool: "read", Args: map[string]string{"path": "a.go"}}, noParams)
-	if !ok || got != "cat 'a.go'" {
+	if !ok || got != "cat -- 'a.go'" {
 		t.Fatalf("got %q ok=%v", got, ok)
 	}
 }
 
 func TestShellCommand_LsDefaultDot(t *testing.T) {
 	got, ok := shellCommand(0, Call{Tool: "ls", Args: map[string]string{}}, noParams)
-	if !ok || got != "ls ." {
+	if !ok || got != "ls -- ." {
 		t.Fatalf("got %q ok=%v", got, ok)
 	}
 }
@@ -67,5 +67,14 @@ func TestShellCommand_BashParamNotSupported(t *testing.T) {
 func TestShellCommand_UnknownTool(t *testing.T) {
 	if _, ok := shellCommand(0, Call{Tool: "browser", Args: map[string]string{}}, noParams); ok {
 		t.Fatal("unknown tool must not translate")
+	}
+}
+
+func TestShellCommand_FindRefusesExprLikeStart(t *testing.T) {
+	for _, p := range []string{"-delete", "!x", "(a"} {
+		c := Call{Tool: "glob", Args: map[string]string{"pattern": "*.go", "path": p}}
+		if got, ok := shellCommand(0, c, noParams); ok {
+			t.Errorf("path %q must not translate, got %q", p, got)
+		}
 	}
 }

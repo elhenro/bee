@@ -24,7 +24,7 @@ func TestRender_ExactRepeatParsesToExecSkill(t *testing.T) {
 		t.Fatalf("exec vector: %v", s.Exec)
 	}
 	script := s.Exec[2]
-	if !strings.Contains(script, "grep -rn 'foo'") || !strings.Contains(script, "cat 'a.go'") {
+	if !strings.Contains(script, "grep -rn -e 'foo'") || !strings.Contains(script, "cat -- 'a.go'") {
 		t.Errorf("script missing steps: %q", script)
 	}
 }

@@ -87,3 +87,44 @@ func writeExec(t *testing.T, s *waggle.Store, name, script string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRun_RejectsFlagLikeArgs(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	s, _ := waggle.ProjectStore("/p")
+	writeExec(t, s, "wag_f", "echo ran")
+	tool := New(s)
+	for _, a := range []string{"-delete", "src -exec", "'!x'", "'(a'"} {
+		res, _ := tool.Run(context.Background(), map[string]any{"name": "wag_f", "args": a})
+		if !res.IsError || strings.Contains(res.Content, "ran") {
+			t.Errorf("args %q must be refused, got err=%v %q", a, res.IsError, res.Content)
+		}
+	}
+	res, _ := tool.Run(context.Background(), map[string]any{"name": "wag_f", "args": "./-odd 'a -b'"})
+	if res.IsError {
+		t.Errorf("dash inside a field is fine: %q", res.Content)
+	}
+}
+
+func TestRun_ConfinedBlocksSecretPaths(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	s, _ := waggle.ProjectStore("/p")
+	writeExec(t, s, "wag_c", "echo ran")
+	args := map[string]any{"name": "wag_c", "args": "/home/u/.ssh/id_rsa"}
+	if res, _ := New(s).Run(context.Background(), args); res.IsError {
+		t.Errorf("unconfined run must allow: %q", res.Content)
+	}
+	if res, _ := New(s).Confine(true).Run(context.Background(), args); !res.IsError {
+		t.Errorf("confined run must refuse secret path: %q", res.Content)
+	}
+}
+
+func TestRun_RecordsExplicitUse(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	s, _ := waggle.ProjectStore("/p")
+	writeExec(t, s, "wag_u", "echo hello")
+	New(s).Run(context.Background(), map[string]any{"name": "wag_u"})
+	stats, _ := waggle.ReadLedger(s.LedgerPath())
+	if stats["wag_u"].Uses != 1 {
+		t.Errorf("explicit follow not recorded: %+v", stats)
+	}
+}

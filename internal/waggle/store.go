@@ -3,7 +3,6 @@ package waggle
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -57,26 +56,37 @@ func (s *Store) IsDisabled(name string) bool {
 
 // Write persists the waggle markdown as <name>.md, creating the dir on demand.
 func (s *Store) Write(name, md string) error {
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(s.dir, name+".md"), []byte(md), 0o644)
+	// 0600: mined commands may carry paths and arguments worth keeping private
+	return writeFileAtomic(filepath.Join(s.dir, name+".md"), []byte(md), 0o600)
 }
 
-// writeFileAtomic writes to a per-pid temp file then renames it into place: a
+// writeFileAtomic writes to a unique temp file then renames it into place: a
 // concurrent reader never sees a half-written file, a crash mid-write can't
-// leave a torn one, and the pid suffix keeps two processes writing the same
-// target from clobbering each other's temp.
+// leave a torn one, and the unique name keeps goroutines or processes writing
+// the same target from clobbering each other's temp.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	tmp := fmt.Sprintf("%s.tmp.%d", path, os.Getpid())
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp.*")
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	tmp := f.Name()
+	_, werr := f.Write(data)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(tmp, perm)
+	}
+	if werr == nil {
+		werr = os.Rename(tmp, path)
+	}
+	if werr != nil {
 		_ = os.Remove(tmp)
-		return err
 	}
-	return nil
+	return werr
 }
 
 // beeHome resolves ~/.bee, overridable via BEE_HOME for hermetic tests. Mirrors

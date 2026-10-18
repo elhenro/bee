@@ -25,8 +25,7 @@ type LedgerEntry struct {
 // Ledger is an append-only reuse log for one scope, persisted as JSONL beside
 // that scope's skills dir. The mutex serializes appends within a single Ledger
 // instance; across instances/processes (each hive worker builds its own over
-// the shared path) line integrity relies on O_APPEND atomicity for the short
-// single-line writes, not on the mutex.
+// the shared path) the file lock orders appends against CompactLedger's rewrite.
 type Ledger struct {
 	mu   sync.Mutex
 	path string
@@ -45,6 +44,7 @@ func (l *Ledger) Append(e LedgerEntry) error {
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
 		return err
 	}
+	defer lockFile(l.path)()
 	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
@@ -64,6 +64,9 @@ func (l *Ledger) Append(e LedgerEntry) error {
 // history — otherwise stale Fails would auto-demote the fresh route. A missing
 // ledger is a no-op.
 func CompactLedger(path string, keep map[string]bool) error {
+	// held across read and rename so a concurrent Append can't land in between
+	// and be dropped by the rewrite
+	defer lockFile(path)()
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -140,4 +143,14 @@ func ReadLedger(path string) (map[string]Stat, error) {
 		out[e.Name] = s
 	}
 	return out, sc.Err()
+}
+
+// RecordUse logs one explicit follow of a waggle (the on-demand lookup path or
+// `bee <name>`), so curation sees uses beyond predictive replay and does not
+// prune a route that is only ever run by hand. Best-effort.
+func RecordUse(s *Store, name string, yield int) error {
+	if s == nil {
+		return nil
+	}
+	return NewLedger(s.LedgerPath()).Append(LedgerEntry{Name: name, Steps: 1, Yield: yield})
 }

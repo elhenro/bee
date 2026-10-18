@@ -84,7 +84,7 @@ func appendWaggleLookup(all []tools.Tool, cfg config.Config, cwd string) []tools
 		return all
 	}
 	if t := waggle_lookup.New(proj, user); t != nil {
-		all = append(all, t)
+		all = append(all, t.Confine(sandbox.Scope(cfg.Sandbox.Scope).Confines()))
 	}
 	return all
 }

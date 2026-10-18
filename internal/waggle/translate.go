@@ -36,21 +36,33 @@ func shellCommand(step int, c Call, paramTok func(step int, key string) string) 
 		if _, ok := c.Args["pattern"]; !ok {
 			return "", false
 		}
-		return "grep -rn " + tokenFor("pattern") + " " + pathArg(), true
+		// -e and -- keep a dash-leading pattern or path from parsing as a flag
+		return "grep -rn -e " + tokenFor("pattern") + " -- " + pathArg(), true
 	case "read":
 		if _, ok := c.Args["path"]; !ok {
 			return "", false
 		}
-		return "cat " + tokenFor("path"), true
+		return "cat -- " + tokenFor("path"), true
 	case "ls":
-		return "ls " + pathArg(), true
+		return "ls -- " + pathArg(), true
 	case "glob": // bee's find tool is registered as "glob"
 		if _, ok := c.Args["pattern"]; !ok {
+			return "", false
+		}
+		// find has no portable --: a literal start point that parses as an
+		// expression is refused, a parameterized one is checked at run time
+		if _, ok := c.Args["path"]; ok && paramTok(step, "path") == "" && exprLike(c.Args["path"]) {
 			return "", false
 		}
 		return "find " + pathArg() + " -name " + tokenFor("pattern"), true
 	}
 	return "", false
+}
+
+// exprLike reports whether s would be read by find as an expression, not a
+// start point.
+func exprLike(s string) bool {
+	return strings.HasPrefix(s, "-") || strings.HasPrefix(s, "!") || strings.HasPrefix(s, "(")
 }
 
 // singleQuote wraps s in single quotes for safe literal inclusion, escaping
