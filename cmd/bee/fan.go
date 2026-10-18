@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -87,98 +89,117 @@ func runFan(args []string) {
 		os.Exit(1)
 	}
 
-	pool := hivepkg.NewPool(*maxConc)
-	pool.Throttle = cliThrottle("fan", cfg)
-	// pheromone card: the shared task heads it, one row per target, mirrored
-	// so a second terminal can watch a wide fan-out.
-	pool.Goal = *task
-	if path, perr := hivepkg.PheromonePath(uuid.NewString()); perr == nil {
-		pool.Pheromone = hivepkg.NewPheromone(path)
-		fmt.Fprintf(os.Stderr, "fan: pheromone card at %s\n", path)
-	}
-	rolls := make([]*session.Rollout, 0, len(workers))
-	worktrees := make([]*worktree.Worktree, 0, len(workers))
-	defer func() {
-		for _, r := range rolls {
-			_ = r.Close()
+	code := func() int {
+		pool := hivepkg.NewPool(*maxConc)
+		pool.Throttle = cliThrottle("fan", cfg)
+		// pheromone card: the shared task heads it, one row per target, mirrored
+		// so a second terminal can watch a wide fan-out.
+		pool.Goal = *task
+		if path, perr := hivepkg.PheromonePath(uuid.NewString()); perr == nil {
+			pool.Pheromone = hivepkg.NewPheromone(path)
+			fmt.Fprintf(os.Stderr, "fan: pheromone card at %s\n", path)
 		}
-		for _, w := range worktrees {
-			if err := w.Cleanup(); err != nil {
-				fmt.Fprintf(os.Stderr, "bee fan: cleanup worktree: %v\n", err)
+		rolls := make([]*session.Rollout, 0, len(workers))
+		worktrees := make([]*worktree.Worktree, 0, len(workers))
+		wtByWorker := map[string]*worktree.Worktree{}
+		kept := map[*worktree.Worktree]bool{}
+		defer func() {
+			for _, r := range rolls {
+				_ = r.Close()
 			}
-		}
-	}()
+			cleanupWorktrees("fan", worktrees, kept)
+		}()
 
-	for i, wspec := range workers {
-		workerCwd := cwd
-		workerReg := reg
-		if *isolated {
-			wt, err := worktree.Create(cwd, fmt.Sprintf("fan-w%d", i))
+		for i, wspec := range workers {
+			workerCwd := cwd
+			workerReg := reg
+			var workerWT *worktree.Worktree
+			if *isolated {
+				wt, err := worktree.Create(cwd, fmt.Sprintf("fan-w%d", i))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "bee fan: worker %s worktree: %v\n", wspec.name, err)
+					return 1
+				}
+				worktrees = append(worktrees, wt)
+				workerWT = wt
+				workerCwd = wt.Path
+				r2, err := buildTools(workerCwd, cfg, prov, storeDir)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "bee fan: worker %s tools: %v\n", wspec.name, err)
+					return 1
+				}
+				workerReg = r2
+			}
+			eng, roll, err := newWorkerEngine(prov, workerReg, cfg, workerCwd)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "bee fan: worker %s worktree: %v\n", wspec.name, err)
-				os.Exit(1)
+				fmt.Fprintf(os.Stderr, "bee fan: build worker %s: %v\n", wspec.name, err)
+				return 1
 			}
-			worktrees = append(worktrees, wt)
-			workerCwd = wt.Path
-			r2, err := buildTools(workerCwd, cfg, prov, storeDir)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "bee fan: worker %s tools: %v\n", wspec.name, err)
-				os.Exit(1)
+			rolls = append(rolls, roll)
+			id := uuid.NewString()
+			if workerWT != nil {
+				wtByWorker[id] = workerWT
 			}
-			workerReg = r2
+			pool.Submit(&hivepkg.Worker{
+				ID:     id,
+				Name:   wspec.name,
+				Task:   wspec.task,
+				Engine: eng,
+			})
 		}
-		eng, roll, err := newWorkerEngine(prov, workerReg, cfg, workerCwd)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee fan: build worker %s: %v\n", wspec.name, err)
-			os.Exit(1)
+
+		sig, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		ctx, cancel := context.WithTimeout(sig, 20*time.Minute)
+		defer cancel()
+
+		// progress watcher: prints state transitions to stderr until results close.
+		resCh := pool.Run(ctx)
+		doneCh := make(chan struct{})
+		var collected []hivepkg.Result
+		var mu sync.Mutex
+		go func() {
+			defer close(doneCh)
+			for r := range resCh {
+				mu.Lock()
+				collected = append(collected, r)
+				mu.Unlock()
+				tag := "ok"
+				if r.Err != nil {
+					tag = "err"
+				}
+				fmt.Fprintf(os.Stderr, "[%s] %s done in %s\n",
+					tag, r.Name, r.Ended.Sub(r.Started).Round(time.Millisecond))
+			}
+		}()
+		<-doneCh
+
+		mu.Lock()
+		finalResults := collected
+		mu.Unlock()
+
+		fmt.Fprint(os.Stdout, hivepkg.Summary(finalResults))
+		if merged := hivepkg.MergeText(finalResults); merged != "" {
+			fmt.Fprintln(os.Stdout)
+			fmt.Fprint(os.Stdout, merged)
 		}
-		rolls = append(rolls, roll)
-		pool.Submit(&hivepkg.Worker{
-			ID:     uuid.NewString(),
-			Name:   wspec.name,
-			Task:   wspec.task,
-			Engine: eng,
-		})
-	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
-	defer cancel()
-
-	// progress watcher: prints state transitions to stderr until results close.
-	resCh := pool.Run(ctx)
-	doneCh := make(chan struct{})
-	var collected []hivepkg.Result
-	var mu sync.Mutex
-	go func() {
-		defer close(doneCh)
-		for r := range resCh {
-			mu.Lock()
-			collected = append(collected, r)
-			mu.Unlock()
-			tag := "ok"
+		code := 0
+		work := make([]isolatedWork, 0, len(finalResults))
+		for _, r := range finalResults {
 			if r.Err != nil {
-				tag = "err"
+				code = 1
 			}
-			fmt.Fprintf(os.Stderr, "[%s] %s done in %s\n",
-				tag, r.Name, r.Ended.Sub(r.Started).Round(time.Millisecond))
+			work = append(work, isolatedWork{name: r.Name, wt: wtByWorker[r.WorkerID], ok: r.Err == nil})
 		}
+		kept = mergeIsolated("fan", work)
+		if len(kept) > 0 {
+			code = 1
+		}
+		return code
 	}()
-	<-doneCh
-
-	mu.Lock()
-	finalResults := collected
-	mu.Unlock()
-
-	fmt.Fprint(os.Stdout, hivepkg.Summary(finalResults))
-	if merged := hivepkg.MergeText(finalResults); merged != "" {
-		fmt.Fprintln(os.Stdout)
-		fmt.Fprint(os.Stdout, merged)
-	}
-
-	for _, r := range finalResults {
-		if r.Err != nil {
-			os.Exit(1)
-		}
+	if code != 0 {
+		os.Exit(code)
 	}
 }
 

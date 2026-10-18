@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,10 +95,13 @@ func runSwarm(args []string) {
 	// full planner+worker+synth call on every trivial task. Ambiguity (and
 	// any classifier error) falls through to the hive, so a risky change is
 	// never under-reviewed. --no-triage forces the full hive.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	sig, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(sig, 30*time.Minute)
 	defer cancel()
 	if shortCircuit, scErr := maybeTriageShortCircuit(ctx, prov, cfg.DefaultModel, *triage && !*noTriage, planner.Run, task, os.Stdout); shortCircuit {
 		if scErr != nil {
+			_ = plannerSess.Close()
 			os.Exit(1)
 		}
 		return
@@ -116,65 +121,74 @@ func runSwarm(args []string) {
 			fmt.Fprintf(os.Stderr, "swarm: worker tier %s unavailable (%v), using %s\n", hivepkg.TierLabel(cfg, tier), terr, cfg.DefaultModel)
 		}
 	}
-	workers := make([]hivepkg.Runner, 0, *nWorkers)
-	closers := make([]io.Closer, 0, *nWorkers)
-	worktrees := make([]*worktree.Worktree, 0, *nWorkers)
-	defer func() {
-		for _, c := range closers {
-			_ = c.Close()
-		}
-		for _, w := range worktrees {
-			if err := w.Cleanup(); err != nil {
-				fmt.Fprintf(os.Stderr, "bee swarm: cleanup worktree: %v\n", err)
+	code := func() int {
+		workers := make([]hivepkg.Runner, 0, *nWorkers)
+		closers := make([]io.Closer, 0, *nWorkers)
+		worktrees := make([]*worktree.Worktree, 0, *nWorkers)
+		kept := map[*worktree.Worktree]bool{}
+		defer func() {
+			for _, c := range closers {
+				_ = c.Close()
 			}
-		}
-	}()
-	for i := 0; i < *nWorkers; i++ {
-		workerCwd := cwd
-		workerReg := plannerReg
-		if *isolated {
-			wt, err := worktree.Create(cwd, fmt.Sprintf("swarm-w%d", i))
+			cleanupWorktrees("swarm", worktrees, kept)
+		}()
+		for i := 0; i < *nWorkers; i++ {
+			workerCwd := cwd
+			workerReg := plannerReg
+			if *isolated {
+				wt, err := worktree.Create(cwd, fmt.Sprintf("swarm-w%d", i))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "bee swarm: worker %d worktree: %v\n", i, err)
+					return 1
+				}
+				worktrees = append(worktrees, wt)
+				workerCwd = wt.Path
+				// rebuild the registry so file-rooted tools (grep, find, ls,
+				// write, edit_diff) target the isolated tree instead of cwd.
+				reg, err := buildTools(workerCwd, cfg, prov, storeDir)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "bee swarm: worker %d tools: %v\n", i, err)
+					return 1
+				}
+				workerReg = reg
+			}
+			eng, sess, err := newEngine(workerProv, workerReg, skillReg, workerCfg, workerCwd, io.Discard, fmt.Sprintf("worker-%d", i))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "bee swarm: worker %d worktree: %v\n", i, err)
-				os.Exit(1)
+				fmt.Fprintf(os.Stderr, "bee swarm: worker %d session: %v\n", i, err)
+				return 1
 			}
-			worktrees = append(worktrees, wt)
-			workerCwd = wt.Path
-			// rebuild the registry so file-rooted tools (grep, find, ls,
-			// write, edit_diff) target the isolated tree instead of cwd.
-			reg, err := buildTools(workerCwd, cfg, prov, storeDir)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "bee swarm: worker %d tools: %v\n", i, err)
-				os.Exit(1)
-			}
-			workerReg = reg
+			workers = append(workers, eng)
+			closers = append(closers, sess)
 		}
-		eng, sess, err := newEngine(workerProv, workerReg, skillReg, workerCfg, workerCwd, io.Discard, fmt.Sprintf("worker-%d", i))
+
+		q := hivepkg.NewQueen(planner, workers)
+		q.Throttle = cliThrottle("swarm", cfg)
+		// pheromone card: every worker carries the goal, plan and sibling status
+		// in its prompt; the mirror file lets a second terminal watch the hive.
+		if path, perr := hivepkg.PheromonePath(plannerSess.ID()); perr == nil {
+			q.Pheromone = hivepkg.NewPheromone(path)
+			fmt.Fprintf(os.Stderr, "swarm: pheromone card at %s\n", path)
+		}
+
+		fmt.Fprintln(os.Stderr, "swarm: decomposing task...")
+		res, err := q.Run(ctx, task)
+		// workers share engines round-robin, so a worktree merges only when
+		// every sub-task that ran in it succeeded.
+		kept = mergeIsolated("swarm", swarmWork(worktrees, res.WorkerResults))
+		code := 0
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee swarm: worker %d session: %v\n", i, err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "bee swarm: %v\n", err)
+			code = 1
 		}
-		workers = append(workers, eng)
-		closers = append(closers, sess)
-	}
-
-	q := hivepkg.NewQueen(planner, workers)
-	q.Throttle = cliThrottle("swarm", cfg)
-	// pheromone card: every worker carries the goal, plan and sibling status
-	// in its prompt; the mirror file lets a second terminal watch the hive.
-	if path, perr := hivepkg.PheromonePath(plannerSess.ID()); perr == nil {
-		q.Pheromone = hivepkg.NewPheromone(path)
-		fmt.Fprintf(os.Stderr, "swarm: pheromone card at %s\n", path)
-	}
-
-	fmt.Fprintln(os.Stderr, "swarm: decomposing task...")
-	res, err := q.Run(ctx, task)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee swarm: %v\n", err)
 		printQueenResult(os.Stdout, res)
-		os.Exit(1)
+		if len(kept) > 0 {
+			code = 1
+		}
+		return code
+	}()
+	if code != 0 {
+		os.Exit(code)
 	}
-	printQueenResult(os.Stdout, res)
 }
 
 // newEngine builds a loop.Engine + its session rollout. Returns the rollout
