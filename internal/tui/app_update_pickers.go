@@ -16,9 +16,15 @@ func (m Model) onOpenPalette(_ openPaletteMsg) (tea.Model, tea.Cmd) {
 			m.input.SetValue("/")
 			m.input.CursorEnd()
 		}
-		m.palette.Show(strings.TrimPrefix(m.input.Value(), "/"))
+		m.showPalette(strings.TrimPrefix(m.input.Value(), "/"))
 	}
 	return m, nil
+}
+
+// showPalette opens the palette scoped to what the current state can run.
+func (m *Model) showPalette(initial string) {
+	m.palette.SetRunOnly(m.state == StateStreaming)
+	m.palette.Show(initial)
 }
 
 func (m Model) onPaletteSelect(msg PaletteSelectMsg) (tea.Model, tea.Cmd) {

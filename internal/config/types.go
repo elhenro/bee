@@ -74,7 +74,7 @@ type Config struct {
 	ShowLoader bool `toml:"show_loader"`
 
 	// Figures shown on the busy row (and in the strip loader's readout).
-	// Default true for each.
+	// Default true for in/out, false for rate.
 	ShowLoaderIn   bool `toml:"show_loader_in"`   // ↑ input tokens
 	ShowLoaderOut  bool `toml:"show_loader_out"`  // ↓ output tokens
 	ShowLoaderRate bool `toml:"show_loader_rate"` // avg tok/s throughput
@@ -89,6 +89,11 @@ type Config struct {
 	// token-budget or read-only-stall guard fires). Defaults() seeds DefaultMaxIterations;
 	// raise for tool-heavy agents, set 0 to lift the cap, lower to fail fast.
 	MaxIterations int `toml:"max_iterations"`
+
+	// MaxOutputTokens caps one model response (thinking included). 0 = auto:
+	// local providers get LocalMaxOutputTokens, hosted ones keep their own
+	// default. Negative lifts the cap. Raise it for very long single writes.
+	MaxOutputTokens int `toml:"max_output_tokens"`
 
 	// Mastermind is the legacy flag for hive orchestration, superseded by the
 	// queen role. Kept only so an old config.toml migrates forward on load
@@ -150,6 +155,11 @@ type Config struct {
 	// top bar already conveys window utilisation; the bottom strip just adds
 	// a row of visual noise. Toggle via /settings; persists across launches.
 	ShowContextBar bool `toml:"show_context_bar"`
+
+	// ShowCallDetail prints the whole call (full command, pattern, url) under
+	// a tool call card that carries a model-written label. Default false: the
+	// label alone. Failed calls always show it. Toggle via /settings; persists.
+	ShowCallDetail bool `toml:"show_call_detail"`
 
 	// Highlight gates syntax highlighting (chroma) on tool output, file
 	// content, edit/write diffs, and bash command summaries. Default true.

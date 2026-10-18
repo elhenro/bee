@@ -175,6 +175,8 @@ func (f *fakeSide) SetShowRecap(bool) error       { return nil }
 func (f *fakeSide) GetShowRecap() bool            { return false }
 func (f *fakeSide) SetShowContextBar(bool) error  { return nil }
 func (f *fakeSide) GetShowContextBar() bool       { return false }
+func (f *fakeSide) SetShowCallDetail(bool) error  { return nil }
+func (f *fakeSide) GetShowCallDetail() bool       { return false }
 func (f *fakeSide) SetHighlight(bool) error       { return nil }
 func (f *fakeSide) GetHighlight() bool            { return true }
 func (f *fakeSide) SetShellBangSilent(bool) error { return nil }

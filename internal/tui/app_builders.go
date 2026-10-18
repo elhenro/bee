@@ -93,6 +93,16 @@ func (m Model) WithShowContextBar(v bool) Model {
 	return m
 }
 
+// WithShowCallDetail seeds the full-call row under labeled tool calls.
+// Config-driven path.
+func (m Model) WithShowCallDetail(v bool) Model {
+	m.showCallDetail = v
+	if m.stream != nil {
+		m.stream.SetShowCallDetail(v)
+	}
+	return m
+}
+
 // WithHighlight seeds chroma syntax-highlighting state. Config-driven path.
 func (m Model) WithHighlight(v bool) Model {
 	m.highlight = v

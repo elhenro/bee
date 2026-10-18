@@ -151,7 +151,7 @@ func TestContextChip_ShowsLabelAndPercent(t *testing.T) {
 	tr := cost.New()
 	tr.Record("openai", "gpt-4o-mini", 64_000, 1_000)
 	m := NewModel(nil, "/tmp/work", "gpt-4o-mini", "workspace-write", caveman.Default).WithCostTracker(tr)
-	if got := stripANSI(m.renderContextHex()); got != glyphBee+" ctx 50%" {
+	if got := stripANSI(m.renderContextHex()); got != glyphBee+" 50%" {
 		t.Fatalf("chip = %q", got)
 	}
 }

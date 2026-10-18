@@ -9,6 +9,7 @@ const (
 	glyphBee    = "⬢" // assistant marker + brand mark
 	glyphTool   = "●" // tool-call bullet
 	glyphResult = "⎿" // connector from a call to its result
+	glyphDetail = "┆" // connector from a call to its full detail row
 	glyphThink  = "✻" // reasoning marker
 	glyphFail   = "✗" // turn-level error marker
 	glyphPrompt = "❯" // input prompt

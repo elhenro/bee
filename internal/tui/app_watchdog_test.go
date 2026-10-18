@@ -49,6 +49,16 @@ func TestWatchdog_StallStartsHandshake(t *testing.T) {
 	}
 }
 
+func TestWatchdog_RunningToolIsNotAStall(t *testing.T) {
+	m := armedWatchdog(t)
+	m.pendingTools = []types.ToolUse{{ID: "u1", Name: "bash"}}
+	out, _ := m.onLoaderTick(loaderTickMsg{})
+	got := out.(Model)
+	if got.stallResumePending || got.cancelRun == nil {
+		t.Fatal("watchdog cancelled a turn whose tool is still running")
+	}
+}
+
 func TestWatchdog_StallResumesOnCancelLanding(t *testing.T) {
 	m := armedWatchdog(t)
 	out, _ := m.onLoaderTick(loaderTickMsg{})

@@ -176,11 +176,13 @@ func hashResult(content string) string {
 // signatureFor builds a stable Sig. ArgsHash = sha256 of key-sorted JSON of
 // Input. nil/empty Input → "empty" sentinel so signatures stay comparable.
 func signatureFor(u types.ToolUse) ToolCallSignature {
-	if len(u.Input) == 0 {
+	// the label is worded fresh each time; the same call must still repeat
+	in := u.Args()
+	if len(in) == 0 {
 		return ToolCallSignature{Name: u.Name, ArgsHash: "empty"}
 	}
-	keys := make([]string, 0, len(u.Input))
-	for k := range u.Input {
+	keys := make([]string, 0, len(in))
+	for k := range in {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -189,7 +191,7 @@ func signatureFor(u types.ToolUse) ToolCallSignature {
 		b.WriteString(k)
 		b.WriteByte('=')
 		// json-encode each value so nested maps/slices canonicalize the same way.
-		v, err := json.Marshal(u.Input[k])
+		v, err := json.Marshal(in[k])
 		if err != nil {
 			b.WriteString("<unmarshalable>")
 		} else {

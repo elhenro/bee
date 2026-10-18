@@ -187,7 +187,10 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	// schema validation BEFORE Run: catches `{"cmd":"x"}` vs `{"command":"x"}`
 	// with a corrected example envelope, instead of the tool's own "missing
 	// field" generic. Tiny local models lock onto literal example shapes.
-	if err := tools.ValidateInput(t.Spec(), u.Input); err != nil {
+	// the call label is for the card, not the tool: drop it before validating
+	// and running so a tool never sees an arg it did not declare.
+	args := u.Args()
+	if err := tools.ValidateInput(t.Spec(), args); err != nil {
 		return types.ToolResult{UseID: u.ID, Content: err.Error(), IsError: true}, nil
 	}
 	// strip model-supplied internal-channel keys (underscore-prefixed) before
@@ -195,7 +198,7 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	// by wrapShellInput); a model that sets one itself could spoof the shell
 	// safety classifier into vetting a decoy while a different command runs.
 	// the parse-error channels (_parse_error/_raw_args) are consumed above.
-	input := sanitizeToolInput(u.Input)
+	input := sanitizeToolInput(args)
 	if u.Name == "bash" {
 		input = wrapShellInput(input, e.Cfg.Sandbox, e.Cwd)
 	}

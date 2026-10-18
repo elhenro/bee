@@ -969,7 +969,7 @@ func TestRenderThinkingPartial_WrapsLongLines(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 40)
 	r.SetShowThoughts(true)
 	long := strings.Repeat("word ", 30) // ~150 chars on one logical line
-	got := stripANSI(r.RenderThinkingPartial(long))
+	got := stripANSI(r.RenderThinkingPartial(long, 0, true))
 	for _, ln := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
 		if w := lipgloss.Width(ln); w > 40 {
 			t.Fatalf("thought row exceeds width 40: %d cols %q", w, ln)

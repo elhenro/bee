@@ -1198,3 +1198,33 @@ func TestOnLiveMsg_TextMsgLeavesLoaderRateAlone(t *testing.T) {
 		t.Errorf("loaderRateSamples len = %d, want 1 (unchanged)", len(got.loaderRateSamples))
 	}
 }
+
+func TestModel_SlashOpensPaletteWhileStreaming(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	m := newTestModel(t)
+	m.state = StateStreaming
+	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = m2.(Model)
+	if !m.palette.Active {
+		t.Fatal("palette not active after / mid-stream")
+	}
+	if len(m.palette.matches) == 0 {
+		t.Fatal("no autocomplete rows mid-stream")
+	}
+	for _, e := range m.palette.pool {
+		if c, ok := m.cmds.Get(e.Name); ok && !c.AllowDuringRun {
+			t.Errorf("/%s offered mid-stream but not AllowDuringRun", e.Name)
+		}
+	}
+	// esc-free path: typing a prefix narrows to /settings
+	for _, r := range "sett" {
+		m2, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = m2.(Model)
+	}
+	if len(m.palette.matches) == 0 || m.palette.pool[m.palette.matches[0].Index].Name != "settings" {
+		t.Errorf("/sett did not rank settings first: %+v", m.palette.matches)
+	}
+	if m.state != StateStreaming {
+		t.Errorf("opening palette changed state to %v", m.state)
+	}
+}

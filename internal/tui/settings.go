@@ -31,6 +31,7 @@ var settingsRows = []settingsRow{
 	{key: "show_recap", label: "post-turn recap", desc: "one-line summary + next step after each turn (costs tokens)"},
 	{key: "compact", label: "compact layout", desc: "dense: no gutter, no blank rows between turns, no user panel"},
 	{key: "show_context_bar", label: "context gauge", desc: "fill the prompt's bottom rule as the context window fills"},
+	{key: "show_call_detail", label: "tool call detail", desc: "whole command or args under each labeled tool call"},
 	{key: "highlight", label: "syntax highlight", desc: "color code in diffs, file content, and bash commands"},
 	{key: "shell_bang_silent", label: "!shell stays local", desc: "!cmd runs without forwarding output to the LLM (!! inverts)"},
 	{key: "show_banner", label: "intro animation", desc: "braille startup animation (applies on next launch)"},
@@ -72,6 +73,7 @@ type SettingsPane struct {
 	compact    bool
 	ctxBar     bool
 	highlight  bool
+	callDetail bool
 	bangSilent bool
 	bee        bool
 	ctxPct     bool
@@ -135,6 +137,7 @@ type SettingsSnapshot struct {
 	Compact         bool
 	ShowContextBar  bool
 	Highlight       bool
+	ShowCallDetail  bool
 	ShellBangSilent bool
 	ShowBee         bool
 	ShowContextPct  bool
@@ -170,6 +173,7 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 	p.compact = s.Compact
 	p.ctxBar = s.ShowContextBar
 	p.highlight = s.Highlight
+	p.callDetail = s.ShowCallDetail
 	p.bangSilent = s.ShellBangSilent
 	p.bee = s.ShowBee
 	p.ctxPct = s.ShowContextPct
@@ -341,6 +345,8 @@ func (p *SettingsPane) rowState(key string) bool {
 		return p.ctxBar
 	case "highlight":
 		return p.highlight
+	case "show_call_detail":
+		return p.callDetail
 	case "shell_bang_silent":
 		return p.bangSilent
 	case "show_bee":
@@ -390,6 +396,8 @@ func (p *SettingsPane) setRowState(key string, v bool) {
 		p.ctxBar = v
 	case "highlight":
 		p.highlight = v
+	case "show_call_detail":
+		p.callDetail = v
 	case "shell_bang_silent":
 		p.bangSilent = v
 	case "show_bee":

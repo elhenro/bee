@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -58,31 +59,86 @@ func noticeText(m types.Message) (string, bool) {
 	if !m.Ephemeral || m.Role != types.RoleAssistant || len(m.Content) != 1 || m.Content[0].Type != types.BlockText {
 		return "", false
 	}
-	t := strings.TrimSpace(m.Content[0].Text)
+	return parenText(m.Content[0].Text)
+}
+
+// a harness-sent user turn (auto-resume) shown as a parenthetical Display:
+// not something the user typed, so it reads as a notice, not a user bubble
+func userNoticeText(m types.Message) (string, bool) {
+	if m.Role != types.RoleUser {
+		return "", false
+	}
+	return parenText(m.Display)
+}
+
+func parenText(s string) (string, bool) {
+	t := strings.TrimSpace(s)
 	if len(t) < 3 || t[0] != '(' || t[len(t)-1] != ')' || strings.Contains(t, "\n") {
 		return "", false
 	}
 	return t[1 : len(t)-1], true
 }
 
-// live variant of renderThinking, gutter-applied to match scrollback
-func (r *StreamRenderer) RenderThinkingPartial(s string) string {
-	body := r.renderThinking(s)
+// live variant of renderThinking, gutter-applied to match scrollback.
+// running is the reasoning clock: ticking while the model thinks, frozen
+// once the answer starts
+func (r *StreamRenderer) RenderThinkingPartial(s string, elapsed time.Duration, running bool) string {
+	label := r.thoughtLabel("Thought for ", elapsed)
+	if running {
+		label = r.thoughtLabel("Thinking… ", elapsed)
+	}
+	body := r.thoughtBlock(s, label)
 	if body == "" {
 		return body
 	}
 	return r.gutter(body)
 }
 
-// faint italic reasoning under a ✻; stripped like tool output so escapes
-// can't blit over the chrome
-func (r *StreamRenderer) renderThinking(s string) string {
-	if !r.showThoughts {
-		return ""
+// a committed reasoning block. the label row carries the time the model
+// spent thinking and survives hidden thoughts; only the text goes. blocks
+// from before timing existed (ms 0) keep the bare text-or-nothing form
+func (r *StreamRenderer) renderThinking(s string, ms int64) string {
+	label := ""
+	if ms > 0 {
+		label = r.thoughtLabel("Thought for ", time.Duration(ms)*time.Millisecond)
 	}
+	return r.thoughtBlock(s, label)
+}
+
+// verb and time, "for " dropped when the row would not fit a narrow terminal
+func (r *StreamRenderer) thoughtLabel(verb string, d time.Duration) string {
+	label := verb + formatElapsed(d)
+	if r.textWidth(markIndent) < lipgloss.Width(label) {
+		label = strings.Replace(verb, " for ", " ", 1) + formatElapsed(d)
+	}
+	return label
+}
+
+// label row `✻ Thought for 4.2s` over faint italic reasoning, indented under
+// it; the text rows drop away when thoughts are hidden. stripped like tool
+// output so escapes can't blit over the chrome
+func (r *StreamRenderer) thoughtBlock(s, label string) string {
+	var lines []string
+	if r.showThoughts {
+		lines = r.thoughtRows(s)
+	}
+	marker := r.styles.Dim.Render(glyphThink) + " "
+	switch {
+	case label == "" && len(lines) == 0:
+		return ""
+	case label == "":
+		return hang(strings.Join(lines, "\n"), marker, "  ") + "\n"
+	case len(lines) == 0:
+		return marker + r.styles.Thought.Render(label) + "\n"
+	}
+	return marker + r.styles.Thought.Render(label) + "\n" + hang(strings.Join(lines, "\n"), "  ", "  ") + "\n"
+}
+
+// wrapped, styled reasoning rows; nil when there is no visible text
+func (r *StreamRenderer) thoughtRows(s string) []string {
 	clean := expandTabs(ansi.Strip(strings.TrimRight(s, "\n")))
 	if clean == "" {
-		return ""
+		return nil
 	}
 	var rows []string
 	for _, ln := range strings.Split(clean, "\n") {
@@ -93,12 +149,12 @@ func (r *StreamRenderer) renderThinking(s string) string {
 		rows = append(rows, wrapText(ln, r.textWidth(markIndent)))
 	}
 	if len(rows) == 0 {
-		return ""
+		return nil
 	}
 	// style per line: SGR must not bleed across the hanging indent.
 	lines := strings.Split(strings.Join(rows, "\n"), "\n")
 	for i := range lines {
 		lines[i] = r.styles.Thought.Render(lines[i])
 	}
-	return hang(strings.Join(lines, "\n"), r.styles.Dim.Render(glyphThink)+" ", "  ") + "\n"
+	return lines
 }

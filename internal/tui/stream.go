@@ -59,6 +59,8 @@ type StreamRenderer struct {
 	// compact strips the spacing layer for terminals where vertical
 	// density matters more than focus. Default false = clean mode.
 	compact bool
+	// showCallDetail prints the whole call under a labeled call card.
+	showCallDetail bool
 	// highlight gates chroma syntax-highlighting on tool output, file
 	// content, edit/write diffs, and bash command summaries. Default true.
 	highlight bool
@@ -140,6 +142,10 @@ func (r *StreamRenderer) SetShowThoughts(v bool) { r.showThoughts = v }
 // Off (default) collapses them out of scrollback; the loop still injects
 // them so the provider sees the same conversation.
 func (r *StreamRenderer) SetShowNudges(v bool) { r.showNudges = v }
+
+// SetShowCallDetail toggles the full-call row under tool calls that carry a
+// model-written label. Failed calls show it regardless.
+func (r *StreamRenderer) SetShowCallDetail(v bool) { r.showCallDetail = v }
 
 // SetHighlight toggles chroma syntax-highlighting across diff/file/bash
 // previews. Off returns raw content; on (default) emits ANSI-colored tokens.

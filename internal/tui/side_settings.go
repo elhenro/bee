@@ -271,6 +271,30 @@ func (s *tuiSide) GetShowContextBar() bool {
 	return s.m.showContextBar
 }
 
+// SetShowCallDetail toggles the full-call row under labeled tool calls live
+// + persists.
+func (s *tuiSide) SetShowCallDetail(v bool) error {
+	if s.m == nil {
+		return errors.New("show_call_detail: no tui state")
+	}
+	s.m.showCallDetail = v
+	if s.m.stream != nil {
+		s.m.stream.SetShowCallDetail(v)
+	}
+	if s.m.eng != nil {
+		s.m.eng.Cfg.ShowCallDetail = v
+	}
+	return PersistSetting("", "show_call_detail", v)
+}
+
+// GetShowCallDetail returns the current show-call-detail flag.
+func (s *tuiSide) GetShowCallDetail() bool {
+	if s.m == nil {
+		return false
+	}
+	return s.m.showCallDetail
+}
+
 // SetHighlight toggles chroma syntax-highlighting live + persists. Affects
 // tool result previews, edit/write diffs, bash command summaries.
 func (s *tuiSide) SetHighlight(v bool) error {

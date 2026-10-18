@@ -41,6 +41,10 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 
 	switch m.Role {
 	case types.RoleUser:
+		if note, ok := userNoticeText(m); ok {
+			r.afterTool = false
+			return r.frame(r.renderNotice(note), false, false)
+		}
 		body := m.Display
 		if body == "" {
 			body = joinText(m)
@@ -83,7 +87,7 @@ func (r *StreamRenderer) assistantBody(m types.Message) string {
 				r.SetContinuation(false) // only the first block continues a flushed head
 			}
 		case types.BlockThinking:
-			s = r.renderThinking(b.Text)
+			s = r.renderThinking(b.Text, b.ThinkMs)
 		case types.BlockToolUse:
 			if b.Use != nil && b.Use.Name == "escalate" {
 				s = r.renderToolUse(*b.Use)

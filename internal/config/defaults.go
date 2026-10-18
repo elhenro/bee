@@ -86,7 +86,7 @@ func Defaults() Config {
 		ShowTotalTokens: true,
 		ShowLoaderIn:    true,
 		ShowLoaderOut:   true,
-		ShowLoaderRate:  true,
+		ShowLoaderRate:  false,
 		OuterPadLR:      0,
 		UpdateCheck:     "ask",
 		UpdateRepo:      "elhenro/bee",

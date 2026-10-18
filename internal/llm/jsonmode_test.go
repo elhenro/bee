@@ -156,6 +156,44 @@ func TestJSONMode_ParsesCombinedSayAndTool(t *testing.T) {
 	}
 }
 
+func TestJSONMode_SayInsideArgsIsLiftedToText(t *testing.T) {
+	inner := &fakeProvider{events: []Event{
+		{Type: EventTextDelta, Delta: `{"tool":"bash","args":{"command":"go test","say":"stopping the loop"}}`},
+		{Type: EventDone, StopReason: "stop"},
+	}}
+	p := NewJSONMode(inner)
+	ch, _ := p.Stream(context.Background(), Request{Tools: jmTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Name != "bash" {
+		t.Fatalf("lost the tool call: %v", tools)
+	}
+	if _, stray := tools[0].Input["say"]; stray {
+		t.Fatalf("say left in tool args: %v", tools[0].Input)
+	}
+	if tools[0].Input["command"] != "go test" {
+		t.Fatalf("real args damaged: %v", tools[0].Input)
+	}
+	if text != "stopping the loop" {
+		t.Fatalf("note not shown to the user: %q", text)
+	}
+}
+
+func TestJSONMode_TopLevelSayWinsOverArgsSay(t *testing.T) {
+	inner := &fakeProvider{events: []Event{
+		{Type: EventTextDelta, Delta: `{"say":"outer","tool":"bash","args":{"command":"ls","say":"inner"}}`},
+		{Type: EventDone, StopReason: "stop"},
+	}}
+	p := NewJSONMode(inner)
+	ch, _ := p.Stream(context.Background(), Request{Tools: jmTools()})
+	tools, text, _ := collect(ch)
+	if len(tools) != 1 || tools[0].Input["say"] != nil {
+		t.Fatalf("args say not stripped: %v", tools)
+	}
+	if text != "outer" {
+		t.Fatalf("expected top-level say, got %q", text)
+	}
+}
+
 func TestJSONMode_FencedAndPaddedOutput(t *testing.T) {
 	inner := &fakeProvider{events: []Event{
 		{Type: EventTextDelta, Delta: "```json\n{\"tool\":\"read\",\"args\":{\"path\":\"a.go\"}}\n```"},

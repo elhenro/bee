@@ -74,6 +74,7 @@ func (m Model) onOpenSettings(_ openSettingsMsg) (tea.Model, tea.Cmd) {
 		Compact:         m.compact,
 		ShowContextBar:  m.showContextBar,
 		Highlight:       m.highlight,
+		ShowCallDetail:  m.showCallDetail,
 		ShellBangSilent: m.shellBangSilent,
 		ShowBee:         m.showBee,
 		ShowContextPct:  m.showContextPct,
@@ -111,6 +112,8 @@ func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
 		err = m.side().SetShowContextBar(msg.value)
 	case "highlight":
 		err = m.side().SetHighlight(msg.value)
+	case "show_call_detail":
+		err = m.side().SetShowCallDetail(msg.value)
 	case "shell_bang_silent":
 		err = m.side().SetShellBangSilent(msg.value)
 	case "show_bee":

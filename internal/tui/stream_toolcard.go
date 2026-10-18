@@ -75,6 +75,9 @@ func (r *StreamRenderer) callParts(u types.ToolUse, o toolOutcome, anchor int) (
 		}
 		return prefix, b
 	}
+	if u.Label() != "" {
+		return r.labeledCall(prefix, u, o)
+	}
 	args := summarizeToolArgs(u.Name, u.Input, r.argsBudget(u.Name))
 	switch {
 	case args == "":

@@ -64,6 +64,10 @@ type PaletteModel struct {
 	// frecency tracker; nil-safe — when empty the pool falls back to
 	// alphabetical via stable sort tiebreak.
 	usage *cmdUsage
+	// mid-run: only commands flagged AllowDuringRun are dispatchable, so
+	// the pool drops everything else (skills start a turn) instead of
+	// offering rows that would just bounce with a hint
+	runOnly bool
 }
 
 // SetWidth tells the palette how wide a row may be. Set from the app's
@@ -94,6 +98,19 @@ func (p *PaletteModel) Show(initial string) {
 	p.recomputeMatches()
 }
 
+// SetRunOnly restricts the pool to commands that may run while the engine is
+// busy. Rebuilds a live palette when the flag flips, e.g. the turn ended.
+func (p *PaletteModel) SetRunOnly(on bool) {
+	if p.runOnly == on {
+		return
+	}
+	p.runOnly = on
+	if p.Active {
+		p.rebuildPool()
+		p.recomputeMatches()
+	}
+}
+
 // SetFilter mirrors the filter from the main input bar — typing lives there
 // now, palette just shows the ranked list. Resets selection on change.
 func (p *PaletteModel) SetFilter(s string) {
@@ -116,10 +133,13 @@ func (p *PaletteModel) rebuildPool() {
 	p.pool = p.pool[:0]
 	if p.cmds != nil {
 		for _, c := range p.cmds.List() {
+			if p.runOnly && !c.AllowDuringRun {
+				continue
+			}
 			p.pool = append(p.pool, PaletteEntry{Name: c.Name, Description: c.Description, Kind: EntryCommand})
 		}
 	}
-	if p.skills != nil {
+	if p.skills != nil && !p.runOnly {
 		for _, s := range p.skills.List() {
 			p.pool = append(p.pool, PaletteEntry{Name: s.Name, Description: s.Description, Kind: EntrySkill})
 		}

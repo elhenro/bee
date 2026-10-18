@@ -189,6 +189,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.stream.SetShowNudges(m.showNudges)
 		m.stream.SetCompact(m.compact)
 		m.stream.SetHighlight(m.highlight)
+		m.stream.SetShowCallDetail(m.showCallDetail)
 		m.stream.SetLoader(m.loader)
 		m.palette.SetWidth(msg.Width)
 		m.atpicker.SetWidth(msg.Width)
@@ -215,6 +216,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		if mm, ok := nm.(Model); ok && mm.palette.Active {
 			val := mm.input.Value()
 			if strings.HasPrefix(val, "/") {
+				mm.palette.SetRunOnly(mm.state == StateStreaming)
 				mm.palette.SetFilter(val[1:])
 			} else {
 				mm.palette.Active = false

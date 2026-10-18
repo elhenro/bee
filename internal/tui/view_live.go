@@ -84,10 +84,13 @@ func (m Model) renderStreamingParts(maxRows int) []string {
 	m.stream.SetContinuation(len(m.streamFlushed) > 0)
 
 	var parts []string
-	// reasoning streams above the answer, styled like the committed block
-	if think := m.thinkPartial; think != "" && m.showThoughts {
-		block := m.stream.RenderThinkingPartial(think)
-		if maxRows > 0 {
+	// reasoning streams above the answer, styled like the committed block;
+	// hidden thoughts still show their label row with the running clock
+	thinkRows := 0
+	if think := m.thinkPartial; think != "" {
+		elapsed, running := m.thinkElapsed()
+		block := m.stream.RenderThinkingPartial(think, elapsed, running)
+		if maxRows > 0 && m.showThoughts {
 			// share the budget with the answer text; reasoning alone may use it all
 			room := maxRows - m.busyRows()
 			if visible != "" {
@@ -98,6 +101,9 @@ func (m Model) renderStreamingParts(maxRows int) []string {
 			if room >= 3 {
 				block = m.stream.ClipStreamingTail(block, room)
 			}
+		}
+		if !m.showThoughts {
+			thinkRows = lipgloss.Height(block)
 		}
 		parts = append(parts, block)
 	}
@@ -110,7 +116,7 @@ func (m Model) renderStreamingParts(maxRows int) []string {
 		pending = m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame)
 	}
 	if text := m.stream.RenderStreaming(visible, m.loaderFrame); text != "" {
-		if clip := maxRows - m.busyRows(); maxRows > 0 && clip > 0 {
+		if clip := maxRows - m.busyRows() - thinkRows; maxRows > 0 && clip > 0 {
 			text = m.stream.ClipStreamingTail(text, clip)
 		}
 		parts = append(parts, text)

@@ -262,6 +262,9 @@ type Model struct {
 	// turn. Rendered dim+italic above m.partial while streaming. Cleared
 	// when the final BlockThinking lands via liveMsgMsg/turnDoneMsg.
 	thinkPartial string
+	// reasoning clock for the live row: set by the first delta of a block,
+	// frozen when the answer starts (see think_time.go)
+	thinkStartedAt, thinkEndedAt time.Time
 
 	// liveMsgCh receives each persisted assistant/tool message from the
 	// engine's LiveMsgCh so cards render mid-Run instead of only on done.
@@ -431,6 +434,10 @@ type Model struct {
 	// false — the top-bar bee-glyph hex fill already conveys utilisation.
 	// Toggle via /settings; persists to config.
 	showContextBar bool
+
+	// showCallDetail prints the whole call under a labeled tool call card.
+	// Toggle via /settings; persists to config.
+	showCallDetail bool
 
 	// highlight gates chroma syntax-highlighting on tool output, diffs,
 	// file content, and bash command summaries. Default true. Toggle via

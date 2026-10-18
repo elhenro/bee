@@ -26,6 +26,27 @@ func IsLocalProvider(name string) bool {
 	return localProviderNames[strings.ToLower(name)]
 }
 
+// LocalMaxOutputTokens caps one response from an on-host model. Local servers
+// default to the whole context window, so a rambling generation (thinking that
+// never converges, not periodic enough for the repeat watchdog) runs for
+// ~10-50 min at local speeds. ~6 min at 44 tok/s, room for a long file write.
+const LocalMaxOutputTokens = 16384
+
+// OutputCap returns the per-response max_tokens for the main turn. Explicit
+// max_output_tokens wins (negative lifts the cap); otherwise local providers
+// get LocalMaxOutputTokens and hosted ones 0 (omit, provider default).
+func OutputCap(cfg Config) int {
+	switch {
+	case cfg.MaxOutputTokens < 0:
+		return 0
+	case cfg.MaxOutputTokens > 0:
+		return cfg.MaxOutputTokens
+	case IsLocalProvider(cfg.DefaultProvider):
+		return LocalMaxOutputTokens
+	}
+	return 0
+}
+
 // IsLoopbackURL returns true when u points at localhost / 127.x.x.x / ::1.
 func IsLoopbackURL(u string) bool {
 	p, err := url.Parse(u)

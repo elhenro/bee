@@ -152,6 +152,7 @@ func (m Model) retrigger(text, reason string) (tea.Model, tea.Cmd) {
 	m.warning = "bee " + reason + " — auto-resuming (" +
 		strconv.Itoa(m.resumeCount) + "/" + strconv.Itoa(m.watchdogMaxResumes) + ")…"
 	m.warningExpires = time.Now().Add(warningTTL)
-	nm, cmd := m.submitWithDisplay(text, "(auto-resume: "+reason+")")
+	display := "(auto-resume " + strconv.Itoa(m.resumeCount) + "/" + strconv.Itoa(m.watchdogMaxResumes) + ": " + reason + ")"
+	nm, cmd := m.submitWithDisplay(text, display)
 	return nm, tea.Batch(cmd, warningFadeCmd())
 }

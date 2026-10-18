@@ -158,6 +158,14 @@ func parseEnvelope(s string) (tool string, args map[string]any, say string, ok b
 		}
 	}
 	say, _ = obj["say"].(string)
+	// small models file the note inside args, where the grammar allows it but
+	// tools ignore it and the user never sees it. lift it to the envelope.
+	if note, ok := args["say"].(string); ok {
+		delete(args, "say")
+		if say == "" {
+			say = note
+		}
+	}
 	// "done" is the terminal branch; "say" stays accepted for the combined
 	// tool+note shape and for degraded servers emitting the legacy form.
 	if d, _ := obj["done"].(string); d != "" && say == "" {

@@ -140,6 +140,11 @@ type Side interface {
 	SetShowContextBar(v bool) error
 	// GetShowContextBar returns the current show-context-bar flag.
 	GetShowContextBar() bool
+	// SetShowCallDetail toggles the full-call row under labeled tool calls.
+	// Persists to config.
+	SetShowCallDetail(v bool) error
+	// GetShowCallDetail returns the current show-call-detail flag.
+	GetShowCallDetail() bool
 	// SetHighlight toggles chroma syntax-highlighting across diff/file/bash
 	// previews. Persists to config.
 	SetHighlight(v bool) error

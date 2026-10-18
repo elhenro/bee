@@ -30,6 +30,9 @@ type ContentBlock struct {
 	// Signature authenticates a BlockThinking so a provider that requires
 	// reasoning to round-trip next to tool calls can accept it back.
 	Signature string `json:"signature,omitempty"`
+	// ThinkMs is how long a BlockThinking took, first reasoning delta to the
+	// first answer or tool-call event. Display only; 0 on legacy sessions.
+	ThinkMs int64 `json:"think_ms,omitempty"`
 }
 
 type BlockType string

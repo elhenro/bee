@@ -106,6 +106,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// no-op when the profile uses tool_format=xml (schema is nilled by the
 	// textmode wrapper before it reaches the wire).
 	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg)
+	specs = addCallLabels(specs, e.Cfg)
 	// then narrow by role/posture: a read-only turn drops mutators entirely.
 	specs = filterToolSpecsForRole(specs, role, readOnly)
 	// re-add any plan-only tool a prompt skill granted for this turn (e.g.
@@ -297,6 +298,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			Messages:           e.applyVisionFallback(ctx, wireMsgs),
 			Tools:              specs,
 			Stream:             true,
+			MaxTokens:          config.OutputCap(e.Cfg),
 			Temperature:        prof.Temperature,
 			TopP:               prof.TopP,
 			Thinking:           resolvedThinking,

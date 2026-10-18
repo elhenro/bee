@@ -28,7 +28,7 @@ func (e *Engine) observeWaggle(uses []types.ToolUse, results []types.ToolResult)
 		}
 		e.Waggle.Observe(waggle.Call{
 			Tool:      u.Name,
-			Args:      stringifyArgs(u.Input),
+			Args:      stringifyArgs(u.Args()),
 			Mutates:   !safeParallelTools[u.Name],
 			EstTokens: len(results[i].Content) / 4,
 		})
@@ -49,7 +49,7 @@ func (e *Engine) replayFollow(ctx context.Context, uses []types.ToolUse, results
 		if results[i].IsError || !safeParallelTools[u.Name] {
 			continue
 		}
-		e.Replay.Observe(waggle.Call{Tool: u.Name, Args: stringifyArgs(u.Input)})
+		e.Replay.Observe(waggle.Call{Tool: u.Name, Args: stringifyArgs(u.Args())})
 		last = i
 	}
 	if last < 0 {

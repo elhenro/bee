@@ -79,6 +79,8 @@ func (s *loginSideStub) GetShowRecap() bool                            { return 
 func (s *loginSideStub) OpenAgentView() error                          { return nil }
 func (s *loginSideStub) SetShowContextBar(bool) error                  { return nil }
 func (s *loginSideStub) GetShowContextBar() bool                       { return false }
+func (s *loginSideStub) SetShowCallDetail(bool) error                  { return nil }
+func (s *loginSideStub) GetShowCallDetail() bool                       { return false }
 func (s *loginSideStub) SetHighlight(bool) error                       { return nil }
 func (s *loginSideStub) GetHighlight() bool                            { return true }
 func (s *loginSideStub) SetShellBangSilent(bool) error                 { return nil }

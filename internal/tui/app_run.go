@@ -87,7 +87,7 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 			WithShowLoaderRate(eng.Cfg.ShowLoaderRate)
 	} else {
 		m = m.WithShowBanner(true).WithShowLoader(true).
-			WithShowLoaderIn(true).WithShowLoaderOut(true).WithShowLoaderRate(true)
+			WithShowLoaderIn(true).WithShowLoaderOut(true).WithShowLoaderRate(false)
 	}
 	// verbose: env wins over cfg (CLI/env path); cfg persists across launches.
 	verbose := os.Getenv("BEE_VERBOSE") != ""
@@ -122,6 +122,9 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 	// show-context-bar: cfg-driven; default false (hex glyph carries fill).
 	if eng != nil {
 		m = m.WithShowContextBar(eng.Cfg.ShowContextBar)
+	}
+	if eng != nil {
+		m = m.WithShowCallDetail(eng.Cfg.ShowCallDetail)
 	}
 	// highlight: cfg-driven; default true. Skip default-call when eng is nil
 	// so tests stay on the ctor default already set to true.

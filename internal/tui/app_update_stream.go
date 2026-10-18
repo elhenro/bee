@@ -20,6 +20,7 @@ import (
 // message, the partial is just for the in-flight view).
 func (m Model) onThinkDelta(msg thinkDeltaMsg) (tea.Model, tea.Cmd) {
 	m.noteActivity()
+	m.noteThinking()
 	m.thinkPartial += msg.Delta
 	m.turnOutChars += len(msg.Delta)
 	return m, m.waitThink()
@@ -36,6 +37,7 @@ func (m Model) onProgress(msg progressMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) onStreamDelta(msg streamDeltaMsg) (tea.Model, tea.Cmd) {
 	m.noteActivity()
+	m.answerStarted()
 	// append to live partial. View() picks it up next render. The pump
 	// re-arms itself so subsequent deltas keep draining.
 	m.partial += msg.Delta
@@ -163,9 +165,12 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	// only deepens the server queue — a turn that never produces anything is
 	// caught by the provider-level stall guard instead. Suppressed while the
 	// user is mid-steer (typing) and once a stall-resume is already pending.
+	// A running tool is silent by design (long build, batch job) and bounded by
+	// its own timeout: cancelling it here kills the work and the resumed model
+	// just re-runs the same call.
 	if m.state == StateStreaming && m.watchdogEnabled && !m.watchdogDisabled &&
 		!m.stallResumePending && strings.TrimSpace(m.input.Value()) == "" &&
-		m.turnSawActivity && time.Since(m.lastActivityAt) >= m.watchdogStall {
+		len(m.pendingTools) == 0 && m.turnSawActivity && time.Since(m.lastActivityAt) >= m.watchdogStall {
 		// continue from partial output when the turn produced any, else
 		// re-send the original instruction.
 		text := resumeContinueText

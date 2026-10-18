@@ -353,3 +353,35 @@ func TestPalette_View_NoMatchesShowsMessage(t *testing.T) {
 		t.Errorf("expected 'no matches' marker, got: %q", v)
 	}
 }
+
+func TestPalette_RunOnlyKeepsOnlyDuringRunCommands(t *testing.T) {
+	p := newTestPalette(t)
+	p.SetRunOnly(true)
+	p.Show("")
+	var sawSettings bool
+	for _, e := range p.pool {
+		if e.Kind == EntrySkill {
+			t.Errorf("skill %q offered mid-run", e.Name)
+		}
+		if e.Name == "settings" {
+			sawSettings = true
+		}
+		if c, ok := p.cmds.Get(e.Name); ok && !c.AllowDuringRun {
+			t.Errorf("/%s offered mid-run but not AllowDuringRun", e.Name)
+		}
+	}
+	if !sawSettings {
+		t.Error("/settings missing from run-only pool")
+	}
+}
+
+func TestPalette_SetRunOnlyRebuildsLivePalette(t *testing.T) {
+	p := newTestPalette(t)
+	p.SetRunOnly(true)
+	p.Show("")
+	narrow := len(p.pool)
+	p.SetRunOnly(false)
+	if len(p.pool) <= narrow {
+		t.Errorf("pool did not widen after run ended: %d -> %d", narrow, len(p.pool))
+	}
+}

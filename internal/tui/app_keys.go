@@ -157,12 +157,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// mirrors via SetFilter (see KeyMsg branch in Update). Also recover
 	// from StateError so a stream/provider failure doesn't lock out the
 	// palette — user must still be able to /model, /login, /help.
-	if msg.String() == "/" && m.input.Value() == "" && !m.palette.Active && (m.state == StateIdle || m.state == StateError) {
+	// Also open mid-stream: AllowDuringRun commands (/settings, /model, …)
+	// are dispatchable then, so they need their autocomplete too.
+	if msg.String() == "/" && m.input.Value() == "" && !m.palette.Active && (m.state == StateIdle || m.state == StateError || m.state == StateStreaming) {
 		if m.state == StateError {
 			m.state = StateIdle
 			m.lastErr = ""
 		}
-		m.palette.Show("")
+		m.showPalette("")
 		// fall through to let the textinput consume "/"
 	}
 	// `@` while idle opens the fuzzy file picker. Also recover from

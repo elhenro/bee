@@ -25,7 +25,7 @@ import (
 
 const (
 	toolName       = "bash"
-	defaultTimeout = 30 * time.Second
+	defaultTimeout = 120 * time.Second
 
 	// capture window per run: first and last bytes kept, middle dropped. the
 	// loop owns the per-profile cap (and the spill file) on top of this; this
@@ -92,7 +92,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 				},
 				"timeout_seconds": map[string]any{
 					"type":        "integer",
-					"description": "Hard timeout in seconds (default 30).",
+					"description": "Hard timeout in seconds (default 120). Raise it for long builds or test suites.",
 				},
 				"cwd": map[string]any{
 					"type":        "string",

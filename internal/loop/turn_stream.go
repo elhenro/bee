@@ -110,6 +110,7 @@ func (e *Engine) streamAttempt(
 	truncated := false // stream dropped mid-output on a transient error
 	loopPeriodText, loopPeriodThink := 0, 0
 	loopTrimText, loopTrimThink := -1, -1
+	var think thinkClock
 events:
 	for ev := range ch {
 		if ctx.Err() != nil {
@@ -117,6 +118,7 @@ events:
 		}
 		switch ev.Type {
 		case llm.EventThinkingDelta:
+			think.reasoning()
 			if ev.Signature != "" {
 				*thinkSig = ev.Signature
 			}
@@ -132,6 +134,7 @@ events:
 				}
 			}
 		case llm.EventTextDelta:
+			think.answered()
 			textBuf.WriteString(ev.Delta)
 			gotContent = true
 			sinceScan += len(ev.Delta)
@@ -157,6 +160,7 @@ events:
 			}
 		case llm.EventToolUse:
 			if ev.ToolUse != nil {
+				think.answered()
 				*toolUses = append(*toolUses, *ev.ToolUse)
 				gotContent = true
 				if e.JSONEmitter != nil {
@@ -294,7 +298,7 @@ events:
 	}
 	// thinking block first so the rendered transcript reads in causal order
 	if thinkStr != "" || *thinkSig != "" {
-		*content = append(*content, types.ContentBlock{Type: types.BlockThinking, Text: thinkStr, Signature: *thinkSig})
+		*content = append(*content, types.ContentBlock{Type: types.BlockThinking, Text: thinkStr, Signature: *thinkSig, ThinkMs: think.ms()})
 	}
 	if textStr != "" {
 		*content = append(*content, types.ContentBlock{Type: types.BlockText, Text: textStr})

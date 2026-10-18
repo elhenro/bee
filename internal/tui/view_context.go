@@ -83,7 +83,7 @@ func contextTier(pct float64, known bool) (lipgloss.TerminalColor, bool) {
 	}
 }
 
-// bee mark + `ctx 12%`, tinted by fill; "?" when the model isn't in the
+// bee mark + `12%`, tinted by fill; "?" when the model isn't in the
 // windows table (else 0% would look like an empty context)
 func (m Model) renderContextHex() string {
 	if !m.showBee && !m.showContextPct {
@@ -109,7 +109,7 @@ func (m Model) renderContextHex() string {
 		if known {
 			label = fmt.Sprintf("%d%%", min(999, int(pct*100+0.5)))
 		}
-		chip := m.styles.Dim.Render("ctx") + " " + style.Render(label)
+		chip := style.Render(label)
 		if out != "" {
 			out += " " + chip
 		} else {
