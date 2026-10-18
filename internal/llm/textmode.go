@@ -115,6 +115,7 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 		}()
 	}()
 	var buf strings.Builder
+	var think thinkSplitter
 	var done Event
 	gotDone := false
 	// dedup: qwen3 / hermes models occasionally re-emit the same call twice
@@ -139,7 +140,13 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 	for ev := range in {
 		switch ev.Type {
 		case EventTextDelta:
-			buf.WriteString(ev.Delta)
+			// inline <think> blocks are reasoning: forward them as thinking
+			// so a call quoted inside a thought is never dispatched.
+			answer, thought := think.feed(ev.Delta)
+			if thought != "" {
+				emit(ctx, out, Event{Type: EventThinkingDelta, Delta: thought})
+			}
+			buf.WriteString(answer)
 			// withheld content still counts as generation progress.
 			emit(ctx, out, Event{Type: EventProgress, N: len(ev.Delta)})
 			// only attempt early dispatch when a closing tag for ANY known
@@ -180,6 +187,11 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 			emit(ctx, out, ev)
 		}
 	}
+	answer, thought := think.flush()
+	if thought != "" {
+		emit(ctx, out, Event{Type: EventThinkingDelta, Delta: thought})
+	}
+	buf.WriteString(answer)
 	text := buf.String()
 	// snapshot pre-normalization for the nudge detector: normalization
 	// strips envelope markers (e.g. `<tool_call>`) on its way to canonical
