@@ -100,6 +100,12 @@ func validate(e Entry) error {
 	if strings.HasPrefix(e.Name, ".") {
 		return fmt.Errorf("knowledge: name %q must not start with '.'", e.Name)
 	}
+	// the scanner skips these two files, so a record under either name would be
+	// invisible (or clobber the index); case-insensitive for folding filesystems
+	switch strings.ToUpper(strings.TrimSuffix(e.Name, ".md")) {
+	case "INDEX", "MEMORY":
+		return fmt.Errorf("knowledge: name %q is reserved", e.Name)
+	}
 	if !slugChar(e.Name) && !slugChar(strings.TrimSuffix(e.Name, ".md")) {
 		return fmt.Errorf("knowledge: name %q must be a slug (a-z, 0-9, -, _, .)", e.Name)
 	}

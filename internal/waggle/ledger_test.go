@@ -137,3 +137,16 @@ func TestRecordUse_CountsExplicitFollow(t *testing.T) {
 		t.Errorf("stats = %+v", stats["wag_a"])
 	}
 }
+
+func TestRecordUseByName_FindsOwningStore(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	user, _ := UserStore()
+	if err := user.Write("wag_u", "x"); err != nil {
+		t.Fatal(err)
+	}
+	RecordUseByName("/some/project", "wag_u", 5)
+	stats, _ := ReadLedger(user.LedgerPath())
+	if stats["wag_u"].Uses != 1 {
+		t.Errorf("stats = %+v", stats)
+	}
+}

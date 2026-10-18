@@ -63,4 +63,6 @@ func runExecWaggle(sk skills.Skill, rest []string) {
 	if res.IsError {
 		os.Exit(1)
 	}
+	cwd, _ := os.Getwd()
+	waggle.RecordUseByName(cwd, sk.Name, len(res.Content)/4)
 }

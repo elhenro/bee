@@ -202,3 +202,15 @@ func TestYAMLEscape(t *testing.T) {
 		}
 	}
 }
+
+func TestValidate_RejectsReservedNames(t *testing.T) {
+	for _, n := range []string{"INDEX", "index", "Index.md", "MEMORY", "memory.md"} {
+		err := validate(Entry{Name: n, Description: "d"})
+		if err == nil || !strings.Contains(err.Error(), "reserved") {
+			t.Errorf("validate(%q) = %v, want reserved error", n, err)
+		}
+	}
+	if err := validate(Entry{Name: "index-notes", Description: "d"}); err != nil {
+		t.Errorf("index-notes should be fine: %v", err)
+	}
+}

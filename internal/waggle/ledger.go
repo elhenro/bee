@@ -154,3 +154,17 @@ func RecordUse(s *Store, name string, yield int) error {
 	}
 	return NewLedger(s.LedgerPath()).Append(LedgerEntry{Name: name, Steps: 1, Yield: yield})
 }
+
+// RecordUseByName is RecordUse for a caller that only knows the waggle name and
+// cwd (the `bee <name>` dispatcher): it logs to the first of the project and
+// user stores that holds the route.
+func RecordUseByName(cwd, name string, yield int) {
+	proj, _ := ProjectStore(cwd)
+	user, _ := UserStore()
+	for _, s := range []*Store{proj, user} {
+		if s != nil && s.Exists(name) {
+			_ = RecordUse(s, name, yield)
+			return
+		}
+	}
+}
