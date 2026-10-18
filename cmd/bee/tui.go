@@ -319,6 +319,9 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 
 	if err := tui.RunSeededAsker(context.Background(), eng, cmdReg, km, tuiApprover, tuiAsker, seedPrompt); err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tui: %v\n", err)
+		// os.Exit skips defers: persist the allowlist and sync the rollout first
+		app.Flush()
+		_ = roll.Close()
 		os.Exit(1)
 	}
 	// /new, /back, /fork, /clone swap eng.Sessions mid-run; print the active

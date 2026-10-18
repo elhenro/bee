@@ -70,6 +70,9 @@ func (s *tuiSide) SetToolDisabled(name string, disabled bool) error {
 	if name == "" {
 		return errors.New("empty tool name")
 	}
+	if s.m.engineBusy() {
+		return errEngineBusy
+	}
 	cfg := &s.m.eng.Cfg
 	cur := cfg.DisabledTools[:0:0]
 	dup := false
@@ -99,6 +102,9 @@ func (s *tuiSide) AddUserTool(name, cmdStr, desc string) error {
 	}
 	if name == "" || cmdStr == "" {
 		return errors.New("name and command required")
+	}
+	if s.m.engineBusy() {
+		return errEngineBusy
 	}
 	cfg := &s.m.eng.Cfg
 	for _, u := range cfg.UserTools {
@@ -130,6 +136,9 @@ func (s *tuiSide) AddUserTool(name, cmdStr, desc string) error {
 func (s *tuiSide) RemoveUserTool(name string) error {
 	if s.m == nil || s.m.eng == nil {
 		return errors.New("no tui state")
+	}
+	if s.m.engineBusy() {
+		return errEngineBusy
 	}
 	cfg := &s.m.eng.Cfg
 	found := false

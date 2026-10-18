@@ -142,6 +142,8 @@ func translateModifyOtherKeys(buf []byte) (out, held []byte) {
 		seq = append(seq, ';', '5', 'u')
 		out = bytes.ReplaceAll(out, seq, []byte{c - 'a' + 1})
 	}
+	// everything else in CSI u form: alt+key -> ESC+key, ctrl+symbol -> C0.
+	out = translateKittyCSIu(out)
 	// hold back a trailing partial ESC[ sequence (no terminator yet) so a
 	// chord that arrives across two reads still matches on the next pass.
 	if idx := bytes.LastIndexByte(out, 0x1b); idx >= 0 {

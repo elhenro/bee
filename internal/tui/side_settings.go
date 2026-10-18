@@ -24,10 +24,7 @@ func (s *tuiSide) SetRole(role string) error {
 	}
 	s.m.role = r
 	s.m.thinking = roleThinking(r)
-	if s.m.eng != nil {
-		s.m.eng.Cfg.Role = r
-		s.m.eng.Cfg.Thinking = s.m.thinking
-	}
+	s.m.mirrorToEngine()
 	return PersistSetting("", "role", r)
 }
 
@@ -55,9 +52,7 @@ func (s *tuiSide) SetThinking(level string) error {
 	}
 	canonical := string(llm.ParseThinking(raw))
 	s.m.thinking = canonical
-	if s.m.eng != nil {
-		s.m.eng.Cfg.Thinking = canonical
-	}
+	s.m.mirrorToEngine()
 	return PersistSetting("", "thinking", canonical)
 }
 
@@ -75,9 +70,7 @@ func (s *tuiSide) SetYolo(on bool) error {
 		return errors.New("yolo: no tui state")
 	}
 	s.m.yolo = on
-	if s.m.eng != nil {
-		s.m.eng.Cfg.Yolo = on
-	}
+	s.m.mirrorToEngine()
 	return PersistSetting("", "yolo", on)
 }
 
@@ -123,6 +116,9 @@ func (s *tuiSide) SetMaxIterations(n int) error {
 		n = 0
 	}
 	if s.m.eng != nil {
+		if s.m.engineBusy() {
+			return errEngineBusy
+		}
 		s.m.eng.Cfg.MaxIterations = n
 	}
 	return PersistSetting("", "max_iterations", n)

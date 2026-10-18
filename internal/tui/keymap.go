@@ -5,19 +5,19 @@ import "github.com/charmbracelet/bubbles/key"
 // KeyMap centralises every binding the TUI listens to. Other slices
 // (workspace, hive, provider picker) just consume the same struct.
 type KeyMap struct {
-	Submit       key.Binding
-	Quit         key.Binding
-	Cancel       key.Binding
-	ProviderPick key.Binding
-	WorkspaceTog key.Binding
-	HiveOpen     key.Binding
-	SessionTree  key.Binding
-	CostOpen     key.Binding
-	SlashPalette  key.Binding
-	HistorySearch key.Binding
-	CavemanCycle key.Binding
-	RoleCycle    key.Binding
-	YoloToggle   key.Binding
+	Submit         key.Binding
+	Quit           key.Binding
+	Cancel         key.Binding
+	ProviderPick   key.Binding
+	WorkspaceTog   key.Binding
+	HiveOpen       key.Binding
+	SessionTree    key.Binding
+	CostOpen       key.Binding
+	SlashPalette   key.Binding
+	HistorySearch  key.Binding
+	CavemanCycle   key.Binding
+	RoleCycle      key.Binding
+	YoloToggle     key.Binding
 	ApproveAllow   key.Binding
 	ApproveSession key.Binding
 	ApproveAlways  key.Binding
@@ -28,9 +28,10 @@ type KeyMap struct {
 	// FollowUp: alt+enter queues a follow-up that fires after the current
 	// turn finishes (works in idle or streaming).
 	FollowUp key.Binding
-	// ImagePaste: ctrl+i stages an image from the system clipboard for the
+	// ImagePaste: alt+v stages an image from the system clipboard for the
 	// next submit. bubbletea's raw-paste support is unreliable in many
-	// terminals, hence the explicit chord.
+	// terminals, hence the explicit chord. ctrl+i is the tab byte and arrives
+	// as "tab", so it can never match.
 	ImagePaste key.Binding
 	// ExpandOutput: ctrl+o re-prints the last tool result at the opposite
 	// detail level (full ↔ collapsed preview). Doubles as resume for a
@@ -119,8 +120,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("alt+enter", "queue follow-up"),
 		),
 		ImagePaste: key.NewBinding(
-			key.WithKeys("ctrl+i"),
-			key.WithHelp("ctrl+i", "paste image from clipboard"),
+			key.WithKeys("alt+v"),
+			key.WithHelp("alt+v", "paste image from clipboard"),
 		),
 		ExpandOutput: key.NewBinding(
 			key.WithKeys("ctrl+o"),

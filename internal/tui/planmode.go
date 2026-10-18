@@ -242,17 +242,11 @@ func (m Model) onPlanProceed(c PlanProceedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.role = c.Role
 	m.thinking = roleThinking(c.Role)
-	if m.eng != nil {
-		m.eng.Cfg.Role = c.Role
-		m.eng.Cfg.Thinking = m.thinking
-	}
 	if c.Yolo {
 		m.yolo = true
-		if m.eng != nil {
-			m.eng.Cfg.Yolo = true
-		}
 		_ = PersistSetting("", "yolo", true)
 	}
+	m.mirrorToEngine()
 	if c.Fresh {
 		nm, err := m.clearForFreshSession()
 		if err != nil {

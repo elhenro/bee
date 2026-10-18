@@ -25,24 +25,21 @@ func (m Model) onOpenResume(_ openResumeMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) onResumeSelect(msg ResumeSelectMsg) (tea.Model, tea.Cmd) {
 	if err := m.side().OpenSession(msg.ID); err != nil {
-		m.lastErr = err.Error()
-		m.state = StateError
+		return m.fail(err.Error())
 	}
 	return m, nil
 }
 
 func (m Model) onSessionFork(msg SessionForkMsg) (tea.Model, tea.Cmd) {
 	if err := m.side().ForkSession(msg.FromID); err != nil {
-		m.lastErr = err.Error()
-		m.state = StateError
+		return m.fail(err.Error())
 	}
 	return m, nil
 }
 
 func (m Model) onSessionClone(_ SessionCloneMsg) (tea.Model, tea.Cmd) {
 	if err := m.side().CloneSession(); err != nil {
-		m.lastErr = err.Error()
-		m.state = StateError
+		return m.fail(err.Error())
 	}
 	return m, nil
 }

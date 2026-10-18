@@ -209,14 +209,16 @@ func renderResumeRow(e ResumeEntry, selected bool, width int) string {
 	// budget: cursor(2) + id(8) + space + ts(<=12) + space + preview
 	head := cursor + idStyle.Render(id) + "  " + tsStyle.Render(padRightCells(ts, 10)) + "  "
 	headW := lipglossWidth(head)
-	maxPrev := width - headW
-	if maxPrev < 10 {
-		maxPrev = 10
+	// no floor: on a narrow terminal the preview shrinks to nothing rather
+	// than pushing the row past the edge
+	if width <= 0 {
+		return head + prevStyle.Render(preview)
 	}
+	maxPrev := max(width-headW, 0)
 	if lipglossWidth(preview) > maxPrev {
-		preview = truncateVisible(preview, maxPrev-1) + "…"
+		preview = truncateVisible(preview, maxPrev)
 	}
-	return head + prevStyle.Render(preview)
+	return truncateVisible(head+prevStyle.Render(preview), width)
 }
 
 // humanAge renders a created-at timestamp as a compact relative age.

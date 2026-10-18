@@ -62,6 +62,9 @@ func (m Model) rewindConversation(toMsgID string) (Model, error) {
 	if m.eng == nil || m.eng.Sessions == nil {
 		return m, errors.New("no active session")
 	}
+	if m.engineBusy() {
+		return m, errEngineBusy
+	}
 	newR, err := session.Fork(m.eng.Sessions.ID(), toMsgID)
 	if err != nil {
 		return m, err

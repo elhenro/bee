@@ -367,6 +367,7 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithCancel(parent)
 	m.cancelRun = cancel
 	eng := m.eng
+	toggles := m.cfgSnapshot()
 	// prior turns for context. exclude the optimistic user msg we just appended
 	// (history); prior keeps it (the full list mastermind rebuilds its result from).
 	var history []types.Message
@@ -392,6 +393,9 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 			if prevDone != nil {
 				<-prevDone // wait for a prior (possibly esc'd) run to fully return
 			}
+			// toggles flipped mid-turn reach the engine only now that the prior
+			// run released it.
+			toggles.apply(eng)
 			// seed prior turns into the engine here, after the prior run released
 			// it, so two runs never write InitialMessages concurrently.
 			// StripBrokenToolCall scrubs the trailing assistant message when it

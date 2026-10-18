@@ -87,14 +87,11 @@ func (m Model) onPicked(msg PickedMsg) (tea.Model, tea.Cmd) {
 		return m.onHandoffPicked(msg)
 	}
 	if err := m.side().SwitchProviderModel(msg.Provider, msg.Model); err != nil {
-		m.lastErr = err.Error()
-		m.state = StateError
-		return m, nil
+		return m.fail(err.Error())
 	}
 	// persist for next launch; non-fatal if it fails (e.g. read-only fs)
 	if perr := PersistPick("", msg.Provider, msg.Model); perr != nil {
-		m.lastErr = "saved live but persist failed: " + perr.Error()
-		m.state = StateError
+		return m.fail("saved live but persist failed: " + perr.Error())
 	}
 	return m, nil
 }
@@ -113,9 +110,7 @@ func (m Model) onRolePicked(msg rolePickedMsg) (tea.Model, tea.Cmd) {
 	v := string(msg)
 	wasQueen := m.role == "queen"
 	if err := m.side().SetRole(v); err != nil {
-		m.lastErr = err.Error()
-		m.state = StateError
-		return m, nil
+		return m.fail(err.Error())
 	}
 	// SetRole updated m.role + baked thinking already; mirror the row.
 	m.rolePane.SetCurrent(m.role)
@@ -133,9 +128,7 @@ func (m Model) onRolePicked(msg rolePickedMsg) (tea.Model, tea.Cmd) {
 func (m Model) onEffortPicked(msg effortPickedMsg) (tea.Model, tea.Cmd) {
 	v := string(msg)
 	if err := m.side().SetThinking(v); err != nil {
-		m.lastErr = err.Error()
-		m.state = StateError
-		return m, nil
+		return m.fail(err.Error())
 	}
 	// SetThinking canonicalized m.thinking already; mirror the current row.
 	m.effortPane.SetCurrent(m.thinking)

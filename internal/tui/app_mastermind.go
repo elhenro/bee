@@ -85,6 +85,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 	think := m.thinkCh
 	progress := m.progressCh
 	task := hiveTaskWithContext(content, history)
+	toggles := m.cfgSnapshot()
 
 	workerCount := planner.Cfg.MastermindWorkers
 	if workerCount < 1 {
@@ -98,6 +99,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		if prevDone != nil {
 			<-prevDone // wait for a prior (possibly esc'd) run to fully return
 		}
+		toggles.apply(planner)
 		notify := func(s string) {
 			if warn == nil {
 				return

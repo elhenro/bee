@@ -231,14 +231,14 @@ func renderRewindRow(e RewindEntry, selected bool, width int) string {
 		meta += "  (no code)"
 	}
 	head := cursor + style.Render(padRightCells(meta, 24)) + "  "
-	maxPrev := width - lipglossWidth(head)
-	if maxPrev < 10 {
-		maxPrev = 10
+	if width <= 0 {
+		return head + style.Render(preview)
 	}
+	maxPrev := max(width-lipglossWidth(head), 0)
 	if lipglossWidth(preview) > maxPrev {
-		preview = truncateVisible(preview, maxPrev-1) + "…"
+		preview = truncateVisible(preview, maxPrev)
 	}
-	return head + style.Render(preview)
+	return truncateVisible(head+style.Render(preview), width)
 }
 
 // buildRewindEntries groups messages into turns (newest first) and joins each

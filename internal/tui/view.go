@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -50,7 +51,7 @@ func (m Model) padFrameLR(s string) string {
 		// correctly; we just chop visible runes off the right tail.
 		w := lipgloss.Width(line)
 		if w > inner {
-			lines[i] = truncateVisible(line, inner) + right
+			lines[i] = left + truncateVisible(line, inner) + right
 		} else {
 			lines[i] = left + line + right
 		}
@@ -219,17 +220,31 @@ func cleanErrorMessage(s string) string {
 // when possible and hard-cutting overlong tokens (URLs, opaque IDs) so a
 // single token can't overflow the budget.
 func wrapHanging(s string, n int) []string {
-	if n <= 0 || len(s) <= n {
+	if n <= 0 || lipgloss.Width(s) <= n {
 		return []string{s}
 	}
 	var out []string
-	for len(s) > n {
-		cut := n
-		for cut > 0 && s[cut] != ' ' {
-			cut--
+	for lipgloss.Width(s) > n {
+		// widest prefix that fits n cells, remembering the last space inside
+		w, cut, lastSpace := 0, 0, -1
+		for i, r := range s {
+			rw := lipgloss.Width(string(r))
+			if w+rw > n {
+				break
+			}
+			if r == ' ' {
+				lastSpace = i
+			}
+			w += rw
+			cut = i + utf8.RuneLen(r)
 		}
-		if cut == 0 {
-			cut = n // no space in window: hard-cut.
+		switch {
+		case cut < len(s) && s[cut] == ' ':
+			// window ends right at a word boundary
+		case lastSpace > 0:
+			cut = lastSpace
+		case cut == 0:
+			_, cut = utf8.DecodeRuneInString(s) // rune wider than n: take it whole
 		}
 		out = append(out, s[:cut])
 		s = strings.TrimLeft(s[cut:], " ")

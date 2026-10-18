@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/elhenro/bee/internal/bgreg"
 )
 
@@ -286,18 +288,15 @@ func shortModel(m string) string {
 			break
 		}
 	}
-	if len(m) > 18 {
-		return m[:17] + "…"
-	}
-	return m
+	return ansi.Truncate(m, 18, "…")
 }
 
 func truncate(s string, n int) string {
 	s = strings.ReplaceAll(strings.TrimSpace(s), "\n", " ")
-	if len(s) <= n {
-		return s
+	if n <= 0 {
+		return ""
 	}
-	return s[:n-1] + "…"
+	return ansi.Truncate(s, n, "…")
 }
 
 // truncateLines clips s to a single line of at most width runes (multi-line
@@ -309,9 +308,5 @@ func truncateLines(s string, width, lines int) string {
 	if width < 10 {
 		width = 80
 	}
-	if len([]rune(s)) <= width {
-		return s
-	}
-	r := []rune(s)
-	return string(r[:width-1]) + "…"
+	return ansi.Truncate(s, width, "…")
 }

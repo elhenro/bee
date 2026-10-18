@@ -54,16 +54,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
 		if m.state == StateStreaming {
-			if m.cancelRun != nil {
-				m.cancelRun()
-				m.cancelRun = nil
-			}
-			m.state = StateIdle
+			m.cancelTurn()
 			m.interrupted = true
-			// user aborted — cancel any pending watchdog resume.
-			m.stallResumePending = false
-			m.resumeCount = 0
-			m.awaitingProgress = false
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.FollowUp):
@@ -126,10 +118,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		prev := m.role
 		m.role = cycleRole(m.role)
 		m.thinking = roleThinking(m.role)
-		if m.eng != nil {
-			m.eng.Cfg.Role = m.role
-			m.eng.Cfg.Thinking = m.thinking
-		}
+		m.mirrorToEngine()
 		_ = PersistSetting("", "role", m.role)
 		// entering queen: arm exactly one rainbow glow loop + a one-shot warning.
 		// substantial tasks spawn a planning+review hive; small/clear ones are
@@ -142,9 +131,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.YoloToggle):
 		m.yolo = !m.yolo
-		if m.eng != nil {
-			m.eng.Cfg.Yolo = m.yolo
-		}
+		m.mirrorToEngine()
 		_ = PersistSetting("", "yolo", fmt.Sprintf("%v", m.yolo))
 		// loud one-shot warning when arming; disarming is quiet.
 		if m.yolo {

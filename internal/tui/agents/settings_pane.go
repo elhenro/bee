@@ -281,15 +281,15 @@ func renderHighlightedLabel(label string, matched []int, base, hl lipgloss.Style
 		}
 	}
 	var b strings.Builder
-	for i := 0; i < len(label); i++ {
-		ch := string(label[i])
+	for i, r := range label {
+		ch := string(r)
 		if _, ok := hits[i]; ok {
 			b.WriteString(hl.Render(ch))
 		} else {
 			b.WriteString(base.Render(ch))
 		}
 	}
-	if extra := pad - len(label); extra > 0 {
+	if extra := pad - lipgloss.Width(label); extra > 0 {
 		b.WriteString(strings.Repeat(" ", extra))
 	}
 	return b.String()

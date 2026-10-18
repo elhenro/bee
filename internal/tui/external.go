@@ -119,10 +119,8 @@ func (m Model) launchJob(name string, cmd *exec.Cmd, dir string, resumePid int) 
 // onExternalDone updates job tracking and surfaces launch failures.
 func (m Model) onExternalDone(msg externalDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		m.lastErr = msg.what + ": " + msg.err.Error()
-		m.state = StateError
 		m.suspendedJob = nil
-		return m, nil
+		return m.fail(msg.what + ": " + msg.err.Error())
 	}
 	if msg.suspended {
 		m.suspendedJob = &suspendedJob{pid: msg.pid, what: msg.what, dir: msg.dir}

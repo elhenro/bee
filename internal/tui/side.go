@@ -40,6 +40,9 @@ func (s *tuiSide) SwitchModel(name string) error {
 	if name == "" {
 		return errors.New("model: empty name")
 	}
+	if s.m.eng != nil && s.m.engineBusy() {
+		return errEngineBusy
+	}
 	s.m.model = name
 	if s.m.eng != nil {
 		s.m.eng.Cfg.DefaultModel = name
@@ -66,6 +69,9 @@ func (s *tuiSide) SwitchModel(name string) error {
 func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 	if provider == "" {
 		return errors.New("model: empty provider")
+	}
+	if s.m.eng != nil && s.m.engineBusy() {
+		return errEngineBusy
 	}
 	if s.m.eng != nil {
 		s.m.eng.Cfg.DefaultProvider = provider
@@ -152,6 +158,9 @@ func (s *tuiSide) OpenSession(id string) error {
 	}
 	if id == "" {
 		return errors.New("open session: empty id")
+	}
+	if s.m.engineBusy() {
+		return errEngineBusy
 	}
 	// ReadResume (not Read) collapses at the last checkpoint, so resuming a
 	// compacted session doesn't re-seed the full raw history — that would ship
@@ -262,6 +271,9 @@ func (s *tuiSide) NewSession() error {
 	if s.m == nil {
 		return nil
 	}
+	if s.m.eng != nil && s.m.engineBusy() {
+		return errEngineBusy
+	}
 	s.m.messages = nil
 	s.m.partial = ""
 	s.m.streamFlushed = ""
@@ -334,6 +346,9 @@ func (s *tuiSide) UsageText() string { return renderUsageText() }
 func (s *tuiSide) ForkSession(fromMsgID string) error {
 	if s.m == nil || s.m.eng == nil || s.m.eng.Sessions == nil {
 		return errors.New("no active session")
+	}
+	if s.m.engineBusy() {
+		return errEngineBusy
 	}
 	newR, err := session.Fork(s.m.eng.Sessions.ID(), fromMsgID)
 	if err != nil {

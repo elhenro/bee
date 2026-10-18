@@ -81,11 +81,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 	if parts[0] == "stop" {
 		msg := "nothing to stop"
 		if m.state == StateStreaming {
-			if m.cancelRun != nil {
-				m.cancelRun()
-				m.cancelRun = nil
-			}
-			m.state = StateIdle
+			m.cancelTurn()
 			msg = "stopped"
 		}
 		m.messages = append(m.messages, types.Message{
