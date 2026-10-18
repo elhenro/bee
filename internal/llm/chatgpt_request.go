@@ -33,12 +33,16 @@ func (p *ChatGPTProvider) do(ctx context.Context, req Request, isRetry bool) (*h
 	}
 
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/responses"
+	// bearer the last attempt carried, so a refresh after 401 can tell
+	// whether another caller already rotated the token.
+	var sentBearer string
 	resp, err := postWithRetry(ctx, p.client, p.cfg.Name, func() (*http.Request, error) {
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
 		p.applyHeaders(httpReq, req.Stream)
+		sentBearer = strings.TrimPrefix(httpReq.Header.Get("Authorization"), "Bearer ")
 		return httpReq, nil
 	})
 	if err != nil {
@@ -46,7 +50,7 @@ func (p *ChatGPTProvider) do(ctx context.Context, req Request, isRetry bool) (*h
 	}
 	if resp.StatusCode == 401 && !isRetry && p.cfg.TokenEndpoint != "" {
 		resp.Body.Close()
-		if refreshed, rerr := p.refresh(ctx, strings.TrimPrefix(httpReq.Header.Get("Authorization"), "Bearer ")); rerr == nil && refreshed {
+		if refreshed, rerr := p.refresh(ctx, sentBearer); rerr == nil && refreshed {
 			return p.do(ctx, req, true)
 		}
 		// fall through with a clean error message
