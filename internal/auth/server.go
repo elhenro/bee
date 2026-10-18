@@ -36,6 +36,14 @@ func StartLoopback(ctx context.Context, path string) (*LoopbackServer, error) {
 // StartLoopbackOn is like StartLoopback but binds to a fixed port. Pass 0 for
 // random. Used when the provider requires an exact redirect_uri match.
 func StartLoopbackOn(ctx context.Context, path string, fixedPort int) (*LoopbackServer, error) {
+	return StartLoopbackState(ctx, path, fixedPort, "")
+}
+
+// StartLoopbackState is StartLoopbackOn that only accepts callbacks carrying
+// the given state; any other request (a stray local probe, a forged redirect)
+// gets a 400 and does not consume the one result slot. Empty state skips the
+// check.
+func StartLoopbackState(ctx context.Context, path string, fixedPort int, state string) (*LoopbackServer, error) {
 	if path == "" {
 		path = "/callback"
 	}
@@ -49,6 +57,10 @@ func StartLoopbackOn(ctx context.Context, path string, fixedPort int) (*Loopback
 	mux := http.NewServeMux()
 	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		if state != "" && q.Get("state") != state {
+			http.Error(w, "unexpected callback", http.StatusBadRequest)
+			return
+		}
 		if e := q.Get("error"); e != "" {
 			msg := e
 			if desc := q.Get("error_description"); desc != "" {

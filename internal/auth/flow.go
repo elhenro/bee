@@ -151,7 +151,7 @@ func Login(ctx context.Context, cfg LoginConfig) (*Token, error) {
 		return nil, err
 	}
 
-	srv, err := StartLoopbackOn(ctx, cfg.RedirectPath, cfg.RedirectPort)
+	srv, err := StartLoopbackState(ctx, cfg.RedirectPath, cfg.RedirectPort, state)
 	if err != nil {
 		return nil, err
 	}

@@ -136,3 +136,43 @@ func TestBuildAuthorizeURL_PreservesExistingQuery(t *testing.T) {
 		t.Errorf("empty scope should be omitted: %s", got)
 	}
 }
+
+func TestStartLoopbackState_IgnoresStrayRequests(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	srv, err := StartLoopbackState(ctx, "", 0, "good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	for _, q := range []string{"", "?error=boom", "?code=evil&state=bad"} {
+		resp, err := http.Get(srv.URL + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%q: status %d, want 400", q, resp.StatusCode)
+		}
+	}
+	select {
+	case r := <-srv.Result:
+		t.Fatalf("stray request consumed the result: %+v", r)
+	default:
+	}
+
+	resp, err := http.Get(srv.URL + "?code=abc&state=good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	select {
+	case r := <-srv.Result:
+		if r.Code != "abc" {
+			t.Errorf("got %+v", r)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for callback")
+	}
+}

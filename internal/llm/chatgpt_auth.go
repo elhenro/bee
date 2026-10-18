@@ -10,9 +10,11 @@ import (
 )
 
 // refresh swaps the stored refresh_token for a fresh access_token. Returns
-// (true, nil) on success. Concurrent callers serialize on p.mu so we only
-// refresh once even if multiple requests race a 401.
-func (p *ChatGPTProvider) refresh(ctx context.Context) (bool, error) {
+// (true, nil) on success. Concurrent callers serialize on p.mu (in process) and
+// a file lock (across processes); stale is the access token the failed request
+// carried, so a caller that lost the race sees the rotated token on disk and
+// retries with it instead of spending the already-rotated refresh_token.
+func (p *ChatGPTProvider) refresh(ctx context.Context, stale string) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -21,9 +23,13 @@ func (p *ChatGPTProvider) refresh(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	dir := filepath.Join(home, ".bee", "auth")
+	defer auth.LockToken(dir, p.cfg.Name)()
 	tok, err := auth.LoadToken(dir, p.cfg.Name)
 	if err != nil || tok == nil {
 		return false, fmt.Errorf("no token to refresh")
+	}
+	if stale != "" && tok.AccessToken != "" && tok.AccessToken != stale {
+		return true, nil
 	}
 	if tok.RefreshToken == "" {
 		return false, fmt.Errorf("token has no refresh_token")

@@ -85,3 +85,14 @@ func TestSaveToken_NilErrors(t *testing.T) {
 		t.Error("expected error on nil token")
 	}
 }
+
+func TestSaveToken_LeavesNoTempFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveToken(dir, "p", &Token{AccessToken: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	ents, _ := os.ReadDir(dir)
+	if len(ents) != 1 || ents[0].Name() != "p.json" {
+		t.Errorf("dir = %v, want only p.json", ents)
+	}
+}

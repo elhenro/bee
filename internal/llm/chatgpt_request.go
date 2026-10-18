@@ -45,7 +45,7 @@ func (p *ChatGPTProvider) do(ctx context.Context, req Request, isRetry bool) (*h
 	}
 	if resp.StatusCode == 401 && !isRetry && p.cfg.TokenEndpoint != "" {
 		resp.Body.Close()
-		if refreshed, rerr := p.refresh(ctx); rerr == nil && refreshed {
+		if refreshed, rerr := p.refresh(ctx, strings.TrimPrefix(httpReq.Header.Get("Authorization"), "Bearer ")); rerr == nil && refreshed {
 			return p.do(ctx, req, true)
 		}
 		// fall through with a clean error message
