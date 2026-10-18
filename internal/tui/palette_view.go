@@ -94,8 +94,8 @@ func (p PaletteModel) View() string {
 		if absIdx == p.selected {
 			ns = nameSel
 		}
-		for j := 0; j < nameLen; j++ {
-			ch := string(entry.Name[j])
+		for j, r := range entry.Name {
+			ch := string(r)
 			if _, ok := matchSet[j]; ok {
 				line.WriteString(hl.Render(ch))
 			} else {

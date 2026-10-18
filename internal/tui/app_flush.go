@@ -198,7 +198,8 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 	if chunk == "" {
 		return nil
 	}
-	return m.scroll.print(expandTabs(chunk))
+	// hardwrap like flush(): a soft-wrapped row miscounts in the inline renderer
+	return m.scroll.print(ansi.Hardwrap(expandTabs(chunk), w, true))
 }
 
 // stripTextPrefix returns a copy of msg with the leading prefix removed

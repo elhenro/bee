@@ -99,14 +99,16 @@ func (a *AgentView) Update(msg tea.Msg) (*AgentView, tea.Cmd) {
 		return a, tea.Tick(time.Second, func(t time.Time) tea.Msg { return agentTickMsg(t) })
 	case tea.KeyMsg:
 		switch m.String() {
-		case "esc", "q":
+		// the reply input is always focused, so letters are text: only
+		// arrows and esc drive the list
+		case "esc":
 			return a, func() tea.Msg { return CloseAgentViewMsg{} }
-		case "up", "k":
+		case "up":
 			if a.selected > 0 {
 				a.selected--
 			}
 			return a, nil
-		case "down", "j":
+		case "down":
 			if a.selected < len(a.rows)-1 {
 				a.selected++
 			}

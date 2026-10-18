@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -133,8 +134,9 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 		if i == sel {
 			ns = nameSel
 		}
-		for j := 0; j < nameLen; j++ {
-			ch := string(name[j])
+		// fuzzy indexes are byte offsets of each matched rune, so walk runes
+		for j, r := range name {
+			ch := string(r)
 			if _, ok := hits[j]; ok {
 				line.WriteString(hl.Render(ch))
 			} else {
@@ -172,8 +174,5 @@ func compactError(s string, maxLen int) string {
 	if maxLen < 16 {
 		maxLen = 16
 	}
-	if len(s) > maxLen {
-		s = s[:maxLen-1] + "…"
-	}
-	return s
+	return ansi.Truncate(s, maxLen, "…")
 }

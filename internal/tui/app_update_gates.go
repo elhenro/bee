@@ -117,6 +117,12 @@ func (m Model) claimByPane(msg tea.Msg) (Model, tea.Cmd, bool) {
 	// syncs from input value after handleKey runs (see KeyMsg branch).
 	if m.palette.Active {
 		if km, ok := msg.(tea.KeyMsg); ok {
+			// enter with nothing to pick closes the palette and lets the
+			// typed line submit, else a prompt starting with "/" is swallowed
+			if km.String() == "enter" && len(m.palette.matches) == 0 {
+				m.palette.Active = false
+				return m, nil, false
+			}
 			switch km.String() {
 			case "up", "down", "enter", "esc", "ctrl+n", "ctrl+p", "ctrl+c":
 				newP, cmd := m.palette.Update(msg)

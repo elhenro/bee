@@ -54,6 +54,9 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	}
 	// Seeded auto-submit from Init (skill dispatch into the TUI). Route it
 	// through the normal submit path once; clear the seed so it can't refire.
+	if _, ok := msg.(initFlushMsg); ok {
+		return m, m.flush()
+	}
 	if as, ok := msg.(autoSubmitMsg); ok {
 		m.seedPrompt = ""
 		m.input.SetValue(as.text)
@@ -91,13 +94,9 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		if m.approver != nil {
 			m.approver.Resolve(dec.UseID, dec.Decision)
 		}
-		// the modal consumed the loader-tick chain while it was up; revive it
-		// (and the stall watchdog that rides it) and reset the stall clock —
-		// the approval wait was a human block, not a model stall.
+		// the approval wait was a human block, not a model stall. the loader
+		// tick chain keeps running while the modal is up, so no revive.
 		m.lastActivityAt = time.Now()
-		if m.state == StateStreaming {
-			return m, loaderTickCmd()
-		}
 		return m, nil
 	}
 	// ask_user question arrives from the engine goroutine via the Asker
@@ -113,12 +112,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		if m.asker != nil {
 			m.asker.Resolve(a.UseID, a.Answer)
 		}
-		// revive the loader-tick/watchdog chain the modal consumed; the
-		// question wait was a human block, not a model stall.
+		// the question wait was a human block, not a model stall.
 		m.lastActivityAt = time.Now()
-		if m.state == StateStreaming {
-			return m, loaderTickCmd()
-		}
 		return m, nil
 	}
 	// escalate pick: submit the chosen option as the next user turn.
@@ -130,31 +125,40 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	if c, ok := msg.(PlanProceedMsg); ok {
 		return m.onPlanProceed(c)
 	}
-	// modal first: it consumes keys when active.
-	if m.escalate.Active {
-		newEsc, cmd := m.escalate.Update(msg)
-		m.escalate = newEsc
-		return m, cmd
+	// modals consume input only. Everything else (turnDone, stream deltas,
+	// ticks, window size, pump re-arms) must reach the main switch or the
+	// pumps die and a turn never completes while a modal is up.
+	if isInputMsg(msg) {
+		if m.escalate.Active {
+			newEsc, cmd := m.escalate.Update(msg)
+			m.escalate = newEsc
+			return m, cmd
+		}
+		if m.planmode.Active {
+			newPM, cmd := m.planmode.Update(msg)
+			m.planmode = newPM
+			return m, cmd
+		}
+		if m.approval.Active {
+			newApp, cmd := m.approval.Update(msg)
+			m.approval = newApp
+			return m, cmd
+		}
+		if m.askModel.Active {
+			newAsk, cmd := m.askModel.Update(msg)
+			m.askModel = newAsk
+			return m, cmd
+		}
+		if m.updatePrompt.Active {
+			newP, cmd := m.updatePrompt.Update(msg)
+			m.updatePrompt = newP
+			return m, cmd
+		}
 	}
-	if m.planmode.Active {
-		newPM, cmd := m.planmode.Update(msg)
-		m.planmode = newPM
-		return m, cmd
-	}
-	if m.approval.Active {
-		newApp, cmd := m.approval.Update(msg)
-		m.approval = newApp
-		return m, cmd
-	}
-	if m.askModel.Active {
-		newAsk, cmd := m.askModel.Update(msg)
-		m.askModel = newAsk
-		return m, cmd
-	}
-	if m.updatePrompt.Active {
-		newP, cmd := m.updatePrompt.Update(msg)
-		m.updatePrompt = newP
-		return m, cmd
+	// a human-blocked wait is not a model stall: keep the watchdog clock fresh
+	// while a prompt that blocks the engine is up.
+	if _, ok := msg.(loaderTickMsg); ok && (m.approval.Active || m.askModel.Active) {
+		m.lastActivityAt = time.Now()
 	}
 	// tutorial claims keys while active; ticks/window-size fall through.
 	if m.tutorial.active {
@@ -362,4 +366,13 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// isInputMsg reports whether msg is user input a modal may claim.
+func isInputMsg(msg tea.Msg) bool {
+	switch msg.(type) {
+	case tea.KeyMsg, tea.MouseMsg:
+		return true
+	}
+	return false
 }

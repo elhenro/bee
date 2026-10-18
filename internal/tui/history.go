@@ -184,7 +184,7 @@ func LoadHistory() []string {
 		if t == "" {
 			continue
 		}
-		lines = append(lines, t)
+		lines = append(lines, decodeHistory(t))
 	}
 	// reverse to newest-first and dedupe globally — most-recent occurrence
 	// wins so autosuggestions surface the freshest match for any prefix.
@@ -198,6 +198,30 @@ func LoadHistory() []string {
 		out = append(out, lines[i])
 	}
 	return out
+}
+
+// multiMark prefixes a stored entry that held newlines. Plain single-line
+// entries are stored untouched, so older history files load unchanged.
+const multiMark = "\x1e"
+
+var (
+	historyEscape   = strings.NewReplacer(`\`, `\\`, "\n", `\n`, "\r", `\r`)
+	historyUnescape = strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\r`, "\r")
+)
+
+// encodeHistory folds a multi-line prompt onto one file line.
+func encodeHistory(t string) string {
+	if !strings.ContainsAny(t, "\n\r") {
+		return t
+	}
+	return multiMark + historyEscape.Replace(t)
+}
+
+func decodeHistory(l string) string {
+	if rest, ok := strings.CutPrefix(l, multiMark); ok {
+		return historyUnescape.Replace(rest)
+	}
+	return l
 }
 
 // AppendHistory atomically appends a single entry to ~/.bee/history. Skips
@@ -220,7 +244,7 @@ func AppendHistory(text string) {
 	if err != nil {
 		return
 	}
-	_, _ = f.WriteString(t + "\n")
+	_, _ = f.WriteString(encodeHistory(t) + "\n")
 	_ = f.Close()
 	maybeTrim(p)
 }

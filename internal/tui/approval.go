@@ -48,6 +48,9 @@ type ApprovalModel struct {
 	width int
 	// out is the channel the parent passes for Engine wakeup.
 	out chan<- ApprovalDecisionMsg
+	// queue holds requests that arrived while one is on screen (parallel
+	// workers); each is shown in arrival order once the current one resolves.
+	queue []ApprovalRequest
 }
 
 // SetWidth records the terminal width so View can bound the modal.
@@ -65,8 +68,13 @@ func (m *ApprovalModel) SetOutput(ch chan<- ApprovalDecisionMsg) {
 	m.out = ch
 }
 
-// Show opens the modal for the given request.
+// Show opens the modal for the given request, or queues it behind the one
+// already showing so the earlier request is never overwritten.
 func (m *ApprovalModel) Show(req ApprovalRequest) {
+	if m.Active {
+		m.queue = append(m.queue, req)
+		return
+	}
 	m.Request = req
 	m.Active = true
 	m.focus = 0
@@ -76,6 +84,7 @@ func (m *ApprovalModel) Show(req ApprovalRequest) {
 func (m *ApprovalModel) Hide() {
 	m.Active = false
 	m.Request = ApprovalRequest{}
+	m.queue = nil
 }
 
 // Update handles modal key events. Returns the updated model + an optional cmd
@@ -128,6 +137,11 @@ func (m ApprovalModel) decide(d ApprovalDecision) (ApprovalModel, tea.Cmd) {
 	out := m.out
 	useID := m.Request.UseID
 	m.Active = false
+	if len(m.queue) > 0 {
+		next := m.queue[0]
+		m.queue = append([]ApprovalRequest(nil), m.queue[1:]...)
+		m.Show(next)
+	}
 	cmd := func() tea.Msg {
 		dec := ApprovalDecisionMsg{UseID: useID, Decision: d}
 		// best-effort fanout to engine channel; non-blocking

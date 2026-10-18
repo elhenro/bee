@@ -217,9 +217,9 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 	checkerCtx, cancelChecker := context.WithCancel(ctx)
 	defer cancelChecker()
 	if eng != nil {
-		engRef := eng // capture for the closure so probes pick up live mode changes
+		setUpdateMode(eng.Cfg.UpdateCheck)
 		startUpdateChecker(checkerCtx, p, updateCheckConfig{
-			mode:     func() string { return engRef.Cfg.UpdateCheck },
+			mode:     updateMode,
 			repo:     eng.Cfg.UpdateRepo,
 			branch:   eng.Cfg.UpdateBranch,
 			interval: time.Hour,

@@ -33,6 +33,7 @@ func (m Model) onUpdateDecision(msg updateDecisionMsg) (tea.Model, tea.Cmd) {
 		if err := PersistSetting("", "update_check", "auto"); err != nil {
 			warn = "persist update_check=auto: " + err.Error()
 		}
+		setUpdateMode("auto")
 		if m.eng != nil {
 			m.eng.Cfg.UpdateCheck = "auto"
 		}
@@ -45,6 +46,7 @@ func (m Model) onUpdateDecision(msg updateDecisionMsg) (tea.Model, tea.Cmd) {
 		if err := PersistSetting("", "update_check", "off"); err != nil {
 			return m.withWarn("persist update_check=off: " + err.Error()), warningFadeCmd()
 		}
+		setUpdateMode("off")
 		if m.eng != nil {
 			m.eng.Cfg.UpdateCheck = "off"
 		}

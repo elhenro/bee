@@ -92,10 +92,14 @@ func (m Model) Init() tea.Cmd {
 	if c := m.waitWarn(); c != nil {
 		cmds = append(cmds, c)
 	}
-	if c := m.flush(); c != nil {
-		cmds = append(cmds, c)
+	// Init has a value receiver, so flushing here would advance printedCount
+	// on a throwaway copy and the first real flush would print the resumed
+	// transcript a second time. Do it in Update instead.
+	resumed := m.printedCount < len(m.messages)
+	if resumed {
+		cmds = append(cmds, func() tea.Msg { return initFlushMsg{} })
 	}
-	if m.introActive {
+	if m.introActive && !resumed {
 		cmds = append(cmds, introTickCmd())
 	}
 	if m.role == "queen" {
@@ -109,6 +113,9 @@ func (m Model) Init() tea.Cmd {
 	}
 	return tea.Batch(cmds...)
 }
+
+// initFlushMsg asks Update to flush resumed-session messages into scrollback.
+type initFlushMsg struct{}
 
 // autoSubmitMsg carries a seeded prompt from Init into Update so it runs
 // through the normal submit path exactly once.

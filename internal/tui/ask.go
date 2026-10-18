@@ -26,6 +26,14 @@ type AskModel struct {
 	input  textinput.Model
 	out    chan<- AskAnswerMsg
 	width  int // terminal width; bounds the modal so it never overflows
+	// queue holds questions that arrived while one is on screen, shown in
+	// arrival order once the current one is answered.
+	queue []queuedAsk
+}
+
+type queuedAsk struct {
+	useID string
+	q     ask.Question
 }
 
 // NewAskModel returns a fresh, inactive picker.
@@ -47,8 +55,13 @@ func (m *AskModel) SetWidth(w int) {
 }
 
 // Show opens the picker for a question, defaulting focus to the recommended
-// option so enter accepts it immediately.
+// option so enter accepts it immediately. A question arriving while another
+// is open waits its turn instead of replacing it.
 func (m *AskModel) Show(useID string, q ask.Question) {
+	if m.Active {
+		m.queue = append(m.queue, queuedAsk{useID, q})
+		return
+	}
 	m.useID = useID
 	m.question = q
 	m.Active = true
@@ -67,6 +80,7 @@ func (m *AskModel) Show(useID string, q ask.Question) {
 func (m *AskModel) Hide() {
 	m.Active = false
 	m.question = ask.Question{}
+	m.queue = nil
 }
 
 // customIdx is the focus index of the custom-entry row, or -1 if disabled.
@@ -145,6 +159,11 @@ func (m AskModel) answer(ans ask.Answer) (AskModel, tea.Cmd) {
 	useID := m.useID
 	m.Active = false
 	m.typing = false
+	if len(m.queue) > 0 {
+		next := m.queue[0]
+		m.queue = append([]queuedAsk(nil), m.queue[1:]...)
+		m.Show(next.useID, next.q)
+	}
 	cmd := func() tea.Msg {
 		msg := AskAnswerMsg{UseID: useID, Answer: ans}
 		if out != nil {

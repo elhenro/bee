@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +27,17 @@ type updateCheckConfig struct {
 	repo     string
 	branch   string
 	interval time.Duration
+}
+
+// updatePolicy is the live update mode. The checker goroutine reads it while
+// the update loop changes it, so it lives here instead of in engine config.
+var updatePolicy atomic.Value // string
+
+func setUpdateMode(mode string) { updatePolicy.Store(mode) }
+
+func updateMode() string {
+	s, _ := updatePolicy.Load().(string)
+	return s
 }
 
 // updateAvailableMsg surfaces a probed update into the bubbletea loop.
