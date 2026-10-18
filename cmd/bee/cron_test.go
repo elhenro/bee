@@ -42,7 +42,12 @@ func TestCronRunnerRespectsZzzLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	release, err := zzz.AcquireLock(wd, "zzz-run")
+	// zzz locks the repo toplevel; cron runs from a subdirectory here
+	top, err := zzz.RepoRoot(wd)
+	if err != nil {
+		t.Skip("not in a repo")
+	}
+	release, err := zzz.AcquireLock(top, "zzz-run")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,9 +61,25 @@ func TestCronRunnerRespectsZzzLock(t *testing.T) {
 		t.Fatalf("run after release: %v", err)
 	}
 	// cron must free the lock so a later zzz run can take it
-	again, err := zzz.AcquireLock(wd, "zzz-run-2")
+	again, err := zzz.AcquireLock(top, "zzz-run-2")
 	if err != nil {
 		t.Fatalf("lock not released by cron: %v", err)
 	}
 	again()
+}
+
+// a job that itself runs `bee zzz` must inherit cron's hold on the tree, not
+// collide with it.
+func TestCronJobInheritsLock(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	wd, _ := os.Getwd()
+	top, err := zzz.RepoRoot(wd)
+	if err != nil {
+		t.Skip("not in a repo")
+	}
+	want := zzz.LockEnv(top)
+	job := &cron.Job{Name: "j", Command: `test "$` + zzz.LockHeldEnv + `" = "` + strings.TrimPrefix(want, zzz.LockHeldEnv+"=") + `"`}
+	if err := newCronRunner().Run(context.Background(), job); err != nil {
+		t.Fatalf("job did not see the lock env: %v", err)
+	}
 }

@@ -124,12 +124,17 @@ func (s *Scheduler) Tick(now time.Time) int {
 				j.Name, j.Window.NextOpen(now).Format(time.RFC3339))
 			continue
 		}
-		j.running = true
+		repeat := j.wallRepeat(now)
 		if next := j.Schedule.Next(now); next.IsZero() {
 			j.nextDue = now.AddDate(100, 0, 0)
 		} else {
 			j.nextDue = next
 		}
+		if repeat {
+			s.log("cron: skipped %s, wall-clock minute already ran (DST repeat)", j.Name)
+			continue
+		}
+		j.running = true
 		s.launchLocked(j)
 		fired++
 	}

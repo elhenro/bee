@@ -28,6 +28,27 @@ func RepoRoot(dir string) (string, error) {
 	return gitRun(dir, "rev-parse", "--show-toplevel")
 }
 
+// MainRepoRoot resolves the main checkout behind dir. For a linked worktree
+// that is the directory holding the shared git dir, so every worktree of one
+// repo maps to one project key. Falls back to dir's own toplevel.
+func MainRepoRoot(dir string) (string, error) {
+	top, err := RepoRoot(dir)
+	if err != nil {
+		return "", err
+	}
+	common, err := gitRun(top, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return top, nil
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(top, common)
+	}
+	if filepath.Base(common) == ".git" {
+		return filepath.Dir(common), nil
+	}
+	return top, nil
+}
+
 // IsClean returns true when `git status --porcelain` has no output.
 func IsClean(dir string) (bool, error) {
 	out, err := gitRun(dir, "status", "--porcelain")

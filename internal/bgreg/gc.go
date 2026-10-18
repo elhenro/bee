@@ -6,8 +6,9 @@ import (
 )
 
 // PruneOpts mirrors zzz.PruneOpts: thresholds are AND-ed. Zero disables the
-// matching threshold. Active/awaiting sessions are always preserved — only
-// terminal (done, failed) sidecars are candidates.
+// matching threshold. Active/awaiting sessions are always preserved, and so
+// are agents with unmerged work. Only terminal (done, failed) sidecars are
+// candidates.
 type PruneOpts struct {
 	MaxAge     time.Duration
 	KeepNewest int
@@ -29,7 +30,7 @@ func Prune(opts PruneOpts) PruneResult {
 	}
 	var terminal []Status
 	for _, s := range all {
-		if isTerminalState(s.State) {
+		if isTerminalState(s.State) && !holdsUnmergedWork(s) {
 			terminal = append(terminal, s)
 		}
 	}
@@ -55,6 +56,12 @@ func Prune(opts PruneOpts) PruneResult {
 		res.RemovedIDs = append(res.RemovedIDs, s.SessionID)
 	}
 	return res
+}
+
+// holdsUnmergedWork is true for an agent whose branch never reached main: its
+// sidecar is the only pointer to the worktree, so pruning it strands the work.
+func holdsUnmergedWork(s Status) bool {
+	return s.WorktreePath != "" && s.MergeState != MergeStateMerged && s.MergeState != MergeStateNone
 }
 
 func isTerminalState(s State) bool {

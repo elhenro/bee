@@ -133,7 +133,9 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 		return res
 	}
 
-	_ = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
+	// main already moved: surface a failed bookkeeping write instead of
+	// dropping it, the next tick would re-verify an already merged branch.
+	res.Err = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
 		s.MergeState = bgreg.MergeStateMerged
 		s.State = bgreg.StateDone
 		s.FinishedAt = time.Now().UTC()

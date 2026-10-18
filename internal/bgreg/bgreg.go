@@ -171,6 +171,18 @@ func writeRaw(s Status) error {
 // (only possible if fn took longer than the lock acquisition retry window or
 // if a writer bypassed Update — Write keeps last-writer-wins semantics).
 func Update(sessionID string, fn func(*Status) error) error {
+	// a bypassing Write can move the version under fn; fn re-runs on the fresh
+	// status instead of the caller silently losing its transition.
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = updateOnce(sessionID, fn); !errors.Is(err, ErrStaleUpdate) {
+			return err
+		}
+	}
+	return err
+}
+
+func updateOnce(sessionID string, fn func(*Status) error) error {
 	if sessionID == "" {
 		return errors.New("bgreg.Update: empty sessionID")
 	}
@@ -262,5 +274,6 @@ func Remove(sessionID string) error {
 	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	_ = os.Remove(lockPath(filepath.Dir(p), sessionID))
 	return nil
 }

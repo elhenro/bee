@@ -5,6 +5,31 @@ import (
 	"time"
 )
 
+func TestPrune_KeepsUnmergedAgentWork(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	old := time.Now().UTC().Add(-48 * time.Hour)
+	for _, s := range []Status{
+		{SessionID: "stranded", State: StateDone, WorktreePath: "/w/1", MergeState: MergeStateUnmerged},
+		{SessionID: "blocked", State: StateFailed, WorktreePath: "/w/2", MergeState: MergeStateBlocked},
+		{SessionID: "merged", State: StateDone, WorktreePath: "/w/3", MergeState: MergeStateMerged},
+		{SessionID: "legacy", State: StateDone},
+	} {
+		s.UpdatedAt, s.FinishedAt = old, old
+		if err := Write(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res := Prune(PruneOpts{MaxAge: time.Hour})
+	if len(res.RemovedIDs) != 2 {
+		t.Fatalf("removed %v, want only merged and legacy", res.RemovedIDs)
+	}
+	for _, id := range []string{"stranded", "blocked"} {
+		if _, err := Read(id); err != nil {
+			t.Errorf("%s pruned: %v", id, err)
+		}
+	}
+}
+
 func TestPrune_KeepNewestAndAge(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BEE_HOME", dir)

@@ -135,7 +135,13 @@ func newCronRunner() cron.Runner {
 		if err != nil {
 			return err
 		}
-		release, err := zzz.AcquireLock(wd, "cron:"+j.Name)
+		// key by the repo toplevel like zzz does, or a job started from a
+		// subdirectory would never contend with a zzz run on the same tree
+		lockDir := wd
+		if top, terr := zzz.RepoRoot(wd); terr == nil {
+			lockDir = top
+		}
+		release, err := zzz.AcquireLock(lockDir, "cron:"+j.Name)
 		if err != nil {
 			return fmt.Errorf("job %s: %w", j.Name, err)
 		}
@@ -146,6 +152,8 @@ func newCronRunner() cron.Runner {
 		}
 		cmd := exec.CommandContext(ctx, shell, flag, j.Command)
 		cmd.Dir, cmd.Stdout, cmd.Stderr = wd, os.Stdout, os.Stderr
+		// a job that runs `bee zzz` is a child of the lock holder, not a rival
+		cmd.Env = append(os.Environ(), zzz.LockEnv(lockDir))
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("job %s: %w", j.Name, err)
 		}

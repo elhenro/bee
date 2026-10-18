@@ -2,17 +2,15 @@ package agents
 
 import (
 	"errors"
-	"fmt"
-	"os"
-	"strconv"
-	"strings"
+
+	"github.com/elhenro/bee/internal/pidlock"
 )
 
 // MergeLock is an advisory single-host lock for the merge coordinator. Held
-// for the full rebase+FF window so two agents can't race onto main. Stale
-// locks (dead PID) are stolen on acquire.
+// for the full rebase+FF window so two agents can't race onto main. Backed by
+// a kernel lock, so a crashed holder frees it with no stale-pid heuristics.
 type MergeLock struct {
-	path string
+	l *pidlock.Lock
 }
 
 // AcquireLock attempts to take the merge lock. Returns ok=false (no error)
@@ -22,39 +20,23 @@ func AcquireLock() (*MergeLock, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	for attempt := 0; attempt < 2; attempt++ {
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err == nil {
-			fmt.Fprintf(f, "%d\n", os.Getpid())
-			_ = f.Close()
-			return &MergeLock{path: p}, true, nil
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return nil, false, err
-		}
-		// existing lock — check liveness
-		body, rerr := os.ReadFile(p)
-		if rerr != nil {
-			return nil, false, rerr
-		}
-		pidStr := strings.TrimSpace(string(body))
-		pid, perr := strconv.Atoi(pidStr)
-		if perr != nil || pid <= 0 || !pidAlive(pid) {
-			// stale — steal
-			_ = os.Remove(p)
-			continue
-		}
+	l, err := pidlock.Acquire(p, "merge")
+	var held *pidlock.HeldError
+	if errors.As(err, &held) {
 		return nil, false, nil
 	}
-	return nil, false, errors.New("merge lock: contention after stale steal")
+	if err != nil {
+		return nil, false, err
+	}
+	return &MergeLock{l: l}, true, nil
 }
 
-// Release removes the lock file. Safe to call on a nil receiver.
+// Release frees the lock. Safe to call on a nil receiver.
 func (l *MergeLock) Release() {
-	if l == nil || l.path == "" {
+	if l == nil {
 		return
 	}
-	_ = os.Remove(l.path)
+	l.l.Release()
 }
 
 // mergeLockHeld reports whether a live process currently holds the merge
@@ -62,13 +44,5 @@ func (l *MergeLock) Release() {
 // left behind by a coordinator that crashed mid-merge.
 func mergeLockHeld() bool {
 	p, err := MergeLockPath()
-	if err != nil {
-		return false
-	}
-	body, err := os.ReadFile(p)
-	if err != nil {
-		return false
-	}
-	pid, perr := strconv.Atoi(strings.TrimSpace(string(body)))
-	return perr == nil && pid > 0 && pidAlive(pid)
+	return err == nil && pidlock.Held(p)
 }

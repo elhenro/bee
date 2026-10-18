@@ -150,8 +150,10 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 				s.HandinSHA, _ = zzz.HeadSHA(eng.Cwd)
 				// a resumed agent may only have rebased, so judge by commits
 				// ahead of the base, not by whether this process committed.
-				if n, aerr := agents.Ahead(eng.Cwd); aerr == nil {
-					hadCommit = hadCommit || n > 0
+				// when the count fails, keep the branch rather than tear
+				// down a worktree that may hold commits.
+				if n, aerr := agents.Ahead(eng.Cwd); aerr != nil || n > 0 {
+					hadCommit = true
 				}
 				if hadCommit {
 					s.MergeState = bgreg.MergeStateUnmerged

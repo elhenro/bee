@@ -41,8 +41,9 @@ type Job struct {
 	ResourceKey string
 	Window      *Window
 
-	nextDue time.Time
-	running bool
+	nextDue  time.Time
+	running  bool
+	lastWall string // wall-clock minute of the last launch, see wallRepeat
 }
 
 // due reports whether the job's next scheduled time has arrived.
@@ -105,7 +106,9 @@ func parseCronField(expr string, lo, hi int) (cronField, error) {
 			return f, fmt.Errorf("empty list element")
 		}
 		step := 1
+		stepped := false
 		if i := strings.Index(part, "/"); i >= 0 {
+			stepped = true
 			n, err := strconv.Atoi(part[i+1:])
 			if err != nil || n <= 0 {
 				return f, fmt.Errorf("bad step in %q", part)
@@ -116,6 +119,10 @@ func parseCronField(expr string, lo, hi int) (cronField, error) {
 		start, end, err := cronRange(part, lo, hi)
 		if err != nil {
 			return f, err
+		}
+		// "5/15" runs from 5 to the top of the field, not just at 5
+		if stepped && start == end && part != "" && part != "*" && !strings.Contains(part, "-") {
+			end = hi
 		}
 		for v := start; v <= end; v += step {
 			f.bits |= 1 << uint(v)
@@ -144,6 +151,22 @@ func cronRange(part string, lo, hi int) (int, int, error) {
 		}
 		return n, n, nil
 	}
+}
+
+// wallRepeat reports whether the job already launched at this wall-clock
+// minute and records it otherwise. A DST fall-back replays an hour, so a job
+// pinned to specific hours would fire twice for one calendar time. Jobs with
+// a free hour field are exempt: they are meant to recur each real hour.
+func (j *Job) wallRepeat(now time.Time) bool {
+	if !j.Schedule.hour.restricted {
+		return false
+	}
+	wall := now.Format("2006-01-02 15:04")
+	if wall == j.lastWall {
+		return true
+	}
+	j.lastWall = wall
+	return false
 }
 
 // Match reports whether t satisfies the schedule to minute resolution. When

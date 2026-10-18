@@ -1,6 +1,7 @@
 package bgreg
 
 import (
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -42,6 +43,27 @@ func TestSessionLock_MutualExclusion(t *testing.T) {
 	wg.Wait()
 	if maxHolders != 1 {
 		t.Fatalf("max concurrent holders=%d; want 1", maxHolders)
+	}
+}
+
+// release must keep the lock file: unlinking it lets a waiter that already
+// opened the old inode and a newcomer that creates a new one both hold it.
+func TestSessionLock_ReleaseKeepsFileRemoveDropsIt(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	const id = "lock-keep"
+	l, err := acquireSessionLock(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.release()
+	if _, err := os.Stat(l.path); err != nil {
+		t.Fatalf("lock file unlinked on release: %v", err)
+	}
+	if err := Remove(id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(l.path); !os.IsNotExist(err) {
+		t.Fatalf("Remove left the lock file behind: %v", err)
 	}
 }
 

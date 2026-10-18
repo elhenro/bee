@@ -55,14 +55,9 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 	}
 	var ready []built
 	for i := 0; i < n; i++ {
-		run, err := startRun(zCfg)
+		run, unlock, err := startRun(zCfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[queen] bee %d setup failed: %v\n", i+1, err)
-			continue
-		}
-		unlock, lerr := zzz.AcquireLock(run.RepoRoot, run.ID)
-		if lerr != nil {
-			fmt.Fprintf(os.Stderr, "[queen] bee %d lock failed: %v\n", i+1, lerr)
 			continue
 		}
 		unlocks = append(unlocks, unlock)

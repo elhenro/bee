@@ -63,9 +63,9 @@ func (l *sessionLock) release() {
 	// later reopen in the same process can't accidentally hold it.
 	_ = syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
 	_ = l.f.Close()
-	// best-effort cleanup; another waiter may already hold a new lock on
-	// this path so Remove failing is fine.
-	_ = os.Remove(l.path)
+	// never unlink: a waiter already holding an fd on this inode would lock
+	// the old file while the next arrival creates a new one, giving two
+	// holders. Remove deletes the lock with the session.
 }
 
 func lockPath(d, id string) string { return d + string(os.PathSeparator) + id + ".lock" }

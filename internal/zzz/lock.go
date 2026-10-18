@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/elhenro/bee/internal/pidlock"
 )
 
 // lockDir returns ~/.bee/zzz/locks, creating it.
@@ -28,67 +30,65 @@ func lockDir() (string, error) {
 }
 
 // lockKey hashes the working-tree path so two runs targeting the same tree
-// collide on one lock file regardless of how the path was spelled.
+// collide on one lock file regardless of how the path was spelled. Symlinks
+// are resolved so a symlinked checkout and its target share a key.
 func lockKey(workdir string) string {
 	abs, err := filepath.Abs(workdir)
 	if err != nil {
 		abs = workdir
 	}
+	if real, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		abs = real
+	}
 	sum := sha256.Sum256([]byte(filepath.Clean(abs)))
 	return hex.EncodeToString(sum[:8])
 }
+
+// LockHeldEnv names the env var a lock holder sets for the children it
+// spawns, so a child that would take the same lock (cron running `bee zzz`)
+// knows its parent already owns the tree.
+const LockHeldEnv = "BEE_ZZZ_LOCK_HELD"
+
+// LockEnv returns the env entry to give a child process that runs while the
+// caller holds the lock on workdir.
+func LockEnv(workdir string) string { return LockHeldEnv + "=" + lockKey(workdir) }
 
 // AcquireLock takes an exclusive lock on workdir (a run's RepoRoot — the
 // worktree for worktree runs, the main repo for branch/current runs). It
 // prevents two overnight loops from racing the same git index and prevents a
 // double-resume of the same run. Returns a release func; call it on exit.
 //
-// A lock left behind by a crashed process is detected via the recorded PID and
-// stolen. On Windows there is no portable liveness probe, so a stale lock is
-// kept (manual removal of ~/.bee/zzz/locks/<key>.lock required) rather than
-// risk stealing a live one.
+// The lock is a kernel lock on a file that is never unlinked (internal/
+// pidlock), so a crashed holder frees it and two waiters cannot both win. A
+// process whose parent already holds this tree's lock (see LockEnv) gets a
+// no-op release instead of a failure.
 func AcquireLock(workdir, runID string) (func(), error) {
 	dir, err := lockDir()
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, lockKey(workdir)+".lock")
-	release := func() { _ = os.Remove(path) }
-
-	for attempt := 0; attempt < 2; attempt++ {
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err == nil {
-			fmt.Fprintf(f, "%d\n%s\n%s\n%s\n", os.Getpid(), runID, workdir, time.Now().UTC().Format(time.RFC3339))
-			_ = f.Close()
-			return release, nil
-		}
-		if !os.IsExist(err) {
-			return nil, err
-		}
-		pid, who := readLockHolder(path)
-		if processAlive(pid) {
-			return nil, fmt.Errorf("another zzz run holds %s (pid %d, run %s) — wait for it or remove %s", workdir, pid, who, path)
-		}
-		// stale lock from a dead process: remove and retry once.
-		if rmErr := os.Remove(path); rmErr != nil {
-			return nil, fmt.Errorf("stale lock %s could not be removed: %w", path, rmErr)
-		}
+	key := lockKey(workdir)
+	if os.Getenv(LockHeldEnv) == key {
+		return func() {}, nil
 	}
-	return nil, fmt.Errorf("could not acquire lock for %s", workdir)
+	path := filepath.Join(dir, key+".lock")
+	info := fmt.Sprintf("%s\n%s\n%s\n", runID, workdir, time.Now().UTC().Format(time.RFC3339))
+	l, err := pidlock.Acquire(path, info)
+	var held *pidlock.HeldError
+	if errors.As(err, &held) {
+		pid, who := parseHolder(held.Info)
+		return nil, fmt.Errorf("another zzz run holds %s (pid %d, run %s) — wait for it to finish", workdir, pid, who)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return l.Release, nil
 }
 
-// readLockHolder parses the pid (line 1) and run id (line 2) from a lock file.
-// Returns pid 0 when unreadable so the caller treats it as stale.
-func readLockHolder(path string) (int, string) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0, ""
-	}
-	lines := strings.Split(string(b), "\n")
-	pid := 0
-	if len(lines) > 0 {
-		pid, _ = strconv.Atoi(strings.TrimSpace(lines[0]))
-	}
+// parseHolder reads the pid (line 1) and run id (line 2) of a lock record.
+func parseHolder(rec string) (int, string) {
+	lines := strings.Split(rec, "\n")
+	pid, _ := strconv.Atoi(strings.TrimSpace(lines[0]))
 	who := ""
 	if len(lines) > 1 {
 		who = strings.TrimSpace(lines[1])

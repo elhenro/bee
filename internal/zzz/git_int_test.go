@@ -60,6 +60,72 @@ func TestDiffAgainstTruncates(t *testing.T) {
 	}
 }
 
+func TestMainRepoRootFromLinkedWorktree(t *testing.T) {
+	repo := newRepo(t)
+	wt := filepath.Join(t.TempDir(), "wt")
+	if err := WorktreeAdd(repo, wt, "zzz/mrr"); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(repo)
+	for _, dir := range []string{repo, wt} {
+		got, err := MainRepoRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g, _ := filepath.EvalSymlinks(got); g != want {
+			t.Fatalf("MainRepoRoot(%s) = %s, want %s", dir, g, want)
+		}
+	}
+}
+
+func TestMergeFFLeavesCheckoutAlone(t *testing.T) {
+	repo := newRepo(t)
+	base, _ := CurrentBranch(repo)
+	if err := CreateBranchAt(repo, "feat/x", "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(t.TempDir(), "wt")
+	if err := WorktreeAdd(repo, wt, "agent/x"); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, wt, "a.txt", "a", "a")
+	tip, _ := gitRun(wt, "rev-parse", "HEAD")
+
+	// user sits on another branch: base moves by ref, checkout stays put
+	if _, err := gitRun(repo, "switch", "-q", "feat/x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := MergeFF(repo, base, tip); err != nil {
+		t.Fatalf("MergeFF: %v", err)
+	}
+	if cur, _ := CurrentBranch(repo); cur != "feat/x" {
+		t.Fatalf("checkout moved to %s", cur)
+	}
+	if got, _ := gitRun(repo, "rev-parse", base); got != tip {
+		t.Fatalf("%s = %s, want %s", base, got, tip)
+	}
+
+	// base checked out in another worktree: a ref move would desync it
+	other := filepath.Join(t.TempDir(), "other")
+	if _, err := gitRun(repo, "worktree", "add", "-q", "-b", "side", other); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, other, "b.txt", "b", "b")
+	side, _ := gitRun(other, "rev-parse", "HEAD")
+	if _, err := gitRun(repo, "switch", "-q", base); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitRun(repo, "switch", "-q", "feat/x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitRun(other, "switch", "-q", base); err != nil {
+		t.Fatal(err)
+	}
+	if err := MergeFF(repo, base, side); err == nil {
+		t.Fatal("MergeFF must refuse when base is checked out elsewhere")
+	}
+}
+
 func TestCreateBranchAt(t *testing.T) {
 	repo := newRepo(t)
 	commitFile(t, repo, "x.txt", "x", "x")

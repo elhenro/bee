@@ -62,7 +62,7 @@ func (l *sessionLock) release() {
 	var ol windows.Overlapped
 	_ = windows.UnlockFileEx(windows.Handle(l.f.Fd()), 0, 1, 0, &ol)
 	_ = l.f.Close()
-	_ = os.Remove(l.path)
+	// never unlink, see lock_unix.go.
 }
 
 func lockPath(d, id string) string { return d + string(os.PathSeparator) + id + ".lock" }
