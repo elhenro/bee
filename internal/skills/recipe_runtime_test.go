@@ -97,38 +97,47 @@ func TestPlaceholderInQuotes(t *testing.T) {
 	}
 }
 
-func TestPlaceholderInHeredoc(t *testing.T) {
+func TestPlaceholderInUnsafeSyntax(t *testing.T) {
 	cases := map[string]bool{
-		// any placeholder in a body is rejected, quoted delimiter or not
-		"cat <<EOF\nhello {{args}}\nEOF":    true,
-		"cat <<-EOF\n\t{{args}}\n\tEOF":     true,
-		"cat <<\"EOF\"\nhi {{args}}\nEOF":   true,
-		"cat <<'EOF'\nit's {{args}}\nEOF":   true,
-		"cat <<\\EOF\n{{args}}\nEOF":        true,
-		"cat <<EOF | tr a b\n{{args}}\nEOF": true,
-		// unparseable delimiter or missing terminator, with a placeholder
+		// heredocs, any shape
+		"cat <<EOF\nhello {{args}}\nEOF":           true,
+		"cat <<-EOF\n\t{{args}}\n\tEOF":            true,
+		"cat <<\"EOF\"\nhi {{args}}\nEOF":          true,
+		"cat <<'EOF'\nit's {{args}}\nEOF":          true,
+		"cat <<\\EOF\n{{args}}\nEOF":               true,
+		"cat <<\"E\\F\"\n{{args}}\nE\\F":           true,
+		"cat <<\"E$F\"\n{{args}}\nE$F":             true,
 		"cat <<E'O'F\nplain\nE'O'F\necho {{args}}": true,
 		"cat <<$X\nplain\n$X\necho {{args}}":       true,
 		"cat <<EOF\nplain\necho {{args}}":          true,
 		"echo {{args}} <<EOF":                      true,
-		// placeholder in a comment can be escaped by a newline value
-		"echo hi # <<EOF {{args}}": true,
+		"cat <<'EOF'\nplain\nEOF\necho {{args}}":   true,
+		"cat <<<{{args}}":                          true,
+		// comments: any # that is not clearly mid-word
+		"echo hi # <<EOF {{args}}":   true,
+		"echo hi # x\necho {{args}}": true,
+		"(echo a)# x\necho {{args}}": true,
+		"echo a ># x\necho {{args}}": true,
+		"echo a <# x\necho {{args}}": true,
+		"echo a\r# x\necho {{args}}": true,
+		"#!/bin/sh\necho {{args}}":   true,
+		"echo 'unbalanced {{args}}":  true,
 		// safe shapes
-		"cat <<EOF\nplain\nEOF\necho {{args}}": false,
-		"cat <<EOF | tr a b\nplain\nEOF":       false,
-		"cat <<<{{args}}":                      false,
-		"echo \"a<<b\"\nrm {{args}}":           false,
-		"echo hi # <<EOF\nrm {{args}}":         false,
-		"echo a#b {{args}}":                    false,
-		"cat <<E'O'F\nplain":                   false, // no placeholder at all
+		"echo a#b {{args}}":             false,
+		"echo $# {{args}}":              false,
+		"echo ${#x} {{args}}":           false,
+		"echo \"a#b\" {{args}}":         false,
+		"echo 'a # b' {{args}}":         false,
+		"echo \\# {{args}}":             false,
+		"echo \"a<<b\" {{args}}":        true, // << anywhere: rejected, unsure
+		"grep -rn {{args}} . | head -5": false,
+		// nothing templated: untouched
+		"cat <<EOF\nplain\nEOF": false,
+		"echo hi # comment":     false,
 	}
 	for run, want := range cases {
-		if got := placeholderInHeredoc(run); got != want {
+		if got := placeholderInUnsafeSyntax(run); got != want {
 			t.Errorf("%q: got %v want %v", run, got, want)
 		}
-	}
-	// apostrophe in a heredoc body must not flip quote state for a later line
-	if placeholderInQuotes("cat <<'EOF'\ndon't\nEOF\necho {{args}}") {
-		t.Error("heredoc body apostrophe leaked into quote state")
 	}
 }

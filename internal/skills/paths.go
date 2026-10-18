@@ -3,12 +3,13 @@ package skills
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // env overrides for tests / advanced users
 const (
 	envBaseDir = "BEE_SKILLS_DIR"
-	envHome    = "BEE_HOME"
 )
 
 // BaseDir returns the directory holding skill *.md files.
@@ -21,13 +22,9 @@ func BaseDir() string {
 }
 
 func beeHome() string {
-	if v := os.Getenv(envHome); v != "" {
-		return v
+	if root, err := beehome.Dir(); err == nil {
+		return root
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		// last-resort fallback, will surface in caller errors
-		return ".bee"
-	}
-	return filepath.Join(home, ".bee")
+	// last-resort fallback, will surface in caller errors
+	return ".bee"
 }
