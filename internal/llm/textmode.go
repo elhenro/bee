@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 // TextModeProvider wraps an inner Provider to bypass the native tool_calls
@@ -92,7 +92,7 @@ func (p *TextModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 	}
 
 	out := make(chan Event, 16)
-	go p.relay(innerCh, out, known, canonical)
+	go p.relay(ctx, innerCh, out, known, canonical)
 	return out, nil
 }
 
@@ -105,8 +105,15 @@ func (p *TextModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 // the synthesized ToolUse events early. Cuts post-stream latency on
 // providers that emit one delta per token by amortizing the parse over the
 // stream instead of doing it all at EventDone.
-func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[string]bool, canonical map[string]string) {
+func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<- Event, known map[string]bool, canonical map[string]string) {
 	defer close(out)
+	// an early return must not strand the inner producer on a full channel
+	defer func() {
+		go func() {
+			for range in {
+			}
+		}()
+	}()
 	var buf strings.Builder
 	var done Event
 	gotDone := false
@@ -122,11 +129,11 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 			return false
 		}
 		seen[fp] = true
-		out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+		emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
 			ID:    "call_" + uuid.NewString(),
 			Name:  c.Name,
 			Input: c.Input,
-		}}
+		}})
 		return true
 	}
 	for ev := range in {
@@ -134,7 +141,7 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 		case EventTextDelta:
 			buf.WriteString(ev.Delta)
 			// withheld content still counts as generation progress.
-			out <- Event{Type: EventProgress, N: len(ev.Delta)}
+			emit(ctx, out, Event{Type: EventProgress, N: len(ev.Delta)})
 			// only attempt early dispatch when a closing tag for ANY known
 			// tool is present — cheap substring scan, avoids invoking the
 			// full regex extractor on every token.
@@ -149,7 +156,7 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 				}
 			}
 		case EventThinkingDelta:
-			out <- ev
+			emit(ctx, out, ev)
 		case EventToolUse:
 			// inner provider also emits native tool_use (e.g. when the model
 			// surprises us). pass through verbatim so we don't drop signal.
@@ -162,15 +169,15 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 				}
 				seen[fp] = true
 			}
-			out <- ev
+			emit(ctx, out, ev)
 		case EventDone:
 			done = ev
 			gotDone = true
 		case EventError:
-			out <- ev
+			emit(ctx, out, ev)
 			return
 		default:
-			out <- ev
+			emit(ctx, out, ev)
 		}
 	}
 	text := buf.String()
@@ -183,7 +190,7 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 	// rewrite hermes / qwen3 wrappers (<tool_call>, <function=NAME>) into the
 	// bee canonical `<name>{...}</name>` or bare-json shapes the existing
 	// extractors handle.
-	text = normalizeHermesEnvelopes(text)
+	text = normalizeHermesEnvelopes(text, known)
 	calls, cleaned := extractToolCalls(text, known, canonical)
 	// fallback: model emitted JSON tool-call envelope instead of XML.
 	// scan the remaining (XML-stripped) text for bare {"type":"<tool>",...}
@@ -205,26 +212,26 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 	// just falls through as prose and the agent appears to hang.
 	if len(seen) == 0 {
 		if name, snippet, ok := detectMalformedEnvelope(rawText); ok {
-			out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+			emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
 				ID:   "call_" + uuid.NewString(),
 				Name: name,
 				Input: map[string]any{
 					"_parse_error": "tool-call envelope detected but could not be parsed. emit ONE canonical block: `<NAME>{\"arg\":\"val\"}</NAME>` — replace NAME with the actual tool name. no markdown fences, no stray angle brackets.",
 					"_raw_args":    snippet,
 				},
-			}}
+			}})
 			// suppress the malformed prose so it doesn't leak into the
 			// user-facing transcript on top of the nudge.
 			cleaned = ""
 		}
 	}
 	if cleaned != "" {
-		out <- Event{Type: EventTextDelta, Delta: cleaned}
+		emit(ctx, out, Event{Type: EventTextDelta, Delta: cleaned})
 	}
 	if gotDone {
-		out <- done
+		emit(ctx, out, done)
 	} else {
-		out <- Event{Type: EventDone, StopReason: "stop"}
+		emit(ctx, out, Event{Type: EventDone, StopReason: "stop"})
 	}
 }
 
@@ -234,7 +241,7 @@ func (p *TextModeProvider) relay(in <-chan Event, out chan<- Event, known map[st
 var (
 	// `<function=NAME>` AND the bare `function=NAME>` variant (rendering or
 	// markup-strip dropped the `<`). Used together so either form triggers.
-	malformedFunctionRe = regexp.MustCompile(`(?im)(^|[\s>])function=([a-z_][a-z0-9_\-]*)>`)
+	malformedFunctionRe  = regexp.MustCompile(`(?im)(^|[\s>])function=([a-z_][a-z0-9_\-]*)>`)
 	malformedParameterRe = regexp.MustCompile(`(?i)<parameter=[a-z_]`)
 	malformedToolCallRe  = regexp.MustCompile(`(?i)</?tool_call>`)
 )
@@ -307,12 +314,17 @@ func extractIncremental(s string, known map[string]bool, canonical map[string]st
 			}
 		}
 	}
-	if lastClose < 0 {
+	// close tags inside another call's JSON string must not trigger dispatch:
+	// when a known call is open, only fully closed calls count
+	if end, sawOpen := completeCallsEnd(s, known); sawOpen {
+		lastClose = end
+	}
+	if lastClose <= 0 {
 		return nil, s
 	}
 	head := s[:lastClose]
 	tail := s[lastClose:]
-	normalized := normalizeHermesEnvelopes(head)
+	normalized := normalizeHermesEnvelopes(head, known)
 	calls, cleaned := extractToolCalls(normalized, known, canonical)
 	if len(calls) == 0 {
 		return nil, s
@@ -424,7 +436,7 @@ func renderSchemaSig(schema map[string]any) string {
 		if required[name] {
 			req = append(req, entry)
 		} else {
-			opt = append(opt, "[" + entry + "]")
+			opt = append(opt, "["+entry+"]")
 		}
 	}
 	sortStable(req)

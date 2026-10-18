@@ -51,7 +51,7 @@ func (p *JSONModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 		return nil, err
 	}
 	out := make(chan Event, 16)
-	go p.relay(innerCh, out)
+	go p.relay(ctx, innerCh, out)
 	return out, nil
 }
 
@@ -60,8 +60,15 @@ func (p *JSONModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 // say text. Parse failure (server without grammar support slipped format)
 // falls back to emitting the raw text so the loop's existing recovery nudges
 // still see what the model tried.
-func (p *JSONModeProvider) relay(in <-chan Event, out chan<- Event) {
+func (p *JSONModeProvider) relay(ctx context.Context, in <-chan Event, out chan<- Event) {
 	defer close(out)
+	// an early return must not strand the inner producer on a full channel
+	defer func() {
+		go func() {
+			for range in {
+			}
+		}()
+	}()
 	var buf strings.Builder
 	var done Event
 	gotDone := false
@@ -70,34 +77,34 @@ func (p *JSONModeProvider) relay(in <-chan Event, out chan<- Event) {
 		case EventTextDelta:
 			buf.WriteString(ev.Delta)
 			// withheld content still counts as generation progress.
-			out <- Event{Type: EventProgress, N: len(ev.Delta)}
+			emit(ctx, out, Event{Type: EventProgress, N: len(ev.Delta)})
 		case EventThinkingDelta:
-			out <- ev
+			emit(ctx, out, ev)
 		case EventToolUse:
 			// inner provider emitted a native call despite Tools being nil
 			// (model surprise). pass through so signal isn't dropped.
-			out <- ev
+			emit(ctx, out, ev)
 		case EventDone:
 			done = ev
 			gotDone = true
 		case EventError:
-			out <- ev
+			emit(ctx, out, ev)
 			return
 		default:
-			out <- ev
+			emit(ctx, out, ev)
 		}
 	}
 	if name, args, say, ok := parseEnvelope(buf.String()); ok {
 		// say first so the status note precedes the tool card in transcripts.
 		if say != "" {
-			out <- Event{Type: EventTextDelta, Delta: say}
+			emit(ctx, out, Event{Type: EventTextDelta, Delta: say})
 		}
 		if name != "" {
-			out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+			emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
 				ID:    "call_" + uuid.NewString(),
 				Name:  name,
 				Input: args,
-			}}
+			}})
 		}
 	} else if text := strings.TrimSpace(buf.String()); text != "" {
 		// parse failed. if the text looks like an attempted envelope (a server
@@ -106,22 +113,22 @@ func (p *JSONModeProvider) relay(in <-chan Event, out chan<- Event) {
 		// fix — parity with textmode, instead of leaking broken JSON as prose
 		// and stalling the turn.
 		if looksLikeJSONEnvelope(text) {
-			out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+			emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
 				ID:   "call_" + uuid.NewString(),
 				Name: "_parse_error",
 				Input: map[string]any{
 					"_parse_error": "your JSON envelope could not be parsed. emit EXACTLY one object: {\"tool\":\"<name>\",\"args\":{...}} to act, or {\"done\":\"...\"} to finish. no prose, no markdown fences.",
 					"_raw_args":    truncateForNudge(text),
 				},
-			}}
+			}})
 		} else {
-			out <- Event{Type: EventTextDelta, Delta: text}
+			emit(ctx, out, Event{Type: EventTextDelta, Delta: text})
 		}
 	}
 	if gotDone {
-		out <- done
+		emit(ctx, out, done)
 	} else {
-		out <- Event{Type: EventDone, StopReason: "stop"}
+		emit(ctx, out, Event{Type: EventDone, StopReason: "stop"})
 	}
 }
 

@@ -77,13 +77,13 @@ var dsmlParamRe = regexp.MustCompile(`(?is)<\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*param
 // Why pre-process instead of adding a third extractor: keeps the call-site in
 // relay() unchanged and avoids fighting brace-matching on the
 // `<function=NAME>` form where the body isn't valid JSON at all.
-func normalizeHermesEnvelopes(s string) string {
+func normalizeHermesEnvelopes(s string, known map[string]bool) string {
 	// pass 0: rewrite attribute-style `<NAME k="v" k="v"/>` (and explicit
 	// close form `<NAME k="v">...</NAME>`) into canonical
 	// `<NAME>{"k":"v",...}</NAME>`. catches the HTML/XML-flavored envelope
 	// some models reach for when the JSON-in-body form doesn't stick. tool
 	// name resolution is deferred to extractToolCalls.
-	s = normalizeAttrEnvelopes(s)
+	s = normalizeAttrEnvelopes(s, known)
 	// pass 1: unwrap <tool_call>...</tool_call> envelopes. body re-emitted
 	// inline so a json body becomes bare json, and a <function=...> body
 	// becomes a bare <function=...> match for pass 2. tolerate missing
@@ -280,11 +280,14 @@ var attrPairRe = regexp.MustCompile(`(?is)([a-z_][a-z0-9_\-]*)\s*=\s*(?:"([^"]*)
 // attribute (bare `<NAME>` is left for extractToolCalls). Body between explicit
 // open/close is preserved appended after the synthesized JSON — rare, but lets
 // `<write path="x">content body</write>` round-trip when a model mixes shapes.
-// Tool name validity is checked downstream; this pass is purely syntactic.
-func normalizeAttrEnvelopes(s string) string {
-	if !strings.Contains(s, "=") {
+// Only known tool names are rewritten, and never inside the `{...}` body of an
+// opened `<known>{` call: that is JSON content (HTML/JSX with attributes) and
+// must reach the arg parser untouched.
+func normalizeAttrEnvelopes(s string, known map[string]bool) string {
+	if !strings.Contains(s, "=") || len(known) == 0 {
 		return s
 	}
+	protected := jsonBodyRanges(s, known)
 	var b strings.Builder
 	b.Grow(len(s) + 32)
 	cur := 0
@@ -297,6 +300,11 @@ func normalizeAttrEnvelopes(s string) string {
 		matchStart := cur + loc[0]
 		matchEnd := cur + loc[1]
 		name := strings.ToLower(s[cur+loc[2] : cur+loc[3]])
+		if !known[name] || inRanges(protected, matchStart) {
+			b.WriteString(s[cur:matchEnd])
+			cur = matchEnd
+			continue
+		}
 		attrSpan := s[cur+loc[4] : cur+loc[5]]
 		selfClose := loc[6] >= 0 && (cur+loc[7]) > (cur+loc[6]) && s[cur+loc[6]] == '/'
 
@@ -321,6 +329,48 @@ func normalizeAttrEnvelopes(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// jsonBodyRanges returns [start,end) spans of the JSON object following each
+// `<known>` open tag. An unbalanced body (stream cut) runs to the end of s.
+func jsonBodyRanges(s string, known map[string]bool) [][2]int {
+	var out [][2]int
+	cur := 0
+	for cur < len(s) {
+		loc := openTagRe.FindStringSubmatchIndex(s[cur:])
+		if loc == nil {
+			break
+		}
+		tagEnd := cur + loc[1]
+		name := strings.ToLower(s[cur+loc[2] : cur+loc[3]])
+		cur = tagEnd
+		if !known[name] {
+			continue
+		}
+		i := tagEnd
+		for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n') {
+			i++
+		}
+		if i >= len(s) || s[i] != '{' {
+			continue
+		}
+		end := len(s)
+		if m := matchBraces(s, i); m >= 0 {
+			end = m + 1
+		}
+		out = append(out, [2]int{i, end})
+		cur = end
+	}
+	return out
+}
+
+func inRanges(ranges [][2]int, pos int) bool {
+	for _, r := range ranges {
+		if pos >= r[0] && pos < r[1] {
+			return true
+		}
+	}
+	return false
 }
 
 // parseAttrPairs walks an HTML-style attribute span and returns a key→value
@@ -437,7 +487,7 @@ func extractToolCalls(s string, known map[string]bool, canonical map[string]stri
 		tagEnd := cur + loc[1]
 		name := strings.ToLower(s[cur+loc[2] : cur+loc[3]])
 		if !known[name] {
-			out.WriteString(s[cur : tagEnd])
+			out.WriteString(s[cur:tagEnd])
 			cur = tagEnd
 			continue
 		}
