@@ -6,10 +6,9 @@
 package shell
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -27,6 +26,12 @@ import (
 const (
 	toolName       = "bash"
 	defaultTimeout = 30 * time.Second
+
+	// capture window per run: first and last bytes kept, middle dropped. the
+	// loop owns the per-profile cap (and the spill file) on top of this; this
+	// only bounds memory for runaway output.
+	captureHead = 256 << 10
+	captureTail = 256 << 10
 )
 
 // Options configures shell behavior beyond approval gating.
@@ -74,7 +79,7 @@ func NewWithOptions(app approval.Approver, opts Options) tools.Tool {
 // Spec advertises the tool to the model.
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
-		Name: toolName,
+		Name:          toolName,
 		Description:   "Run a shell command via `bash -c`. Combined stdout+stderr returned, capped at 20 KB. Already runs in bee's cwd — do NOT prepend `cd <dir> &&`; use the cwd field only to override.",
 		PromptSnippet: "Execute bash.",
 		Schema: map[string]any{
@@ -130,21 +135,23 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		}
 	}
 	if t.approver != nil {
-		key, desc, hit := safety.DetectDangerous(displayCmd)
-		if !hit && cmdStr != displayCmd {
-			key, desc, hit = safety.DetectDangerous(cmdStr)
+		hits := safety.DetectAllDangerous(displayCmd)
+		if cmdStr != displayCmd {
+			hits = mergeDangers(hits, safety.DetectAllDangerous(cmdStr))
 		}
-		if !hit && t.opts.Allowed != nil && !t.opts.Allowed(displayCmd) {
-			key, desc, hit = untrustedKey(displayCmd), "command is not on the known-safe list (approval = untrusted)", true
+		if len(hits) == 0 && t.opts.Allowed != nil && !t.opts.Allowed(displayCmd) {
+			hits = []safety.Danger{{Key: untrustedKey(displayCmd), Desc: "command is not on the known-safe list (approval = untrusted)"}}
 		}
-		if hit {
-			d, err := t.approver.Request(ctx, displayCmd, key, desc)
+		// each matched pattern needs its own grant: approving rm-recursive must
+		// not carry a chained `curl | sh` through.
+		for _, h := range hits {
+			d, err := t.approver.Request(ctx, displayCmd, h.Key, h.Desc)
 			if err != nil {
 				return tools.Result{Content: fmt.Sprintf("approval error: %v", err), IsError: true}, nil
 			}
 			if d == approval.Deny {
 				return tools.Result{
-					Content: fmt.Sprintf("refused by user: %s (%s). Try a different approach.", desc, key),
+					Content: fmt.Sprintf("refused by user: %s (%s). Try a different approach.", h.Desc, h.Key),
 					IsError: true,
 				}, nil
 			}
@@ -173,15 +180,13 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	shellBin, finalCmd := t.buildInvocation(cmdStr)
 	cmd := exec.CommandContext(runCtx, shellBin, "-c", finalCmd)
 	cmd.Dir = cwd
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	buf := tools.NewCapBuffer(captureHead, captureTail)
+	cmd.Stdout = buf
+	cmd.Stderr = buf
 	// own process group so timeout/cancel kills backgrounded children too,
-	// not just the bash leader. Cancel hook fires on runCtx expiry; WaitDelay
-	// caps how long we wait for the group to die before returning.
-	setProcessGroup(cmd)
-	cmd.Cancel = func() error { return killProcessGroup(cmd) }
-	cmd.WaitDelay = 2 * time.Second
+	// not just the bash leader. WaitDelay caps how long we wait for pipes a
+	// surviving child still holds.
+	tools.GroupKill(cmd, 2*time.Second)
 
 	err := cmd.Start()
 	if err != nil {
@@ -191,7 +196,13 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		}, nil
 	}
 	err = cmd.Wait()
-	output := truncate(buf.Bytes())
+	output := buf.String()
+	// a backgrounded child kept the pipes open after bash exited cleanly:
+	// the command itself succeeded, so report success with a note.
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		err = nil
+		stripNote = joinNote(stripNote, "[a background process still holds the output pipe; returned without waiting for it]")
+	}
 
 	switch {
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
@@ -286,18 +297,33 @@ func defaultRCFor(shellBin string) string {
 }
 
 // shellQuote wraps s in single quotes for safe inclusion in a shell command,
-// escaping any embedded single quotes via the standard '\'' dance.
+// escaping any embedded single quotes via the standard '\” dance.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// truncate keeps both the head and tail of oversized output so the actionable
-// error block at the END of a long test/build log survives the cut — errors
-// live at the tail, and head-only truncation here used to discard them before
-// the loop's per-profile head-tail pass could preserve them. Routes through the
-// canonical bash head-tail+spill helper (full body persisted to the spill dir).
-func truncate(b []byte) string {
-	return tools.TruncateForTool("bash", string(b))
+// mergeDangers appends the entries of extra whose key is not already in base.
+func mergeDangers(base, extra []safety.Danger) []safety.Danger {
+	for _, d := range extra {
+		dup := false
+		for _, b := range base {
+			if b.Key == d.Key {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			base = append(base, d)
+		}
+	}
+	return base
+}
+
+func joinNote(a, b string) string {
+	if a == "" {
+		return b
+	}
+	return a + "\n" + b
 }
 
 func toInt(v any) (int, error) {

@@ -6,7 +6,6 @@
 package usertool
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -21,7 +20,6 @@ import (
 const (
 	defaultTimeout = 30 * time.Second
 	maxOutputBytes = 20 * 1024
-	truncMarker    = "\n[…truncated]"
 )
 
 // Tool wraps a fixed bash command as a tool the model can invoke.
@@ -86,13 +84,19 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// user-registered command but model input is never re-parsed by bash
 	bashArgs := append([]string{"-c", t.command, "bee-usertool"}, extra...)
 	cmd := exec.CommandContext(runCtx, "bash", bashArgs...)
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	buf := tools.NewCapBuffer(maxOutputBytes, 0)
+	cmd.Stdout = buf
+	cmd.Stderr = buf
+	// own process group + pipe wait cap, like the shell tool: cancel kills
+	// backgrounded children and a lingering one cannot hold Wait open.
+	tools.GroupKill(cmd, 2*time.Second)
 	err := cmd.Run()
-	output := truncateOut(buf.Bytes())
+	output := buf.String()
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		err = nil // exited cleanly; only a leftover child held the pipe
+	}
 	switch {
-	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
+	case errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
 		return tools.Result{Content: fmt.Sprintf("timeout after %s\n%s", defaultTimeout, output), IsError: true}, nil
 	case ctx.Err() != nil:
 		return tools.Result{Content: ctx.Err().Error(), IsError: true}, ctx.Err()
@@ -104,13 +108,6 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		return tools.Result{Content: fmt.Sprintf("exec error: %v\n%s", err, output), IsError: true}, nil
 	}
 	return tools.Result{Content: output}, nil
-}
-
-func truncateOut(b []byte) string {
-	if len(b) <= maxOutputBytes {
-		return string(b)
-	}
-	return string(b[:maxOutputBytes]) + truncMarker
 }
 
 // SplitArgs is splitArgs for callers that vet the fields before running.

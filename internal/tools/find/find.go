@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -52,6 +53,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if pat == "" {
 		return tools.Result{Content: "missing pattern", IsError: true}, nil
 	}
+	hasStarStar := strings.Contains(pat, "**")
 	// strip leading '**/' (and bare '**'), recursion is implicit. without
 	// this, a pattern like '**/Bunker*.ts' would never match because
 	// filepath.Match is applied to the basename only.
@@ -118,12 +120,12 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 			}
 			return nil
 		}
-		ok, err := filepath.Match(pat, filepath.Base(p))
+		rel := tools.RelTo(root, p)
+		ok, err := matchPattern(pat, rel, hasStarStar)
 		if err != nil {
 			return err
 		}
 		if ok && dirPrefix != "" {
-			rel := tools.RelTo(root, p)
 			if rel != dirPrefix && !strings.HasPrefix(rel, dirPrefix+string(filepath.Separator)) {
 				ok = false
 			}
@@ -144,4 +146,24 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		return tools.Result{Content: "no matches"}, nil
 	}
 	return tools.Result{Content: strings.Join(out, "\n")}, nil
+}
+
+// matchPattern matches a glob against a root-relative path. A pattern without
+// a slash is a basename glob. With a slash and no '**' it is anchored at the
+// root (`pkg/*.go`); after a '**' split the remaining segments match the tail
+// of the path.
+func matchPattern(pat, rel string, afterStarStar bool) (bool, error) {
+	if !strings.Contains(pat, "/") {
+		return filepath.Match(pat, filepath.Base(rel))
+	}
+	rel = filepath.ToSlash(rel)
+	if !afterStarStar {
+		return path.Match(strings.TrimPrefix(pat, "./"), rel)
+	}
+	segs := strings.Split(rel, "/")
+	n := strings.Count(pat, "/") + 1
+	if n > len(segs) {
+		return false, nil
+	}
+	return path.Match(pat, strings.Join(segs[len(segs)-n:], "/"))
 }

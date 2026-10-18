@@ -131,11 +131,7 @@ func TruncateWithLimitSpill(toolName, content string, limitTokens int, spillDir 
 	// output is one giant line (minified json, a long diff) there is no newline
 	// to snap to — back off the raw byte cut to a rune boundary so we never emit
 	// a partial UTF-8 sequence that breaks downstream encoding or model parse.
-	if idx := strings.LastIndexByte(head, '\n'); idx > 0 {
-		head = head[:idx]
-	} else {
-		head = trimPartialRune(head)
-	}
+	head = snapHead(head)
 	spillPath := writeSpill(spillDir, toolName, content)
 	var trailer string
 	if spillPath != "" {
@@ -197,6 +193,17 @@ func trimPartialRune(s string) string {
 	return s
 }
 
+// snapHead trims a cut head back to its last newline so it doesn't end
+// mid-line, but only when that keeps at least half the head: one early newline
+// in a huge single-line blob must not shrink the kept text to a few chars.
+// otherwise it backs off to a rune boundary so no partial UTF-8 sequence leaks.
+func snapHead(head string) string {
+	if idx := strings.LastIndexByte(head, '\n'); idx > len(head)/2 {
+		return head[:idx]
+	}
+	return trimPartialRune(head)
+}
+
 // advanceToRuneStart moves i forward to the next UTF-8 rune boundary so a tail
 // slice taken at a raw byte offset doesn't begin mid-sequence.
 func advanceToRuneStart(s string, i int) int {
@@ -254,13 +261,9 @@ func truncateHeadTailWithSpill(toolName, content string, limitTokens, tailChars 
 		tailChars = maxChars / 2
 	}
 	head := content[:maxChars-tailChars]
-	if idx := strings.LastIndexByte(head, '\n'); idx > 0 {
-		head = head[:idx]
-	} else {
-		head = trimPartialRune(head)
-	}
+	head = snapHead(head)
 	tailStart := total - tailChars
-	if nl := strings.Index(content[tailStart:], "\n"); nl >= 0 {
+	if nl := strings.Index(content[tailStart:], "\n"); nl >= 0 && nl <= tailChars/2 {
 		tailStart += nl
 	} else {
 		tailStart = advanceToRuneStart(content, tailStart)
@@ -311,11 +314,7 @@ func TruncateHeadTailWithLimit(toolName, content string, limitTokens int, tailCh
 	head := content[:maxChars]
 	// avoid splitting mid-line: trim back to the last newline in head; with no
 	// newline, back off to a rune boundary so we never emit a partial UTF-8 seq.
-	if idx := strings.LastIndexByte(head, '\n'); idx > 0 {
-		head = head[:idx]
-	} else {
-		head = trimPartialRune(head)
-	}
+	head = snapHead(head)
 	tailStart := strings.Index(content[len(content)-tailChars:], "\n")
 	if tailStart >= 0 {
 		tailStart += len(content) - tailChars

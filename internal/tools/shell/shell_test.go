@@ -43,29 +43,47 @@ func TestNonZeroExit(t *testing.T) {
 	}
 }
 
-func TestLargeOutputTruncated(t *testing.T) {
-	// emit ~120 KB of filler then a sentinel at the very end. The fix keeps the
-	// head AND tail of oversized output so the error block at the end of a long
-	// log survives — head-only truncation would drop the sentinel.
+// the loop owns per-profile truncation and spill; the tool only bounds memory.
+// an ordinary large log comes back whole, a runaway one keeps head and tail.
+func TestLargeOutputCaptureBounded(t *testing.T) {
 	res, err := New().Run(context.Background(), map[string]any{
 		"command": "head -c 120000 /dev/zero | tr '\\0' x; printf TAIL_SENTINEL",
 	})
+	if err != nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if !strings.Contains(res.Content, "TAIL_SENTINEL") || len(res.Content) < 120000 {
+		t.Fatalf("ordinary large output must pass through whole, got %d bytes", len(res.Content))
+	}
+	res, err = New().Run(context.Background(), map[string]any{
+		"command": "head -c 2000000 /dev/zero | tr '\\0' x; printf TAIL_SENTINEL",
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("err=%v", err)
+	}
+	if !strings.Contains(res.Content, "bytes omitted") || !strings.Contains(res.Content, "TAIL_SENTINEL") {
+		t.Fatalf("runaway output must keep the tail and say it dropped the middle")
+	}
+	if len(res.Content) > captureHead+captureTail+200 {
+		t.Fatalf("capture unbounded: %d bytes", len(res.Content))
+	}
+}
+
+// bash exits 0 but a backgrounded child keeps stdout open: success, not error.
+func TestBackgroundChildHoldingPipeIsSuccess(t *testing.T) {
+	start := time.Now()
+	res, err := New().Run(context.Background(), map[string]any{"command": "sleep 4 & echo started"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.IsError {
-		t.Fatalf("unexpected error: %s", res.Content)
+		t.Fatalf("exit 0 reported as error: %s", res.Content)
 	}
-	if !strings.Contains(res.Content, "truncated middle") {
-		t.Fatalf("missing head-tail truncate marker in %d-byte output", len(res.Content))
+	if !strings.Contains(res.Content, "started") {
+		t.Fatalf("output missing: %q", res.Content)
 	}
-	// the tail (where errors live) must survive the cut.
-	if !strings.Contains(res.Content, "TAIL_SENTINEL") {
-		t.Fatalf("tail dropped by truncation: error block at end of log would be lost")
-	}
-	// must be materially smaller than the full body.
-	if len(res.Content) >= 120000 {
-		t.Fatalf("output not truncated: %d bytes", len(res.Content))
+	if time.Since(start) > 10*time.Second {
+		t.Fatalf("waited for the background child")
 	}
 }
 
