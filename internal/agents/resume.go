@@ -2,12 +2,12 @@ package agents
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/elhenro/bee/internal/bgreg"
+	"github.com/elhenro/bee/internal/gitsafe"
 )
 
 // Resume re-starts a stopped agent on its existing worktree and session with
@@ -76,7 +76,7 @@ func firstLine(s string) string {
 // ahead is unmerged even when this process made no commit itself (a resumed
 // agent may only have rebased).
 func Ahead(dir string) (int, error) {
-	cmd := exec.Command("git", "rev-list", "--count", MergeBase+"..HEAD")
+	cmd := gitsafe.Command("rev-list", "--count", MergeBase+"..HEAD")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
@@ -87,7 +87,7 @@ func Ahead(dir string) (int, error) {
 
 // unmergedFiles lists paths left conflicted by an in-progress rebase.
 func unmergedFiles(dir string) []string {
-	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=U")
+	cmd := gitsafe.Command("diff", "--name-only", "--diff-filter=U")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

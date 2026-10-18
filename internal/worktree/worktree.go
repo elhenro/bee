@@ -21,6 +21,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/elhenro/bee/internal/gitsafe"
 )
 
 // Worktree is one isolated checkout. Path is the working directory; the
@@ -40,7 +42,7 @@ func (w *Worktree) Cleanup() error {
 	if w == nil || w.Path == "" {
 		return nil
 	}
-	cmd := exec.Command("git", "-C", w.repoRoot, "worktree", "remove", "--force", w.Path)
+	cmd := gitsafe.Command("-C", w.repoRoot, "worktree", "remove", "--force", w.Path)
 	out, err := cmd.CombinedOutput()
 	// fall through to RemoveAll either way; `git worktree remove` will fail
 	// if a worker left local commits, and we still want the disk space back.
@@ -67,17 +69,17 @@ func (w *Worktree) MergeBack() error {
 	if w == nil || w.Path == "" {
 		return nil
 	}
-	if out, err := exec.Command("git", "-C", w.Path, "add", "-A").CombinedOutput(); err != nil {
+	if out, err := gitsafe.Command("-C", w.Path, "add", "-A").CombinedOutput(); err != nil {
 		return fmt.Errorf("git add: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	patch, err := exec.Command("git", "-C", w.Path, "diff", "--cached", "--binary", w.base).Output()
+	patch, err := gitsafe.Command("-C", w.Path, "diff", "--cached", "--binary", w.base).Output()
 	if err != nil {
 		return fmt.Errorf("git diff: %w", err)
 	}
 	if len(strings.TrimSpace(string(patch))) == 0 {
 		return nil // worker changed nothing
 	}
-	cmd := exec.Command("git", "-C", w.repoRoot, "apply", "--3way", "--whitespace=nowarn")
+	cmd := gitsafe.Command("-C", w.repoRoot, "apply", "--3way", "--whitespace=nowarn")
 	cmd.Stdin = bytes.NewReader(patch)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git apply: %v: %s", err, strings.TrimSpace(string(out)))
@@ -135,7 +137,7 @@ func Create(repoRoot, label string) (*Worktree, error) {
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, err
 	}
-	cmd := exec.Command("git", "-C", top, "worktree", "add", "--detach", dir, base)
+	cmd := gitsafe.Command("-C", top, "worktree", "add", "--detach", dir, base)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("git worktree add: %v: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -143,6 +145,6 @@ func Create(repoRoot, label string) (*Worktree, error) {
 }
 
 func gitOut(dir string, args ...string) (string, error) {
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	out, err := gitsafe.Command(append([]string{"-C", dir}, args...)...).Output()
 	return strings.TrimSpace(string(out)), err
 }

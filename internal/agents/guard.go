@@ -3,11 +3,11 @@ package agents
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/elhenro/bee/internal/gate"
+	"github.com/elhenro/bee/internal/gitsafe"
 	"github.com/elhenro/bee/internal/sandbox"
 )
 
@@ -16,7 +16,7 @@ import (
 const agentScope = sandbox.WorkspaceWrite
 
 func gitOut(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	cmd := gitsafe.Command(args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
@@ -63,7 +63,7 @@ func pristine(repoRoot, sha string) (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
-	cmd := exec.Command("git", "worktree", "add", "--detach", "-q", dir, sha)
+	cmd := gitsafe.Command("worktree", "add", "--detach", "-q", dir, sha)
 	cmd.Dir = repoRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.RemoveAll(dir)

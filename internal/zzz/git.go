@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/elhenro/bee/internal/gitsafe"
 )
 
 // gitRun executes git in dir, captures stdout. stderr only on failure.
 func gitRun(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	cmd := gitsafe.Command(args...)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
