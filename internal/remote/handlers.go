@@ -72,6 +72,17 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	user := Msg{Role: "user", Text: body.Text}
 	s.history = append(s.history, user)
 	s.mu.Unlock()
+	released := false
+	defer func() {
+		// engine panic: don't leave the relay stuck busy for every later send
+		if released {
+			return
+		}
+		s.mu.Lock()
+		s.busy = false
+		s.mu.Unlock()
+		s.broadcast(sseEvent{typ: "busy", data: false})
+	}()
 
 	s.logf("recv %q", body.Text)
 	s.broadcast(sseEvent{typ: "message", data: user})
@@ -91,6 +102,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.history = append(s.history, asst)
 	s.busy = false
+	released = true
 	s.mu.Unlock()
 
 	s.broadcast(sseEvent{typ: "message", data: asst})

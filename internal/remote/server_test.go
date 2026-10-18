@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type stubEngine struct{}
@@ -109,5 +110,56 @@ func TestSendBadOrigin(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+type panicEngine struct{}
+
+func (panicEngine) Send(context.Context, string, func(string)) (string, error) { panic("boom") }
+
+func TestSendPanicReleasesBusy(t *testing.T) {
+	s := New(panicEngine{}, Options{})
+	req := httptest.NewRequest(http.MethodPost, "/"+s.Token()+"/send", strings.NewReader(`{"text":"hi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	func() {
+		defer func() { _ = recover() }()
+		s.Handler().ServeHTTP(httptest.NewRecorder(), req)
+	}()
+	s.mu.Lock()
+	busy := s.busy
+	s.mu.Unlock()
+	if busy {
+		t.Fatal("busy stuck after engine panic")
+	}
+}
+
+func TestServeShutdownWithOpenSSE(t *testing.T) {
+	s := New(stubEngine{}, Options{Addr: "127.0.0.1:0"})
+	ln, url, err := s.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(ctx, ln) }()
+
+	resp, err := http.Get(url + "events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	start := time.Now()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Serve returned %v, want nil after clean shutdown", err)
+		}
+		if d := time.Since(start); d > 2*time.Second {
+			t.Errorf("shutdown took %v with an open SSE stream", d)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("Serve did not return")
 	}
 }

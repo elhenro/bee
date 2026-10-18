@@ -174,12 +174,17 @@ func (s *Server) Start() (net.Listener, string, error) {
 
 // Serve blocks serving on ln until ctx is done, then shuts down gracefully.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
-	srv := &http.Server{Handler: s.Handler()}
+	// handler contexts derive from base: cancelling it ends open SSE streams
+	// and in-flight turns, which Shutdown alone waits on until its deadline
+	base, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
+	srv := &http.Server{Handler: s.Handler(), BaseContext: func(net.Listener) context.Context { return base }}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
 
 	select {
 	case <-ctx.Done():
+		cancelBase()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdown)
