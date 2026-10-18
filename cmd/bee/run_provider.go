@@ -4,10 +4,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -111,22 +109,11 @@ func buildProvider(cfg config.Config) (llm.Provider, error) {
 	case "json":
 		inner = llm.NewJSONMode(inner)
 	}
-	// prewarm: local providers don't expose context_length on /v1/models, so
-	// the loop's budget falls back to a useless 4*SystemPromptBudget. Probe
-	// /api/show synchronously (a closed port fails fast on dial; a running
-	// server answers in well under a second) so contextBudget — and the
-	// ToolOutputTokens / SystemPromptBudget scaling in ScaleProfileForContext —
-	// reflect reality from turn one instead of after the probe loses the race.
+	// prewarm: without a learned window the loop's budget falls back to a
+	// useless 4*SystemPromptBudget, and ToolOutputTokens / SystemPromptBudget
+	// scaling in ScaleProfileForContext has nothing to scale against.
 	if config.IsLocalProvider(cfg.DefaultProvider) {
-		if pc, ok := cfg.Providers[cfg.DefaultProvider]; ok && pc.BaseURL != "" {
-			ctx, cancel := context.WithTimeout(context.Background(), localContextProbeTimeout)
-			if n, err := llm.ProbeOllamaContext(ctx, http.DefaultClient, pc.BaseURL, cfg.DefaultModel); err == nil && n > 0 {
-				llm.RememberContextLength(cfg.DefaultModel, n)
-			} else if err != nil {
-				fmt.Fprintf(os.Stderr, "bee: local context probe failed (%v); using fallback budget\n", err)
-			}
-			cancel()
-		}
+		prewarmLocalContext(cfg)
 	}
 	return inner, nil
 }
