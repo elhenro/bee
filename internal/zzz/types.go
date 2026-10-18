@@ -5,7 +5,11 @@
 // individually-revertable commits and a notes.md log of every step.
 package zzz
 
-import "time"
+import (
+	"time"
+
+	"github.com/elhenro/bee/internal/sentinel"
+)
 
 // Config is the parsed flag set for one run.
 type Config struct {
@@ -80,6 +84,7 @@ type IterationResult struct {
 	Iter      int
 	Status    string // "committed" | "reset" | "failed" | "noop" | "repair"
 	Subject   string
+	Sentinel  sentinel.Kind // marker found in Subject, classified once per iteration
 	CommitSHA string
 	Verified  bool // committed through a green verify gate
 	Tokens    TokenStat

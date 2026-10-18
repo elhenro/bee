@@ -11,7 +11,10 @@
 // not collapsed.
 package sentinel
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // Kind classifies the sentinel found in an agent's final text.
 type Kind int
@@ -44,18 +47,23 @@ func (k Kind) String() string {
 // quote / heading / emphasis markers and emphasis hugging the keyword.
 const (
 	// leading decoration allowed before the keyword: whitespace, blockquote,
-	// list bullets, headings, and bold/italic/code emphasis.
-	lead = "[\\s>*_`#+-]*"
+	// list bullets, headings, and bold/italic/code emphasis. A -/+ bullet
+	// needs its space, so a quoted diff line (`+DONE: x`) is not a marker.
+	lead = "(?:[\\s>*_`#]|[-+]\\s)*"
 	// emphasis allowed between the keyword and its colon: `**DONE**:`.
 	gap = "[\\s*_`]*"
 )
 
 var (
-	doneRe    = regexp.MustCompile(`(?im)^` + lead + `DONE` + gap + `:`)
-	blockedRe = regexp.MustCompile(`(?im)^` + lead + `BLOCKED` + gap + `:`)
-	needsRe   = regexp.MustCompile(`(?im)^` + lead + `NEEDS-INPUT` + gap + `:`)
+	doneRe    = regexp.MustCompile(`(?m)^` + lead + `DONE` + gap + `:`)
+	blockedRe = regexp.MustCompile(`(?m)^` + lead + `BLOCKED` + gap + `:`)
+	needsRe   = regexp.MustCompile(`(?m)^` + lead + `NEEDS-INPUT` + gap + `:`)
 )
 
+// Markers are case-sensitive (the protocol asks for DONE:, and prose like
+// "Done: added x" is not a signal) and are ignored inside fenced code blocks,
+// where an agent quotes the protocol or tool output.
+//
 // Classify returns the first sentinel kind that appears anchored to the
 // start of any line in s, or KindNone when no sentinel is present.
 //
@@ -63,6 +71,7 @@ var (
 // the objective shouldn't be misclassified as blocked just because they
 // quoted prior failure text.
 func Classify(s string) Kind {
+	s = stripFences(s)
 	switch {
 	case doneRe.MatchString(s):
 		return KindDone
@@ -75,10 +84,36 @@ func Classify(s string) Kind {
 }
 
 // IsDone is a thin shortcut for the common DONE check.
-func IsDone(s string) bool { return doneRe.MatchString(s) }
+func IsDone(s string) bool { return doneRe.MatchString(stripFences(s)) }
 
 // IsBlocked is a thin shortcut for the common BLOCKED check.
-func IsBlocked(s string) bool { return blockedRe.MatchString(s) }
+func IsBlocked(s string) bool { return blockedRe.MatchString(stripFences(s)) }
 
 // IsNeedsInput is a thin shortcut for the NEEDS-INPUT check.
-func IsNeedsInput(s string) bool { return needsRe.MatchString(s) }
+func IsNeedsInput(s string) bool { return needsRe.MatchString(stripFences(s)) }
+
+// stripFences drops fenced code blocks. An unterminated fence swallows the
+// rest of the text, as markdown renderers do.
+func stripFences(s string) string {
+	if !strings.Contains(s, "```") && !strings.Contains(s, "~~~") {
+		return s
+	}
+	var out []string
+	fence := ""
+	for _, line := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case fence != "":
+			if strings.HasPrefix(t, fence) {
+				fence = ""
+			}
+		case strings.HasPrefix(t, "```"):
+			fence = "```"
+		case strings.HasPrefix(t, "~~~"):
+			fence = "~~~"
+		default:
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}

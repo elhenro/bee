@@ -27,6 +27,15 @@ func TestClassify(t *testing.T) {
 		// decoration must not manufacture a sentinel from prose
 		{"- almost DONE: but not yet", KindNone}, // keyword still mid-line
 		{"summary of work done: see above", KindNone},
+		// prose and quoted material are not signals
+		{"Done: added the migration", KindNone},
+		{"blocked: waiting on ci", KindNone},
+		{"+DONE: quoted diff line", KindNone},
+		{"-DONE: removed diff line", KindNone},
+		{"+ DONE: plus bullet", KindDone},
+		{"example reply:\n```\nDONE: <summary>\n```\nstill going", KindNone},
+		{"~~~\nBLOCKED: sample\n~~~\nDONE: real", KindDone},
+		{"```\nunterminated\nDONE: swallowed", KindNone},
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {

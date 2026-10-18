@@ -114,11 +114,12 @@ func setupDriveTest(t *testing.T) (*Run, string) {
 // N+1 to commit iter N's stale changes under iter N+1's subject.
 func TestDrive_CommitFailResetsTree(t *testing.T) {
 	run, repo := setupDriveTest(t)
-	// install a pre-commit hook that always fails so Commit() errors.
-	hookDir := filepath.Join(repo, ".git", "hooks")
-	hookPath := filepath.Join(hookDir, "pre-commit")
-	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatalf("hook: %v", err)
+	// host git ignores hooks, so make Commit() fail through a signing
+	// program that always errors.
+	for _, kv := range [][2]string{{"gpg.program", "false"}, {"commit.gpgsign", "true"}} {
+		if _, err := gitRun(repo, "config", kv[0], kv[1]); err != nil {
+			t.Fatalf("config: %v", err)
+		}
 	}
 	runner := &stubRunner{
 		dir: repo,
@@ -127,7 +128,7 @@ func TestDrive_CommitFailResetsTree(t *testing.T) {
 		},
 	}
 	ui := &stubUI{}
-	cfg := Config{MaxIterations: 1, MaxConsecutiveFails: 1}
+	cfg := Config{MaxIterations: 1, MaxConsecutiveFails: 1, Sign: true}
 	if err := Drive(context.Background(), nil, runner, cfg, run, ui); err != nil {
 		t.Fatalf("Drive: %v", err)
 	}
@@ -164,6 +165,24 @@ func TestDrive_DONEHonoredOnNoop(t *testing.T) {
 	}
 }
 
+// a reply quoting an earlier blocker and then signalling DONE is one outcome:
+// the work is kept and committed, not reset as blocked and then "completed".
+func TestDrive_DoneBeatsQuotedBlocker(t *testing.T) {
+	run, repo := setupDriveTest(t)
+	runner := &stubRunner{
+		dir: repo,
+		turns: []stubTurn{
+			{text: "BLOCKED: earlier error\nDONE: fixed it", write: map[string]string{"a.txt": "1"}, in: 50, out: 20},
+		},
+	}
+	if err := Drive(context.Background(), nil, runner, Config{MaxIterations: 3}, run, &stubUI{}); err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != StatusCompleted || len(run.Commits) != 1 {
+		t.Fatalf("status=%s commits=%d, want completed with the change committed", run.Status, len(run.Commits))
+	}
+}
+
 // TestDrive_NoopDoesNotCountAsFail confirms noop iters don't trip the
 // consecutive-fail breaker — prior code killed plan-then-act sequences.
 func TestDrive_NoopDoesNotCountAsFail(t *testing.T) {
@@ -187,9 +206,10 @@ func TestDrive_NoopDoesNotCountAsFail(t *testing.T) {
 	if len(run.Commits) != 1 {
 		t.Errorf("want 1 commit, got %d", len(run.Commits))
 	}
-	// noops keep their forage span; an ungated commit leaves its span
-	// unverified, so no mutating route is learned from untested work.
-	if want := []bool{true, true}; !equalBools(runner.marks, want) {
+	// noops drop their span (a clean tree does not make shell calls
+	// read-only); an ungated commit leaves its span unverified, so no
+	// mutating route is learned from untested work.
+	if want := []bool{false, false};!equalBools(runner.marks, want) {
 		t.Errorf("outcome marks: got %v want %v", runner.marks, want)
 	}
 }

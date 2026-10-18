@@ -210,7 +210,7 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 		// DONE wins regardless of iter shape — an agent that says "objective
 		// already complete" without touching files must not be force-looped.
 		// a red tree is not done: the repair iteration runs first.
-		if sentinel.IsDone(res.Subject) && res.Status != IterRepair {
+		if res.Sentinel == sentinel.KindDone && res.Status != IterRepair {
 			markIter(eng, res)
 			if res.Status == IterCommitted {
 				run.Commits = append(run.Commits, res.CommitSHA)
@@ -244,7 +244,8 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 			// killed, but leave a note (so the next prompt shows the survey
 			// already happened) and track the streak so a model that only ever
 			// surveys can't spin to MaxIterations committing nothing.
-			// nothing mutated, so the span holds only reads: keep them.
+			// a clean tree does not prove the shell calls were read-only, so
+			// markIter drops the span rather than verifying it.
 			markIter(eng, res)
 			consecutiveFails = 0
 			consecutiveNoops++
@@ -343,7 +344,10 @@ func runOneIteration(ctx context.Context, eng Runner, cfg Config, run *Run, iter
 		return r, runErr
 	}
 
-	if sentinel.IsBlocked(r.Subject) {
+	// classified once so the rollback below and Drive's DONE check agree: a
+	// reply holding both markers is DONE, never reset as blocked then completed.
+	r.Sentinel = sentinel.Classify(r.Subject)
+	if r.Sentinel == sentinel.KindBlocked {
 		r.Status = IterFailed
 		ui.SetPhase("agent-blocked")
 		// stash partial work before reset so operator can inspect what the

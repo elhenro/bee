@@ -71,18 +71,18 @@ func gateTree(ctx context.Context, cfg Config, run *Run, r *IterationResult, ui 
 }
 
 // markIter tells the waggle miner how an iteration ended. Only a verified
-// commit or a no-change survey keeps its span; a repair leaves the span open
-// so the eventual commit or drop decides it, and an ungated commit leaves it
-// unverified so no mutating route is learned from untested work.
+// commit keeps its span; a repair leaves the span open so the eventual commit
+// or drop decides it, and an ungated commit leaves it unverified so no
+// mutating route is learned from untested work. A clean tree proves nothing
+// about the shell calls that ran (a stash, a cleanup or a POST also leave the
+// tree clean), so a no-change span is dropped, not verified.
 func markIter(eng Runner, res IterationResult) {
 	switch res.Status {
 	case IterCommitted:
 		if res.Verified {
 			markOutcome(eng, true)
 		}
-	case IterNoop:
-		markOutcome(eng, true)
-	case IterReset, IterFailed:
+	case IterNoop, IterReset, IterFailed:
 		markOutcome(eng, false)
 	}
 }
