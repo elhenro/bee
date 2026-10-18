@@ -209,7 +209,7 @@ func TestDrive_NoopDoesNotCountAsFail(t *testing.T) {
 	// noops drop their span (a clean tree does not make shell calls
 	// read-only); an ungated commit leaves its span unverified, so no
 	// mutating route is learned from untested work.
-	if want := []bool{false, false};!equalBools(runner.marks, want) {
+	if want := []bool{false, false}; !equalBools(runner.marks, want) {
 		t.Errorf("outcome marks: got %v want %v", runner.marks, want)
 	}
 }
