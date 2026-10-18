@@ -79,7 +79,7 @@ func renderContextSection(files []ContextFile) string {
 	for _, f := range files {
 		body := f.Body
 		if len(body) > maxContextFileBytes {
-			body = body[:maxContextFileBytes] + "\n…[truncated, use view to read full]"
+			body = body[:runeBoundary(body, maxContextFileBytes)] + "\n…[truncated, use view to read full]"
 		}
 		s += "<context path=\"" + f.Path + "\">\n" + body + "\n</context>\n"
 	}

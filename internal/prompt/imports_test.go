@@ -145,3 +145,28 @@ func TestLoadContextFiles_ExpandsImports(t *testing.T) {
 		t.Fatalf("import not expanded in tryLoad: %q", got[0].Body)
 	}
 }
+
+func TestExpandImports_FuzzySkipsBareWords(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "sidecar.txt"), "SIDECAR")
+	in := "see @sid and @notes"
+	if got := expandContextImports(in, dir, map[string]bool{}, 0); got != in {
+		t.Fatalf("bare word fuzzy-matched: %q", got)
+	}
+}
+
+func TestExpandImports_FuzzySkipsDotDirsAndSecrets(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".ssh", "id_rsa"), "PRIVATE_KEY")
+	writeFile(t, filepath.Join(dir, ".claude", "worktrees", "w", "plan.md"), "WT_BODY")
+	writeFile(t, filepath.Join(dir, "cfg", "id_rsa"), "PRIVATE_KEY")
+	writeFile(t, filepath.Join(dir, "cfg", "prod.pem"), "PEM_BODY")
+	for _, in := range []string{"@id_rsa", "@ssh/id_rsa", "@plan.md", "@cfg/prod.pem"} {
+		got := expandContextImports(in, dir, map[string]bool{}, 0)
+		for _, leak := range []string{"PRIVATE_KEY", "WT_BODY", "PEM_BODY"} {
+			if strings.Contains(got, leak) {
+				t.Fatalf("%q leaked %s: %q", in, leak, got)
+			}
+		}
+	}
+}

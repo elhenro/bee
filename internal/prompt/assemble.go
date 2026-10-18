@@ -10,6 +10,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
@@ -194,7 +195,7 @@ func toolsManifest(specs []llm.ToolSpec, descBudget int) string {
 			desc = firstLine(s.Description)
 		}
 		if descBudget > 0 && len(desc) > descBudget {
-			desc = desc[:descBudget] + "…"
+			desc = desc[:runeBoundary(desc, descBudget)] + "…"
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", s.Name, desc)
 	}
@@ -269,11 +270,24 @@ func truncateBody(s string, cap int) string {
 	if cap <= 0 || len(s) <= cap {
 		return s
 	}
+	cap = runeBoundary(s, cap)
 	cut := strings.LastIndexByte(s[:cap], ' ')
 	if cut <= 0 {
 		cut = cap
 	}
 	return s[:cut] + "…"
+}
+
+// runeBoundary returns the largest index <= n that does not split a UTF-8
+// sequence in s.
+func runeBoundary(s string, n int) int {
+	if n >= len(s) {
+		return len(s)
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return n
 }
 
 // join concatenates non-empty sections separated by a blank line.

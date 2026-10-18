@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/sahilm/fuzzy"
+
+	"github.com/elhenro/bee/internal/safety"
 )
 
 const (
@@ -69,15 +71,24 @@ func resolveImport(baseDir, ref string) (string, string, bool) {
 	} else {
 		exact = filepath.Join(baseDir, ref)
 	}
+	if safety.CheckReadable(exact) != nil {
+		return "", "", false
+	}
 	if data, ok := readImport(exact); ok {
 		abs, _ := filepath.Abs(exact)
 		return abs, data, true
 	}
-	// fuzzy fallback only for relative refs — absolute paths are explicit.
-	if filepath.IsAbs(ref) {
+	// fuzzy fallback only for relative path-like refs: absolute paths are
+	// explicit, and a bare word ("@sid") must not match arbitrary files.
+	if filepath.IsAbs(ref) || !looksLikePath(ref) {
 		return "", "", false
 	}
 	return fuzzyResolve(baseDir, ref)
+}
+
+// looksLikePath reports whether ref has a dir separator or a file extension.
+func looksLikePath(ref string) bool {
+	return strings.Contains(ref, "/") || filepath.Ext(ref) != ""
 }
 
 // readImport reads path with size cap + binary skip. Empty body returns false.
@@ -108,11 +119,25 @@ func fuzzyResolve(baseDir, needle string) (string, string, bool) {
 		return "", "", false
 	}
 	best := filepath.Join(baseDir, matches[0].Str)
+	if !insideDir(baseDir, best) {
+		return "", "", false
+	}
 	if data, ok := readImport(best); ok {
 		abs, _ := filepath.Abs(best)
 		return abs, data, true
 	}
 	return "", "", false
+}
+
+// insideDir guards against a symlink inside baseDir pointing out of it.
+func insideDir(dir, path string) bool {
+	d, err1 := filepath.EvalSymlinks(dir)
+	p, err2 := filepath.EvalSymlinks(path)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	rel, err := filepath.Rel(d, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func walkFuzzy(root string) []string {
@@ -122,12 +147,15 @@ func walkFuzzy(root string) []string {
 			return nil
 		}
 		if d.IsDir() {
-			if noiseDirs[d.Name()] {
+			if p != root && (noiseDirs[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		rel, _ := filepath.Rel(root, p)
+		if safety.CheckReadable(rel) != nil {
+			return nil
+		}
 		out = append(out, rel)
 		if len(out) >= maxFuzzyWalk {
 			return filepath.SkipAll

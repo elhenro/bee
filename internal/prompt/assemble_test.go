@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/knowledge"
@@ -239,5 +240,15 @@ func TestEstimateTokensRoughly(t *testing.T) {
 	}
 	if got := EstimateTokens(strings.Repeat("x", 400)); got != 100 {
 		t.Errorf("400 chars expected 100 tokens, got %d", got)
+	}
+}
+
+func TestTruncateBody_runeBoundary(t *testing.T) {
+	got := truncateBody("ééééééééé", 5)
+	if !utf8.ValidString(got) {
+		t.Fatalf("split rune: %q", got)
+	}
+	if d := runeBoundary("aé", 2); d != 1 {
+		t.Fatalf("runeBoundary = %d, want 1", d)
 	}
 }

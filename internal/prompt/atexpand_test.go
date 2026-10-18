@@ -97,6 +97,15 @@ func TestExpandAtPaths_noAtNoop(t *testing.T) {
 	}
 }
 
+func TestExpandAtPaths_trailingPunctuation(t *testing.T) {
+	dir := t.TempDir()
+	must(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte("BODY\n"), 0o644))
+	out := ExpandAtPaths("look at @a.go.", dir)
+	if !strings.Contains(out, "BODY") || !strings.HasSuffix(out, "```.") {
+		t.Fatalf("trailing dot broke expansion: %q", out)
+	}
+}
+
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {

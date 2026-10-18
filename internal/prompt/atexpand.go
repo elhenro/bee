@@ -8,6 +8,7 @@ package prompt
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -36,12 +37,14 @@ func ExpandAtPaths(text, cwd string) string {
 			return match
 		}
 		prefix := groups[1]
-		rel := groups[2]
+		// sentence punctuation after a path ("@main.go.") is not part of it
+		rel := strings.TrimRight(groups[2], ".,;:")
+		trailing := groups[2][len(rel):]
 		expanded, ok := readForInline(cwd, rel)
 		if !ok {
 			return match
 		}
-		return prefix + expanded
+		return prefix + expanded + trailing
 	})
 }
 
@@ -60,7 +63,12 @@ func readForInline(cwd, rel string) (string, bool) {
 	if err != nil || info.IsDir() {
 		return "", false
 	}
-	data, err := os.ReadFile(abs)
+	f, err := os.Open(abs)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
 	if err != nil {
 		return "", false
 	}
