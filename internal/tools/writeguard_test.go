@@ -39,21 +39,45 @@ func TestFilterPath(t *testing.T) {
 func TestCheckWriteTarget(t *testing.T) {
 	root := t.TempDir()
 	re := regexp.MustCompile(`^docs/`)
-	if msg := CheckWriteTarget(root, filepath.Join(root, "docs", "a.md"), re); msg != "" {
+	if _, msg := CheckWriteTarget(root, filepath.Join(root, "docs", "a.md"), re); msg != "" {
 		t.Errorf("allowed path denied: %s", msg)
 	}
-	if msg := CheckWriteTarget(root, filepath.Join(root, "docs", "..", "x.md"), re); msg == "" {
+	if _, msg := CheckWriteTarget(root, filepath.Join(root, "docs", "..", "x.md"), re); msg == "" {
 		t.Error("dot-dot bypass of filter accepted")
 	}
-	if msg := CheckWriteTarget(root, filepath.Join(root, ".git", "hooks", "pre-commit"), nil); msg == "" {
+	if _, msg := CheckWriteTarget(root, filepath.Join(root, ".git", "hooks", "pre-commit"), nil); msg == "" {
 		t.Error("confined write into .git accepted")
 	}
 	// danger scope (empty root): no sensitive-path check, filter is cwd-relative
-	if msg := CheckWriteTarget("", filepath.Join(t.TempDir(), ".git", "hooks", "x"), nil); msg != "" {
+	if _, msg := CheckWriteTarget("", filepath.Join(t.TempDir(), ".git", "hooks", "x"), nil); msg != "" {
 		t.Errorf("danger scope denied: %s", msg)
 	}
 	wd, _ := os.Getwd()
-	if msg := CheckWriteTarget("", filepath.Join(wd, "docs", "a.md"), re); msg != "" {
+	if _, msg := CheckWriteTarget("", filepath.Join(wd, "docs", "a.md"), re); msg != "" {
 		t.Errorf("danger scope filter denied cwd-relative path: %s", msg)
+	}
+}
+
+// a link inside root that points at a protected path must be refused even
+// though the link's own path looks harmless.
+func TestCheckWriteTarget_SymlinkToProtected(t *testing.T) {
+	root := t.TempDir()
+	hooks := filepath.Join(root, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooks, "post-commit"), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "innocent.txt")
+	if err := os.Symlink(filepath.Join(hooks, "post-commit"), link); err != nil {
+		t.Fatal(err)
+	}
+	if _, msg := CheckWriteTarget(root, link, nil); msg == "" {
+		t.Error("symlink to hook file accepted under confined scope")
+	}
+	// danger scope: unchanged
+	if target, msg := CheckWriteTarget("", link, nil); msg != "" || target != link {
+		t.Errorf("danger scope altered: %q %q", target, msg)
 	}
 }

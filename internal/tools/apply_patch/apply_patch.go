@@ -112,6 +112,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// each name to its absolute form so plan/commit stay consistent. In danger-
 	// full-access (empty root) ResolveMaybe is a passthrough and CheckWritable is
 	// skipped — patch anywhere.
+	shown := map[string]string{} // resolved target -> path as given, for the summary
 	for _, f := range files {
 		for _, np := range []*string{&f.OldName, &f.NewName} {
 			name := *np
@@ -122,10 +123,12 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 			if !ok {
 				return tools.Result{Content: fmt.Sprintf("patch path %q escapes workspace root %q; refused (no files changed)", name, rootAbs), IsError: true}, nil
 			}
-			if msg := tools.CheckWriteTarget(t.root, abs, t.pathRe); msg != "" {
+			target, msg := tools.CheckWriteTarget(t.root, abs, t.pathRe)
+			if msg != "" {
 				return tools.Result{Content: msg + " (no files changed)", IsError: true}, nil
 			}
-			*np = abs
+			shown[target] = abs
+			*np = target
 		}
 	}
 
@@ -146,6 +149,9 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 				Content: fmt.Sprintf("apply failed for %s: %v (no files changed)", fileLabel(f), err),
 				IsError: true,
 			}, nil
+		}
+		if orig, ok := shown[c.path]; ok {
+			c.path = orig
 		}
 		c.path = tools.RelTo(t.root, c.path)
 		changes = append(changes, c)

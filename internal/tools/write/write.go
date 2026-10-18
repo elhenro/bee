@@ -92,7 +92,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}, nil
 	}
 
-	if msg := tools.CheckWriteTarget(t.root, abs, t.pathRe); msg != "" {
+	abs, msg := tools.CheckWriteTarget(t.root, abs, t.pathRe)
+	if msg != "" {
 		return tools.Result{Content: msg, IsError: true}, nil
 	}
 

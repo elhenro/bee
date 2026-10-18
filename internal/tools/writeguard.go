@@ -30,24 +30,32 @@ func FilterPath(root, abs string) (string, bool) {
 }
 
 // CheckWriteTarget runs the per-write guards on an already-resolved abs path.
-// Under a confined root it refuses sensitive targets; in danger-full-access
-// (empty root) that check is skipped. pathRe, when set, applies in both modes
-// against FilterPath. Returns "" when allowed, else a denial message.
-func CheckWriteTarget(root, abs string, pathRe *regexp.Regexp) string {
+// Under a confined root it refuses sensitive targets, checking both the path
+// as given and its symlink-resolved target (a link inside root to a hook file
+// must not pass), and returns the resolved path so the caller writes exactly
+// what was checked. In danger-full-access (empty root) the sensitive check is
+// skipped and abs comes back unchanged. pathRe, when set, applies in both
+// modes against FilterPath. denied is "" when allowed, else a message for the
+// model.
+func CheckWriteTarget(root, abs string, pathRe *regexp.Regexp) (target, denied string) {
+	target = abs
 	if root != "" {
-		if err := safety.CheckWritable(abs); err != nil {
-			return fmt.Sprintf("path %q refused: %v", abs, err)
+		target = resolveSymlinks(abs)
+		for _, p := range []string{abs, target} {
+			if err := safety.CheckWritable(p); err != nil {
+				return abs, fmt.Sprintf("path %q refused: %v", abs, err)
+			}
 		}
 	}
 	if pathRe == nil {
-		return ""
+		return target, ""
 	}
 	rel, ok := FilterPath(root, abs)
 	if !ok {
-		return fmt.Sprintf("path %q denied by write filter (outside workspace)", abs)
+		return abs, fmt.Sprintf("path %q denied by write filter (outside workspace)", abs)
 	}
 	if !pathRe.MatchString(rel) {
-		return fmt.Sprintf("path %q denied by write filter", rel)
+		return abs, fmt.Sprintf("path %q denied by write filter", rel)
 	}
-	return ""
+	return target, ""
 }

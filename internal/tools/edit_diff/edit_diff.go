@@ -104,7 +104,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	expected := tools.IntArg(in, "count", 0)
 	replaceAll, _ := in["replace_all"].(bool)
 
-	if msg := tools.CheckWriteTarget(t.root, path, t.pathRe); msg != "" {
+	path, msg := tools.CheckWriteTarget(t.root, path, t.pathRe)
+	if msg != "" {
 		return tools.Result{Content: msg, IsError: true}, nil
 	}
 
