@@ -52,7 +52,7 @@ func validateRuntimeStep(st RecipeStep, ids map[string]bool, knownTools map[stri
 			return fmt.Errorf("run: placeholder inside quotes; substitution quotes it already, write it bare")
 		}
 		if placeholderInUnsafeSyntax(st.Run) {
-			return fmt.Errorf("run: templated runs may not use heredocs, comments or unbalanced quotes; pass values as arguments or env vars")
+			return fmt.Errorf("run: templated runs may not use heredocs, comments, $(...), backticks, ${...}, unbalanced quotes, or a placeholder glued to other text; pass values as standalone arguments or env vars")
 		}
 	case StepBee:
 		if st.Prompt == "" {

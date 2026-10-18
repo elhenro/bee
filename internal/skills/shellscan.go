@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -15,7 +16,14 @@ func scanShell(run string) (inQuotes, unsafe bool) {
 	if !strings.Contains(run, "{{") {
 		return false, false
 	}
-	if strings.Contains(run, "<<") {
+	// heredocs, and substitution contexts the scanner does not model: they
+	// create quote-state differentials, so reject rather than extend it
+	for _, bad := range []string{"<<", "$(", "`", "${"} {
+		if strings.Contains(run, bad) {
+			unsafe = true
+		}
+	}
+	if !placeholdersStandalone(run) {
 		unsafe = true
 	}
 	inSingle, inDouble := false, false
@@ -38,6 +46,26 @@ func scanShell(run string) (inQuotes, unsafe bool) {
 		unsafe = true // unbalanced quotes: unsure, reject
 	}
 	return inQuotes, unsafe
+}
+
+// placeholderRe finds every {{...}} opener-to-closer span.
+var placeholderRe = regexp.MustCompile(`\{\{[^}]*\}\}`)
+
+// placeholdersStandalone reports whether every placeholder is a whole shell
+// word: preceded by start-of-run, whitespace or one of `;|&(`, and followed by
+// whitespace, one of `;|&)` or end-of-run. A glued `\{{x}}` would let the
+// backslash escape the opening quote the substitution adds, and `$`/word
+// characters change how the quoted value splices into its neighbours.
+func placeholdersStandalone(run string) bool {
+	for _, m := range placeholderRe.FindAllStringIndex(run, -1) {
+		if m[0] > 0 && !strings.ContainsRune(" \t\r\n;|&(", rune(run[m[0]-1])) {
+			return false
+		}
+		if m[1] < len(run) && !strings.ContainsRune(" \t\r\n;|&)", rune(run[m[1]])) {
+			return false
+		}
+	}
+	return true
 }
 
 // couldStartComment is true unless the # is clearly mid-word: after an
