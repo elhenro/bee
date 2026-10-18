@@ -171,7 +171,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	skillReg := skills.NewRegistry()
 	_ = skillReg.Load(skills.BaseDir())
 	// exec-kind skills (including waggles) become model-callable tools.
-	skillexec.RegisterExecSkills(reg, skillReg.List())
+	skillexec.RegisterExecSkills(reg, skillReg.List(), execSandbox(cfg, cwd)...)
 
 	// pre-warm the live model catalogue for the active provider so the
 	// context-fill indicator works for any model the API knows about,
@@ -262,7 +262,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		if err != nil {
 			return err
 		}
-		skillexec.RegisterExecSkills(newReg, skillReg.List())
+		skillexec.RegisterExecSkills(newReg, skillReg.List(), execSandbox(e.Cfg, cwd)...)
 		e.Provider = newProv
 		e.Memory = newKnowledgeAdapter(newProv, e.Cfg)
 		e.Tools = newReg
@@ -281,7 +281,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		if err != nil {
 			return nil, err
 		}
-		skillexec.RegisterExecSkills(r, skillReg.List())
+		skillexec.RegisterExecSkills(r, skillReg.List(), execSandbox(eng.Cfg, wcwd)...)
 		return r, nil
 	}
 

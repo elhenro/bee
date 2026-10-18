@@ -176,7 +176,7 @@ func runHeadlessReal(args []string) {
 	_ = skillReg.Load(skills.BaseDir()) // best-effort
 	// exec-kind skills (including waggles) become model-callable tools. Done
 	// before the --allowed-tools filter so the allowlist governs them too.
-	skillexec.RegisterExecSkills(reg, skillReg.List())
+	skillexec.RegisterExecSkills(reg, skillReg.List(), execSandbox(cfg, cwd)...)
 
 	if *allowedTools != "" {
 		if reg, err = filterTools(reg, *allowedTools); err != nil {

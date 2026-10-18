@@ -12,6 +12,7 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/recipe"
 	"github.com/elhenro/bee/internal/skills"
+	"github.com/elhenro/bee/internal/waggle"
 )
 
 // engineHost adapts a headless engine to recipe.Host. Tool and shell steps run
@@ -79,5 +80,8 @@ func runRecipeHeadless(eng *loop.Engine, s skills.Skill, args []string) int {
 		fmt.Fprintf(os.Stderr, "bee %s: failed: %s\n", s.Name, res.Reason)
 		return 1
 	}
+	// a recipe waggle run by hand counts as a use, so curation keeps it. A
+	// plain recipe skill is in no waggle store and logs nothing.
+	waggle.RecordUseByName(eng.Cwd, s.Name, len(res.Output)/4)
 	return 0
 }

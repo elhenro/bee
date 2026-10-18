@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools/skillexec"
 	"github.com/elhenro/bee/internal/waggle"
@@ -43,7 +44,12 @@ func waggleSkill(name string) (skills.Skill, bool) {
 // runExecWaggle follows a read-only exec waggle directly through the hardened
 // skillexec path, no engine needed. Prints the output; exit 1 on error.
 func runExecWaggle(sk skills.Skill, rest []string) {
-	tool, err := skillexec.New(sk)
+	cwd, _ := os.Getwd()
+	cfg, cerr := config.Load()
+	if cerr != nil {
+		cfg = config.Defaults()
+	}
+	tool, err := skillexec.New(sk, execSandbox(cfg, cwd)...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee %s: %v\n", sk.Name, err)
 		os.Exit(1)
@@ -63,6 +69,5 @@ func runExecWaggle(sk skills.Skill, rest []string) {
 	if res.IsError {
 		os.Exit(1)
 	}
-	cwd, _ := os.Getwd()
 	waggle.RecordUseByName(cwd, sk.Name, len(res.Content)/4)
 }

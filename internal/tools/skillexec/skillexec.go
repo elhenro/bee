@@ -28,7 +28,7 @@ type Tool struct {
 
 // New builds a tool from an exec-kind skill. Non-exec kinds and empty commands
 // are rejected so a misfiled skill fails loudly at registration, not at call.
-func New(s skills.Skill) (tools.Tool, error) {
+func New(s skills.Skill, opts ...usertool.Option) (tools.Tool, error) {
 	if s.Kind != skills.KindExec {
 		return nil, fmt.Errorf("skillexec: skill %q is kind %q, not exec", s.Name, s.Kind)
 	}
@@ -36,7 +36,7 @@ func New(s skills.Skill) (tools.Tool, error) {
 	if strings.TrimSpace(cmd) == "" {
 		return nil, errors.New("skillexec: empty exec command")
 	}
-	inner, err := usertool.New(s.Name, cmd, s.Description)
+	inner, err := usertool.New(s.Name, cmd, s.Description, opts...)
 	if err != nil {
 		return nil, err
 	}

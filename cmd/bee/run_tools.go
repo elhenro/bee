@@ -84,7 +84,7 @@ func appendWaggleLookup(all []tools.Tool, cfg config.Config, cwd string) []tools
 		return all
 	}
 	if t := waggle_lookup.New(proj, user); t != nil {
-		all = append(all, t.Confine(sandbox.Scope(cfg.Sandbox.Scope).Confines()))
+		all = append(all, t.Confine(sandbox.Scope(cfg.Sandbox.Scope).Confines()).WithOptions(execSandbox(cfg, cwd)...))
 	}
 	return all
 }
@@ -263,7 +263,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 		)
 	}
 	all = appendCodegraphTool(all, cwd)
-	all = appendUserTools(all, cfg.UserTools)
+	all = appendUserTools(all, cfg.UserTools, execSandbox(cfg, cwd)...)
 	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
 	for _, t := range all {
@@ -299,9 +299,9 @@ func appendCodegraphTool(all []tools.Tool, cwd string) []tools.Tool {
 // appendUserTools wraps each [[user_tools]] entry as a tool. Malformed
 // entries (empty name/command) are silently skipped so a typo in config
 // doesn't crash bootstrapping.
-func appendUserTools(all []tools.Tool, ut []config.UserTool) []tools.Tool {
+func appendUserTools(all []tools.Tool, ut []config.UserTool, opts ...usertool.Option) []tools.Tool {
 	for _, u := range ut {
-		t, err := usertool.New(u.Name, u.Command, u.Description)
+		t, err := usertool.New(u.Name, u.Command, u.Description, opts...)
 		if err != nil {
 			continue
 		}
@@ -384,7 +384,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 		)
 	}
 	all = appendCodegraphTool(all, cwd)
-	all = appendUserTools(all, cfg.UserTools)
+	all = appendUserTools(all, cfg.UserTools, execSandbox(cfg, cwd)...)
 	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
 	for _, t := range all {

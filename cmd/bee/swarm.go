@@ -99,7 +99,7 @@ func runSwarm(args []string) {
 	defer stop()
 	ctx, cancel := context.WithTimeout(sig, 30*time.Minute)
 	defer cancel()
-	if shortCircuit, scErr := maybeTriageShortCircuit(ctx, prov, cfg.DefaultModel, *triage && !*noTriage, planner.Run, task, os.Stdout); shortCircuit {
+	if shortCircuit, scErr := maybeTriageShortCircuit(ctx, prov, plannerCfg.DefaultModel, *triage && !*noTriage, planner.Run, task, os.Stdout); shortCircuit {
 		if scErr != nil {
 			_ = plannerSess.Close()
 			os.Exit(1)
@@ -145,7 +145,7 @@ func runSwarm(args []string) {
 				workerCwd = wt.Path
 				// rebuild the registry so file-rooted tools (grep, find, ls,
 				// write, edit_diff) target the isolated tree instead of cwd.
-				reg, err := buildTools(workerCwd, cfg, prov, storeDir)
+				reg, err := buildTools(workerCwd, workerCfg, workerProv, storeDir)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "bee swarm: worker %d tools: %v\n", i, err)
 					return 1

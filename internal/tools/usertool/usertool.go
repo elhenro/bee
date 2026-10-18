@@ -27,10 +27,20 @@ type Tool struct {
 	name        string
 	command     string
 	description string
+	wrap        func(argv []string) []string
+}
+
+// Option tunes a Tool at construction.
+type Option func(*Tool)
+
+// WithWrap runs the command through w (the sandbox wrapper) instead of bare
+// bash. A nil w leaves the tool unwrapped.
+func WithWrap(w func(argv []string) []string) Option {
+	return func(t *Tool) { t.wrap = w }
 }
 
 // New builds a usertool from a name + command template + description.
-func New(name, command, description string) (tools.Tool, error) {
+func New(name, command, description string, opts ...Option) (tools.Tool, error) {
 	name = strings.TrimSpace(name)
 	command = strings.TrimSpace(command)
 	if name == "" {
@@ -43,7 +53,11 @@ func New(name, command, description string) (tools.Tool, error) {
 	if desc == "" {
 		desc = "User-defined shell alias for `" + command + "`."
 	}
-	return &Tool{name: name, command: command, description: desc}, nil
+	t := &Tool{name: name, command: command, description: desc}
+	for _, o := range opts {
+		o(t)
+	}
+	return t, nil
 }
 
 func (t *Tool) Spec() llm.ToolSpec {
@@ -82,8 +96,11 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	defer cancel()
 	// pass extras as positional params so $1..$N and "$@" expand in the
 	// user-registered command but model input is never re-parsed by bash
-	bashArgs := append([]string{"-c", t.command, "bee-usertool"}, extra...)
-	cmd := exec.CommandContext(runCtx, "bash", bashArgs...)
+	argv := append([]string{"bash", "-c", t.command, "bee-usertool"}, extra...)
+	if t.wrap != nil {
+		argv = t.wrap(argv)
+	}
+	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	buf := tools.NewCapBuffer(maxOutputBytes, 0)
 	cmd.Stdout = buf
 	cmd.Stderr = buf

@@ -269,10 +269,6 @@ func expandGlobs(patterns []string) ([]string, error) {
 	return out, nil
 }
 
-// newWorkerEngine builds a fresh Engine with its own session rollout. Each
-// bee gets isolated state — that's the whole point of fan-out. Memory is
-// intentionally skipped here to keep the fan-out cheap; revisit if users
-// want shared learning across workers.
 // cliThrottle holds hive worker starts on an oversubscribed machine and says
 // so on stderr.
 func cliThrottle(cmd string, cfg config.Config) hivepkg.Throttle {
@@ -285,6 +281,10 @@ func cliThrottle(cmd string, cfg config.Config) hivepkg.Throttle {
 	}
 }
 
+// newWorkerEngine builds a fresh Engine with its own session rollout. Each
+// bee gets isolated state — that's the whole point of fan-out. Memory is
+// intentionally skipped here to keep the fan-out cheap; revisit if users
+// want shared learning across workers.
 func newWorkerEngine(prov llm.Provider, reg *tools.Registry, cfg config.Config, cwd string) (*loop.Engine, *session.Rollout, error) {
 	sessID := uuid.NewString()
 	roll, err := session.Open(sessID)

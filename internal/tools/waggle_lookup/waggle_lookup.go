@@ -29,6 +29,7 @@ const toolName = "waggle_lookup"
 type Tool struct {
 	stores   []*waggle.Store
 	confined bool // gate path args with the secret-path guard under a confined scope
+	opts     []usertool.Option
 }
 
 // New binds the tool to the given stores (typically project + user). nil stores
@@ -50,6 +51,12 @@ func New(stores ...*waggle.Store) *Tool {
 // sandbox scope. Returns t for chaining.
 func (t *Tool) Confine(confined bool) *Tool {
 	t.confined = confined
+	return t
+}
+
+// WithOptions passes opts (the sandbox wrapper) to every route the tool runs.
+func (t *Tool) WithOptions(opts ...usertool.Option) *Tool {
+	t.opts = opts
 	return t
 }
 
@@ -156,7 +163,7 @@ func (t *Tool) follow(ctx context.Context, name string, in map[string]any) (tool
 			// gate, which only the subcommand path provides.
 			return tools.Result{Content: fmt.Sprintf("waggle %q has shell steps that change state; run it as `bee %s [args]` via the bash tool (its steps prompt for approval)", name, name), IsError: true}, nil
 		}
-		tool, err := skillexec.New(sk)
+		tool, err := skillexec.New(sk, t.opts...)
 		if err != nil {
 			return tools.Result{Content: fmt.Sprintf("waggle %q not runnable: %v", name, err), IsError: true}, nil
 		}

@@ -88,3 +88,20 @@ func TestSpec_PreservesName(t *testing.T) {
 		t.Errorf("description missing")
 	}
 }
+
+func TestWithWrapRunsThroughWrapper(t *testing.T) {
+	wrap := func(argv []string) []string {
+		return append([]string{"sh", "-c", `echo wrapped; exec "$@"`, "w"}, argv...)
+	}
+	tool, err := New("echoer", `echo "$1"`, "", WithWrap(wrap))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tool.Run(context.Background(), map[string]any{"args": "hi"})
+	if err != nil || res.IsError {
+		t.Fatalf("run: %v %+v", err, res)
+	}
+	if res.Content != "wrapped\nhi\n" {
+		t.Fatalf("got %q", res.Content)
+	}
+}
