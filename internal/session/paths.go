@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // SessionsDir returns the directory holding session JSONL files.
@@ -14,14 +16,14 @@ func SessionsDir() (string, error) {
 	if v := os.Getenv("BEE_SESSIONS_DIR"); v != "" {
 		return v, nil
 	}
-	home, err := os.UserHomeDir()
+	root, err := beehome.Dir()
 	if err != nil {
 		return "", err
 	}
-	if home == "" {
+	if root == "" {
 		return "", errors.New("session: empty home dir")
 	}
-	return filepath.Join(home, ".bee", "sessions"), nil
+	return filepath.Join(root, "sessions"), nil
 }
 
 // Path returns the JSONL file path for a session id.

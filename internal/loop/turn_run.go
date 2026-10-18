@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/beehome"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/llm"
@@ -123,10 +123,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	}
 
 	// walk-up AGENTS.md/CLAUDE.md plus ~/.bee global; best-effort.
-	beeHome := ""
-	if home, err := os.UserHomeDir(); err == nil {
-		beeHome = filepath.Join(home, ".bee")
-	}
+	beeHome, _ := beehome.Dir()
 	ctxFiles := prompt.LoadContextFiles(e.Cwd, beeHome)
 
 	// reuse cached system prompt when the inputs fingerprint matches. saves

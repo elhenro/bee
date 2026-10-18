@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // slug regex: collapse anything non-alphanumeric to a dash so a path can
@@ -51,11 +53,10 @@ func StoreDir() (string, error) {
 		}
 		return p, nil
 	}
-	home, err := os.UserHomeDir()
+	root, err := beehome.Dir()
 	if err != nil {
 		return "", err
 	}
-	root := filepath.Join(home, ".bee")
 
 	if git, ok := findGitRoot(); ok {
 		slug := slugifyPath(git)

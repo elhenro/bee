@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/elhenro/bee/internal/arena"
+	"github.com/elhenro/bee/internal/beehome"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/knowledge"
 )
@@ -160,9 +161,9 @@ func warsLedgerPath(flagVal string) string {
 	if flagVal != "" {
 		return flagVal
 	}
-	home, err := os.UserHomeDir()
+	p, err := beehome.Join("wars", "ledger.jsonl")
 	if err != nil {
 		return "wars-ledger.jsonl"
 	}
-	return filepath.Join(home, ".bee", "wars", "ledger.jsonl")
+	return p
 }

@@ -3,9 +3,9 @@ package llm
 import (
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/elhenro/bee/internal/auth"
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 func (p *OpenAICompatProvider) applyHeaders(r *http.Request, streaming bool) {
@@ -45,11 +45,11 @@ func loadAuthBearer(provider string) string {
 	if provider == "" {
 		return ""
 	}
-	home, err := os.UserHomeDir()
+	dir, err := beehome.Join("auth")
 	if err != nil {
 		return ""
 	}
-	tok, err := auth.LoadToken(filepath.Join(home, ".bee", "auth"), provider)
+	tok, err := auth.LoadToken(dir, provider)
 	if err != nil || tok == nil {
 		return ""
 	}
@@ -64,11 +64,11 @@ func loadAuthAPIKey(provider string) string {
 	if provider == "" {
 		return ""
 	}
-	home, err := os.UserHomeDir()
+	dir, err := beehome.Join("auth")
 	if err != nil {
 		return ""
 	}
-	key, err := auth.LoadAPIKey(filepath.Join(home, ".bee", "auth"), provider)
+	key, err := auth.LoadAPIKey(dir, provider)
 	if err != nil {
 		return ""
 	}

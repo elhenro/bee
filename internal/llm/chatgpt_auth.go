@@ -3,10 +3,9 @@ package llm
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/elhenro/bee/internal/auth"
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // refresh swaps the stored refresh_token for a fresh access_token. Returns
@@ -18,11 +17,10 @@ func (p *ChatGPTProvider) refresh(ctx context.Context, stale string) (bool, erro
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	home, err := os.UserHomeDir()
+	dir, err := beehome.Join("auth")
 	if err != nil {
 		return false, err
 	}
-	dir := filepath.Join(home, ".bee", "auth")
 	defer auth.LockToken(dir, p.cfg.Name)()
 	tok, err := auth.LoadToken(dir, p.cfg.Name)
 	if err != nil || tok == nil {
@@ -59,11 +57,11 @@ func loadAuthToken(provider string) *auth.Token {
 	if provider == "" {
 		return nil
 	}
-	home, err := os.UserHomeDir()
+	dir, err := beehome.Join("auth")
 	if err != nil {
 		return nil
 	}
-	tok, err := auth.LoadToken(filepath.Join(home, ".bee", "auth"), provider)
+	tok, err := auth.LoadToken(dir, provider)
 	if err != nil {
 		return nil
 	}

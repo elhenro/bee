@@ -5,15 +5,16 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // DefaultDir returns ~/.bee/auth, creating it 0700 if missing.
 func DefaultDir() (string, error) {
-	home, err := os.UserHomeDir()
+	dir, err := beehome.Join("auth")
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".bee", "auth")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
