@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/elhenro/bee/internal/tools/read"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -204,6 +205,9 @@ func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.T
 		style = r.styles.Error
 	}
 	n := r.previewRows(use.Name, res.IsError)
+	if n == 0 && haveUse && use.Name == "read" && len(v.lines) == 1 && strings.HasPrefix(v.lines[0], read.NotePrefix) {
+		n = 1 // an attached picture names itself, a line count would not
+	}
 	w := r.textWidth(resultIndent)
 
 	var rows []string

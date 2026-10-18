@@ -60,6 +60,10 @@ type ToolResult struct {
 	UseID   string `json:"use_id"`
 	Content string `json:"content"`
 	IsError bool   `json:"is_error,omitempty"`
+	// Images are pictures the tool wants the model to see. In-memory only: the
+	// loop moves them into image blocks beside the tool_result, which is where
+	// they persist, so the bytes never serialize twice.
+	Images []ContentBlock `json:"-"`
 }
 
 // Message is one turn in the conversation. Content is an ordered list of

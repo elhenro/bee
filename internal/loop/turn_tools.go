@@ -213,7 +213,7 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if truncated && e.JSONEmitter != nil {
 		e.JSONEmitter.Emit(jsonmode.Event{Type: "tool_truncated", Name: u.Name, UseID: u.ID})
 	}
-	return types.ToolResult{UseID: u.ID, Content: content, IsError: out.IsError}, nil
+	return types.ToolResult{UseID: u.ID, Content: content, IsError: out.IsError, Images: out.Images}, nil
 }
 
 // allowedNames returns the tool names advertised this turn, sorted, for the

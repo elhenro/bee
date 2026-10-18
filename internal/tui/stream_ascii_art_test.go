@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/elhenro/bee/internal/tools/read"
 )
 
 // two labelled pictures, 12 rows each, one bright (blank) row in the second
@@ -83,5 +85,16 @@ func TestFoldArt_ReadResultsStayLineCounted(t *testing.T) {
 	out := stripANSI(r.RenderMessage(resultMsg("u1", strings.Repeat(strings.Repeat(":", 40)+"\n", 20), false)))
 	if !strings.Contains(out, "20 lines") {
 		t.Fatalf("read keeps its line count: %q", out)
+	}
+}
+
+// a read that attached a picture names it instead of "1 line"
+func TestToolCard_ReadImageShowsNote(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 100)
+	r.RenderMessage(useMsg("u1", "read", map[string]any{"path": "public/images/ass1.jpeg"}))
+	note := read.NotePrefix + "ass1.jpeg · image/jpeg · 1200×800 · 120 KB · attached below"
+	out := stripANSI(r.RenderMessage(resultMsg("u1", note, false)))
+	if !strings.Contains(out, "ass1.jpeg · image/jpeg · 1200×800") || strings.Contains(out, "1 line") {
+		t.Fatalf("want the image note, got %q", out)
 	}
 }

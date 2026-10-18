@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/types"
 )
 
 // Tool is the contract every executable tool must satisfy.
@@ -23,6 +24,9 @@ type Tool interface {
 type Result struct {
 	Content string
 	IsError bool
+	// Images are image blocks shown to the model next to Content (a read of a
+	// picture file). Content should say what they are.
+	Images []types.ContentBlock
 }
 
 // Registry maps tool name -> Tool. Safe for concurrent reads after build.

@@ -269,9 +269,12 @@ func splitUser(blocks []types.ContentBlock) []ChatMessage {
 			})
 		}
 	}
+	// tool messages must directly follow the assistant tool_calls, so a user
+	// message that rides with tool results (pictures a tool produced) goes after
 	if hasImage && len(parts) > 0 {
-		msgs = append([]ChatMessage{{Role: "user", Content: parts}}, msgs...)
-	} else if text.Len() > 0 {
+		return append(msgs, ChatMessage{Role: "user", Content: parts})
+	}
+	if text.Len() > 0 {
 		// prepend, so text precedes tool results in stable order
 		msgs = append([]ChatMessage{{Role: "user", Content: text.String()}}, msgs...)
 	}

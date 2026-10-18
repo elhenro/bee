@@ -51,6 +51,10 @@ func DefaultTokenEstimator() TokenEstimator { return heuristicEstimator{} }
 // tests to inject a different accounting scheme.
 var defaultTokenEstimator TokenEstimator = heuristicEstimator{}
 
+// imageTokens is a flat per-picture cost: providers bill by pixel area, not
+// by the base64 length, so char/4 over the bytes would be wildly off
+const imageTokens = 1500
+
 // estimateMessageTokens approximates the token cost of one message by
 // summing every content block — not just text. Tool output dominates real
 // conversations, so ignoring BlockToolResult under-estimates by orders of
@@ -72,6 +76,8 @@ func estimateMessageTokens(m types.Message) int {
 			if c.Result != nil {
 				total += prompt.EstimateTokens(c.Result.Content)
 			}
+		case types.BlockImage:
+			total += imageTokens
 		}
 	}
 	return total

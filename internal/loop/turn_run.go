@@ -492,6 +492,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		blocks = observeDuplicateWrites(e, toolUses, toolResults, blocks)
 		blocks = observeEditNoVerify(e, toolUses, toolResults, blocks)
 		blocks = injectIterAndTokenWarnings(e, blocks, i+1, maxIter, tokenBudget, readOnly)
+		blocks = append(blocks, toolImageBlocks(toolResults)...)
 		toolMsg := types.Message{
 			ID:       newID(),
 			ParentID: assistantMsg.ID,

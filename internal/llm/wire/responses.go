@@ -136,11 +136,13 @@ func translateResponsesMessage(m types.Message) []ResponsesItem {
 func splitResponsesUser(blocks []types.ContentBlock) []ResponsesItem {
 	var items []ResponsesItem
 	var parts []ResponsesContent
+	hasImage := false
 	for _, b := range blocks {
 		switch b.Type {
 		case types.BlockText:
 			parts = append(parts, ResponsesContent{Type: "input_text", Text: b.Text})
 		case types.BlockImage:
+			hasImage = hasImage || len(b.Data) > 0
 			// Responses API images: input_image with a data URL or remote URL.
 			// We keep it simple — emit a text marker if data isn't a URL.
 			if len(b.Data) > 0 {
@@ -170,11 +172,13 @@ func splitResponsesUser(blocks []types.ContentBlock) []ResponsesItem {
 		}
 	}
 	if len(parts) > 0 {
-		items = append([]ResponsesItem{{
-			Type:    "message",
-			Role:    "user",
-			Content: parts,
-		}}, items...)
+		msg := ResponsesItem{Type: "message", Role: "user", Content: parts}
+		if hasImage {
+			// outputs must stay next to their calls; pictures a tool produced
+			// follow them
+			return append(items, msg)
+		}
+		items = append([]ResponsesItem{msg}, items...)
 	}
 	return items
 }

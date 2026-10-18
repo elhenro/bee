@@ -82,7 +82,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 	limitDesc := fmt.Sprintf("Max lines to return (file only). Default %d. Pass an explicit value up to %d to read more in one call instead of multiple offset-paged reads.", defLines, maxLines)
 	return llm.ToolSpec{
 		Name: toolName,
-		Description: "Read a text file or list a directory. Output format: '<line> │ <content>' (separator is space-pipe-space, never a tab). " +
+		Description: "Read a text file, list a directory, or view an image (png/jpg/gif/webp: attached for you to see). Output format: '<line> │ <content>' (separator is space-pipe-space, never a tab). " +
 			"With hashline=true: '<line>#<TAG> │ <content>' for hashline_edit anchors. Use tail=N for the last N lines (log-style). " +
 			"Content is verbatim — leading tabs are part of the content, not the separator.",
 		PromptSnippet: "Read file contents",
@@ -148,6 +148,10 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 			return tools.Result{Content: err.Error(), IsError: true}, nil
 		}
 		return tools.Result{Content: out}, nil
+	}
+
+	if res, ok := readImage(path, info.Size()); ok {
+		return res, nil
 	}
 
 	defLines := t.defaultLines
