@@ -44,7 +44,7 @@ func NewWithFilter(root string, pathRe *regexp.Regexp) *Tool {
 // Spec advertises the tool to the model.
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
-		Name:        toolName,
+		Name:          toolName,
 		Description:   "Overwrite a file with content. Creates parent dirs. Path must stay inside workspace root. Empty content is rejected (file deletion is not supported). Args: path (required), content (required, non-empty).",
 		PromptSnippet: "Create or overwrite files",
 		Schema: map[string]any{
@@ -92,11 +92,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}, nil
 	}
 
-	if t.pathRe != nil {
-		match := rel
-		if !t.pathRe.MatchString(match) {
-			return tools.Result{Content: fmt.Sprintf("path %q denied by write filter", match), IsError: true}, nil
-		}
+	if msg := tools.CheckWriteTarget(t.root, abs, t.pathRe); msg != "" {
+		return tools.Result{Content: msg, IsError: true}, nil
 	}
 
 	// single stat: drives both the large-rewrite guard and the mode preservation.

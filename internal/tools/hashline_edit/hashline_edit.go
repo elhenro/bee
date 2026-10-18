@@ -14,7 +14,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -97,11 +96,11 @@ func (t *Tool) Spec() llm.ToolSpec {
 
 // edit is one parsed mutation.
 type edit struct {
-	rawPos  string
-	line    int // 1-based
-	tag     string
-	op      string
-	lines   []string
+	rawPos string
+	line   int // 1-based
+	tag    string
+	op     string
+	lines  []string
 }
 
 // Run validates and applies the batch atomically.
@@ -124,16 +123,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	}
 	dryRun, _ := in["dry_run"].(bool)
 
-	if t.pathRe != nil {
-		match := path
-		if cwd, err := os.Getwd(); err == nil {
-			if rel, err := filepath.Rel(cwd, path); err == nil {
-				match = rel
-			}
-		}
-		if !t.pathRe.MatchString(match) {
-			return tools.Result{Content: fmt.Sprintf("path %q denied by write filter", match), IsError: true}, nil
-		}
+	if msg := tools.CheckWriteTarget(t.root, path, t.pathRe); msg != "" {
+		return tools.Result{Content: msg, IsError: true}, nil
 	}
 
 	edits, err := parseEdits(rawEdits)
@@ -155,7 +146,19 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if hadTrailing {
 		body = strings.TrimSuffix(body, "\n")
 	}
+	// dominant CRLF files edit as plain lines and are written back with CRLF,
+	// so an edit never leaves bare LF endings in the file.
+	crlf := strings.Count(string(data), "\r\n")*2 > strings.Count(string(data), "\n")
+	eol := "\n"
+	if crlf {
+		eol = "\r\n"
+	}
 	lines := strings.Split(body, "\n")
+	if crlf {
+		for i, l := range lines {
+			lines[i] = strings.TrimSuffix(l, "\r")
+		}
+	}
 	// special case: empty file → no lines to anchor against.
 	if body == "" {
 		lines = nil
@@ -169,9 +172,9 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	// ascending-original-line order with a running shift. Each edit shifts
 	// lines below it by `delta` (net add/remove). Edits above are unaffected.
 	type span struct {
-		origLine int    // pre-edit 1-based line for labelling
-		newFrom  int    // post-edit 1-based first line of the edit's content
-		newTo    int    // post-edit 1-based last line; < newFrom means deletion
+		origLine int // pre-edit 1-based line for labelling
+		newFrom  int // post-edit 1-based first line of the edit's content
+		newTo    int // post-edit 1-based last line; < newFrom means deletion
 		op       string
 	}
 	ascending := make([]edit, len(edits))
@@ -206,13 +209,11 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		lines = applyOne(lines, e)
 	}
 
-	out := strings.Join(lines, "\n")
-	if hadTrailing || (len(lines) > 0 && out != "") {
-		// keep original trailing-newline convention; if we inserted into
-		// an empty file we still want a final newline for sanity.
-		if !strings.HasSuffix(out, "\n") {
-			out += "\n"
-		}
+	out := strings.Join(lines, eol)
+	// keep the original trailing-newline convention; an empty file that gained
+	// content still ends in a newline.
+	if (hadTrailing || len(data) == 0) && out != "" && !strings.HasSuffix(out, "\n") {
+		out += eol
 	}
 
 	if !dryRun {

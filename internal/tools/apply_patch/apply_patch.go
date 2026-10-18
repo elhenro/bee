@@ -6,19 +6,14 @@
 package apply_patch
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
 	"github.com/elhenro/bee/internal/llm"
-	"github.com/elhenro/bee/internal/safety"
 	"github.com/elhenro/bee/internal/tools"
 )
 
@@ -127,150 +122,42 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 			if !ok {
 				return tools.Result{Content: fmt.Sprintf("patch path %q escapes workspace root %q; refused (no files changed)", name, rootAbs), IsError: true}, nil
 			}
-			if t.root != "" {
-				if err := safety.CheckWritable(abs); err != nil {
-					return tools.Result{Content: fmt.Sprintf("patch path %q refused: %v (no files changed)", name, err), IsError: true}, nil
-				}
+			if msg := tools.CheckWriteTarget(t.root, abs, t.pathRe); msg != "" {
+				return tools.Result{Content: msg + " (no files changed)", IsError: true}, nil
 			}
 			*np = abs
-		}
-	}
-
-	if t.pathRe != nil {
-		cwd, _ := os.Getwd()
-		for _, f := range files {
-			p := fileLabel(f)
-			match := p
-			if cwd != "" && filepath.IsAbs(p) {
-				if rel, err := filepath.Rel(cwd, p); err == nil {
-					match = rel
-				}
-			}
-			if !t.pathRe.MatchString(match) {
-				return tools.Result{Content: fmt.Sprintf("path %q denied by write filter", match), IsError: true}, nil
-			}
 		}
 	}
 
 	// plan all changes in memory first; commit only once every file validates,
 	// so a mid-batch failure (e.g. context mismatch on the 3rd file) leaves the
 	// tree untouched instead of half-patched.
-	plans := make([]plannedChange, 0, len(files))
+	// sections share one overlay, so two sections for the same file apply in
+	// order instead of both planning against the on-disk original.
+	ov := newOverlay()
+	changes := make([]fileChange, 0, len(files))
 	for _, f := range files {
 		if err := ctx.Err(); err != nil {
 			return tools.Result{Content: err.Error(), IsError: true}, err
 		}
-		p, err := planOne(f)
+		c, err := ov.plan(f)
 		if err != nil {
 			return tools.Result{
 				Content: fmt.Sprintf("apply failed for %s: %v (no files changed)", fileLabel(f), err),
 				IsError: true,
 			}, nil
 		}
-		plans = append(plans, p)
+		c.path = tools.RelTo(t.root, c.path)
+		changes = append(changes, c)
 	}
-	changes := make([]fileChange, 0, len(plans))
-	for i, p := range plans {
-		if err := commit(p); err != nil {
-			return tools.Result{
-				Content: fmt.Sprintf("apply failed writing %s: %v (%d/%d already written)", p.path, err, i, len(plans)),
-				IsError: true,
-			}, nil
-		}
-		changes = append(changes, fileChange{path: tools.RelTo(t.root, p.path), kind: p.kind, added: p.added, removed: p.removed})
+	if path, n, total, err := ov.commit(); err != nil {
+		return tools.Result{
+			Content: fmt.Sprintf("apply failed writing %s: %v (%d/%d already written)", path, err, n, total),
+			IsError: true,
+		}, nil
 	}
 
 	return tools.Result{Content: summarize(changes)}, nil
-}
-
-// plannedChange is a fully-computed file mutation held in memory until every
-// file in the batch validates, so a mid-batch failure can't leave a partially
-// applied tree (all-or-nothing).
-type plannedChange struct {
-	path    string
-	kind    string // "create", "modify", "delete"
-	data    []byte // bytes to write for create/modify
-	mode    os.FileMode
-	added   int
-	removed int
-}
-
-// planOne validates one parsed File and computes its result WITHOUT writing to
-// disk. Reads are allowed (modify needs current content); no mutation happens
-// here so the caller can abort the whole batch before any commit.
-func planOne(f *gitdiff.File) (plannedChange, error) {
-	if f.IsBinary {
-		return plannedChange{}, errors.New("binary patches not supported")
-	}
-	switch {
-	case f.IsDelete:
-		path := f.OldName
-		if path == "" {
-			return plannedChange{}, errors.New("delete patch missing old name")
-		}
-		if _, err := os.Stat(path); err != nil {
-			return plannedChange{}, err
-		}
-		return plannedChange{path: path, kind: "delete", removed: countLines(f, lineRemoved)}, nil
-	case f.IsNew:
-		path := f.NewName
-		if path == "" {
-			return plannedChange{}, errors.New("create patch missing new name")
-		}
-		if _, err := os.Stat(path); err == nil {
-			return plannedChange{}, fmt.Errorf("create patch but %s already exists", path)
-		}
-		var buf bytes.Buffer
-		if err := gitdiff.Apply(&buf, bytes.NewReader(nil), f); err != nil {
-			return plannedChange{}, err
-		}
-		// ignore the patch-supplied mode: a model-controlled file mode could set
-		// over-permissive bits. New files get a fixed safe mode.
-		return plannedChange{path: path, kind: "create", data: buf.Bytes(), mode: 0o644, added: countLines(f, lineAdded)}, nil
-	default:
-		path := f.NewName
-		if path == "" {
-			path = f.OldName
-		}
-		if path == "" {
-			return plannedChange{}, errors.New("modify patch missing file name")
-		}
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return plannedChange{}, err
-		}
-		var buf bytes.Buffer
-		if err := gitdiff.Apply(&buf, bytes.NewReader(src), f); err != nil {
-			return plannedChange{}, err
-		}
-		// reject empty result on modify; require explicit deletion semantics
-		if buf.Len() == 0 && !f.IsDelete {
-			return plannedChange{}, fmt.Errorf("modify patch for %s produced empty file; use deleted file mode to remove", path)
-		}
-		// preserve original file mode; fall back to 0o644 if stat fails
-		mode := os.FileMode(0o644)
-		if info, err := os.Stat(path); err == nil {
-			mode = info.Mode().Perm()
-		}
-		return plannedChange{path: path, kind: "modify", data: buf.Bytes(), mode: mode, added: countLines(f, lineAdded), removed: countLines(f, lineRemoved)}, nil
-	}
-}
-
-// commit writes one planned change to disk.
-func commit(p plannedChange) error {
-	switch p.kind {
-	case "delete":
-		return os.Remove(p.path)
-	case "create":
-		if dir := filepath.Dir(p.path); dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
-		}
-		return os.WriteFile(p.path, p.data, p.mode)
-	default: // modify
-		return os.WriteFile(p.path, p.data, p.mode)
-	}
 }
 
 type lineKind int

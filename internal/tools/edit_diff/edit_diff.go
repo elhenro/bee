@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -105,14 +104,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	expected := tools.IntArg(in, "count", 0)
 	replaceAll, _ := in["replace_all"].(bool)
 
-	if t.pathRe != nil {
-		match := path
-		if rel, err := filepath.Rel(t.root, path); err == nil {
-			match = rel
-		}
-		if !t.pathRe.MatchString(match) {
-			return tools.Result{Content: fmt.Sprintf("path %q denied by write filter", match), IsError: true}, nil
-		}
+	if msg := tools.CheckWriteTarget(t.root, path, t.pathRe); msg != "" {
+		return tools.Result{Content: msg, IsError: true}, nil
 	}
 
 	data, err := os.ReadFile(path)

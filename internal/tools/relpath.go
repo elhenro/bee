@@ -51,19 +51,35 @@ func expandHome(p string) string {
 // and re-appends the missing trailing components. On any error it returns the
 // cleaned input so callers degrade to a plain comparison.
 func resolveSymlinks(path string) string {
+	resolved, _ := resolveStrict(path)
+	return resolved
+}
+
+// resolveStrict is resolveSymlinks plus a verdict: ok=false when an existing
+// component cannot be resolved, i.e. a dangling or looping symlink. Joining the
+// leftover components onto a parent would hide that link, and the first create
+// through it lands wherever it points, outside the root.
+func resolveStrict(path string) (string, bool) {
 	path = filepath.Clean(path)
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
+		return resolved, true
+	}
+	ok := true
+	if _, err := os.Lstat(path); err == nil {
+		ok = false
 	}
 	dir, rest := filepath.Dir(path), filepath.Base(path)
 	for dir != path { // walk up until something resolves or we hit the root
 		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			return filepath.Join(resolved, rest)
+			return filepath.Join(resolved, rest), ok
+		}
+		if _, err := os.Lstat(dir); err == nil {
+			ok = false
 		}
 		rest = filepath.Join(filepath.Base(dir), rest)
 		path, dir = dir, filepath.Dir(dir)
 	}
-	return filepath.Clean(path)
+	return filepath.Clean(path), ok
 }
 
 // pathIsInside checks whether absPath is inside rootPath, handling both
@@ -124,7 +140,10 @@ func ResolveInRoot(root, path string) (abs, rel, rootAbs string, ok bool) {
 	}
 
 	rRoot := resolveSymlinks(rootAbs)
-	rAbs := resolveSymlinks(abs)
+	rAbs, resolvable := resolveStrict(abs)
+	if !resolvable {
+		return abs, "", rootAbs, false
+	}
 	if !pathIsInside(rAbs, rRoot) {
 		return abs, "", rootAbs, false
 	}
