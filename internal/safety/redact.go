@@ -16,6 +16,10 @@ type pattern struct {
 // secretName is the secret-ish identifier part shared by the assign patterns.
 const secretName = `(?:API[_-]?KEY|SECRET(?:[_-]?KEY)?|ACCESS[_-]?TOKEN|AUTH[_-]?TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET)`
 
+// anyName is a case-insensitive secret-ish name; a bare `token` counts only as
+// the whole word so `token_limit: 100` is left alone.
+const anyName = `(?:[a-z][a-z0-9_]*)?` + secretName + `[a-z0-9_]*|token`
+
 var patterns = []pattern{
 	// anthropic before openai: sk-ant-… also matches the openai sk- prefix.
 	{"anthropic-key", regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_-]{20,}\b`)},
@@ -34,11 +38,14 @@ var patterns = []pattern{
 	// case-sensitive on purpose: a lowercase `apiKey := load()` is code, not a
 	// secret. a value may not start with `=` so comparisons never match.
 	{"env-assign", regexp.MustCompile(`\b((?:[A-Z][A-Z0-9_]*)?` + secretName + `[A-Z0-9_]*)([ \t]*(?::=|[:=])[ \t]*)(?:"[^"\n]+"|'[^'\n]+'|[^\s"';|&=][^\s"';|&]*)`)},
-	// kv-assign: any-case names, but only a quoted literal (`password = "x"`)
-	// or a yaml-style bare scalar alone on its line (`secret: foo`). calls and
-	// expressions on the right-hand side stay untouched.
-	{"kv-assign", regexp.MustCompile(`(?i)\b((?:[a-z][a-z0-9_]*)?` + secretName + `[a-z0-9_]*)([ \t]*[:=][ \t]*)(?:"[^"\n]+"|'[^'\n]+')`)},
-	{"kv-assign", regexp.MustCompile(`(?im)\b((?:[a-z][a-z0-9_]*)?` + secretName + `[a-z0-9_]*)([ \t]*:[ \t]*)[a-z0-9_./+-]+([ \t]*\r?$)`)},
+	// kv-assign: any-case names. quoted literal on either separator; bare
+	// `name=value` with no spaces (dotenv lines, cli flags, url queries) when
+	// the value is not code; yaml `name: scalar` alone on its line, optional
+	// trailing comment. a value containing `(` is a call, one starting with `=`
+	// is a comparison: both stay untouched, as does `:=`.
+	{"kv-assign", regexp.MustCompile(`(?i)\b(` + anyName + `)([ \t]*[:=][ \t]*)(?:"[^"\n]+"|'[^'\n]+')`)},
+	{"kv-assign", regexp.MustCompile(`(?im)\b(` + anyName + `)(=)[^\s()&;"'=][^\s()&;]*([\s&;]|$)`)},
+	{"kv-assign", regexp.MustCompile(`(?im)\b(` + anyName + `)([ \t]*:[ \t]*)[^\s#=("'][^\s(]*((?:[ \t]+#.*)?[ \t]*\r?)$`)},
 }
 
 // Redact scans text for known secret shapes and replaces matches with a

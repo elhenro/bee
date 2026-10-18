@@ -37,7 +37,10 @@ func TestRedactAssignShapes(t *testing.T) {
 		`apiKey := os.Getenv("API_KEY")`,
 		`if password == "" {`,
 		`apiKey = loadKey(cfg)`,
-		`password: string,`,
+		`apiKey=loadKey(cfg)`,
+		`password == hunter2`,
+		`token_limit: 100`,
+		`key := token`,
 	}
 	for _, in := range keep {
 		if out := Redact(in); out != in {
@@ -52,13 +55,22 @@ func TestRedactAssignShapes(t *testing.T) {
 		"client_secret: 'abc def'":      `client_secret: <REDACTED>`,
 		"API_KEY := abc123":             `API_KEY := <REDACTED>`,
 		"SOME_SECRET_KEY='abc' trailer": `SOME_SECRET_KEY=<REDACTED> trailer`,
+		"password=hunter2":              `password=<REDACTED>`,
+		"cmd --api_key=abc123 --v":      `cmd --api_key=<REDACTED> --v`,
+		"GET /x?token=xyz&a=1":          `GET /x?token=<REDACTED>&a=1`,
+		"db_password: s3cr3t!@#":        `db_password: <REDACTED>`,
+		"db_password: s3cr3t # prod":    `db_password: <REDACTED> # prod`,
+		"Secret: foo,":                  `Secret: <REDACTED>`,
 	}
 	for in, want := range hide {
 		if out := Redact(in); out != want {
 			t.Errorf("Redact(%q) = %q want %q", in, out, want)
 		}
 	}
-	if strings.Contains(Redact("password: hunter2\r\nx"), "hunter2") {
-		t.Error("crlf yaml value leaked")
+	if out := Redact("password: hunter2\r\nx"); strings.Contains(out, "hunter2") {
+		t.Errorf("crlf yaml value leaked: %q", out)
+	}
+	if out := Redact("a=1\npassword=hunter2\nb=2"); out != "a=1\npassword=<REDACTED>\nb=2" {
+		t.Errorf("multiline dotenv: %q", out)
 	}
 }
