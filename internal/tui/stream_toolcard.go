@@ -156,6 +156,9 @@ func (r *StreamRenderer) viewResult(use types.ToolUse, res types.ToolResult) res
 		clean = stripGuardPrefixes(clean)
 	}
 	lines := compactLines(clean)
+	if use.Name != "read" && !res.IsError {
+		lines = foldArt(clean, r.verbose)
+	}
 	refused := res.IsError && len(lines) > 0 &&
 		(strings.HasPrefix(lines[0], "refused") || strings.Contains(lines[0], "denied by"))
 	return resultView{lines: lines, total: len(clean), refused: refused}
