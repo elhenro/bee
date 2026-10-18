@@ -76,6 +76,44 @@ func pristine(repoRoot, sha string) (string, func(), error) {
 	return dir, cleanup, nil
 }
 
+// sameRepo reports whether the worktree at wt belongs to the repo at
+// repoRoot. Sessions of every repo share one registry, and the merger must
+// only touch its own.
+func sameRepo(repoRoot, wt string) bool {
+	a, errA := commonDir(repoRoot)
+	b, errB := commonDir(wt)
+	return errA == nil && errB == nil && a == b
+}
+
+func commonDir(dir string) (string, error) {
+	out, err := gitOut(dir, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(out) {
+		out = filepath.Join(dir, out)
+	}
+	return filepath.EvalSymlinks(out)
+}
+
+// rebasing reports whether dir has a rebase in progress that someone else
+// started: aborting it would throw away a half-resolved conflict.
+func rebasing(dir string) bool {
+	for _, name := range []string{"rebase-merge", "rebase-apply"} {
+		p, err := gitOut(dir, "rev-parse", "--git-path", name)
+		if err != nil {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // branchAt reports whether refs/heads/branch in repoRoot still points at sha,
 // so the fast-forward lands exactly the commit that was verified.
 func branchAt(repoRoot, branch, sha string) bool {

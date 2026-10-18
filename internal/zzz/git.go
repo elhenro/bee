@@ -186,7 +186,10 @@ func IsRebasing(dir string) bool {
 }
 
 // MergeFF fast-forwards branch onto base in dir. dir should be the main repo
-// (not the worktree). Returns error if FF is not possible.
+// (not the worktree). Returns error if FF is not possible. It never switches
+// the user's checkout: when base is checked out in dir it merges in place,
+// otherwise it moves the base ref directly (compare-and-swap) unless another
+// worktree has base checked out, which a ref move would desync.
 func MergeFF(dir, base, branch string) error {
 	if base == "" {
 		return errors.New("merge-ff: empty base")
@@ -194,12 +197,45 @@ func MergeFF(dir, base, branch string) error {
 	if branch == "" {
 		return errors.New("merge-ff: empty branch")
 	}
-	// switch base, then merge --ff-only branch
-	if _, err := gitRun(dir, "switch", base); err != nil {
+	if cur, err := CurrentBranch(dir); err == nil && cur == base {
+		_, err := gitRun(dir, "merge", "--ff-only", branch)
 		return err
 	}
-	_, err := gitRun(dir, "merge", "--ff-only", branch)
+	if at := checkedOutAt(dir, base); at != "" {
+		return fmt.Errorf("merge-ff: %s is checked out at %s", base, at)
+	}
+	old, err := gitRun(dir, "rev-parse", "--verify", "refs/heads/"+base)
+	if err != nil {
+		return err
+	}
+	sha, err := gitRun(dir, "rev-parse", "--verify", branch+"^{commit}")
+	if err != nil {
+		return err
+	}
+	if _, err := gitRun(dir, "merge-base", "--is-ancestor", old, sha); err != nil {
+		return fmt.Errorf("merge-ff: %s is not a fast-forward of %s", branch, base)
+	}
+	_, err = gitRun(dir, "update-ref", "-m", "bee: fast-forward "+base, "refs/heads/"+base, sha, old)
 	return err
+}
+
+// checkedOutAt returns the path of the worktree that has branch checked out,
+// or "" when none does.
+func checkedOutAt(dir, branch string) string {
+	out, err := gitRun(dir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return ""
+	}
+	var path string
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			path = strings.TrimPrefix(line, "worktree ")
+		case line == "branch refs/heads/"+branch:
+			return path
+		}
+	}
+	return ""
 }
 
 // DiffAgainst returns the full diff of dir's working tree (clean = HEAD)

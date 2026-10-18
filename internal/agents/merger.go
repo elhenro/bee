@@ -63,6 +63,13 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 	// fetch is best-effort: local-only repos have no origin.
 	_ = zzz.Fetch(repoRoot, "origin")
 
+	// a rebase the agent left half-done is its own work: hand it back as is
+	if rebasing(st.WorktreePath) {
+		setMerge(st.SessionID, bgreg.MergeStateConflict, "rebase left in progress")
+		_, res.Err = Resume(repoRoot, st, conflictFeedback(st, unmergedFiles(st.WorktreePath)), sw.Resumes())
+		res.Conflict = true
+		return res
+	}
 	if rebaseErr := zzz.Rebase(st.WorktreePath, MergeBase); rebaseErr != nil {
 		// git prints CONFLICT lines on stdout, which the error does not carry,
 		// so ask for the unmerged paths before the abort clears them.
@@ -225,6 +232,9 @@ func scan(ctx context.Context, repoRoot, only string, sw config.SwarmConfig) {
 	}
 	for _, s := range all {
 		if only != "" && s.SessionID != only {
+			continue
+		}
+		if s.WorktreePath == "" || !sameRepo(repoRoot, s.WorktreePath) {
 			continue
 		}
 		switch {

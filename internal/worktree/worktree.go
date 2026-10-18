@@ -30,6 +30,7 @@ type Worktree struct {
 	Path     string
 	repoRoot string
 	branch   string
+	base     string // HEAD sha the worktree was cut from
 }
 
 // Cleanup removes the worktree and its on-disk state. Best-effort: errors
@@ -54,7 +55,8 @@ func (w *Worktree) Cleanup() error {
 
 // MergeBack applies every change made inside the worktree onto the source
 // repo's working tree. It stages the worktree (so new/untracked files appear),
-// diffs against HEAD, and applies that patch in repoRoot with a 3-way merge.
+// diffs against the commit the worktree was cut from (so commits the worker
+// made count too), and applies that patch in repoRoot with a 3-way merge.
 // Returns nil when the worktree made no changes. A non-nil error means the
 // patch did not apply cleanly (conflicting edits in the source tree) — the
 // caller decides whether to drop the worker.
@@ -68,7 +70,7 @@ func (w *Worktree) MergeBack() error {
 	if out, err := exec.Command("git", "-C", w.Path, "add", "-A").CombinedOutput(); err != nil {
 		return fmt.Errorf("git add: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	patch, err := exec.Command("git", "-C", w.Path, "diff", "--cached", "--binary", "HEAD").Output()
+	patch, err := exec.Command("git", "-C", w.Path, "diff", "--cached", "--binary", w.base).Output()
 	if err != nil {
 		return fmt.Errorf("git diff: %w", err)
 	}
@@ -101,11 +103,26 @@ func Create(repoRoot, label string) (*Worktree, error) {
 	if err != nil {
 		return nil, err
 	}
-	parent := filepath.Join(abs, ".git", "bee-worktrees")
+	// repoRoot may be a subdir or a linked worktree: ask git for the real
+	// toplevel and common dir instead of assuming <repoRoot>/.git.
+	top, err := gitOut(abs, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, fmt.Errorf("worktree: %w", err)
+	}
+	base, err := gitOut(top, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("worktree: %w", err)
+	}
+	parent := filepath.Join(top, ".git", "bee-worktrees")
+	if common, cerr := gitOut(top, "rev-parse", "--git-common-dir"); cerr == nil {
+		if !filepath.IsAbs(common) {
+			common = filepath.Join(top, common)
+		}
+		parent = filepath.Join(common, "bee-worktrees")
+	}
 	if err := os.MkdirAll(parent, 0o755); err != nil {
-		// .git may be a file (submodule, secondary worktree). Fall back to
-		// a sibling temp dir so the call still works.
-		parent, err = os.MkdirTemp(filepath.Dir(abs), "bee-worktree-")
+		// fall back to a sibling temp dir so the call still works.
+		parent, err = os.MkdirTemp(filepath.Dir(top), "bee-worktree-")
 		if err != nil {
 			return nil, err
 		}
@@ -118,9 +135,14 @@ func Create(repoRoot, label string) (*Worktree, error) {
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, err
 	}
-	cmd := exec.Command("git", "-C", abs, "worktree", "add", "--detach", dir, "HEAD")
+	cmd := exec.Command("git", "-C", top, "worktree", "add", "--detach", dir, base)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("git worktree add: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	return &Worktree{Path: dir, repoRoot: abs, branch: label}, nil
+	return &Worktree{Path: dir, repoRoot: top, branch: label, base: base}, nil
+}
+
+func gitOut(dir string, args ...string) (string, error) {
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	return strings.TrimSpace(string(out)), err
 }
