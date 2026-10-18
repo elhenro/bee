@@ -140,11 +140,11 @@ var retryRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 var retryRandMu sync.Mutex
 
 // retryableStatus reports whether a server response code is worth retrying.
-// 408 request timeout, 429 too many requests, 5xx server errors. matches
+// 408 request timeout, 429 too many requests, 5xx server errors, 529 overloaded. matches
 // the set used by major chat-completions SDKs.
 func retryableStatus(code int) bool {
 	switch code {
-	case 408, 429, 500, 502, 503, 504:
+	case 408, 429, 500, 502, 503, 504, 529:
 		return true
 	}
 	return false
@@ -153,7 +153,7 @@ func retryableStatus(code int) bool {
 // rateLimitedStatus marks codes that warrant extra retries since the server
 // is asking us to slow down rather than reporting a hard failure.
 func rateLimitedStatus(code int) bool {
-	return code == 429 || code == 503
+	return code == 429 || code == 503 || code == 529
 }
 
 // retryBackoff computes the delay for the given attempt with ±25% jitter,
@@ -230,7 +230,7 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 	// while other retryable errors still bail at maxRetryAttempts.
 	for attempt := 0; attempt < maxRetryAttemptsRate; attempt++ {
 		// after the non-rate cap, only continue if the previous failure was a
-		// rate-limited status (429 or 503).
+		// rate-limited status (429, 503 or 529).
 		if attempt >= maxRetryAttempts && !lastWasRate {
 			break
 		}

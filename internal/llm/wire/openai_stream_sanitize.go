@@ -105,7 +105,10 @@ func stripMarkupAny(v any) any {
 //
 // Returns the repaired bytes and true on success; false when nothing
 // recognizable was found (caller should surface the original error).
-func repairToolArgs(raw []byte) ([]byte, bool) {
+//
+// closeOpen=false skips the unterminated case: a truncated stream must not have
+// its cut-off object closed into something that parses.
+func repairToolArgs(raw []byte, closeOpen bool) ([]byte, bool) {
 	// trim leading prose: keep from the first '{' or '['.
 	start := -1
 	for i, b := range raw {
@@ -162,6 +165,9 @@ func repairToolArgs(raw []byte) ([]byte, bool) {
 	if end > 0 {
 		// case 1: balanced object found; drop trailing junk.
 		return s[:end], true
+	}
+	if !closeOpen {
+		return nil, false
 	}
 	// case 2: unterminated. close it by appending missing braces/brackets.
 	// re-scan to count unmatched opens.

@@ -19,6 +19,9 @@ type GeminiPart struct {
 	InlineData       *GeminiInlineData       `json:"inline_data,omitempty"`
 	FunctionCall     *GeminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
+	// ThoughtSignature rides next to a functionCall so the model keeps its
+	// reasoning across the tool round-trip.
+	ThoughtSignature string `json:"thoughtSignature,omitempty"`
 }
 
 // GeminiInlineData carries a base64-encoded blob (image, audio, etc.).
@@ -75,4 +78,7 @@ type GeminiCandidate struct {
 type GeminiUsage struct {
 	PromptTokenCount     int `json:"promptTokenCount"`
 	CandidatesTokenCount int `json:"candidatesTokenCount"`
+	// ThoughtsTokenCount is billed as output but reported outside
+	// candidatesTokenCount.
+	ThoughtsTokenCount int `json:"thoughtsTokenCount"`
 }

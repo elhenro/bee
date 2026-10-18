@@ -12,9 +12,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/llm/wire"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 // GeminiConfig configures the native Gemini provider. BaseURL defaults to
@@ -62,22 +62,23 @@ func (p *GeminiProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/models/" + req.Model + ":streamGenerateContent?alt=sse"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	resp, err := postWithRetry(ctx, p.client, "gemini", func() (*http.Request, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Accept", "text/event-stream")
+		// key via header, never the URL query: a *url.Error from a transport failure
+		// embeds the full URL (Go redacts userinfo, not query params), which would
+		// leak the key into error output and transcripts.
+		if p.cfg.APIKey != "" {
+			httpReq.Header.Set("x-goog-api-key", p.cfg.APIKey)
+		}
+		return httpReq, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-	// key via header, never the URL query: a *url.Error from a transport failure
-	// embeds the full URL (Go redacts userinfo, not query params), which would
-	// leak the key into error output and transcripts.
-	if p.cfg.APIKey != "" {
-		httpReq.Header.Set("x-goog-api-key", p.cfg.APIKey)
-	}
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("post: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
@@ -102,7 +103,7 @@ func (p *GeminiProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 	defer cancelWatchdog()
 
 	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	sc.Buffer(make([]byte, 64*1024), sseMaxLine)
 
 	stopReason := ""
 	var usage *Usage
@@ -114,7 +115,7 @@ func (p *GeminiProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 			out <- Event{Type: EventError, Err: ctx.Err()}
 			return
 		case <-stalled:
-			out <- Event{Type: EventError, Err: fmt.Errorf("gemini stream stalled: no data for %s (try a different model)", streamStallTimeout)}
+			out <- Event{Type: EventError, Err: fmt.Errorf("gemini stream stalled: no data for %s (try a different model)", effectiveStallTimeout())}
 			return
 		default:
 		}
@@ -149,9 +150,10 @@ func (p *GeminiProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 				}
 				if part.FunctionCall != nil {
 					out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-						ID:    "call_" + uuid.NewString(),
-						Name:  part.FunctionCall.Name,
-						Input: part.FunctionCall.Args,
+						ID:        "call_" + uuid.NewString(),
+						Name:      part.FunctionCall.Name,
+						Input:     part.FunctionCall.Args,
+						Signature: part.ThoughtSignature,
 					}}
 				}
 			}
@@ -162,17 +164,25 @@ func (p *GeminiProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 		if chunk.UsageMetadata != nil {
 			usage = &Usage{
 				InputTokens:  chunk.UsageMetadata.PromptTokenCount,
-				OutputTokens: chunk.UsageMetadata.CandidatesTokenCount,
+				OutputTokens: chunk.UsageMetadata.CandidatesTokenCount + chunk.UsageMetadata.ThoughtsTokenCount,
 			}
 		}
 	}
 
 	if err := sc.Err(); err != nil {
+		// the watchdog closes the body, which surfaces here as a read error;
+		// report the stall instead of the cryptic close
+		select {
+		case <-stalled:
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("gemini stream stalled: no data for %s (try a different model)", effectiveStallTimeout())})
+			return
+		default:
+		}
 		if ctx.Err() != nil {
 			out <- Event{Type: EventError, Err: ctx.Err()}
 			return
 		}
-		out <- Event{Type: EventError, Err: fmt.Errorf("sse scan: %w", err)}
+		out <- Event{Type: EventError, Err: sseScanError(err)}
 		return
 	}
 
@@ -192,6 +202,17 @@ func buildGeminiRequest(req Request) wire.GeminiRequest {
 	if req.System != "" {
 		out.SystemInstruction = &wire.GeminiContent{
 			Parts: []wire.GeminiPart{{Text: req.System}},
+		}
+	}
+
+	// functionResponse.name must match the function name, but a result only
+	// carries the call id
+	names := map[string]string{}
+	for _, m := range req.Messages {
+		for _, c := range m.Content {
+			if c.Type == types.BlockToolUse && c.Use != nil {
+				names[c.Use.ID] = c.Use.Name
+			}
 		}
 	}
 
@@ -223,17 +244,19 @@ func buildGeminiRequest(req Request) wire.GeminiRequest {
 						Name: c.Use.Name,
 						Args: c.Use.Input,
 					},
+					ThoughtSignature: c.Use.Signature,
 				})
 			case types.BlockToolResult:
 				if c.Result == nil {
 					continue
 				}
-				// gemini needs the tool name, not the call id. ToolResult only
-				// has the use-id, so we pass it through — caller upstream can
-				// preserve name->id mapping if strict matching is required.
+				name := names[c.Result.UseID]
+				if name == "" {
+					name = c.Result.UseID // call not in history (compacted away)
+				}
 				gc.Parts = append(gc.Parts, wire.GeminiPart{
 					FunctionResponse: &wire.GeminiFunctionResponse{
-						Name:     c.Result.UseID,
+						Name:     name,
 						Response: map[string]any{"content": c.Result.Content},
 					},
 				})
@@ -257,7 +280,7 @@ func buildGeminiRequest(req Request) wire.GeminiRequest {
 	}
 
 	// gemini 2.5 family supports thinkingConfig.thinkingBudget. omit when off.
-	if b := ThinkingBudget(req.Thinking); b > 0 {
+	if b := geminiThinkingBudget(req.Model, ThinkingBudget(req.Thinking)); b > 0 {
 		if out.GenerationConfig == nil {
 			out.GenerationConfig = map[string]any{}
 		}
@@ -278,6 +301,19 @@ func buildGeminiRequest(req Request) wire.GeminiRequest {
 	}
 
 	return out
+}
+
+// geminiThinkingBudget clamps the budget to the model's ceiling; an
+// over-cap value is a 400.
+func geminiThinkingBudget(model string, b int) int {
+	m := strings.ToLower(model)
+	switch {
+	case strings.Contains(m, "flash"):
+		return min(b, 24576)
+	case strings.Contains(m, "pro"):
+		return min(b, 32768)
+	}
+	return b
 }
 
 // geminiRole collapses bee's four roles into Gemini's two ("user"/"model").

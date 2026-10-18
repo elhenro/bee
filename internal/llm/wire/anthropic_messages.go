@@ -60,7 +60,7 @@ type AnthropicMessage struct {
 }
 
 // AnthropicContentPart is one block inside a message: text | image |
-// tool_use | tool_result.
+// tool_use | tool_result | thinking.
 type AnthropicContentPart struct {
 	Type string `json:"type"`
 	// text
@@ -68,9 +68,13 @@ type AnthropicContentPart struct {
 	// image
 	Source *AnthropicImageSource `json:"source,omitempty"`
 	// tool_use
-	ID    string         `json:"id,omitempty"`
-	Name  string         `json:"name,omitempty"`
-	Input map[string]any `json:"input,omitempty"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	// any, not a map: omitempty drops an empty map, and tool_use requires input
+	Input any `json:"input,omitempty"`
+	// thinking
+	Thinking  *string `json:"thinking,omitempty"`
+	Signature string  `json:"signature,omitempty"`
 	// tool_result
 	ToolUseID string                 `json:"tool_use_id,omitempty"`
 	IsError   bool                   `json:"is_error,omitempty"`
@@ -129,10 +133,11 @@ func BuildAnthropicMessagesRequest(model, system, systemDynamic string, messages
 	if thinkingBudget > 0 {
 		if isAdaptiveThinkingModel(model) {
 			req.Thinking = &AnthropicThinking{Type: "adaptive"}
-		} else {
-			req.Thinking = &AnthropicThinking{Type: "enabled", BudgetTokens: thinkingBudget}
+			thinkingActive = true
+		} else if b := clampThinkingBudget(thinkingBudget, req.MaxTokens); b > 0 {
+			req.Thinking = &AnthropicThinking{Type: "enabled", BudgetTokens: b}
+			thinkingActive = true
 		}
-		thinkingActive = true
 	}
 	// Anthropic rejects requests that set both temperature and thinking.
 	if temperature != 0 && !thinkingActive {
@@ -210,6 +215,22 @@ func normalizeInputSchema(s map[string]any) map[string]any {
 	return out
 }
 
+// minThinkingBudget is the smallest budget_tokens the API accepts.
+const minThinkingBudget = 1024
+
+// clampThinkingBudget keeps budget_tokens strictly below max_tokens with room
+// left for the visible answer (the API 400s otherwise). Returns 0 when max
+// leaves less than the minimum budget, which means thinking stays off.
+func clampThinkingBudget(budget, maxTokens int) int {
+	if limit := maxTokens * 3 / 4; budget > limit {
+		budget = limit
+	}
+	if budget < minThinkingBudget {
+		return 0
+	}
+	return budget
+}
+
 // anthropicMaxTokens picks a default when caller didn't pin one. Anthropic
 // requires the field. Picks model-aware ceilings so Sonnet/Opus aren't
 // truncated at 4k while running tool loops.
@@ -276,7 +297,7 @@ func translateAnthropicUserBlocks(blocks []types.ContentBlock) []AnthropicConten
 	for _, b := range blocks {
 		switch b.Type {
 		case types.BlockText:
-			if b.Text == "" {
+			if strings.TrimSpace(b.Text) == "" {
 				continue
 			}
 			out = append(out, AnthropicContentPart{Type: "text", Text: b.Text})
@@ -296,12 +317,18 @@ func translateAnthropicUserBlocks(blocks []types.ContentBlock) []AnthropicConten
 			if b.Result == nil {
 				continue
 			}
+			// empty text blocks are rejected, and omitempty would drop the text
+			// field entirely; same placeholder the responses wire uses
+			text := b.Result.Content
+			if strings.TrimSpace(text) == "" {
+				text = "(no output)"
+			}
 			out = append(out, AnthropicContentPart{
 				Type:      "tool_result",
 				ToolUseID: b.Result.UseID,
 				IsError:   b.Result.IsError,
 				Content: []AnthropicContentPart{
-					{Type: "text", Text: b.Result.Content},
+					{Type: "text", Text: text},
 				},
 			})
 		}
@@ -311,10 +338,19 @@ func translateAnthropicUserBlocks(blocks []types.ContentBlock) []AnthropicConten
 
 func translateAnthropicAssistantBlocks(blocks []types.ContentBlock) []AnthropicContentPart {
 	out := make([]AnthropicContentPart, 0, len(blocks))
+	var thinking []AnthropicContentPart
 	for _, b := range blocks {
 		switch b.Type {
+		case types.BlockThinking:
+			// the API rejects thinking blocks without their signature, so
+			// unsigned ones (other providers, old sessions) are left out
+			if b.Signature == "" {
+				continue
+			}
+			text := b.Text
+			thinking = append(thinking, AnthropicContentPart{Type: "thinking", Thinking: &text, Signature: b.Signature})
 		case types.BlockText:
-			if b.Text == "" {
+			if strings.TrimSpace(b.Text) == "" {
 				continue
 			}
 			out = append(out, AnthropicContentPart{Type: "text", Text: b.Text})
@@ -334,6 +370,6 @@ func translateAnthropicAssistantBlocks(blocks []types.ContentBlock) []AnthropicC
 			})
 		}
 	}
-	return out
+	// thinking must lead the turn
+	return append(thinking, out...)
 }
-

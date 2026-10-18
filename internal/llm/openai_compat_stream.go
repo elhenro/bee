@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/llm/wire"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 // nonStreamLoop drains a single JSON body and emits the equivalent events.
@@ -21,8 +21,8 @@ func (p *OpenAICompatProvider) nonStreamLoop(resp *http.Response, out chan<- Eve
 	var body struct {
 		Choices []struct {
 			Message struct {
-				Content   string             `json:"content"`
-				ToolCalls []wire.ToolCall    `json:"tool_calls"`
+				Content   string          `json:"content"`
+				ToolCalls []wire.ToolCall `json:"tool_calls"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -82,6 +82,7 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 
 	acc := wire.NewToolCallAccumulator()
 	stopReason := ""
+	sawDone := false
 	var usage *wire.StreamUsage
 
 	// inactivity watchdog: cancels the request when no SSE line arrives for
@@ -89,13 +90,13 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 	// indefinitely on a live-but-quiet connection while the TUI loader spins.
 	stallWindow := p.cfg.StallTimeout
 	if stallWindow == 0 {
-		stallWindow = streamStallTimeout
+		stallWindow = effectiveStallTimeout()
 	}
 	bumpActivity, stalled, cancelWatchdog := streamWatchdogWith(ctx, resp.Body, stallWindow)
 	defer cancelWatchdog()
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), sseMaxLine)
 
 	for scanner.Scan() {
 		// any received line is liveness — including ': keepalive' comments and
@@ -105,10 +106,10 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 
 		select {
 		case <-ctx.Done():
-			out <- Event{Type: EventError, Err: ctx.Err()}
+			emit(ctx, out, Event{Type: EventError, Err: ctx.Err()})
 			return
 		case <-stalled:
-			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s sse stalled: no data for %s (try a different model)", p.cfg.Name, stallWindow)}
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s sse stalled: no data for %s (try a different model)", p.cfg.Name, stallWindow)})
 			return
 		default:
 		}
@@ -124,10 +125,11 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 
 		chunk, done, err := wire.ParseChunk(payload)
 		if err != nil {
-			out <- Event{Type: EventError, Err: err}
+			emit(ctx, out, Event{Type: EventError, Err: err})
 			return
 		}
 		if done {
+			sawDone = true
 			break
 		}
 		if chunk == nil {
@@ -136,7 +138,7 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 		// in-band error after a 200 OK (context overflow / backend failure). turn
 		// the silent empty completion into a real diagnostic the model can see.
 		if chunk.Error != nil && chunk.Error.Message != "" {
-			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s stream error: %s", p.cfg.Name, chunk.Error.Message)}
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream error: %s", p.cfg.Name, chunk.Error.Message)})
 			return
 		}
 
@@ -155,15 +157,21 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 			// without mixing them into assistant content.
 			if ch.Delta.ReasoningContent != "" {
 				bumpActivity() // reasoning is liveness — keep the socket alive
-				out <- Event{Type: EventThinkingDelta, Delta: ch.Delta.ReasoningContent}
+				if !emit(ctx, out, Event{Type: EventThinkingDelta, Delta: ch.Delta.ReasoningContent}) {
+					return
+				}
 			}
 			if ch.Delta.Reasoning != "" {
 				bumpActivity()
-				out <- Event{Type: EventThinkingDelta, Delta: ch.Delta.Reasoning}
+				if !emit(ctx, out, Event{Type: EventThinkingDelta, Delta: ch.Delta.Reasoning}) {
+					return
+				}
 			}
 			if ch.Delta.Content != "" {
 				hasRealOutput = true
-				out <- Event{Type: EventTextDelta, Delta: ch.Delta.Content}
+				if !emit(ctx, out, Event{Type: EventTextDelta, Delta: ch.Delta.Content}) {
+					return
+				}
 			}
 			if len(ch.Delta.ToolCalls) > 0 {
 				hasRealOutput = true
@@ -180,18 +188,29 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 	}
 
 	if err := scanner.Err(); err != nil {
+		// the watchdog closes the body, which surfaces here as a read error;
+		// report the stall instead of the cryptic close
+		select {
+		case <-stalled:
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s sse stalled: no data for %s (try a different model)", p.cfg.Name, stallWindow)})
+			return
+		default:
+		}
 		// surface ctx cancellation cleanly
 		if ctx.Err() != nil {
-			out <- Event{Type: EventError, Err: ctx.Err()}
+			emit(ctx, out, Event{Type: EventError, Err: ctx.Err()})
 			return
 		}
-		out <- Event{Type: EventError, Err: fmt.Errorf("sse scan: %w", err)}
+		emit(ctx, out, Event{Type: EventError, Err: sseScanError(err)})
 		return
 	}
 
+	if stopReason == "length" || (stopReason == "" && !sawDone) {
+		acc.MarkTruncated()
+	}
 	calls, err := acc.Finalize()
 	if err != nil {
-		out <- Event{Type: EventError, Err: err}
+		emit(ctx, out, Event{Type: EventError, Err: err})
 		return
 	}
 	for _, c := range calls {
@@ -206,15 +225,17 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 		if c.ParseError != "" && len(input) == 0 {
 			input = map[string]any{"_parse_error": c.ParseError, "_raw_args": c.RawArgs}
 		}
-		out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+		if !emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
 			ID: id, Name: c.Name, Input: input,
-		}}
+		}}) {
+			return
+		}
 	}
 	final := Event{Type: EventDone, StopReason: stopReason}
 	if usage != nil {
 		final.Usage = usageFromWire(usage)
 	}
-	out <- final
+	emit(ctx, out, final)
 }
 
 // usageFromWire maps the wire usage block to the internal Usage, carrying the

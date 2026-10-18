@@ -4,14 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/llm/wire"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 // streamLoop parses the Messages SSE stream. Tool-call inputs arrive as
@@ -31,6 +30,11 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 	// within a single message_stop.
 	calls := map[int]*pending{}
 	var order []int
+	// thinking blocks seen this message and their signatures by block index.
+	// Only a lone signed block round-trips: the loop folds all reasoning into
+	// one block, which several signatures cannot authenticate.
+	thinkBlocks := 0
+	thinkSigs := map[int]string{}
 	var usage *wire.AnthropicUsage
 	stopReason := ""
 
@@ -38,16 +42,16 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 	defer cancelWatchdog()
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), sseMaxLine)
 
 	for scanner.Scan() {
 		bumpActivity()
 		select {
 		case <-ctx.Done():
-			out <- Event{Type: EventError, Err: ctx.Err()}
+			emit(ctx, out, Event{Type: EventError, Err: ctx.Err()})
 			return
 		case <-stalled:
-			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, streamStallTimeout)}
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, effectiveStallTimeout())})
 			return
 		default:
 		}
@@ -62,7 +66,7 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 		ev, err := wire.ParseAnthropicEvent(payload)
 		if err != nil {
-			out <- Event{Type: EventError, Err: err}
+			emit(ctx, out, Event{Type: EventError, Err: err})
 			return
 		}
 		if ev == nil {
@@ -78,6 +82,9 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 			if ev.ContentBlock == nil {
 				continue
 			}
+			if t := ev.ContentBlock.Type; t == "thinking" || t == "redacted_thinking" {
+				thinkBlocks++
+			}
 			if ev.ContentBlock.Type == "tool_use" {
 				calls[ev.Index] = &pending{
 					id:   ev.ContentBlock.ID,
@@ -91,23 +98,20 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 			}
 			switch ev.Delta.Type {
 			case "text_delta":
-				if ev.Delta.Text != "" {
-					out <- Event{Type: EventTextDelta, Delta: ev.Delta.Text}
+				if ev.Delta.Text != "" && !emit(ctx, out, Event{Type: EventTextDelta, Delta: ev.Delta.Text}) {
+					return
 				}
 			case "input_json_delta":
 				if c, ok := calls[ev.Index]; ok {
 					c.args.WriteString(ev.Delta.PartialJSON)
 				}
 			case "thinking_delta":
-				if ev.Delta.Thinking != "" {
-					out <- Event{Type: EventThinkingDelta, Delta: ev.Delta.Thinking}
+				if ev.Delta.Thinking != "" && !emit(ctx, out, Event{Type: EventThinkingDelta, Delta: ev.Delta.Thinking}) {
+					return
 				}
 			case "signature_delta":
-				// Anthropic signs thinking blocks so they can round-trip
-				// back to the model next turn. bee currently drops thinking
-				// blocks on the wire (types.BlockThinking is display-only),
-				// so the signature is parsed and discarded. Kept here so
-				// future thinking-roundtrip work has a hook point.
+				// thinking blocks are signed so they can round-trip next turn
+				thinkSigs[ev.Index] += ev.Delta.Signature
 			}
 		case "message_delta":
 			if ev.Delta != nil && ev.Delta.StopReason != "" {
@@ -126,33 +130,48 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 				}
 			}
 		case "error":
-			out <- Event{Type: EventError, Err: fmt.Errorf("anthropic stream error: %s", string(payload))}
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("anthropic stream error: %s", string(payload))})
 			return
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
+		// the watchdog closes the body, which surfaces here as a read error;
+		// report the stall instead of the cryptic close
+		select {
+		case <-stalled:
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, effectiveStallTimeout())})
+			return
+		default:
+		}
 		if ctx.Err() != nil {
-			out <- Event{Type: EventError, Err: ctx.Err()}
+			emit(ctx, out, Event{Type: EventError, Err: ctx.Err()})
 			return
 		}
-		out <- Event{Type: EventError, Err: fmt.Errorf("sse scan: %w", err)}
+		emit(ctx, out, Event{Type: EventError, Err: sseScanError(err)})
 		return
+	}
+
+	if thinkBlocks == 1 && len(thinkSigs) == 1 {
+		for _, sig := range thinkSigs {
+			if !emit(ctx, out, Event{Type: EventThinkingDelta, Signature: sig}) {
+				return
+			}
+		}
 	}
 
 	for _, idx := range order {
 		c := calls[idx]
-		input := map[string]any{}
-		if c.args.Len() > 0 {
-			_ = json.Unmarshal([]byte(c.args.String()), &input)
-		}
+		input := decodeToolArgs(c.args.String())
 		id := c.id
 		if id == "" {
 			id = "call_" + uuid.NewString()
 		}
-		out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
+		if !emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
 			ID: id, Name: c.name, Input: input,
-		}}
+		}}) {
+			return
+		}
 	}
 
 	final := Event{Type: EventDone, StopReason: stopReason}
@@ -171,5 +190,5 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 			CachedTokens: usage.CacheReadInputTokens,
 		}
 	}
-	out <- final
+	emit(ctx, out, final)
 }

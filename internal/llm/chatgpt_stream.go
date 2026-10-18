@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/llm/wire"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 // nonStreamLoop reads a single JSON body and emits the equivalent events.
@@ -33,10 +33,7 @@ func (p *ChatGPTProvider) nonStreamLoop(resp *http.Response, out chan<- Event) {
 				}
 			}
 		case "function_call":
-			input := map[string]any{}
-			if item.Arguments != "" {
-				_ = json.Unmarshal([]byte(item.Arguments), &input)
-			}
+			input := decodeToolArgs(item.Arguments)
 			id := item.CallID
 			if id == "" {
 				id = "call_" + uuid.NewString()
@@ -74,7 +71,7 @@ func (p *ChatGPTProvider) streamLoop(ctx context.Context, resp *http.Response, o
 	defer cancelWatchdog()
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), sseMaxLine)
 
 	for scanner.Scan() {
 		bumpActivity()
@@ -83,7 +80,7 @@ func (p *ChatGPTProvider) streamLoop(ctx context.Context, resp *http.Response, o
 			out <- Event{Type: EventError, Err: ctx.Err()}
 			return
 		case <-stalled:
-			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, streamStallTimeout)}
+			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, effectiveStallTimeout())}
 			return
 		default:
 		}
@@ -174,7 +171,7 @@ func (p *ChatGPTProvider) streamLoop(ctx context.Context, resp *http.Response, o
 					}
 				}
 			}
-		case "response.completed":
+		case "response.completed", "response.incomplete":
 			if ev.Response != nil {
 				if ev.Response.Usage != nil {
 					usage = ev.Response.Usage
@@ -182,7 +179,24 @@ func (p *ChatGPTProvider) streamLoop(ctx context.Context, resp *http.Response, o
 				if ev.Response.Status != "" {
 					stopReason = ev.Response.Status
 				}
+				if ev.Type == "response.incomplete" {
+					stopReason = "incomplete"
+					if d := ev.Response.IncompleteDetails; d != nil && d.Reason == "max_output_tokens" {
+						stopReason = "length"
+					}
+				}
 			}
+		case "error":
+			// top-level error event: code/message sit on the event itself
+			msg := ev.Message
+			if msg == "" {
+				msg = ev.Code
+			}
+			if msg == "" {
+				msg = "responses stream error"
+			}
+			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s: %s", p.cfg.Name, msg)}
+			return
 		case "response.failed", "response.error":
 			msg := "responses stream failed"
 			if ev.Response != nil && ev.Response.Error != nil {
@@ -197,20 +211,25 @@ func (p *ChatGPTProvider) streamLoop(ctx context.Context, resp *http.Response, o
 	}
 
 	if err := scanner.Err(); err != nil {
+		// the watchdog closes the body, which surfaces here as a read error;
+		// report the stall instead of the cryptic close
+		select {
+		case <-stalled:
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, effectiveStallTimeout())})
+			return
+		default:
+		}
 		if ctx.Err() != nil {
 			out <- Event{Type: EventError, Err: ctx.Err()}
 			return
 		}
-		out <- Event{Type: EventError, Err: fmt.Errorf("sse scan: %w", err)}
+		out <- Event{Type: EventError, Err: sseScanError(err)}
 		return
 	}
 
 	for _, id := range order {
 		c := calls[id]
-		input := map[string]any{}
-		if c.args.Len() > 0 {
-			_ = json.Unmarshal([]byte(c.args.String()), &input)
-		}
+		input := decodeToolArgs(c.args.String())
 		callID := c.callID
 		if callID == "" {
 			callID = "call_" + uuid.NewString()

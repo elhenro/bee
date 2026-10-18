@@ -27,6 +27,9 @@ type ContentBlock struct {
 	Result    *ToolResult `json:"tool_result,omitempty"`
 	MediaType string      `json:"media_type,omitempty"` // for BlockImage e.g. "image/png"
 	Data      []byte      `json:"data,omitempty"`       // raw bytes (provider adapters base64-encode)
+	// Signature authenticates a BlockThinking so a provider that requires
+	// reasoning to round-trip next to tool calls can accept it back.
+	Signature string `json:"signature,omitempty"`
 }
 
 type BlockType string
@@ -37,8 +40,8 @@ const (
 	BlockToolResult BlockType = "tool_result"
 	BlockImage      BlockType = "image"
 	// BlockThinking carries provider-emitted chain-of-thought / reasoning
-	// summaries. Stored locally for display but NEVER sent back to providers
-	// (wire adapters drop unknown block types via their case-based switches).
+	// summaries. Stored locally for display. Only blocks carrying a Signature
+	// are sent back, and only by wires that need it; the rest drop the type.
 	BlockThinking BlockType = "thinking"
 )
 
@@ -47,6 +50,9 @@ type ToolUse struct {
 	ID    string         `json:"id"`
 	Name  string         `json:"name"`
 	Input map[string]any `json:"input"`
+	// Signature is an opaque provider token that must ride back on the call
+	// next turn (reasoning continuity). Empty for providers without one.
+	Signature string `json:"signature,omitempty"`
 }
 
 // ToolResult is the agent's response carrying the tool's output.

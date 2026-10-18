@@ -179,7 +179,7 @@ func TestBuildAnthropicMessages_ToolNamesPassThrough(t *testing.T) {
 }
 
 func TestBuildAnthropicMessages_ThinkingBudget(t *testing.T) {
-	req := BuildAnthropicMessagesRequest("m", "", "", nil, nil, 0, 0, false, 4096)
+	req := BuildAnthropicMessagesRequest("m", "", "", nil, nil, 16384, 0, false, 4096)
 	if req.Thinking == nil || req.Thinking.BudgetTokens != 4096 {
 		t.Fatalf("thinking budget not set: %+v", req.Thinking)
 	}

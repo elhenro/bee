@@ -14,9 +14,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/elhenro/bee/internal/llm/wire"
 	"github.com/elhenro/bee/internal/types"
+	"github.com/google/uuid"
 )
 
 // claudeAPIVersion is the required `anthropic-version` header value.
@@ -105,15 +105,16 @@ func (p *ClaudeProvider) do(ctx context.Context, req Request) (*http.Response, e
 	}
 
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/messages"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	resp, err := postWithRetry(ctx, p.client, p.cfg.Name, func() (*http.Request, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		p.applyHeaders(httpReq, req.Stream)
+		return httpReq, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	p.applyHeaders(httpReq, req.Stream)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("post: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
@@ -156,8 +157,8 @@ func (p *ClaudeProvider) nonStreamLoop(resp *http.Response, out chan<- Event, to
 			Name  string         `json:"name,omitempty"`
 			Input map[string]any `json:"input,omitempty"`
 		} `json:"content"`
-		StopReason string                `json:"stop_reason"`
-		Usage      *wire.AnthropicUsage  `json:"usage,omitempty"`
+		StopReason string               `json:"stop_reason"`
+		Usage      *wire.AnthropicUsage `json:"usage,omitempty"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		out <- Event{Type: EventError, Err: fmt.Errorf("decode non-stream body: %w", err)}
@@ -195,4 +196,3 @@ func (p *ClaudeProvider) nonStreamLoop(resp *http.Response, out chan<- Event, to
 	}
 	out <- done
 }
-

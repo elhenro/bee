@@ -33,15 +33,16 @@ func (p *ChatGPTProvider) do(ctx context.Context, req Request, isRetry bool) (*h
 	}
 
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/responses"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	resp, err := postWithRetry(ctx, p.client, p.cfg.Name, func() (*http.Request, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		p.applyHeaders(httpReq, req.Stream)
+		return httpReq, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	p.applyHeaders(httpReq, req.Stream)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("post: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode == 401 && !isRetry && p.cfg.TokenEndpoint != "" {
 		resp.Body.Close()

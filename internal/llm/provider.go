@@ -41,8 +41,8 @@ type Request struct {
 	// Stop is the optional list of stop sequences. textmode wraps tool calls
 	// in `<bash>{…}</bash>`-style envelopes; passing the closing tag halts
 	// decode immediately after one tool call, saving 50–300 tokens per turn.
-	Stop []string
-	Stream      bool
+	Stop   []string
+	Stream bool
 	// Thinking selects the extended-reasoning budget for providers that
 	// support it. Off means omit the field entirely.
 	Thinking Thinking
@@ -143,13 +143,14 @@ type ToolSpec struct {
 
 // Event is a streamed token, tool call, or terminal signal from a provider.
 type Event struct {
-	Type     EventType
-	Delta    string         // for EventTextDelta
-	N        int            // for EventProgress: chars generated but withheld
-	ToolUse  *types.ToolUse // for EventToolUse
-	StopReason string       // for EventDone
-	Err      error          // for EventError
-	Usage    *Usage         // optional, on EventDone
+	Type       EventType
+	Delta      string         // for EventTextDelta
+	Signature  string         // for EventThinkingDelta: signature of the thinking block
+	N          int            // for EventProgress: chars generated but withheld
+	ToolUse    *types.ToolUse // for EventToolUse
+	StopReason string         // for EventDone
+	Err        error          // for EventError
+	Usage      *Usage         // optional, on EventDone
 }
 
 type EventType string

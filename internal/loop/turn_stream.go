@@ -29,6 +29,7 @@ func (e *Engine) streamOnce(ctx context.Context, req llm.Request) (types.Message
 	var (
 		textBuf  strings.Builder
 		thinkBuf strings.Builder
+		thinkSig string
 		content  []types.ContentBlock
 		toolUses []types.ToolUse
 	)
@@ -40,11 +41,12 @@ func (e *Engine) streamOnce(ctx context.Context, req llm.Request) (types.Message
 			case <-time.After(preContentRetryDelay):
 			}
 		}
-		msg, finalText, uses, gotContent, retry, err := e.streamAttempt(ctx, req, &textBuf, &thinkBuf, &content, &toolUses)
+		msg, finalText, uses, gotContent, retry, err := e.streamAttempt(ctx, req, &textBuf, &thinkBuf, &thinkSig, &content, &toolUses)
 		if retry && !gotContent && attempt < maxPreContentRetries {
 			e.warnf("stream hiccup (%v) — retrying %d/%d", err, attempt+1, maxPreContentRetries)
 			textBuf.Reset()
 			thinkBuf.Reset()
+			thinkSig = ""
 			content = content[:0]
 			toolUses = toolUses[:0]
 			continue
@@ -82,6 +84,7 @@ func (e *Engine) streamAttempt(
 	ctx context.Context,
 	req llm.Request,
 	textBuf, thinkBuf *strings.Builder,
+	thinkSig *string,
 	content *[]types.ContentBlock,
 	toolUses *[]types.ToolUse,
 ) (types.Message, string, []types.ToolUse, bool, bool, error) {
@@ -114,6 +117,9 @@ events:
 		}
 		switch ev.Type {
 		case llm.EventThinkingDelta:
+			if ev.Signature != "" {
+				*thinkSig = ev.Signature
+			}
 			thinkBuf.WriteString(ev.Delta)
 			gotContent = true
 			sinceScan += len(ev.Delta)
@@ -273,6 +279,9 @@ events:
 		} else if loopTrimThink >= 0 {
 			thinkStr = trimLoopedTailAt(thinkStr, loopTrimThink)
 		}
+		if loopPeriodThink > 0 || loopTrimThink >= 0 {
+			*thinkSig = "" // edited text no longer matches its signature
+		}
 		if loopPeriodText > 0 {
 			textStr = trimLoopedTail(textStr, loopPeriodText)
 		} else if loopTrimText >= 0 {
@@ -284,8 +293,8 @@ events:
 		e.run.lastTurnTruncated = true
 	}
 	// thinking block first so the rendered transcript reads in causal order
-	if thinkStr != "" {
-		*content = append(*content, types.ContentBlock{Type: types.BlockThinking, Text: thinkStr})
+	if thinkStr != "" || *thinkSig != "" {
+		*content = append(*content, types.ContentBlock{Type: types.BlockThinking, Text: thinkStr, Signature: *thinkSig})
 	}
 	if textStr != "" {
 		*content = append(*content, types.ContentBlock{Type: types.BlockText, Text: textStr})

@@ -28,9 +28,9 @@ type StreamError struct {
 // StreamChoice is one alternative completion within a chunk. OpenAI commonly
 // streams a single choice.
 type StreamChoice struct {
-	Index        int          `json:"index"`
-	Delta        StreamDelta  `json:"delta"`
-	FinishReason *string      `json:"finish_reason"`
+	Index        int         `json:"index"`
+	Delta        StreamDelta `json:"delta"`
+	FinishReason *string     `json:"finish_reason"`
 }
 
 // StreamDelta carries the incremental fields for this chunk.
@@ -111,8 +111,12 @@ func trimSpace(b []byte) []byte {
 // streamed tool call has a stable Index; ID/Name arrive first, Arguments
 // accumulate as a JSON string fragment.
 type ToolCallAccumulator struct {
-	slots map[int]*partialCall
-	order []int
+	slots map[int]*partialCall // current slot per stream index
+	order []*partialCall
+	// truncated marks a stream cut short (length stop, or ended without a
+	// finish signal). Finalize then refuses to close open JSON: a half-written
+	// argument object would run as if complete.
+	truncated bool
 }
 
 type partialCall struct {
@@ -126,14 +130,18 @@ func NewToolCallAccumulator() *ToolCallAccumulator {
 	return &ToolCallAccumulator{slots: map[int]*partialCall{}}
 }
 
+// MarkTruncated tells Finalize the stream did not end cleanly.
+func (a *ToolCallAccumulator) MarkTruncated() { a.truncated = true }
+
 // Apply merges a chunk's tool-call deltas into the accumulator.
 func (a *ToolCallAccumulator) Apply(deltas []StreamToolCall) {
 	for _, d := range deltas {
 		slot, ok := a.slots[d.Index]
-		if !ok {
+		// servers that reuse one index for parallel calls differ by id
+		if !ok || (d.ID != "" && slot.ID != "" && d.ID != slot.ID) {
 			slot = &partialCall{}
 			a.slots[d.Index] = slot
-			a.order = append(a.order, d.Index)
+			a.order = append(a.order, slot)
 		}
 		if d.ID != "" {
 			slot.ID = d.ID
@@ -168,15 +176,14 @@ type FinalizedCall struct {
 // executing.
 func (a *ToolCallAccumulator) Finalize() ([]FinalizedCall, error) {
 	out := make([]FinalizedCall, 0, len(a.order))
-	for _, idx := range a.order {
-		p := a.slots[idx]
+	for _, p := range a.order {
 		name := SanitizeToolName(p.Name)
 		rawBytes := StripMarkupBytes(p.Args)
 		args := map[string]any{}
 		var rawArgs, parseErr string
 		if len(rawBytes) > 0 {
 			if err := json.Unmarshal(rawBytes, &args); err != nil {
-				repaired, ok := repairToolArgs(rawBytes)
+				repaired, ok := repairToolArgs(rawBytes, !a.truncated)
 				if !ok {
 					rawArgs = string(p.Args)
 					parseErr = fmt.Sprintf("decode tool args for %s: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
@@ -207,4 +214,3 @@ func (a *ToolCallAccumulator) Finalize() ([]FinalizedCall, error) {
 	}
 	return out, nil
 }
-
