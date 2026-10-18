@@ -168,6 +168,7 @@ func writeSpill(spillDir, toolName, body string) string {
 		fmt.Fprintf(os.Stderr, "bee: spill mkdir %s failed: %v\n", spillDir, err)
 		return ""
 	}
+	gcSpill(spillDir)
 	ts := time.Now().UTC().Format("20060102T150405")
 	short := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
 	name := fmt.Sprintf("%s-%s-%s.txt", ts, safeToolName(toolName), short)

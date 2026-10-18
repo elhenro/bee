@@ -52,6 +52,8 @@ type repeatTracker struct {
 	familyKey    string
 	familyStreak int
 	familyActive bool
+	// failure fingerprint → times a test run returned it. see test_fail_loop.go.
+	testFails map[string]int
 }
 
 func newRepeatTracker() *repeatTracker {

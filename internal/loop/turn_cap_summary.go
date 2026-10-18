@@ -13,6 +13,11 @@ import (
 // ceiling can't hang the exit.
 const capSummaryTimeout = 30 * time.Second
 
+// capSummaryMaxTokens keeps the close-out short. the flattened tool-less
+// request cannot reuse the prompt cache, so every output token here is the
+// only cheap part of an otherwise full-price call.
+const capSummaryMaxTokens = 400
+
 // finalSummaryOnCap runs one tool-less turn when the loop hits MaxIterations so
 // the user gets a concise close-out (what changed, what works, what's left)
 // instead of an abrupt error. Best-effort: any failure leaves res untouched and
@@ -30,7 +35,7 @@ func (e *Engine) finalSummaryOnCap(ctx context.Context, res *RunResult, sys, sys
 		ParentID: lastID(res.Messages),
 		Role:     types.RoleUser,
 		Content: []types.ContentBlock{{Type: types.BlockText, Text: "[iter cap reached] You've hit the iteration limit, so no more tools will run. " +
-			"Stop calling tools. Give a short final summary: what you changed, what is verified working, and what is still left to do."}},
+			"Stop calling tools. Give a final summary in under 120 words: what you changed, what is verified working, and what is still left to do."}},
 		Time: time.Now().UTC(),
 	}
 
@@ -51,6 +56,7 @@ func (e *Engine) finalSummaryOnCap(ctx context.Context, res *RunResult, sys, sys
 		Messages:      flattenToolBlocks(wire),
 		Stream:        true,
 		Temperature:   0,
+		MaxTokens:     capSummaryMaxTokens,
 	}
 	msg, text, _, err := e.streamOnce(ctx, req)
 	if err != nil || strings.TrimSpace(text) == "" {

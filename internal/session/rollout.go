@@ -47,13 +47,15 @@ func Open(id string) (*Rollout, error) {
 	if id == "" {
 		return nil, errors.New("session: empty id")
 	}
-	if _, err := ensureDir(); err != nil {
+	dir, err := ensureDir()
+	if err != nil {
 		return nil, err
 	}
 	p, err := Path(id)
 	if err != nil {
 		return nil, err
 	}
+	pruneEmpty(dir, p)
 	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, err

@@ -88,6 +88,13 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 			blocks = prependWarningToToolResult(blocks, w)
 			emitRepeatEvent(e, u, "per_tool_fail", obs)
 		}
+		// same test failure back again: rerunning is not debugging.
+		if n := e.run.repeats.observeTestFail(u, r.Content); n >= testFailNudgeAt && e.nudgeOnce(nudgeTestFail) {
+			w := fmt.Sprintf("[repeat] the same test failure came back %dx. stop rerunning: read the failing assertion "+
+				"and the code it exercises, then change something. no throwaway debug files; if blocked, call escalate.\n\n", n)
+			blocks = prependWarningToToolResult(blocks, w)
+			emitRepeatEvent(e, u, "test_fail_loop", obs)
+		}
 		// identical-output loop on read-only tools: the same read with the
 		// same bytes back teaches the model nothing — observed burning 2M+
 		// tokens re-reading one slice between no-op edits. mutators are

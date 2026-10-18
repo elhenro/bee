@@ -34,10 +34,10 @@ import (
 //
 // budget enforcement: if total exceeds SystemPromptBudget, sections are
 // dropped in this priority order — last in, first out:
-//   1. drop records from the tail (lowest-priority first)
-//   2. trim the skills manifest
-//   3. drop context files from the tail (deepest first)
-//   4. log a warning if still over.
+//  1. drop records from the tail (lowest-priority first)
+//  2. trim the skills manifest
+//  3. drop context files from the tail (deepest first)
+//  4. log a warning if still over.
 func Assemble(
 	cfg config.Config,
 	regToolSpecs []llm.ToolSpec,
@@ -68,7 +68,7 @@ func AssembleWithDynamic(
 
 	rules := caveman.Rules(level)
 	identity := identityBlock(cfg, level)
-	discipline := tinyDiscipline(cfg.Profile)
+	discipline := join(tinyDiscipline(cfg.Profile), efficiencyRules(cfg.Profile))
 	toolMan := toolsManifest(regToolSpecs, prof.ToolDescChars)
 
 	// knowledge + skills + context are the trimmable sections; render then enforce budget.

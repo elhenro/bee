@@ -139,10 +139,11 @@ type runState struct {
 // nudge keys for runState.nudges. Constants so call sites don't typo strings
 // and the dedupe table is searchable.
 const (
-	nudgeTwoStrike    = "two-strike"
-	nudgeRepeat       = "repeat"
-	nudgePerToolFail  = "per-tool-fail"
-	nudgeSameResult   = "same-result"
+	nudgeTwoStrike   = "two-strike"
+	nudgeRepeat      = "repeat"
+	nudgePerToolFail = "per-tool-fail"
+	nudgeSameResult  = "same-result"
+	nudgeTestFail    = "test-fail"
 )
 
 // freshRunState builds a zeroed per-Run state. All map fields are allocated
