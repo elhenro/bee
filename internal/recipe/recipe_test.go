@@ -135,6 +135,21 @@ func TestRun_FailureWithoutRouteFails(t *testing.T) {
 	}
 }
 
+func TestRun_OnFailureAbortAndPaddedRef(t *testing.T) {
+	abort := "---\nname: r\ntype: recipe\nsteps:\n  - id: a\n    kind: shell\n    description: a\n    run: boom\n    on_failure: abort\n  - id: b\n    kind: shell\n    description: b\n    run: never\n---\n"
+	h := &fakeHost{fail: map[string]bool{"boom": true}}
+	res, _ := Run(context.Background(), h, parse(t, abort), Options{})
+	if res.Status != StatusFailed || len(h.calls) != 1 {
+		t.Fatalf("abort: status=%s calls=%v", res.Status, h.calls)
+	}
+	padded := "---\nname: r\ntype: recipe\nsteps:\n  - id: a\n    kind: shell\n    description: a\n    run: boom\n    on_failure: \" fix \"\n    next: stop\n  - id: fix\n    kind: shell\n    description: f\n    run: repair\n---\n"
+	h = &fakeHost{fail: map[string]bool{"boom": true}}
+	res, _ = Run(context.Background(), h, parse(t, padded), Options{})
+	if res.Status != StatusOK || strings.Join(h.calls, ",") != "boom,repair" {
+		t.Fatalf("padded: status=%s calls=%v", res.Status, h.calls)
+	}
+}
+
 func TestRun_FailIfBranchesOnBeeAnswer(t *testing.T) {
 	src := "---\nname: r\ntype: recipe\nsteps:\n  - id: judge\n    kind: bee\n    description: j\n    prompt: ok?\n    fail_if: answer\n    on_failure: escalate\n  - id: go\n    kind: shell\n    description: g\n    run: deploy\n---\n"
 	h := &fakeHost{}

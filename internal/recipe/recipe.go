@@ -101,13 +101,19 @@ func Run(ctx context.Context, h Host, s skills.Skill, opt Options) (Result, erro
 			i++
 		case "stop":
 			return finish(res, StatusOK, ""), nil
+		case "abort":
+			return finish(res, StatusFailed, reason), nil
 		case "escalate":
 			if reason == "" {
 				reason = "step " + st.ID + " handed back to the user"
 			}
 			return finish(res, StatusEscalate, reason), nil
 		default:
-			i = idx[route] // validated at parse time
+			j, ok := idx[route]
+			if !ok {
+				return finish(res, StatusFailed, fmt.Sprintf("step %s routes to unknown step %q", st.ID, route)), nil
+			}
+			i = j
 		}
 	}
 	return finish(res, StatusOK, ""), nil

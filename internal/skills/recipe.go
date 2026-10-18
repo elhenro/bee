@@ -57,7 +57,7 @@ func recipeBuild(s *Skill, raw []recipeStepRaw, knownTools map[string]bool) erro
 			Description: strings.TrimSpace(r.Description),
 			Tool:        r.Tool,
 			Args:        r.Args,
-			OnFailure:   r.OnFailure,
+			OnFailure:   strings.TrimSpace(r.OnFailure),
 			Kind:        StepKind(strings.ToLower(strings.TrimSpace(r.Kind))),
 			Run:         strings.TrimSpace(r.Run),
 			Prompt:      strings.TrimSpace(r.Prompt),
@@ -66,11 +66,11 @@ func recipeBuild(s *Skill, raw []recipeStepRaw, knownTools map[string]bool) erro
 			FailIf:      r.FailIf,
 		})
 	}
-	// validate OnFailure references resolve. allow empty + "escalate"
-	// sentinel + any known step id.
+	// validate OnFailure references resolve. allow empty + "escalate" and
+	// "abort" sentinels + any known step id.
 	for _, st := range steps {
-		of := strings.TrimSpace(st.OnFailure)
-		if of == "" || of == "escalate" {
+		of := st.OnFailure
+		if of == "" || of == "escalate" || of == "abort" {
 			continue
 		}
 		if !ids[of] {

@@ -51,6 +51,9 @@ func validateRuntimeStep(st RecipeStep, ids map[string]bool, knownTools map[stri
 		if placeholderInQuotes(st.Run) {
 			return fmt.Errorf("run: placeholder inside quotes; substitution quotes it already, write it bare")
 		}
+		if placeholderInHeredoc(st.Run) {
+			return fmt.Errorf("run: placeholder inside an unquoted heredoc body is expanded by the shell; use <<'EOF' or pass the value as a quoted argument")
+		}
 	case StepBee:
 		if st.Prompt == "" {
 			return fmt.Errorf("kind bee needs prompt")
@@ -88,27 +91,4 @@ func renderRuntimeBody(s Skill) string {
 		fmt.Fprintf(&b, "%d. [%s] (%s) %s\n", i+1, st.ID, st.Kind, st.Description)
 	}
 	return b.String()
-}
-
-// placeholderInQuotes reports whether a {{...}} opener sits inside a single- or
-// double-quoted region of a shell line. Substitution single-quotes every value,
-// so a placeholder the author also quoted would end up with the value's quotes
-// cancelling theirs and the text running unquoted: `echo '{{x}}'` becomes
-// `echo ”<x>”`. Rejecting it at parse time closes that door.
-func placeholderInQuotes(run string) bool {
-	inSingle, inDouble := false, false
-	for i := 0; i < len(run); i++ {
-		c := run[i]
-		switch {
-		case c == '\\' && !inSingle:
-			i++ // escaped char never changes quote state
-		case c == '\'' && !inDouble:
-			inSingle = !inSingle
-		case c == '"' && !inSingle:
-			inDouble = !inDouble
-		case c == '{' && i+1 < len(run) && run[i+1] == '{' && (inSingle || inDouble):
-			return true
-		}
-	}
-	return false
 }

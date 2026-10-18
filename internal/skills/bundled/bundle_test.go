@@ -62,3 +62,23 @@ func TestWriteDefaults_preservesUserEdits(t *testing.T) {
 		t.Errorf("user file modified: %q", data)
 	}
 }
+
+func TestWriteDefaults_deletedStaysDeleted(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := WriteDefaults(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "calc.md")); err != nil {
+		t.Fatal(err)
+	}
+	written, err := WriteDefaults(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written) != 0 {
+		t.Fatalf("rewrote deleted skills: %v", written)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "calc.md")); !os.IsNotExist(err) {
+		t.Fatal("calc.md came back")
+	}
+}

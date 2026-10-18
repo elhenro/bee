@@ -96,3 +96,26 @@ func TestPlaceholderInQuotes(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaceholderInHeredoc(t *testing.T) {
+	cases := map[string]bool{
+		"cat <<EOF\nhello {{args}}\nEOF":       true,
+		"cat <<-EOF\n\t{{args}}\n\tEOF":        true,
+		"cat <<\"EOF\"\nhi {{args}}\nEOF":      false,
+		"cat <<'EOF'\nit's {{args}}\nEOF":      false,
+		"cat <<\\EOF\n{{args}}\nEOF":           false,
+		"cat <<EOF\nplain\nEOF\necho {{args}}": false,
+		"cat <<EOF | tr a b\nplain\nEOF":       false,
+		"cat <<<{{args}}":                      false,
+		"echo \"a<<b\"\nrm {{args}}":           false,
+	}
+	for run, want := range cases {
+		if got := placeholderInHeredoc(run); got != want {
+			t.Errorf("%q: got %v want %v", run, got, want)
+		}
+	}
+	// apostrophe in a quoted heredoc body must not flag a later bare placeholder
+	if placeholderInQuotes("cat <<'EOF'\ndon't\nEOF\necho {{args}}") {
+		t.Error("heredoc body apostrophe leaked into quote state")
+	}
+}
