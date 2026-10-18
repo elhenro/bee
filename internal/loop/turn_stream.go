@@ -194,12 +194,9 @@ events:
 				e.JSONEmitter.Emit(jsonmode.Event{Type: "done", Usage: u})
 			}
 			if e.Costs != nil && ev.Usage != nil {
-				cev := e.Costs.Record(e.Cfg.DefaultProvider, req.Model, ev.Usage.InputTokens, ev.Usage.OutputTokens)
 				// prefer provider-reported spend over the static estimate.
-				usd, reported := cev.USD, false
-				if ev.Usage.CostUSD > 0 {
-					usd, reported = ev.Usage.CostUSD, true
-				}
+				cev := e.Costs.RecordReported(e.Cfg.DefaultProvider, req.Model, ev.Usage.InputTokens, ev.Usage.OutputTokens, ev.Usage.CostUSD)
+				usd, reported := cev.USD, ev.Usage.CostUSD > 0
 				cost.AppendUsage(cost.UsageRecord{
 					Time:         cev.Time,
 					Provider:     e.Cfg.DefaultProvider,

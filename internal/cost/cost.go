@@ -52,8 +52,18 @@ func New() *Tracker { return &Tracker{} }
 // Unknown models fall back to zero-cost so unpriced local models still log
 // token totals without polluting the dollar figure.
 func (t *Tracker) Record(provider, model string, in, out int) Event {
+	return t.RecordReported(provider, model, in, out, 0)
+}
+
+// RecordReported is Record for a provider that reports its own spend: a
+// positive reportedUSD replaces the table estimate, so routed models missing
+// from the pricing table still show a real dollar figure.
+func (t *Tracker) RecordReported(provider, model string, in, out int, reportedUSD float64) Event {
 	p, _ := Lookup(provider, model)
 	usd := (float64(in)/1_000_000)*p.InputPerM + (float64(out)/1_000_000)*p.OutputPerM
+	if reportedUSD > 0 {
+		usd = reportedUSD
+	}
 	ev := Event{
 		Time:     time.Now().UTC(),
 		Provider: provider,
@@ -196,15 +206,15 @@ func Lookup(provider, model string) (Price, bool) {
 	if p, ok := prices[provider+"|"+model]; ok {
 		return p, true
 	}
+	if idx := strings.LastIndex(model, "/"); idx >= 0 {
+		model = model[idx+1:]
+	}
 	if p, ok := prices[model]; ok {
 		return p, true
 	}
-	if idx := strings.LastIndex(model, "/"); idx >= 0 {
-		if p, ok := prices[model[idx+1:]]; ok {
-			return p, true
-		}
-	}
-	return Price{}, false
+	// routed ids spell versions with dots (claude-sonnet-4.5), the table with dashes
+	p, ok := prices[strings.ReplaceAll(model, ".", "-")]
+	return p, ok
 }
 
 // prices is the embedded pricing table (USD per million tokens).

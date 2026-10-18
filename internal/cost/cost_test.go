@@ -93,3 +93,26 @@ func TestSetPriceRoundTrip(t *testing.T) {
 		t.Fatalf("SetPrice failed: %+v ok=%v", p, ok)
 	}
 }
+
+func TestLookupDottedRoutedIds(t *testing.T) {
+	for _, m := range []string{"anthropic/claude-sonnet-4.5", "claude-sonnet-4.5", "moonshotai/kimi-k2.5"} {
+		if _, ok := Lookup("openrouter", m); !ok {
+			t.Errorf("Lookup(%q) missed", m)
+		}
+	}
+}
+
+func TestRecordReportedPrefersProviderCost(t *testing.T) {
+	tr := New()
+	ev := tr.RecordReported("openrouter", "vendor/unpriced-model", 1000, 100, 0.0123)
+	if ev.USD != 0.0123 {
+		t.Errorf("USD = %v, want reported 0.0123", ev.USD)
+	}
+	if got := tr.Total().USD; got != 0.0123 {
+		t.Errorf("Total USD = %v", got)
+	}
+	est := tr.RecordReported("openai", "gpt-4o", 1_000_000, 0, 0)
+	if est.USD != 2.50 {
+		t.Errorf("zero reported must fall back to table estimate, got %v", est.USD)
+	}
+}
