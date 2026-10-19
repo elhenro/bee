@@ -109,7 +109,7 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 			emit(ctx, out, Event{Type: EventError, Err: ctx.Err()})
 			return
 		case <-stalled:
-			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s sse stalled: no data for %s (try a different model)", p.cfg.Name, stallWindow)})
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, stallWindow)})
 			return
 		default:
 		}
@@ -192,7 +192,7 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 		// report the stall instead of the cryptic close
 		select {
 		case <-stalled:
-			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s sse stalled: no data for %s (try a different model)", p.cfg.Name, stallWindow)})
+			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, stallWindow)})
 			return
 		default:
 		}

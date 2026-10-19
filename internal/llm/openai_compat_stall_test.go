@@ -13,7 +13,7 @@ import (
 
 // TestOpenAICompat_StallTimeout: server opens an SSE response then never
 // sends a chunk. With a short StallTimeout the provider must surface a
-// "sse stalled" error before the test deadline.
+// "stream stalled" error before the test deadline.
 func TestOpenAICompat_StallTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -56,10 +56,10 @@ func TestOpenAICompat_StallTimeout(t *testing.T) {
 			if ev.Type == EventError && ev.Err != nil {
 				msg := ev.Err.Error()
 				// either path indicates the stall watchdog fired and torn down
-				// the connection. "sse stalled" wins the race when select hits
+				// the connection. "stream stalled" wins the race when select hits
 				// <-stalled first; "use of closed network" wins when the body
 				// close lands before the select.
-				if !strings.Contains(msg, "sse stalled") && !strings.Contains(msg, "use of closed network") {
+				if !strings.Contains(msg, "stream stalled") && !strings.Contains(msg, "use of closed network") {
 					t.Fatalf("expected sse stall, got %v", ev.Err)
 				}
 				return

@@ -20,6 +20,22 @@ type AnthropicStreamEvent struct {
 	Message *AnthropicStreamMessage `json:"message,omitempty"`
 
 	Usage *AnthropicUsage `json:"usage,omitempty"`
+
+	// Error is the body of an in-band `error` event.
+	Error *AnthropicStreamError `json:"error,omitempty"`
+}
+
+// AnthropicStreamError is the error object of an in-band error event. Type is
+// e.g. overloaded_error, api_error, invalid_request_error.
+type AnthropicStreamError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+// Transient reports whether the server asked for a retry later (overload or an
+// internal failure) as opposed to rejecting the request.
+func (e *AnthropicStreamError) Transient() bool {
+	return e != nil && (e.Type == "overloaded_error" || e.Type == "api_error")
 }
 
 // AnthropicDeltaPayload covers both content_block_delta (text_delta /

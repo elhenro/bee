@@ -130,7 +130,13 @@ func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 				}
 			}
 		case "error":
-			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("anthropic stream error: %s", string(payload))})
+			err := fmt.Errorf("anthropic stream error: %s", string(payload))
+			// overload and internal errors arrive in-band after a 200; carry the
+			// stream-scan marker so the loop treats them as a retryable hiccup
+			if ev.Error.Transient() {
+				err = sseScanError(err)
+			}
+			emit(ctx, out, Event{Type: EventError, Err: err})
 			return
 		}
 	}
