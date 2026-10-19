@@ -34,6 +34,7 @@ var truncatableLimits = map[string]int{
 	"apply_patch":   MaxOutputTokens,
 	"hashline_edit": MaxOutputTokens,
 	"write":         MaxOutputTokens,
+	"web_fetch":     MaxWebfetchTokens, // the registered tool name
 	"webfetch":      MaxWebfetchTokens,
 }
 
