@@ -26,6 +26,10 @@ const File = ".bee/verify"
 // outputTail caps how much failing output travels back to the author.
 const outputTail = 4000
 
+// pipeGrace bounds how long Run waits for output pipes to close after a
+// command exits or is killed.
+var pipeGrace = 3 * time.Second
+
 // Result is one gate pass.
 type Result struct {
 	OK     bool
@@ -116,7 +120,15 @@ func runOne(ctx context.Context, dir, command string, o Opts) ([]byte, error) {
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
+	// a descendant in its own session survives the group kill and keeps the
+	// output pipe open; without a bound Wait never returns and the heavy lock
+	// stays held
+	cmd.WaitDelay = pipeGrace
 	err := cmd.Run()
+	// exit 0 with a pipe force-closed after the grace is a pass, not a failure
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
 	if errors.Is(cctx.Err(), context.DeadlineExceeded) {
 		return buf.Bytes(), fmt.Errorf("timed out after %s", timeout)
 	}
