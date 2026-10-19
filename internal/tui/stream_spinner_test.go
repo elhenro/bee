@@ -4,6 +4,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/elhenro/bee/internal/caveman"
 )
 
 func spinnerRenderer() *StreamRenderer {
@@ -77,6 +81,18 @@ func TestFormatClock(t *testing.T) {
 	for d, want := range cases {
 		if got := formatClock(d); got != want {
 			t.Errorf("formatClock(%v) = %q, want %q", d, got, want)
+		}
+	}
+}
+
+// the resize rebuild must carry show_loader over to the new renderer
+func TestWindowSize_KeepsShowLoaderOff(t *testing.T) {
+	m := NewModel(nil, "/tmp/work", "m", "", caveman.Default).WithShowLoader(false)
+	for _, w := range []int{100, 60} {
+		nm, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: 30})
+		m = nm.(Model)
+		if m.stream.showLoader {
+			t.Fatalf("width %d: renderer lost show_loader=false", w)
 		}
 	}
 }

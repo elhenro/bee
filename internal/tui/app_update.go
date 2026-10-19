@@ -191,6 +191,7 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		m.stream.SetHighlight(m.highlight)
 		m.stream.SetShowCallDetail(m.showCallDetail)
 		m.stream.SetLoader(m.loader)
+		m.stream.SetShowLoader(m.showLoader)
 		m.palette.SetWidth(msg.Width)
 		m.atpicker.SetWidth(msg.Width)
 		m.history.SetWidth(msg.Width)
