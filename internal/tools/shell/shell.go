@@ -115,8 +115,12 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// already there — wastes tokens and clutters transcripts. Stripping
 	// silently is cleaner than re-nagging through the system prompt. If the
 	// target is a different dir, leave the command alone (legitimate intent).
+	// an explicit cwd override means the cd is not redundant: the command runs
+	// there, so dropping the cd would change where it executes.
 	var stripNote string
-	cmdStr, stripNote = stripRedundantCd(cmdStr)
+	if override, _ := input["cwd"].(string); override == "" {
+		cmdStr, stripNote = stripRedundantCd(cmdStr)
+	}
 	// display command = unwrapped form when engine pre-wrapped with sandbox-exec;
 	// otherwise the modal would show the helper profile, not the user's intent.
 	displayCmd := cmdStr

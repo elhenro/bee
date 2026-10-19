@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,5 +120,28 @@ func TestStripRedundantCd_DynamicTargetKept(t *testing.T) {
 		if out != cmd {
 			t.Errorf("expected unchanged for dynamic %q, got %q", cmd, out)
 		}
+	}
+}
+
+func TestRun_CwdOverrideKeepsCd(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	res, err := New().Run(context.Background(), map[string]any{
+		"command": "cd " + wd + " && pwd",
+		"cwd":     other,
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("run failed: %v %s", err, res.Content)
+	}
+	if strings.Contains(res.Content, "stripped redundant") {
+		t.Errorf("cd stripped despite cwd override: %q", res.Content)
+	}
+	got, _ := filepath.EvalSymlinks(strings.TrimSpace(res.Content))
+	want, _ := filepath.EvalSymlinks(wd)
+	if got != want {
+		t.Errorf("ran in %q, want the explicit cd target %q", got, want)
 	}
 }
