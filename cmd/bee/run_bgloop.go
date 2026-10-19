@@ -72,7 +72,10 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 	}
 
 	msg := firstMsg
-	var cursor int64
+	// a restarted agent starts with whatever was sent while nothing listened
+	if pending, ok := pendingInbox(sessID); ok {
+		msg += "\n\nMessages from the user:\n\n" + pending
+	}
 	hadCommit := false
 	for {
 		s := base
@@ -139,8 +142,8 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 			// a reply queued while this turn ran must not die with a DONE or
 			// BLOCKED exit: run it as the next turn instead of finalizing.
 			if kind == sentinel.KindDone || kind == sentinel.KindBlocked {
-				if next, nc, ok := pendingInbox(sessID, cursor); ok {
-					cursor, msg = nc, next
+				if next, ok := pendingInbox(sessID); ok {
+					msg = next
 					continue
 				}
 			}
@@ -193,11 +196,10 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		s.UpdatedAt = time.Now().UTC()
 		_ = bgreg.Write(s)
 
-		next, newCursor, err := waitForInbox(ctx, sessID, cursor)
+		next, err := waitForInbox(ctx, sessID)
 		if err != nil {
 			return err
 		}
-		cursor = newCursor
 		if ctx.Err() != nil {
 			writeStopped(s)
 			return nil
@@ -248,13 +250,13 @@ func failAgentCommit(base bgreg.Status, reason string) error {
 	return errors.New(s.LastResponse)
 }
 
-// pendingInbox returns whatever is in the inbox right now without waiting.
-func pendingInbox(sessID string, cursor int64) (string, int64, bool) {
-	msgs, nc, err := bgreg.InboxDrain(sessID, cursor)
+// pendingInbox takes whatever is in the inbox right now without waiting.
+func pendingInbox(sessID string) (string, bool) {
+	msgs, err := bgreg.InboxTake(sessID)
 	if err != nil || len(msgs) == 0 {
-		return "", cursor, false
+		return "", false
 	}
-	return joinInbox(msgs), nc, true
+	return joinInbox(msgs), true
 }
 
 func joinInbox(msgs []bgreg.Inbox) string {
@@ -266,21 +268,21 @@ func joinInbox(msgs []bgreg.Inbox) string {
 }
 
 // waitForInbox polls the inbox until a message arrives or ctx is cancelled.
-// Returns the concatenated text of all new messages and the advanced cursor.
-func waitForInbox(ctx context.Context, sessID string, cursor int64) (string, int64, error) {
+// Returns the concatenated text of all new messages.
+func waitForInbox(ctx context.Context, sessID string) (string, error) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return "", cursor, nil
+			return "", nil
 		case <-ticker.C:
-			msgs, nc, err := bgreg.InboxDrain(sessID, cursor)
+			msgs, err := bgreg.InboxTake(sessID)
 			if err != nil {
-				return "", cursor, err
+				return "", err
 			}
 			if len(msgs) > 0 {
-				return joinInbox(msgs), nc, nil
+				return joinInbox(msgs), nil
 			}
 		}
 	}

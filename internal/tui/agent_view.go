@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/elhenro/bee/internal/agents"
 	"github.com/elhenro/bee/internal/bgreg"
 )
 
@@ -56,6 +57,8 @@ func (a *AgentView) Refresh() {
 		return
 	}
 	a.err = ""
+	// a reply to an agent whose process already exited has nobody to read it
+	agents.WakeWaiting(statuses)
 	a.rows = a.rows[:0]
 	for _, s := range statuses {
 		a.rows = append(a.rows, AgentRow{
@@ -82,6 +85,7 @@ func (a *AgentView) SubmitReply(text string) error {
 		return err
 	}
 	a.reply.SetValue("")
+	a.Refresh()
 	return nil
 }
 

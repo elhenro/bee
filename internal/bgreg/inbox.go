@@ -104,5 +104,6 @@ func InboxRemove(sessionID string) error {
 	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	cursorRemove(sessionID)
 	return nil
 }

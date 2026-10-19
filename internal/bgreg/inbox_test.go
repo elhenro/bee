@@ -52,3 +52,39 @@ func TestInboxAppendAndDrain(t *testing.T) {
 		t.Fatalf("unexpected tail: %+v", final)
 	}
 }
+
+func TestInboxTakeKeepsPositionAcrossCalls(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	const id = "sess-take"
+	if InboxPending(id) {
+		t.Fatal("empty inbox reported pending")
+	}
+	_ = InboxAppend(id, "one")
+	if !InboxPending(id) {
+		t.Fatal("unread message not reported pending")
+	}
+	if !InboxPending(id) {
+		t.Fatal("InboxPending consumed the message")
+	}
+	msgs, err := InboxTake(id)
+	if err != nil || len(msgs) != 1 || msgs[0].Text != "one" {
+		t.Fatalf("take: %+v err=%v", msgs, err)
+	}
+	// a restarted process has no memory of the first take
+	if InboxPending(id) {
+		t.Fatal("taken message still pending")
+	}
+	if again, _ := InboxTake(id); len(again) != 0 {
+		t.Fatalf("taken message replayed: %+v", again)
+	}
+	_ = InboxAppend(id, "two")
+	msgs, _ = InboxTake(id)
+	if len(msgs) != 1 || msgs[0].Text != "two" {
+		t.Fatalf("want only the new message, got %+v", msgs)
+	}
+	_ = InboxRemove(id)
+	_ = InboxAppend(id, "fresh")
+	if msgs, _ = InboxTake(id); len(msgs) != 1 || msgs[0].Text != "fresh" {
+		t.Fatalf("stale cursor survived InboxRemove: %+v", msgs)
+	}
+}
