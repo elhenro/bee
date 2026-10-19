@@ -154,13 +154,11 @@ func buildProviderInner(cfg config.Config) (llm.Provider, error) {
 			RouteSort:          prov.RouteSort,
 		}), nil
 	case "gemini":
-		key := cfg.APIKey
-		if key == "" && prov.EnvKey != "" {
-			key = os.Getenv(prov.EnvKey)
-		}
+		// resolved for the selected provider, not cfg.APIKey: that one belongs
+		// to the provider chosen at load and is stale after a switch or tier
 		return llm.NewGemini(llm.GeminiConfig{
 			BaseURL: prov.BaseURL,
-			APIKey:  key,
+			APIKey:  config.ProviderKey(cfg.DefaultProvider, prov),
 		}), nil
 	case "responses":
 		cgCfg := llm.ChatGPTConfig{

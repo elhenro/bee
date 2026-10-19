@@ -133,7 +133,10 @@ func (p *ClaudeProvider) applyHeaders(r *http.Request, streaming bool) {
 	}
 	r.Header.Set("anthropic-version", claudeAPIVersion)
 	r.Header.Set("User-Agent", claudeUserAgent)
+	// env first, then the key stored by /login (same order as config load)
 	if key := os.Getenv(p.cfg.EnvKey); key != "" {
+		r.Header.Set("x-api-key", key)
+	} else if key := loadAuthAPIKey(p.cfg.Name); key != "" {
 		r.Header.Set("x-api-key", key)
 	}
 	for k, v := range p.cfg.ExtraHeaders {

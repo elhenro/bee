@@ -167,6 +167,24 @@ func splitCSV(s string) []string {
 	return out
 }
 
+// ProviderKey resolves the credential for one provider block: env var
+// (pc.EnvKey) first, then the key stored by /login under name. It never
+// reflects another provider, so callers stay correct after a mid-session
+// provider switch (Config.APIKey only describes the provider chosen at load).
+func ProviderKey(name string, pc ProviderConfig) string {
+	if pc.EnvKey != "" {
+		if key := os.Getenv(pc.EnvKey); key != "" {
+			return key
+		}
+	}
+	if dir, err := auth.DefaultDir(); err == nil {
+		if key, err := auth.LoadAPIKey(dir, name); err == nil && key != "" {
+			return key
+		}
+	}
+	return ""
+}
+
 // resolveAPIKey looks up the active provider's auth credential. Resolution
 // order: env var (prov.EnvKey) → ~/.bee/auth/<provider>.key (set via
 // /login <provider>) → error (unless prov.KeyOptional, e.g. omlx running
@@ -181,15 +199,9 @@ func resolveAPIKey(c *Config) error {
 	if prov.EnvKey == "" {
 		return nil
 	}
-	if key := os.Getenv(prov.EnvKey); key != "" {
+	if key := ProviderKey(c.DefaultProvider, prov); key != "" {
 		c.APIKey = key
 		return nil
-	}
-	if dir, err := auth.DefaultDir(); err == nil {
-		if key, err := auth.LoadAPIKey(dir, c.DefaultProvider); err == nil && key != "" {
-			c.APIKey = key
-			return nil
-		}
 	}
 	if prov.KeyOptional {
 		return nil
