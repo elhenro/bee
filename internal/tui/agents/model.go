@@ -157,6 +157,13 @@ func (m model) refresh() model {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// model fetch results and spinner ticks for the picker
+	if m.picker != nil {
+		if np, cmd, ok := m.picker.HandleAsync(msg); ok {
+			m.picker = np
+			return m, cmd
+		}
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
