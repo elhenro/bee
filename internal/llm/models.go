@@ -21,6 +21,9 @@ type Model struct {
 	Name          string
 	ContextLength int
 	Pricing       string
+	// InputModalities is the catalogue's declared input types ("text",
+	// "image", ...). nil when the provider doesn't say.
+	InputModalities []string
 }
 
 // modelsHTTPTimeout caps the /models GET. provider lists are tiny, so 8s is
@@ -225,6 +228,9 @@ func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([
 			ContextLength int    `json:"context_length"`
 			MaxModelLen   int    `json:"max_model_len"`
 			Pricing       any    `json:"pricing"`
+			Architecture  struct {
+				InputModalities []string `json:"input_modalities"`
+			} `json:"architecture"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -252,6 +258,8 @@ func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([
 			Name:          name,
 			ContextLength: ctxLen,
 			Pricing:       formatPricing(m.Pricing),
+
+			InputModalities: m.Architecture.InputModalities,
 		})
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })

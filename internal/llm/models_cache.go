@@ -56,5 +56,8 @@ func storeCache(name string, models []Model) {
 		if m.ContextLength > 0 {
 			RememberContextLength(m.ID, m.ContextLength)
 		}
+		if len(m.InputModalities) > 0 {
+			RememberVision(m.ID, hasModality(m.InputModalities, "image"))
+		}
 	}
 }

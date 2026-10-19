@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -17,7 +18,7 @@ func (s *tuiSide) VisionFallback(model, endpoint, api string) (string, error) {
 	cfg := &s.m.eng.Cfg
 	if model == "" {
 		main := cfg.DefaultModel
-		if llm.SupportsVision(main) {
+		if llm.ActiveModelHasVision(context.Background(), cfg) {
 			return fmt.Sprintf("main model %q has vision — no fallback needed", main), nil
 		}
 		if cfg.Vision.Model == "" {
