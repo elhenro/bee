@@ -16,8 +16,11 @@ var osUserHome = func() (string, error) { return os.UserHomeDir() }
 
 // prettyCwd shortens $HOME to ~ for a tidier status line.
 func prettyCwd(p string) string {
-	if home, err := osUserHome(); err == nil && home != "" && strings.HasPrefix(p, home) {
-		return "~" + strings.TrimPrefix(p, home)
+	// match whole path elements: /Users/henry must not claim /Users/henryx
+	if home, err := osUserHome(); err == nil && home != "" {
+		if rest, ok := strings.CutPrefix(p, home); ok && (rest == "" || rest[0] == '/') {
+			return "~" + rest
+		}
 	}
 	return p
 }
