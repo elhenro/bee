@@ -7,12 +7,14 @@ import (
 )
 
 // rm -rf / and friends. matches the recursive+force flag pair (in either
-// order, combined or separate) followed by a quoted-or-bare /.
+// order, combined or separate), any further flags (-- included), then a
+// quoted-or-bare / or /* that ends its word: a space, newline, comment,
+// operator or end of input may follow.
 var rmRfRoot = regexp.MustCompile(
-	`\brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*|-[rRf]\s+-[rRf]|--recursive\s+--force|--force\s+--recursive)\s+(['"]?/\*?['"]?\s*($|;|&|\|))`,
+	`\brm\s+(?:-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*|-[rRf]\s+-[rRf]|--recursive\s+--force|--force\s+--recursive)(?:\s+-{1,2}[a-zA-Z-]*)*\s+['"]?/\*?['"]?(?:\s|$|[;&|)])`,
 )
 
-var ddToDisk = regexp.MustCompile(`(?i)\bdd\b[^|]*\bof=/dev/(disk|sd|nvme|hd)`)
+var ddToDisk = regexp.MustCompile(`(?i)\bdd\b[^|]*\bof=/dev/(r?disk|sd|nvme|hd|vd|xvd|mmcblk)`)
 
 // cmdPos anchors a match to command position: start of line, after a
 // separator, group opener or negation, optionally behind control keywords,
@@ -29,7 +31,7 @@ const cmdPos = "(?:^|[;&|(\\n`{!]|\\$\\()\\s*" +
 const diskTool = `(?:mkfs(?:\.[a-z0-9]+)?|fdisk|parted)\b`
 
 var diskFormat = regexp.MustCompile(cmdPos + diskTool + `|\b` + diskTool + `\s+(?:-\w|/dev/)`)
-var diskutilErase = regexp.MustCompile(`(?i)` + cmdPos + `diskutil\s+erase`)
+var diskutilErase = regexp.MustCompile(`(?i)` + cmdPos + `diskutil\s+(?:erase|secureErase|zeroDisk|randomDisk|partitionDisk|reformat)`)
 
 // CheckShellCommand heuristically blocks commands that almost certainly mean
 // the model went off the rails. user approval is the primary gate; this just
