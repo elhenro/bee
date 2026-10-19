@@ -160,28 +160,3 @@ func collapseBlankRuns(s string) string {
 	}
 	return strings.Join(out, "\n")
 }
-
-func (r *StreamRenderer) roleGlyph(role types.Role) string {
-	switch role {
-	case types.RoleUser:
-		return r.styles.RoleYou.Render(glyphUser)
-	case types.RoleAssistant:
-		return r.styles.Mark.Render(glyphBee)
-	case types.RoleTool:
-		return ""
-	default:
-		return r.styles.Dim.Render(glyphSep)
-	}
-}
-
-// indent every line after the first
-func indentContinuation(s, indent string) string {
-	if s == "" {
-		return ""
-	}
-	lines := strings.Split(s, "\n")
-	for i := 1; i < len(lines); i++ {
-		lines[i] = indent + lines[i]
-	}
-	return strings.Join(lines, "\n")
-}

@@ -18,12 +18,6 @@ func FormatContextWarning(inputTokens, contextLimit int) string {
 	return fmt.Sprintf("[context at %d%%] you have used %d%% of the context window. summarize aggressively and drop noisy tool output before continuing.\n\n", pct, pct)
 }
 
-// ShouldWarn reports whether usage has crossed the threshold. Cheap helper for callers
-// that want to dedupe (warn once per session).
-func ShouldWarn(inputTokens, contextLimit int) bool {
-	return clampRatio(inputTokens, contextLimit) >= WarningThreshold
-}
-
 func clampRatio(inputTokens, contextLimit int) float64 {
 	if contextLimit <= 0 {
 		return 0

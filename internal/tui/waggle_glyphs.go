@@ -1,7 +1,5 @@
 package tui
 
-import "strings"
-
 // waggle-dance glyph alphabet. honeybees advertise a goal with a dance:
 // round = search, waggle-run = go, turn-back = return. the busy row and
 // pending tool rows read their state out of the same alphabet, so the
@@ -47,21 +45,4 @@ func waggleGlyph(frame int) string {
 	c.SetPixel(p[0], p[1], true)       // body
 	c.SetPixel(p[2], p[3], true)       // wing
 	return c.ToBraille()
-}
-
-// waggleStrip renders a cells-wide mini-dance, one bee per cell. offset
-// staggers the phases so a row of them reads as a swarm mid-communication
-// instead of a lockstep flipbook.
-func waggleStrip(frame, cells, offset int) string {
-	if cells < 1 {
-		cells = 1
-	}
-	if cells > 4 {
-		cells = 4
-	}
-	var b strings.Builder
-	for i := 0; i < cells; i++ {
-		b.WriteString(waggleGlyph(frame - i*2 - offset*3))
-	}
-	return b.String()
 }

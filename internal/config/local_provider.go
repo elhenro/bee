@@ -1,8 +1,6 @@
 package config
 
 import (
-	"net"
-	"net/url"
 	"strings"
 )
 
@@ -45,18 +43,4 @@ func OutputCap(cfg Config) int {
 		return LocalMaxOutputTokens
 	}
 	return 0
-}
-
-// IsLoopbackURL returns true when u points at localhost / 127.x.x.x / ::1.
-func IsLoopbackURL(u string) bool {
-	p, err := url.Parse(u)
-	if err != nil {
-		return false
-	}
-	host := p.Hostname()
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }

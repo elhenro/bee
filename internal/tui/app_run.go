@@ -13,42 +13,11 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 )
 
-// Run builds and runs the bubbletea program with the given engine.
-// Blocks until the program exits (Ctrl+C or tea.Quit). Uses the default
-// (built-in) slash command set.
-func Run(ctx context.Context, eng *loop.Engine) error {
-	return RunWithCommands(ctx, eng, nil)
-}
-
-// RunWithCommands is Run with a caller-provided command registry. Pass nil
-// to get the built-in set. Uses DefaultKeyMap — callers wanting user overrides
-// should use RunWithCommandsAndKeyMap.
-func RunWithCommands(ctx context.Context, eng *loop.Engine, reg *commands.Registry) error {
-	return RunWithCommandsAndKeyMap(ctx, eng, reg, DefaultKeyMap())
-}
-
-// RunWithCommandsAndKeyMap is RunWithCommands plus a caller-supplied keymap.
-// Pass DefaultKeyMap() to keep stock bindings.
-func RunWithCommandsAndKeyMap(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap) error {
-	return RunWithCommandsKeyMapApprover(ctx, eng, reg, km, nil)
-}
-
-// RunWithCommandsKeyMapApprover is RunWithCommandsAndKeyMap plus the channel
-// approver that surfaces dangerous-command prompts in the modal. Pass nil for
-// the legacy no-gating behavior.
-func RunWithCommandsKeyMapApprover(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver) error {
-	return RunSeeded(ctx, eng, reg, km, app, "")
-}
-
-// RunSeeded is RunWithCommandsKeyMapApprover plus an optional seed prompt that
-// auto-submits one turn on startup (skill dispatch into the TUI). Pass "" for
-// no auto-submit.
-func RunSeeded(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver, seed string) error {
-	return RunSeededAsker(ctx, eng, reg, km, app, nil, seed)
-}
-
-// RunSeededAsker is RunSeeded plus the ask_user picker adapter. Pass nil to
-// leave ask_user auto-resolving to the recommended option.
+// RunSeededAsker builds and runs the bubbletea program with the given engine,
+// slash-command registry (nil = built-ins), keymap, dangerous-command approver
+// and ask_user picker adapter (nil = ask_user auto-resolves to the recommended
+// option). A non-empty seed auto-submits one turn on startup (skill dispatch
+// into the TUI). Blocks until the program exits.
 func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver, asker *Asker, seed string) error {
 	cwd := ""
 	modelName := ""

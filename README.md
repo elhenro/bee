@@ -139,9 +139,7 @@ Enable in `~/.bee/config.toml`:
     [browser]
     enabled = true
 
-Or pass `--browser` to any `bee run` invocation, or use the dedicated subcommand:
-
-    bee browse https://example.com
+Or pass `--browser` to any `bee run` invocation.
 
 Inside a running TUI session you can toggle browser support live with `/browser on` and `/browser off`. Chrome/Chromium is auto-detected from standard install paths.
 

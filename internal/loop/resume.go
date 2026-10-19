@@ -94,12 +94,6 @@ func ClassifyResume(err error, res RunResult) ResumeDecision {
 	}
 }
 
-// ShouldResume is the thin (bool, continuation) wrapper over ClassifyResume.
-func ShouldResume(err error, res RunResult) (bool, string) {
-	d := ClassifyResume(err, res)
-	return d.Resume, d.Continuation
-}
-
 // StripDanglingToolUse sanitizes a message history before it is carried into
 // a resumed run. A turn that died mid-dispatch can end on an assistant
 // message whose tool_use blocks never got a tool_result; replaying that

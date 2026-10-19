@@ -5,10 +5,6 @@ package safety
 // (small local models that hallucinate paths and intents) be stricter by
 // default without forcing every user to hand-edit config.
 type ProfileSafety struct {
-	// WriteRoot is a regex relative to cwd. When set AND no CLI --write-path-re
-	// is provided, edit/write/apply_patch tools refuse paths outside the root.
-	WriteRoot string
-
 	// ExtraSafeCommands extend sandbox.IsKnownSafe with profile-specific
 	// known-safe shell command prefixes (e.g. "kubectl get", "docker ps").
 	// merged at engine build time; never narrows the existing default list.

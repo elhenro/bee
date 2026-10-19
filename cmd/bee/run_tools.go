@@ -342,12 +342,6 @@ func isDisabledTool(disabled []string, name string) bool {
 	return false
 }
 
-// buildToolsFiltered is buildTools with a path-regex constraint threaded into
-// every mutation tool. Read-only tools are unaffected.
-func buildToolsFiltered(cwd string, cfg config.Config, writeRe *regexp.Regexp, prov llm.Provider, storeDir string) (*tools.Registry, error) {
-	return buildToolsFilteredWithApprover(cwd, cfg, writeRe, prov, storeDir, nil)
-}
-
 // buildToolsFilteredWithApprover combines buildToolsFiltered with the shell
 // approval hook.
 func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *regexp.Regexp, prov llm.Provider, storeDir string, app approval.Approver) (*tools.Registry, error) {

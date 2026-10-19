@@ -392,22 +392,6 @@ type Profile struct {
 	// a hallucinating small model can't piggyback on one "yes" to run more
 	// destructive commands later. See safety.DefaultsForProfile.
 	Safety ProfileSafety `toml:"safety"`
-
-	// Escalation carries the optional "larger fallback model" wiring. The
-	// engine itself never re-enters Run with this — handoff is caller-driven
-	// (cmd/bee/run.go or the `bee escalate` subcommand). All fields default
-	// to zero / off so this is fully opt-in.
-	Escalation ProfileEscalation `toml:"escalation"`
-}
-
-// ProfileEscalation configures the optional handoff path for when a tiny
-// model wedges (two-strike) or calls the escalate tool. The model id is
-// generic so this stays vendor-neutral.
-type ProfileEscalation struct {
-	// Provider id from Config.Providers. Empty = no handoff configured.
-	Provider string `toml:"provider"`
-	// Model id understood by Provider. Empty = no handoff configured.
-	Model string `toml:"model"`
 }
 
 // ProfileSafety mirrors safety.ProfileSafety in the config schema. Kept here
@@ -415,7 +399,6 @@ type ProfileEscalation struct {
 // the safety package; defaults are seeded by safety.DefaultsForProfile via
 // the bridge in defaults.go.
 type ProfileSafety struct {
-	WriteRoot             string   `toml:"write_root"`
 	ExtraSafeCommands     []string `toml:"extra_safe_commands"`
 	RequireApprovalKeys   []string `toml:"require_approval_keys"`
 	WarnOnDuplicateWrites bool     `toml:"warn_on_duplicate_writes"`
@@ -459,9 +442,8 @@ type ShellConfig struct {
 // MemoryConfig gates the heuristic memory loop. Enabled=false skips both
 // scan and select on every turn.
 type MemoryConfig struct {
-	Enabled             bool `toml:"enabled"`
-	TopK                int  `toml:"top_k"`
-	BackgroundExtractor bool `toml:"background_extractor"`
+	Enabled bool `toml:"enabled"`
+	TopK    int  `toml:"top_k"`
 	// LLMHints lets a thin deterministic lookup ask a side model for keyword
 	// tags before the first request. Off by default: it puts a model round trip
 	// in front of every turn's first token.

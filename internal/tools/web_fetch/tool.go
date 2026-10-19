@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/elhenro/bee/internal/llm"
@@ -129,57 +128,6 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		Content: output,
 		IsError: false,
 	}, nil
-}
-
-// LoadConfigFromEnv loads configuration from environment variables
-func LoadConfigFromEnv() Config {
-	cfg := DefaultConfig()
-
-	// Load from environment
-	if val := os.Getenv("BEE_WEB_FETCH_ENABLED"); val == "false" {
-		cfg.Enabled = false
-	}
-
-	if val := os.Getenv("BEE_WEB_FETCH_MAX_CONTENT_LEN"); val != "" {
-		fmt.Sscanf(val, "%d", &cfg.MaxContentLen)
-	}
-
-	// Load domains from environment
-	if val := os.Getenv("BEE_WEB_FETCH_ALLOW_DOMAINS"); val != "" {
-		cfg.AllowDomains = strings.Split(val, ",")
-		for i, d := range cfg.AllowDomains {
-			cfg.AllowDomains[i] = strings.TrimSpace(d)
-		}
-	}
-
-	if val := os.Getenv("BEE_WEB_FETCH_BLOCK_DOMAINS"); val != "" {
-		cfg.BlockDomains = strings.Split(val, ",")
-		for i, d := range cfg.BlockDomains {
-			cfg.BlockDomains[i] = strings.TrimSpace(d)
-		}
-	}
-
-	return cfg
-}
-
-// LoadConfigFromToml loads configuration from a TOML file
-func LoadConfigFromToml(path string) (Config, error) {
-	cfg := DefaultConfig()
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
-		}
-		return cfg, err
-	}
-
-	err = toml.Unmarshal(data, &cfg)
-	if err != nil {
-		return cfg, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	return cfg, nil
 }
 
 // SaveConfigToToml saves configuration to a TOML file

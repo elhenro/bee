@@ -46,9 +46,6 @@ var reservedSubcommands = map[string]bool{
 	"back":           true,
 	"fan":            true,
 	"swarm":          true,
-	"wars":           true,
-	"wars-agent":     true,
-	"wars-target":    true,
 	"hyperplan":      true,
 	"hive":           true,
 	"bg":             true,
@@ -57,7 +54,6 @@ var reservedSubcommands = map[string]bool{
 	"zzz":            true,
 	"cron":           true,
 	"doctor":         true,
-	"browse":         true,
 	"version":        true,
 	"-v":             true,
 	"--version":      true,
@@ -85,12 +81,6 @@ func main() {
 		fan(os.Args[2:])
 	case "swarm":
 		swarm(os.Args[2:])
-	case "wars":
-		runWars(os.Args[2:])
-	case "wars-agent":
-		runWarsAgent(os.Args[2:])
-	case "wars-target":
-		runWarsTarget(os.Args[2:])
 	case "hyperplan":
 		runHyperplan(os.Args[2:])
 	case "hive":
@@ -111,8 +101,6 @@ func main() {
 		runBench(os.Args[2:])
 	case "waggle":
 		runWaggle(os.Args[2:])
-	case "browse":
-		browse(os.Args[2:])
 	case "version", "-v", "--version":
 		if commit != "" && commit != "dev" {
 			fmt.Printf("bee %s (%s)\n", version, commit)
@@ -141,7 +129,6 @@ usage:
   bee -p   [flags] <msg>    alias for 'bee run' (print mode, for scripts/pipes)
   bee fan  [flags] <task>   fan out N parallel bees over a workload
   bee swarm <task>          queen + workers for a complex task
-  bee wars [flags]          security game: two agents hack each other in containers
   bee hyperplan <plan>      spawn 5 critics to attack a plan
   bee hive                  list active bees and recent sessions
   bee bg [--skill <name>] <message>  run a task in the background

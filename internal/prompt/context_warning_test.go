@@ -40,14 +40,3 @@ func TestFormatContextWarning(t *testing.T) {
 		})
 	}
 }
-
-func TestShouldWarnMatchesFormat(t *testing.T) {
-	pairs := [][2]int{{60, 100}, {70, 100}, {73, 100}, {200, 100}, {80, 0}, {-5, 100}}
-	for _, p := range pairs {
-		got := ShouldWarn(p[0], p[1])
-		want := FormatContextWarning(p[0], p[1]) != ""
-		if got != want {
-			t.Fatalf("ShouldWarn(%d,%d)=%v but Format!=\"\" is %v", p[0], p[1], got, want)
-		}
-	}
-}

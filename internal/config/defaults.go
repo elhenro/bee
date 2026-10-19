@@ -36,9 +36,8 @@ func Defaults() Config {
 			Approval: "on-request",
 		},
 		Memory: MemoryConfig{
-			Enabled:             true,
-			TopK:                3,
-			BackgroundExtractor: false,
+			Enabled: true,
+			TopK:    3,
 		},
 		Compaction: CompactionConfig{
 			Enabled:   true,

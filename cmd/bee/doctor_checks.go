@@ -94,11 +94,6 @@ func checkSandboxHelper() check {
 	}
 }
 
-func checkConfig() []check {
-	cs, _ := checkConfigLoaded()
-	return cs
-}
-
 // checkConfigLoaded mirrors checkConfig but also returns the cfg it loaded
 // so downstream checks (ollama) don't need a second Load() call.
 func checkConfigLoaded() ([]check, config.Config) {

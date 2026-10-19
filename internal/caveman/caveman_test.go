@@ -1,7 +1,6 @@
 package caveman
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -26,48 +25,6 @@ func TestRulesOffEmpty(t *testing.T) {
 func TestRulesUnknownEmpty(t *testing.T) {
 	if got := Rules(Level("bogus")); got != "" {
 		t.Errorf("Rules(bogus) = %q, want \"\"", got)
-	}
-}
-
-func TestInjectOffReturnsInputUnchanged(t *testing.T) {
-	const sys = "you are a coding agent"
-	if got := Inject(sys, Off); got != sys {
-		t.Errorf("Inject Off changed prompt: got %q want %q", got, sys)
-	}
-}
-
-func TestInjectPrepends(t *testing.T) {
-	const sys = "you are a coding agent"
-	got := Inject(sys, Full)
-	if !strings.HasSuffix(got, sys) {
-		t.Errorf("Inject did not preserve trailing system prompt, got %q", got)
-	}
-	if !strings.Contains(got, "Respond terse") {
-		t.Errorf("Inject did not include caveman rules, got %q", got)
-	}
-	if len(got) <= len(sys) {
-		t.Errorf("Inject did not grow prompt: len(got)=%d len(sys)=%d", len(got), len(sys))
-	}
-}
-
-func TestInjectEmptySystem(t *testing.T) {
-	got := Inject("", Full)
-	if got == "" {
-		t.Error("Inject(empty, Full) returned empty")
-	}
-}
-
-// Inject is defined as "prepend each time". Two calls yields rules twice;
-// caller is responsible for not double-injecting. Lock the documented behavior.
-func TestInjectPrependsEachCall(t *testing.T) {
-	const sys = "X"
-	once := Inject(sys, Full)
-	twice := Inject(once, Full)
-	if len(twice) <= len(once) {
-		t.Errorf("second Inject did not prepend again: once=%d twice=%d", len(once), len(twice))
-	}
-	if strings.Count(twice, "Respond terse") != 2 {
-		t.Errorf("expected 2 caveman blocks after double-inject, got %d", strings.Count(twice, "Respond terse"))
 	}
 }
 

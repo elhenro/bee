@@ -181,15 +181,6 @@ func readsBackPlain(s string) bool {
 	return yaml.Unmarshal([]byte("v: "+s+"\n"), &v) == nil && v.V == s
 }
 
-// RebuildIndex rewrites INDEX.md as a markdown table sorted by priority
-// desc then name asc. callers run this after each WriteRecord but may also
-// invoke directly to repair an out-of-sync index.
-func RebuildIndex(dir string) error {
-	storeMu.Lock()
-	defer storeMu.Unlock()
-	return rebuildIndexLocked(dir)
-}
-
 // rebuildIndexLocked is the body of RebuildIndex; assumes storeMu is held.
 func rebuildIndexLocked(dir string) error {
 	entries, err := os.ReadDir(dir)

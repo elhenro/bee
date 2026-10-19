@@ -79,11 +79,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSubmit()
 	case key.Matches(msg, m.keys.ProviderPick):
 		return m, func() tea.Msg { return openProviderMsg{} }
-	case key.Matches(msg, m.keys.WorkspaceTog):
-		if editingChord && !inputEmpty {
-			break
-		}
-		return m, func() tea.Msg { return openWorkspaceMsg{} }
 	case key.Matches(msg, m.keys.HiveOpen):
 		if editingChord && !inputEmpty {
 			break

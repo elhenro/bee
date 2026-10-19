@@ -99,7 +99,7 @@ func (m Model) renderInput() string {
 // the `?` cheat sheet, wrapped to the terminal width
 func (m Model) renderHelpLine() string {
 	pairs := [][2]string{
-		{"^P", "model"}, {"^R", "history"}, {"^W", "workspace"}, {"←", "agents"},
+		{"^P", "model"}, {"^R", "history"}, {"←", "agents"},
 		{"^H", "hive"}, {"^/", "caveman:" + string(m.caveLvl)}, {"^I", "image"}, {"shift+↵", "newline"},
 		{"shift+tab", "role"}, {"alt+y", "yolo"}, {"^O", "expand output"},
 		{"^V", "verbose"}, {"esc", "cancel"}, {"?", "hide"},

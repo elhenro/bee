@@ -195,33 +195,6 @@ func TestCache(t *testing.T) {
 	}
 }
 
-func TestNormalizeString(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{
-			input:    "  hello world  ",
-			expected: "hello world",
-		},
-		{
-			input:    "\thello\nworld\t",
-			expected: "hello\nworld",
-		},
-		{
-			input:    "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		result := NormalizeString(tt.input)
-		if result != tt.expected {
-			t.Errorf("NormalizeString(%q) = %q, want %q", tt.input, result, tt.expected)
-		}
-	}
-}
-
 func TestFetchURL(t *testing.T) {
 	// Test with invalid URL
 	_, err := FetchURL("not-a-url", DefaultDomainPolicy(), true)

@@ -196,17 +196,6 @@ func RebaseAbort(dir string) error {
 	return err
 }
 
-// IsRebasing returns true when a rebase is in progress in dir. Checks for
-// .git/rebase-merge and .git/rebase-apply via git status --porcelain=v2.
-func IsRebasing(dir string) bool {
-	out, err := gitRun(dir, "status", "--porcelain=v2", "--branch")
-	if err != nil {
-		return false
-	}
-	return strings.Contains(out, "# branch.head (no branch)") ||
-		strings.Contains(out, "rebase")
-}
-
 // MergeFF fast-forwards branch onto base in dir. dir should be the main repo
 // (not the worktree). Returns error if FF is not possible. It never switches
 // the user's checkout: when base is checked out in dir it merges in place,

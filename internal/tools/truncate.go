@@ -81,14 +81,6 @@ func Truncate(toolName, content string) (string, bool) {
 	return TruncateWithLimit(toolName, content, 0)
 }
 
-// TruncateForTool applies the per-tool default cap and returns only the
-// (possibly modified) content. Convenience wrapper for callers that don't
-// care about the truncated bool.
-func TruncateForTool(toolName, content string) string {
-	out, _ := TruncateWithLimit(toolName, content, 0)
-	return out
-}
-
 // TruncateWithLimit is Truncate with an explicit profile-provided cap in
 // tokens (chars/4 heuristic). limitTokens<=0 → fall back to the per-tool
 // default. The smaller of (limitTokens, per-tool default) wins so a profile
@@ -282,13 +274,6 @@ func truncateHeadTailWithSpill(toolName, content string, limitTokens, tailChars 
 			len(head), len(tail), total, skipped)
 	}
 	return head + trailer + tail, true
-}
-
-// TruncateHeadTail is like Truncate but preserves both head and tail with a
-// spacer in the middle, giving the model context from the end of large outputs.
-// tailChars defaults to 4 KB (4096) if < 0. Returns modified content + true.
-func TruncateHeadTail(toolName, content string, tailChars int) (string, bool) {
-	return TruncateHeadTailWithLimit(toolName, content, 0, tailChars)
 }
 
 // TruncateHeadTailWithLimit is TruncateHeadTail with an explicit profile cap.

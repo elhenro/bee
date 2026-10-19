@@ -3,6 +3,7 @@ package sandbox
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"runtime"
 )
 
@@ -29,6 +30,12 @@ func RefuseCmd(reason string) []string {
 
 func unknownScopeCmd(s Scope) []string {
 	return RefuseCmd(fmt.Sprintf("sandbox: unknown scope %q (want read-only, workspace-write, workspace-write-net or danger-full-access); refusing to run unsandboxed", string(s)))
+}
+
+// defaultLookPath is the production exec.LookPath. Wrap functions go through
+// the package-level lookPath var so tests can stub helper-missing scenarios.
+func defaultLookPath(file string) (string, error) {
+	return exec.LookPath(file)
 }
 
 // lookPath is indirected for tests. Tests can swap in a stub that returns

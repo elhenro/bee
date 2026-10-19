@@ -19,13 +19,6 @@ func ActiveProfile(c Config) Profile {
 	return Profile{}
 }
 
-// ResolveAutoProfile picks a profile name from a model id alone. Kept for
-// back-compat; prefer ResolveAutoProfileForProvider so local providers
-// (ollama / lmstudio) get the tiny surface regardless of model size.
-func ResolveAutoProfile(model string) string {
-	return ResolveAutoProfileForProvider("", model)
-}
-
 // ResolveAutoProfileForProvider picks a profile name from provider + model.
 // Local providers (ollama, lmstudio) always resolve to tiny — even a 35b
 // local model fumbles a wide tool surface and benefits from plain-english

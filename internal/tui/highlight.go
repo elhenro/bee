@@ -38,16 +38,6 @@ func HighlightCode(content, lang string) string {
 	return b.String()
 }
 
-// HighlightLineByPath highlights a single line using the lexer matching the
-// given file path's extension. Used by per-line render paths (diff bodies,
-// edit previews) that hand chroma one logical line at a time.
-func HighlightLineByPath(line, path string) string {
-	if line == "" {
-		return line
-	}
-	return HighlightCode(line, langFromPath(path))
-}
-
 // langFromPath maps a filename to a chroma lexer name. Empty string falls
 // back to chroma's content analyser inside HighlightCode.
 func langFromPath(path string) string {

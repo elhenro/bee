@@ -6,7 +6,6 @@ package wire
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -331,16 +330,4 @@ func collectText(blocks []types.ContentBlock) string {
 		}
 	}
 	return b.String()
-}
-
-// FormatToolArgs renders tool input back to a JSON string for assistant replay.
-func FormatToolArgs(input map[string]any) (string, error) {
-	if input == nil {
-		return "{}", nil
-	}
-	b, err := json.Marshal(input)
-	if err != nil {
-		return "", fmt.Errorf("marshal tool args: %w", err)
-	}
-	return string(b), nil
 }

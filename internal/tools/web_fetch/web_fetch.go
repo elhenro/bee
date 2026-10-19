@@ -526,14 +526,3 @@ func normalizeMarkdown(s string) string {
 	}
 	return buf.String()
 }
-
-// NormalizeString trims whitespace and normalizes Unicode
-func NormalizeString(s string) string {
-	trimmed := strings.TrimSpace(s)
-	// Simple NFC normalization
-	result := make([]byte, 0, len(trimmed))
-	for _, r := range trimmed {
-		result = append(result, []byte(string(r))...)
-	}
-	return string(result)
-}

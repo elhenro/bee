@@ -83,15 +83,6 @@ func Classify(s string) Kind {
 	return KindNone
 }
 
-// IsDone is a thin shortcut for the common DONE check.
-func IsDone(s string) bool { return doneRe.MatchString(stripFences(s)) }
-
-// IsBlocked is a thin shortcut for the common BLOCKED check.
-func IsBlocked(s string) bool { return blockedRe.MatchString(stripFences(s)) }
-
-// IsNeedsInput is a thin shortcut for the NEEDS-INPUT check.
-func IsNeedsInput(s string) bool { return needsRe.MatchString(stripFences(s)) }
-
 // stripFences drops fenced code blocks. An unterminated fence swallows the
 // rest of the text, as markdown renderers do.
 func stripFences(s string) string {

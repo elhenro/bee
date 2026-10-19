@@ -169,19 +169,18 @@ func recapIdleCmd(gen int, msgs []types.Message) tea.Cmd {
 
 // sentinel msgs for unwired panes — slice 3B/3C consume them later.
 type (
-	openWorkspaceMsg struct{}
-	openHiveMsg      struct{}
-	openProviderMsg  struct{}
-	openTreeMsg      struct{}
-	openPaletteMsg   struct{}
-	openCostMsg      struct{}
-	openUsageMsg     struct{}
-	openLoginMsg     struct{}
-	openResumeMsg    struct{}
-	openRoleMsg      struct{}
-	openEffortMsg    struct{}
-	openSettingsMsg  struct{}
-	openToolsMsg     struct{}
+	openHiveMsg     struct{}
+	openProviderMsg struct{}
+	openTreeMsg     struct{}
+	openPaletteMsg  struct{}
+	openCostMsg     struct{}
+	openUsageMsg    struct{}
+	openLoginMsg    struct{}
+	openResumeMsg   struct{}
+	openRoleMsg     struct{}
+	openEffortMsg   struct{}
+	openSettingsMsg struct{}
+	openToolsMsg    struct{}
 )
 
 // maybeStartCostFlash compares the tracker's call count to what we saw last

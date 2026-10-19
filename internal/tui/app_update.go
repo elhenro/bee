@@ -355,9 +355,6 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	case updateAppliedMsg:
 		return m.onUpdateApplied(msg)
 
-	case openWorkspaceMsg:
-		// slice 3B handles workspace; still a no-op.
-		return m, nil
 	case openHiveMsg:
 		return m.onOpenHive(msg)
 	case CloseAgentViewMsg:

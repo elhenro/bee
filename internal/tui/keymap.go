@@ -9,7 +9,6 @@ type KeyMap struct {
 	Quit           key.Binding
 	Cancel         key.Binding
 	ProviderPick   key.Binding
-	WorkspaceTog   key.Binding
 	HiveOpen       key.Binding
 	SessionTree    key.Binding
 	CostOpen       key.Binding
@@ -57,10 +56,6 @@ func DefaultKeyMap() KeyMap {
 		ProviderPick: key.NewBinding(
 			key.WithKeys("ctrl+p"),
 			key.WithHelp("ctrl+p", "model picker"),
-		),
-		WorkspaceTog: key.NewBinding(
-			key.WithKeys("ctrl+w"),
-			key.WithHelp("ctrl+w", "workspace pane"),
 		),
 		HiveOpen: key.NewBinding(
 			key.WithKeys("ctrl+h"),

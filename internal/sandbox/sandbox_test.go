@@ -282,28 +282,6 @@ func TestCwdAliases_DedupesWhenIdentical(t *testing.T) {
 	}
 }
 
-func TestHelperPath_NonEmpty(t *testing.T) {
-	p, err := HelperPath()
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	if !strings.HasSuffix(p, "bee-sandbox-helper") {
-		t.Errorf("HelperPath() = %q, want suffix bee-sandbox-helper", p)
-	}
-}
-
-func TestIsHelper(t *testing.T) {
-	// We can't easily mutate os.Args[0] portably; just smoke-test that the
-	// function returns a bool without panicking on the current argv.
-	_ = IsHelper()
-}
-
-func TestHelperMain_PlaceholderErrors(t *testing.T) {
-	if err := HelperMain(); err == nil {
-		t.Error("HelperMain should error until wave 2 implements it")
-	}
-}
-
 func equalSlice(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

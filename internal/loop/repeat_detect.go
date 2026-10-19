@@ -169,30 +169,6 @@ func (t *repeatTracker) observeFamily(toolName string, isErr bool, content strin
 	return t.familyStreak
 }
 
-// batchKey returns a stable hash for one step's set of tool calls: each call
-// reduced to its (name, canonical-args) signature, sorted, then hashed. The
-// result is order-independent, so a step issuing the same calls in any order
-// keys identically — a single-call step and a multi-call step are each one
-// deterministic key. An empty step gets the "empty" sentinel. Feeds the
-// ABAB-cycle tracker in cycle_detect.go.
-func batchKey(uses []types.ToolUse) string {
-	if len(uses) == 0 {
-		return "empty"
-	}
-	parts := make([]string, 0, len(uses))
-	for _, u := range uses {
-		sig := signatureFor(u)
-		parts = append(parts, sig.Name+":"+sig.ArgsHash)
-	}
-	sort.Strings(parts)
-	h := sha256.New()
-	for _, p := range parts {
-		h.Write([]byte(p))
-		h.Write([]byte{0})
-	}
-	return hex.EncodeToString(h.Sum(nil)[:8])
-}
-
 // hashResult fingerprints a tool result body for the identical-output streak.
 func hashResult(content string) string {
 	if content == "" {

@@ -104,26 +104,6 @@ func TestApplyProfile_PreservesExplicitCaveman(t *testing.T) {
 	}
 }
 
-func TestResolveAutoProfile_PicksTinyForFlash(t *testing.T) {
-	cases := map[string]string{
-		"deepseek/deepseek-v4-flash":   "tiny",
-		"gpt-4o-mini":                  "tiny",
-		"google/gemini-2.0-flash-lite": "tiny",
-		"anthropic/claude-haiku-4-5":   "tiny",
-		"llama3.1:8b":                  "tiny",
-		"qwen2.5:7b":                   "tiny",
-		"claude-opus-4-7":              "large",
-		"anthropic/claude-sonnet-4-7":  "large",
-		"gpt-5-codex":                  "normal",
-		"":                             "normal",
-	}
-	for model, want := range cases {
-		if got := ResolveAutoProfile(model); got != want {
-			t.Errorf("ResolveAutoProfile(%q) = %q, want %q", model, got, want)
-		}
-	}
-}
-
 func TestApplyProfile_ResolvesAuto(t *testing.T) {
 	c := Defaults()
 	c.Profile = "auto"

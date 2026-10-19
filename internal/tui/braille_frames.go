@@ -92,17 +92,6 @@ var brailleNamedPainters = []braillePainter{
 	{"wagglerun", renderBrailleWaggleRun},
 }
 
-// braillePainterByName looks up a painter by canonical name. Returns nil
-// if unknown.
-func braillePainterByName(name string) func(frame, cells int) string {
-	for _, p := range brailleNamedPainters {
-		if p.name == name {
-			return p.fn
-		}
-	}
-	return nil
-}
-
 // braillePhases drives the default phased loader. Narrative: single bee
 // waking → bees stream out to forage → tight cohesive flock → vortex
 // intensifies → cosmic drift on very long waits.

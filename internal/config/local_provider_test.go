@@ -24,22 +24,3 @@ func TestIsLocalProvider(t *testing.T) {
 		}
 	}
 }
-
-func TestIsLoopbackURL(t *testing.T) {
-	cases := map[string]bool{
-		"http://localhost:11434":  true,
-		"http://127.0.0.1:1234":   true,
-		"http://[::1]:8080":       true,
-		"https://localhost":       true,
-		"http://10.0.0.1:8080":    false,
-		"https://api.openai.com":  false,
-		"http://example.com:8080": false,
-		"":                        false,
-		"not a url at all":        false,
-	}
-	for in, want := range cases {
-		if got := IsLoopbackURL(in); got != want {
-			t.Errorf("IsLoopbackURL(%q) = %v, want %v", in, got, want)
-		}
-	}
-}

@@ -48,24 +48,6 @@ func Rules(level Level) string {
 	return string(b)
 }
 
-// Inject prepends the level's rules to systemPrompt.
-// Returns systemPrompt unchanged when level is Off or rules empty.
-// Each call prepends — caller decides idempotency.
-func Inject(systemPrompt string, level Level) string {
-	rules := Rules(level)
-	if rules == "" {
-		return systemPrompt
-	}
-	if systemPrompt == "" {
-		return rules
-	}
-	// trailing newline on rules + blank line separator
-	if !strings.HasSuffix(rules, "\n") {
-		rules += "\n"
-	}
-	return rules + "\n" + systemPrompt
-}
-
 // ParseLevel validates user input. Empty string → Default.
 func ParseLevel(s string) (Level, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {

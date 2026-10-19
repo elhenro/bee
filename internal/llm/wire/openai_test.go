@@ -366,20 +366,6 @@ func TestToolCallAccumulator_TrailingCommaRepaired(t *testing.T) {
 	}
 }
 
-func TestFormatToolArgs(t *testing.T) {
-	out, err := FormatToolArgs(nil)
-	if err != nil || out != "{}" {
-		t.Fatalf("nil case: out=%q err=%v", out, err)
-	}
-	out, err = FormatToolArgs(map[string]any{"k": "v"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, `"k":"v"`) {
-		t.Fatalf("got %q", out)
-	}
-}
-
 func TestSanitizeToolName(t *testing.T) {
 	cases := []struct {
 		raw, want string

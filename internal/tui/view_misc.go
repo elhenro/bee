@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/elhenro/bee/internal/cost"
 	"os"
 	"path/filepath"
 	"strings"
@@ -226,4 +227,16 @@ func gitBranchUncached(cwd string) string {
 		dir = parent
 	}
 	return ""
+}
+
+// lifetimeTokensTrailer is the "  1.2M tok" trailer on the intro banner line.
+// Empty until the counter file accumulates a non-zero total so fresh installs
+// stay uncluttered.
+func lifetimeTokensTrailer() string {
+	in, out := cost.LifetimeTotals()
+	total := in + out
+	if total <= 0 {
+		return ""
+	}
+	return "  " + cost.FormatLifetimeTokens(total) + " tok"
 }
