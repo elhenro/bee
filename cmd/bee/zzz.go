@@ -310,15 +310,19 @@ func startRun(cfg zzz.Config) (r *zzz.Run, unlock func(), err error) {
 		return nil, nil, fmt.Errorf("not inside a git repo: %w", err)
 	}
 	id := zzz.NewID()
-	unlock = func() {}
+	// held lives apart from the named result: an error return nils unlock
+	// before this defer runs
+	held := func() {}
 	if !cfg.Worktree {
-		if unlock, err = zzz.AcquireLock(root, id); err != nil {
-			return nil, nil, err
+		l, lerr := zzz.AcquireLock(root, id)
+		if lerr != nil {
+			return nil, nil, lerr
 		}
+		held = l
 	}
 	defer func() {
 		if err != nil {
-			unlock()
+			held()
 		}
 	}()
 	clean, err := zzz.IsClean(root)
@@ -347,9 +351,11 @@ func startRun(cfg zzz.Config) (r *zzz.Run, unlock func(), err error) {
 			return nil, nil, fmt.Errorf("worktree add: %w", aerr)
 		}
 		// the worktree path is new, so nobody can hold it yet
-		if unlock, err = zzz.AcquireLock(wt, id); err != nil {
-			return nil, nil, err
+		l, lerr := zzz.AcquireLock(wt, id)
+		if lerr != nil {
+			return nil, nil, lerr
 		}
+		held = l
 		r.Mode = zzz.ModeWorktree
 		r.Worktree = wt
 		r.Branch = branch
@@ -375,7 +381,7 @@ func startRun(cfg zzz.Config) (r *zzz.Run, unlock func(), err error) {
 	if err = zzz.SaveMeta(r); err != nil {
 		return nil, nil, err
 	}
-	return r, unlock, nil
+	return r, held, nil
 }
 
 // resumeRun loads existing run meta. id="" picks the most-recent run.
@@ -408,12 +414,13 @@ func resumeRun(id string) (r *zzz.Run, unlock func(), err error) {
 	}
 	// lock before anything below reads the branch or rewrites the meta: a
 	// second resume of a live run must change nothing.
-	if unlock, err = zzz.AcquireLock(r.RepoRoot, r.ID); err != nil {
-		return nil, nil, err
+	held, lerr := zzz.AcquireLock(r.RepoRoot, r.ID)
+	if lerr != nil {
+		return nil, nil, lerr
 	}
 	defer func() {
 		if err != nil {
-			unlock()
+			held()
 		}
 	}()
 	// current-branch runs commit to whatever branch is checked out; if the user
@@ -433,7 +440,7 @@ func resumeRun(id string) (r *zzz.Run, unlock func(), err error) {
 	if err = zzz.SaveMeta(r); err != nil {
 		return nil, nil, fmt.Errorf("persist resume status: %w", err)
 	}
-	return r, unlock, nil
+	return r, held, nil
 }
 
 func zzzList() error {
