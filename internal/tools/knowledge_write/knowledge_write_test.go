@@ -261,7 +261,7 @@ func TestWriteExpiresDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back failed: %v", err)
 	}
-	if !strings.Contains(string(b), "expires: 2025-09-01T00:00:00Z") {
+	if !strings.Contains(string(b), "expires: 2025-09-01T23:59:59Z") {
 		t.Fatalf("expected RFC 3339 expires in file,\ngot:\n%s", string(b))
 	}
 }

@@ -155,7 +155,7 @@ func parsePriority(raw any) int {
 
 // parseExpires converts the expires_at input to time.Time. Accepts:
 //   - nil / "" -> zero time, nil error (no expiry)
-//   - "YYYY-MM-DD" -> midnight UTC
+//   - "YYYY-MM-DD" -> last second of that day, UTC
 //   - RFC 3339 string
 //   - anything else -> error
 func parseExpires(raw any) (time.Time, error) {
@@ -170,7 +170,7 @@ func parseExpires(raw any) (time.Time, error) {
 	if len(s) == 10 && s[4] == '-' && s[7] == '-' {
 		t, err := time.Parse("2006-01-02", s)
 		if err == nil {
-			return t, nil
+			return knowledge.EndOfDay(t), nil
 		}
 	}
 	t, err := time.Parse(time.RFC3339, s)

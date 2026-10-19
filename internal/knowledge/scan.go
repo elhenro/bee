@@ -285,16 +285,21 @@ func normalizeTags(in []string) []string {
 	return out
 }
 
-// parseExpires accepts RFC3339 timestamps and plain `YYYY-MM-DD` dates.
+// parseExpires accepts RFC3339 timestamps and plain `YYYY-MM-DD` dates. a bare
+// date keeps the record through that whole day.
 func parseExpires(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
 	if t, err := time.Parse("2006-01-02", s); err == nil {
-		return t, nil
+		return EndOfDay(t), nil
 	}
 	return time.Time{}, fmt.Errorf("unrecognized expires value %q", s)
 }
+
+// EndOfDay maps a date parsed at midnight UTC to the last second of that day,
+// so "expires: D" means the record is still live all through D.
+func EndOfDay(midnight time.Time) time.Time { return midnight.Add(24*time.Hour - time.Second) }
 
 // readFrontmatter reads up to FrontmatterMaxLines and parses the YAML block
 // fenced by `---`. anything missing or malformed surfaces as an error so

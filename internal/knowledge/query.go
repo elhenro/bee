@@ -59,6 +59,9 @@ func Query(ctx context.Context, dir, userQuery string, limit int, opts Options) 
 	}
 
 	queryTokens := tokenize(userQuery)
+	// 2-char tags (go, ui, db) match whole query words; the general tokens
+	// drop them as noise.
+	shortTokens := tokenizeMin(userQuery, 2)
 	hintTags := map[string]bool{}
 	for _, t := range opts.HintTags {
 		t = strings.TrimSpace(strings.ToLower(t))
@@ -84,7 +87,7 @@ func Query(ctx context.Context, dir, userQuery string, limit int, opts Options) 
 			if hintTags[t] {
 				s += 2
 			}
-			if queryTokens[t] {
+			if queryTokens[t] || (len(t) == 2 && shortTokens[t]) {
 				s++
 				continue
 			}
@@ -237,11 +240,14 @@ func kindBoost(tags []string) int {
 // tokenize splits s on non-word boundaries, lowercases, and drops short
 // noise tokens. hyphens and underscores yield both the joined slug form
 // and each split sub-token so natural and slug-style queries both hit.
-func tokenize(s string) map[string]bool {
+func tokenize(s string) map[string]bool { return tokenizeMin(s, 3) }
+
+// tokenizeMin is tokenize with a configurable minimum token length.
+func tokenizeMin(s string, minLen int) map[string]bool {
 	out := map[string]bool{}
 	cur := strings.Builder{}
 	emit := func(t string) {
-		if len(t) < 3 {
+		if len(t) < minLen {
 			return
 		}
 		out[t] = true

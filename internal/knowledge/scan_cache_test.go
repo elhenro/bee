@@ -16,6 +16,13 @@ func writeStoreRec(t *testing.T, dir, name string) {
 	}
 }
 
+func writeRaw(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name+".md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // a scan cut short by cancellation must not poison the cache with a partial
 // (here empty) listing.
 func TestScanStoreCanceledDoesNotCache(t *testing.T) {

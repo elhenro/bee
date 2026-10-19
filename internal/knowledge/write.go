@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/goccy/go-yaml"
 )
 
 // slugChar permits a tight set of leaf-name characters so the index and
@@ -153,13 +155,14 @@ func renderFile(r Record) string {
 	return b.String()
 }
 
-// yamlEscape double-quotes when the value contains YAML-sensitive characters,
+// yamlEscape double-quotes when the value contains YAML-sensitive characters or
+// would not read back as the same string (a leading "- ", "? ", "null", ...),
 // otherwise emits as-is so the common case stays readable.
 func yamlEscape(s string) string {
 	if s == "" {
 		return `""`
 	}
-	if strings.ContainsAny(s, ":#'\"\n\r\t[]{},&*!|>%@`") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") {
+	if strings.ContainsAny(s, ":#'\"\n\r\t[]{},&*!|>%@`") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") || !readsBackPlain(s) {
 		escaped := strings.ReplaceAll(s, `\`, `\\`)
 		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 		escaped = strings.ReplaceAll(escaped, "\n", `\n`)
@@ -168,6 +171,14 @@ func yamlEscape(s string) string {
 		return `"` + escaped + `"`
 	}
 	return s
+}
+
+// readsBackPlain reports whether s written unquoted parses back to s.
+func readsBackPlain(s string) bool {
+	var v struct {
+		V string `yaml:"v"`
+	}
+	return yaml.Unmarshal([]byte("v: "+s+"\n"), &v) == nil && v.V == s
 }
 
 // RebuildIndex rewrites INDEX.md as a markdown table sorted by priority
