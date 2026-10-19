@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -234,15 +235,24 @@ func tailBg(id string) {
 	}
 }
 
-// killBg sends SIGTERM to a background bee and clears its sidecar files.
-// Falls back to bgreg.Status.PID if the legacy hive pid file is missing.
+// killBg interrupts a background bee and clears its sidecar files. Falls back
+// to bgreg.Status.PID if the legacy hive pid file is missing.
 func killBg(id string) {
 	pid, err := bghive.ReadPid(id)
+	st, serr := bgreg.Read(id)
 	if err != nil || pid <= 0 {
-		if s, rerr := bgreg.Read(id); rerr == nil && s.PID > 0 {
-			pid = s.PID
+		if serr == nil && st.PID > 0 {
+			pid = st.PID
 		}
 	}
+	// a finished session's pid may name an unrelated process by now
+	if serr == nil && (st.State == bgreg.StateDone || st.State == bgreg.StateFailed) {
+		pid = 0
+	}
+	// drop the sidecar before signalling: the child's stop path rewrites it
+	// only while it still exists, so a killed agent stays gone
+	_ = bgreg.Remove(id)
+	_ = bgreg.InboxRemove(id)
 	if pid > 0 {
 		if proc, perr := os.FindProcess(pid); perr == nil {
 			if serr := proc.Signal(os.Interrupt); serr != nil {
@@ -250,9 +260,9 @@ func killBg(id string) {
 			}
 		}
 	}
-	// best-effort cleanup of bgreg sidecar + inbox so /agent list stays accurate
-	_ = bgreg.Remove(id)
-	_ = bgreg.InboxRemove(id)
+	if dir, derr := bghive.LogDir(); derr == nil {
+		_ = os.Remove(filepath.Join(dir, id+".pid"))
+	}
 	if pid > 0 {
 		fmt.Printf("killed session %s (pid %d)\n", id, pid)
 	} else {

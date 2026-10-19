@@ -90,9 +90,7 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		res, err := eng.Run(ctx, msg)
 		if err != nil {
 			if ctx.Err() != nil {
-				s.State = bgreg.StateDone
-				s.UpdatedAt = time.Now().UTC()
-				_ = bgreg.Write(s)
+				writeStopped(s)
 				return nil
 			}
 			s.State = bgreg.StateFailed
@@ -192,13 +190,23 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		}
 		cursor = newCursor
 		if ctx.Err() != nil {
-			s.State = bgreg.StateDone
-			s.UpdatedAt = time.Now().UTC()
-			_ = bgreg.Write(s)
+			writeStopped(s)
 			return nil
 		}
 		msg = next
 	}
+}
+
+// writeStopped records a cancelled run as done, unless `bee bg --kill` already
+// removed the sidecar: rewriting it would resurrect a killed agent for the
+// merger.
+func writeStopped(s bgreg.Status) {
+	if _, err := bgreg.Read(s.SessionID); errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	s.State = bgreg.StateDone
+	s.UpdatedAt = time.Now().UTC()
+	_ = bgreg.Write(s)
 }
 
 // maxLoadHold caps how long an agent waits on load. Agents are separate
