@@ -200,6 +200,8 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	m.input.Reset()
 	// record every accepted submission for ctrl+r reverse search.
 	AppendHistory(text)
+	// the cycle list predates this submit and its index points into it
+	m.cycleActive, m.cycleEntries, m.cycleStash, m.cycleIdx = false, nil, "", -1
 
 	// inline shell: ! follows the user's configured default (cfg.ShellBangSilent
 	// — silent by default so quick lookups don't burn tokens). !! inverts the
