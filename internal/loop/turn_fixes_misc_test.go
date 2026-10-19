@@ -67,7 +67,7 @@ func TestRescaleProfile_RevertsOnSmallerWindow(t *testing.T) {
 
 func TestSysPromptCacheKey_SeesSameLengthEdits(t *testing.T) {
 	k := func(manifest string) string {
-		return sysPromptCacheKey(config.Config{}, RoleWorker, false, nil, manifest, nil, nil)
+		return sysPromptCacheKey(config.Config{}, "", RoleWorker, false, nil, manifest, nil, nil)
 	}
 	if k("skill-a") == k("skill-b") {
 		t.Error("same-length manifest edit must change the key")

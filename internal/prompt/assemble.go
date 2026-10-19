@@ -8,6 +8,7 @@ package prompt
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -45,7 +46,7 @@ func Assemble(
 	selectedRecords []knowledge.Record,
 	ctxFiles []ContextFile,
 ) string {
-	full, _ := AssembleWithDynamic(cfg, regToolSpecs, skillManifest, selectedRecords, ctxFiles)
+	full, _ := AssembleWithDynamic(cfg, "", regToolSpecs, skillManifest, selectedRecords, ctxFiles)
 	return full
 }
 
@@ -56,8 +57,12 @@ func Assemble(
 // prompt-cache breakpoint at the boundary — keeping the expensive static prefix
 // cached even when memory changes. dynamic is "" when there is no memory section
 // (then the whole prompt is static). full always ends with dynamic when non-empty.
+//
+// cwd is the directory the agent works in, named in the identity block; empty
+// means the process cwd. A worker confined to its own worktree passes that path.
 func AssembleWithDynamic(
 	cfg config.Config,
+	cwd string,
 	regToolSpecs []llm.ToolSpec,
 	skillManifest string,
 	selectedRecords []knowledge.Record,
@@ -67,7 +72,7 @@ func AssembleWithDynamic(
 	level, _ := caveman.ParseLevel(cfg.Caveman)
 
 	rules := caveman.Rules(level)
-	identity := identityBlock(cfg, level)
+	identity := identityBlock(cwd, level)
 	discipline := join(tinyDiscipline(cfg.Profile), efficiencyRules(cfg.Profile))
 	toolMan := toolsManifest(regToolSpecs, prof.ToolDescChars)
 
@@ -120,10 +125,14 @@ var identityCache sync.Map // map[string]identityCacheEntry
 
 // identityBlock is the agent identity block. Plain English with explicit
 // tool-use framing when caveman is off (so small local models stay grounded
-// in action verbs); terse caveman-style otherwise. cwd + git root are
-// derived from the process — keeps Assemble's signature small.
-func identityBlock(_ config.Config, level caveman.Level) string {
-	cwd := getCwd()
+// in action verbs); terse caveman-style otherwise. cwd defaults to the process
+// cwd; the git root is derived from it.
+func identityBlock(cwd string, level caveman.Level) string {
+	if cwd == "" {
+		cwd = getCwd()
+	} else if abs, err := filepath.Abs(cwd); err == nil {
+		cwd = abs
+	}
 	var gitRoot string
 	if v, ok := identityCache.Load(cwd); ok {
 		gitRoot = v.(identityCacheEntry).gitRoot

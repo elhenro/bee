@@ -18,7 +18,7 @@ import (
 // ctx-file paths/body hashes. content is hashed, not measured: an edit that
 // keeps the length must still bust the cache. read-only is folded in because it flips the prompt prefix.
 // returns "" if any required input is unstable enough to skip caching.
-func sysPromptCacheKey(cfg config.Config, role Role, readOnly bool, specs []llm.ToolSpec, skillManifest string, recs []knowledge.Record, ctxFiles []prompt.ContextFile) string {
+func sysPromptCacheKey(cfg config.Config, cwd string, role Role, readOnly bool, specs []llm.ToolSpec, skillManifest string, recs []knowledge.Record, ctxFiles []prompt.ContextFile) string {
 	var b strings.Builder
 	b.WriteString(cfg.DefaultProvider)
 	b.WriteByte('|')
@@ -27,6 +27,8 @@ func sysPromptCacheKey(cfg config.Config, role Role, readOnly bool, specs []llm.
 	b.WriteString(cfg.Profile)
 	b.WriteByte('|')
 	b.WriteString(cfg.Caveman)
+	b.WriteByte('|')
+	b.WriteString(cwd)
 	b.WriteByte('|')
 	b.WriteString(string(role))
 	b.WriteByte('|')

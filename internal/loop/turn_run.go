@@ -132,13 +132,13 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 
 	// reuse cached system prompt when the inputs fingerprint matches. saves
 	// the Assemble + budget-trim work on every Run when nothing changed.
-	cacheKey := sysPromptCacheKey(e.Cfg, role, readOnly, specs, skillManifest, recs, ctxFiles)
+	cacheKey := sysPromptCacheKey(e.Cfg, e.Cwd, role, readOnly, specs, skillManifest, recs, ctxFiles)
 	var sys, sysDynamic string
 	if e.sysPromptCache.key == cacheKey && cacheKey != "" {
 		sys = e.sysPromptCache.value
 		sysDynamic = e.sysPromptCache.dynamic
 	} else {
-		sys, sysDynamic = prompt.AssembleWithDynamic(e.Cfg, specs, skillManifest, recs, ctxFiles)
+		sys, sysDynamic = prompt.AssembleWithDynamic(e.Cfg, e.Cwd, specs, skillManifest, recs, ctxFiles)
 		// rolePromptPrefix prepends, so the dynamic memory tail stays the suffix.
 		if prefix := rolePromptPrefix(role, readOnly); prefix != "" {
 			sys = prefix + "\n" + sys
