@@ -3,6 +3,7 @@ package waggle
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,9 @@ func TestStore_WriteAndExists(t *testing.T) {
 }
 
 func TestStore_WritePrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits are not enforced on windows")
+	}
 	t.Setenv("BEE_HOME", t.TempDir())
 	s, _ := ProjectStore("/p")
 	if err := s.Write("wag_x", "body"); err != nil {

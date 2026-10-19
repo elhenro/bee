@@ -1,6 +1,7 @@
 package herdr
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -231,6 +232,9 @@ func (e testErr) Error() string { return string(e) }
 const errTest = testErr("socket down")
 
 func TestFromEnvGating(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("herdr reporting is disabled on windows")
+	}
 	env := func(m map[string]string) func(string) string {
 		return func(k string) string { return m[k] }
 	}

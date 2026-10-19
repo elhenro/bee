@@ -22,11 +22,11 @@ func TestFind_SlashPatternMatchesRelPath(t *testing.T) {
 		}
 	}
 	res, _ := New(dir).Run(context.Background(), map[string]any{"name": "pkg/*.go"})
-	if res.Content != "pkg/a.go" {
+	if got := filepath.ToSlash(res.Content); got != "pkg/a.go" {
 		t.Errorf("pkg/*.go: got %q", res.Content)
 	}
 	res, _ = New(dir).Run(context.Background(), map[string]any{"name": "**/sub/*.go"})
-	if !strings.Contains(res.Content, "pkg/sub/b.go") || strings.Contains(res.Content, "other") {
+	if got := filepath.ToSlash(res.Content); !strings.Contains(got, "pkg/sub/b.go") || strings.Contains(got, "other") {
 		t.Errorf("**/sub/*.go: got %q", res.Content)
 	}
 }

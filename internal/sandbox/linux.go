@@ -16,12 +16,14 @@ import (
 //
 // If bwrap is not on PATH the original cmd is returned with ErrHelperMissing.
 func wrapLinux(p Policy, cmd []string) ([]string, error) {
-	if _, err := lookPath("bwrap"); err != nil {
-		return cmd, fmt.Errorf("%w: bwrap", ErrHelperMissing)
-	}
+	// validate the policy before probing for the helper: an unappliable scope
+	// (missing cwd) must fail closed even where bwrap is absent, not degrade.
 	args, err := bwrapArgs(p)
 	if err != nil {
 		return cmd, err
+	}
+	if _, err := lookPath("bwrap"); err != nil {
+		return cmd, fmt.Errorf("%w: bwrap", ErrHelperMissing)
 	}
 	wrapped := append([]string{"bwrap"}, args...)
 	wrapped = append(wrapped, cmd...)

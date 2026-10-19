@@ -62,7 +62,7 @@ func TestLoad_EnvProviderTakesProviderDefaultModel(t *testing.T) {
 func TestConfigPath_HonorsBeeHome(t *testing.T) {
 	t.Setenv("BEE_CONFIG", "")
 	t.Setenv("BEE_HOME", "/tmp/iso-bee")
-	if got := ConfigPath(); got != "/tmp/iso-bee/config.toml" {
+	if got := ConfigPath(); got != filepath.Join("/tmp/iso-bee", "config.toml") {
 		t.Errorf("ConfigPath = %q", got)
 	}
 }

@@ -18,6 +18,7 @@ func TestDirHonorsBeeHome(t *testing.T) {
 func TestDirDefaultsUnderHome(t *testing.T) {
 	t.Setenv("BEE_HOME", "")
 	t.Setenv("HOME", "/tmp/h")
+	t.Setenv("USERPROFILE", "/tmp/h") // windows home lookup
 	if d, _ := Dir(); d != filepath.Join("/tmp/h", ".bee") {
 		t.Fatalf("Dir = %q", d)
 	}
