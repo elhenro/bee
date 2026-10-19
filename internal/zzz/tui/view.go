@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // View renders the whole TUI. Layout (top→bottom):
@@ -96,13 +97,15 @@ func (m *Model) logPanel(w int) string {
 	b.WriteString(stySmoke.Render("  log"))
 	for _, l := range lines {
 		b.WriteString("\n  ")
+		// one row per entry: a long line would soft-wrap and tear the redraw
+		text := ansi.Truncate(l.text, max(w-2, 1), "…")
 		switch l.level {
 		case "warn":
-			b.WriteString(styWarning.Render(l.text))
+			b.WriteString(styWarning.Render(text))
 		case "err":
-			b.WriteString(styError.Render(l.text))
+			b.WriteString(styError.Render(text))
 		default:
-			b.WriteString(styBody.Render(l.text))
+			b.WriteString(styBody.Render(text))
 		}
 	}
 	return b.String()

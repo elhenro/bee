@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/elhenro/bee/internal/zzz"
 )
@@ -62,6 +63,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commitsMsg:
 		return m, m.waitMsg()
 	case logMsg:
+		v.text = cleanLogText(v.text)
 		m.log = append(m.log, v)
 		if len(m.log) > 200 {
 			m.log = m.log[len(m.log)-200:]
@@ -220,6 +222,22 @@ func (m *Model) absorbResult(v logMsg) {
 	}
 	// no-op for now; tokens + phase already populate the row. Subject would
 	// require an explicit Println from Drive — left as a future hook.
+}
+
+// cleanLogText drops escape sequences and bare control bytes from text that
+// came from outside (engine output, tool lines): a stray CR or cursor move
+// would wreck the alt-screen layout. tabs become a space.
+func cleanLogText(s string) string {
+	s = ansi.Strip(s)
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t':
+			return ' '
+		case r < 0x20 || r == 0x7f:
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func maxInt(a, b int) int {
