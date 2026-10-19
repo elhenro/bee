@@ -102,11 +102,10 @@ func (r *Rollout) Append(ctx context.Context, msg types.Message) error {
 	if r.f == nil {
 		return errors.New("session: rollout closed")
 	}
-	b, err := json.Marshal(msg)
+	b, err := marshalLine(msg)
 	if err != nil {
 		return err
 	}
-	b = append(b, '\n')
 	if _, err := r.f.Write(b); err != nil {
 		return err
 	}
