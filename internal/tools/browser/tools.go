@@ -38,14 +38,43 @@ func validateNavURL(raw string) error {
 		}
 		return nil
 	}
-	if ips, err := net.LookupIP(host); err == nil {
-		for _, ip := range ips {
-			if blocked(ip) {
-				return fmt.Errorf("refused: %s resolves to blocked IP %s", host, ip)
-			}
+	// the browser reads 0177.0.0.1, 127.1 and 0x7f000001 as IPv4 literals that
+	// the resolver may disagree with, so only canonical dotted quads pass
+	if endsInNumber(host) {
+		return fmt.Errorf("refused: %q is a non-canonical numeric host", host)
+	}
+	ips, err := lookupIP(host)
+	if err != nil {
+		return fmt.Errorf("refused: cannot resolve %s: %w", host, err)
+	}
+	for _, ip := range ips {
+		if blocked(ip) {
+			return fmt.Errorf("refused: %s resolves to blocked IP %s", host, ip)
 		}
 	}
 	return nil
+}
+
+// lookupIP is indirected so tests can run offline.
+var lookupIP = net.LookupIP
+
+// endsInNumber mirrors the URL standard's test for hosts the browser parses as
+// IPv4: the last label is all decimal digits or a 0x hex number.
+func endsInNumber(host string) bool {
+	labels := strings.Split(strings.TrimSuffix(host, "."), ".")
+	last := labels[len(labels)-1]
+	if last == "" {
+		return false
+	}
+	if strings.IndexFunc(last, func(r rune) bool { return r < '0' || r > '9' }) < 0 {
+		return true
+	}
+	if len(last) >= 2 && (last[:2] == "0x" || last[:2] == "0X") {
+		return strings.IndexFunc(last[2:], func(r rune) bool {
+			return !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F')
+		}) < 0
+	}
+	return false
 }
 
 // Options configures the tool set.
