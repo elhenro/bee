@@ -232,20 +232,23 @@ func clampThinkingBudget(budget, maxTokens int) int {
 }
 
 // anthropicMaxTokens picks a default when caller didn't pin one. Anthropic
-// requires the field. Picks model-aware ceilings so Sonnet/Opus aren't
-// truncated at 4k while running tool loops.
+// requires the field and rejects values above the model's output limit, so
+// the old 3.x families keep their small caps while every other claude family
+// (including ids newer than this table) gets a generous 16k: thinking shares
+// the budget, and a lower value truncates tool-call JSON mid-object. Ids that
+// are not claude families (third-party wire clones) stay at 4096.
 func anthropicMaxTokens(model string, n int) int {
 	if n > 0 {
 		return n
 	}
 	m := strings.ToLower(model)
 	switch {
-	case strings.Contains(m, "sonnet-4-6"), strings.Contains(m, "sonnet-4-5"):
+	case strings.Contains(m, "claude-3-opus"), strings.Contains(m, "claude-3-haiku"):
+		return 4096
+	case strings.Contains(m, "claude-3-5"), strings.Contains(m, "claude-3.5"):
+		return 8192
+	case strings.Contains(m, "opus"), strings.Contains(m, "sonnet"), strings.Contains(m, "haiku"):
 		return 16384
-	case strings.Contains(m, "opus"):
-		return 8192
-	case strings.Contains(m, "haiku"):
-		return 8192
 	}
 	return 4096
 }

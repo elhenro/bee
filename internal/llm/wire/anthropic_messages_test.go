@@ -222,8 +222,14 @@ func TestBuildAnthropicMessages_MaxTokensModelAware(t *testing.T) {
 	cases := map[string]int{
 		"claude-sonnet-4-6": 16384,
 		"claude-sonnet-4-5": 16384,
-		"claude-opus-4-7":   8192,
-		"claude-haiku-4-5":  8192,
+		"claude-opus-4-7":   16384,
+		"claude-haiku-4-5":  16384,
+		"claude-sonnet-5-5": 16384,
+		"claude-sonnet-4-7": 16384,
+		"claude-opus-5-5":   16384,
+		"claude-haiku-5-5":  16384,
+		"claude-3-5-sonnet": 8192,
+		"claude-3-haiku":    4096,
 		"unknown-model":     4096,
 	}
 	for m, want := range cases {
