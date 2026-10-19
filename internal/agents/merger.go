@@ -60,9 +60,6 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 	// in this function.
 	setMerge(st.SessionID, bgreg.MergeStateMerging, "")
 
-	// fetch is best-effort: local-only repos have no origin.
-	_ = zzz.Fetch(repoRoot, "origin")
-
 	// a rebase the agent left half-done is its own work: hand it back as is
 	if rebasing(st.WorktreePath) {
 		setMerge(st.SessionID, bgreg.MergeStateConflict, "rebase left in progress")
