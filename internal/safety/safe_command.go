@@ -48,7 +48,7 @@ func plainSegments(cmd string, depth int) ([][]string, bool) {
 			}
 			return nil, false
 		}
-		if hasSubstitution(t) || hasDollarQuote(t) {
+		if hasSubstitution(t) || hasDollarQuote(t) || hasHiddenExpansion(t) {
 			return nil, false
 		}
 		cur = append(cur, t.Value)
