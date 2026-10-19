@@ -45,7 +45,9 @@ func scrubDescriptionsAny(v any) any {
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
-			if k == "description" {
+			// only the string annotation goes: a property named "description"
+			// has a schema map as its value and must stay (it may be required).
+			if _, annotation := val.(string); k == "description" && annotation {
 				continue
 			}
 			out[k] = scrubDescriptionsAny(val)

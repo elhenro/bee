@@ -100,3 +100,29 @@ func TestStripToolSpecDescriptions_TinyXMLNoOp(t *testing.T) {
 		t.Fatal("tiny+xml should skip stripping: textmode wrapper nils Tools downstream")
 	}
 }
+
+// a parameter that is itself called "description" is a property, not an
+// annotation: dropping it would leave "required" naming a field the schema no
+// longer declares.
+func TestStripSchemaDescriptions_KeepsPropertyNamedDescription(t *testing.T) {
+	in := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":        map[string]any{"type": "string", "description": "the name"},
+			"description": map[string]any{"type": "string", "description": "what it does"},
+		},
+		"required": []any{"name", "description"},
+	}
+	out := StripSchemaDescriptionsForProfile(in, "tiny")
+	props := out["properties"].(map[string]any)
+	d, ok := props["description"].(map[string]any)
+	if !ok {
+		t.Fatalf("property named description was dropped: %v", props)
+	}
+	if _, has := d["description"]; has {
+		t.Fatalf("annotation on that property should still be stripped: %v", d)
+	}
+	if _, has := props["name"].(map[string]any)["description"]; has {
+		t.Fatalf("annotation on name should be stripped")
+	}
+}
