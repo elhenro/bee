@@ -156,7 +156,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 			name := d.Name()
 			// .claude holds agent state (worktrees with duplicate code) — skip
 			// or counts/searches double-count every file.
-			if name == ".git" || name == "node_modules" || name == "vendor" || name == "testdata" || name == ".claude" {
+			// never skip the requested root itself, only dirs below it
+			if p != root && (name == ".git" || name == "node_modules" || name == "vendor" || name == "testdata" || name == ".claude") {
 				return filepath.SkipDir
 			}
 			return nil

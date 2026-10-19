@@ -115,7 +115,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if name == ".git" || name == "node_modules" || name == "vendor" || name == ".claude" || name == "testdata" {
+			// never skip the requested root itself, only dirs below it
+			if p != root && (name == ".git" || name == "node_modules" || name == "vendor" || name == ".claude" || name == "testdata") {
 				return filepath.SkipDir
 			}
 			return nil
