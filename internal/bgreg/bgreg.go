@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type State string
@@ -105,7 +106,11 @@ func Truncate(s string) string {
 	if len(s) <= previewMax {
 		return s
 	}
-	return s[:previewMax-1] + "…"
+	cut := previewMax - 1
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 // Write replaces the on-disk status atomically. Version is auto-incremented
@@ -132,7 +137,7 @@ func writeRaw(s Status) error {
 		return errors.New("bgreg.writeRaw: empty SessionID")
 	}
 	s.SchemaV = currentSchema
-	s.Task = Truncate(s.Task)
+	// Task stays whole: resume restates it as the agent's original assignment
 	s.LastResponse = Truncate(s.LastResponse)
 	if s.UpdatedAt.IsZero() {
 		s.UpdatedAt = time.Now().UTC()
