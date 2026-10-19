@@ -9,7 +9,10 @@ import (
 	"context"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/types"
 )
 
 // inlineExecResult is the outcome of an inline ! or !! shell call.
@@ -65,4 +68,35 @@ func resolveBangSilent(defaultSilent bool, bangCount int) bool {
 		return !defaultSilent
 	}
 	return defaultSilent
+}
+
+// inlineShellDoneMsg carries a finished `!cmd` back to Update.
+type inlineShellDoneMsg struct {
+	payload string
+	silent  bool
+}
+
+// inlineShellCmd runs cmd off the update loop: the shell tool may block on an
+// approval prompt that only the loop can answer, and a slow command must not
+// freeze the UI.
+func (m Model) inlineShellCmd(cmd string, silent bool) tea.Cmd {
+	ctx, reg := m.ctx, m.eng.Tools
+	return func() tea.Msg {
+		res := runInlineShell(ctx, reg, cmd, silent)
+		return inlineShellDoneMsg{payload: formatInlineShell(cmd, res.Output, res.IsError), silent: silent}
+	}
+}
+
+func (m Model) onInlineShellDone(msg inlineShellDoneMsg) (tea.Model, tea.Cmd) {
+	// forwarding to the model needs an idle engine; if a turn started while the
+	// shell ran, keep the record local instead of overlapping runs.
+	if msg.silent || m.state != StateIdle {
+		m.messages = append(m.messages, types.Message{
+			Role:    types.RoleUser,
+			Content: []types.ContentBlock{{Type: types.BlockText, Text: msg.payload}},
+		})
+		return m, m.flush()
+	}
+	// the LLM sees the cmd+output once; scrollback shows a single styled card.
+	return m.submit(msg.payload)
 }

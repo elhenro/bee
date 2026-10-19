@@ -209,19 +209,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		silent := resolveBangSilent(m.shellBangSilent, count)
-		res := runInlineShell(m.ctx, m.eng.Tools, cmd, silent)
-		payload := formatInlineShell(cmd, res.Output, res.IsError)
-		if silent {
-			// local-only: record the styled shell exec, no engine turn.
-			m.messages = append(m.messages, types.Message{
-				Role:    types.RoleUser,
-				Content: []types.ContentBlock{{Type: types.BlockText, Text: payload}},
-			})
-			return m, m.flush()
-		}
-		// non-silent: submit the shell record as the user turn so the LLM sees
-		// the full cmd+output once and the scrollback shows a single styled card.
-		return m.submit(payload)
+		return m, m.inlineShellCmd(cmd, silent)
 	}
 
 	if strings.HasPrefix(text, "/") {

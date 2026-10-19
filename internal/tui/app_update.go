@@ -225,6 +225,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		}
 		return nm, cmd
 
+	case inlineShellDoneMsg:
+		return m.onInlineShellDone(msg)
 	case streamDeltaMsg:
 		return m.onStreamDelta(msg)
 	case thinkDeltaMsg:
