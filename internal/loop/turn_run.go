@@ -505,10 +505,15 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			Content:  blocks,
 			Time:     time.Now().UTC(),
 		}
-		if err := e.appendMessage(ctx, toolMsg); err != nil {
+		// a cancel landing while the last tool ran must not drop its results:
+		// the assistant tool_use is already on disk, so the append ignores ctx.
+		if err := e.appendMessage(context.WithoutCancel(ctx), toolMsg); err != nil {
 			return res, err
 		}
 		res.Messages = append(res.Messages, toolMsg)
+		if err := ctx.Err(); err != nil {
+			return res, err
+		}
 		// two-strike bail: append the result first (so transcript shows what
 		// failed) then surface the typed error to the caller.
 		if repeatErr != nil {
