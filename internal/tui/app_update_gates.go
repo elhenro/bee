@@ -54,12 +54,16 @@ func (m Model) claimByPane(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 	}
 
-	// model picker claims all input while active. modelsLoadedMsg /
-	// spinner.TickMsg are routed unconditionally below so async loads still
-	// settle into the cache.
+	// model picker claims all input while active. a finished model fetch is
+	// routed even after the picker closed so it still settles into the cache.
+	if lm, ok := msg.(modelsLoadedMsg); ok && m.picker != nil {
+		newP, cmd := m.picker.Update(lm)
+		m.picker = newP
+		return m, cmd, true
+	}
 	if m.picker != nil && m.picker.Active() {
 		switch msg.(type) {
-		case tea.KeyMsg, modelsLoadedMsg, spinner.TickMsg:
+		case tea.KeyMsg, spinner.TickMsg:
 			newP, cmd := m.picker.Update(msg)
 			m.picker = newP
 			return m, cmd, true

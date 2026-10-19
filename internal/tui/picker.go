@@ -142,22 +142,16 @@ func (p *Picker) SetSize(w, _ int) { p.width = w }
 
 // Update handles key events + async messages.
 func (p *Picker) Update(msg tea.Msg) (*Picker, tea.Cmd) {
+	// a fetch that lands after the picker closed still settles: dropping it
+	// would leave loading[name] set and the provider unloadable for good
+	if m, ok := msg.(modelsLoadedMsg); ok {
+		p.settleLoad(m)
+		return p, nil
+	}
 	if !p.active {
 		return p, nil
 	}
 	switch m := msg.(type) {
-	case modelsLoadedMsg:
-		p.loading[m.provider] = false
-		if m.err != nil {
-			p.loadErr[m.provider] = m.err
-		} else {
-			p.loadErr[m.provider] = nil
-			p.modelsByProvider[m.provider] = modelEntries(m.models)
-			if m.provider == p.currentProvider {
-				p.modelSel = 0
-			}
-		}
-		return p, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		p.spin, cmd = p.spin.Update(m)
@@ -166,6 +160,19 @@ func (p *Picker) Update(msg tea.Msg) (*Picker, tea.Cmd) {
 		return p.handleKey(m)
 	}
 	return p, nil
+}
+
+func (p *Picker) settleLoad(m modelsLoadedMsg) {
+	p.loading[m.provider] = false
+	if m.err != nil {
+		p.loadErr[m.provider] = m.err
+		return
+	}
+	p.loadErr[m.provider] = nil
+	p.modelsByProvider[m.provider] = modelEntries(m.models)
+	if m.provider == p.currentProvider {
+		p.modelSel = 0
+	}
 }
 
 func (p *Picker) handleKey(km tea.KeyMsg) (*Picker, tea.Cmd) {
@@ -250,6 +257,10 @@ func (p *Picker) advance() (*Picker, tea.Cmd) {
 		name := p.selectedProvider()
 		if name == "" {
 			return p, nil
+		}
+		if name != p.currentProvider {
+			// selection and filter belong to the provider they were made in
+			p.modelSel, p.modelQuery = 0, ""
 		}
 		p.currentProvider = name
 		p.focus = colModels

@@ -3,10 +3,13 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 )
@@ -178,5 +181,54 @@ func TestPicker_ErrorAndRetry(t *testing.T) {
 	}
 	if len(p.modelsByProvider["alpha"]) != 1 {
 		t.Errorf("retry did not populate cache: %+v", p.modelsByProvider)
+	}
+}
+
+// esc while a provider fetch is in flight must not wedge that provider: the
+// late result still settles and the next open shows its models.
+func TestPicker_LateFetchAfterEscStillSettles(t *testing.T) {
+	m := NewModel(nil, "/tmp/work", "m", "", caveman.Default)
+	p := NewPicker(testCfg())
+	p.SetLister(fakeLister(map[string][]llm.Model{"alpha": {{ID: "alpha-m1"}}}, nil))
+	m.picker = p
+	p.Show() // fetch for alpha starts, result not delivered yet
+	p.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	nm, _ := m.Update(modelsLoadedMsg{provider: "alpha", models: []llm.Model{{ID: "alpha-m1"}}})
+	m = nm.(Model)
+
+	settle(t, m.picker, m.picker.Show())
+	_, c := m.picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	settle(t, m.picker, c)
+	if v := stripANSI(m.picker.View()); !strings.Contains(v, "alpha-m1") || strings.Contains(v, "loading") {
+		t.Fatalf("picker wedged on loading after esc mid-fetch:\n%s", v)
+	}
+}
+
+// a selection made in one provider's model list must not carry into another's.
+func TestPicker_ModelSelResetsWhenSwitchingProvider(t *testing.T) {
+	var many []llm.Model
+	for i := 0; i < 30; i++ {
+		many = append(many, llm.Model{ID: fmt.Sprintf("a%02d", i)})
+	}
+	p := NewPicker(testCfg())
+	p.SetLister(fakeLister(map[string][]llm.Model{"alpha": many, "beta": {{ID: "b0"}, {ID: "b1"}}}, nil))
+	settle(t, p, p.Show())
+	key := func(k tea.KeyType) {
+		_, c := p.Update(tea.KeyMsg{Type: k})
+		settle(t, p, c)
+	}
+	key(tea.KeyDown) // beta, loaded and cached
+	key(tea.KeyEnter)
+	key(tea.KeyEsc)
+	key(tea.KeyUp) // alpha
+	key(tea.KeyEnter)
+	for i := 0; i < 20; i++ {
+		key(tea.KeyDown)
+	}
+	key(tea.KeyEsc)
+	key(tea.KeyDown) // beta again, now cached
+	key(tea.KeyEnter)
+	if got := p.selectedModelID(); got != "b0" {
+		t.Fatalf("selected %q (modelSel=%d), want first model b0", got, p.modelSel)
 	}
 }
