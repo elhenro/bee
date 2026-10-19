@@ -123,9 +123,18 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 
 	// FF-merge the verified commit itself, not whatever the branch names now.
 	if err := zzz.MergeFF(repoRoot, MergeBase, pinned); err != nil {
-		// rare: usually means base advanced between rebase and merge; flip
-		// back to unmerged and let the next tick retry.
-		setMerge(st.SessionID, bgreg.MergeStateUnmerged, "ff-merge failed: "+err.Error())
+		// usually base advanced between rebase and merge, so retry next tick.
+		// but a base checked out elsewhere or a dirty main fails every tick and
+		// re-verifies each time: spend a hop per failure, then park for a human.
+		msg := "ff-merge failed: " + err.Error()
+		hops := st.Hops + 1
+		_ = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
+			s.Hops, s.MergeState, s.ConflictMsg = hops, bgreg.MergeStateUnmerged, msg
+			return nil
+		})
+		if hops > sw.Hops() {
+			Block(st.SessionID, fmt.Sprintf("%s (failed %d times)", msg, hops))
+		}
 		res.Err = err
 		return res
 	}
