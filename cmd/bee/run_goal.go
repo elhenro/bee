@@ -80,6 +80,7 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 			return 0
 		}
 		res, err := eng.Run(ctx, msg)
+		carryGoalHistory(eng, res, err)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				fmt.Fprintln(os.Stderr, "goal: cancelled")
@@ -133,6 +134,20 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 	}
 	fmt.Fprintf(os.Stderr, "bee back %s\n", sessID)
 	return 0
+}
+
+// carryGoalHistory seeds the next turn with this turn's transcript: Run is
+// stateless, so without it every continuation starts blind and the judge sees
+// only the latest turn. a tool_use left dangling by a failed turn is dropped.
+func carryGoalHistory(eng *loop.Engine, res loop.RunResult, err error) {
+	if len(res.Messages) == 0 {
+		return
+	}
+	if errors.Is(err, loop.ErrProviderReject) {
+		eng.InitialMessages = loop.StripBrokenToolCall(res.Messages)
+		return
+	}
+	eng.InitialMessages = loop.StripDanglingToolUse(res.Messages)
 }
 
 // cumTokens reports cumulative session tokens from the engine's cost tracker,
