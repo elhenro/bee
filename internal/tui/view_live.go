@@ -1,9 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/elhenro/bee/internal/types"
 )
 
 // live in-progress slice: streaming turn, compaction, or the latest error.
@@ -149,6 +153,10 @@ func (m Model) busyRows() int {
 // the spinner line, with a blank row above outside compact mode
 func (m Model) renderBusyRow() string {
 	row := m.stream.RenderSpinner(m.loaderFrame, m.turnElapsed())
+	// the model is blocked on its calls: say so, and clock the wait, not the turn
+	if label := waitingLabel(m.pendingTools); label != "" {
+		row = m.stream.RenderSpinnerLabel(m.loaderFrame, label, time.Since(m.pendingSince), interruptHint)
+	}
 	if m.compact {
 		return row
 	}
@@ -194,4 +202,21 @@ func (m Model) renderCompactingRow() string {
 		return row
 	}
 	return "\n" + row
+}
+
+// busy-row label while calls run: the tool's name for one, a count for a batch
+func waitingLabel(uses []types.ToolUse) string {
+	var names []string
+	for _, u := range uses {
+		if u.Name != "escalate" {
+			names = append(names, u.Name)
+		}
+	}
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return "Running " + names[0] + "…"
+	}
+	return fmt.Sprintf("Running %d calls…", len(names))
 }

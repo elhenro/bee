@@ -78,6 +78,7 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	switch msg.Msg.Role {
 	case types.RoleAssistant:
 		m.pendingTools = pendingToolUses(msg.Msg)
+		m.pendingSince = time.Now()
 	case types.RoleTool:
 		m.pendingTools = nil
 	}

@@ -54,6 +54,9 @@ type Model struct {
 	// swarm so a batch of calls shows as N buzzing bees while they run,
 	// instead of one generic loader.
 	pendingTools []types.ToolUse
+	// pendingSince is when that batch landed; the busy row shows how long
+	// the model has been waiting on it
+	pendingSince time.Time
 
 	// streamFlushed holds the prefix of m.partial that has already been
 	// pushed into terminal scrollback via tea.Println by the progressive

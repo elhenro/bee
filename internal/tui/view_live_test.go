@@ -223,3 +223,21 @@ func TestLoader_SurvivesResize(t *testing.T) {
 		t.Fatal("resize dropped the configured loader")
 	}
 }
+
+func TestRenderLive_BusyRowNamesTheToolAndClocksTheWait(t *testing.T) {
+	m := streamingModel(t)
+	m.pendingTools = []types.ToolUse{{ID: "u1", Name: "bash", Input: map[string]any{"command": "go test ./..."}}}
+	m.pendingSince = time.Now().Add(-42 * time.Second)
+	out := stripANSI(m.renderLive(20))
+	if !strings.Contains(out, "Running bash…") || !strings.Contains(out, "42s") {
+		t.Fatalf("busy row must name the tool and show the wait: %q", out)
+	}
+
+	m.pendingTools = append(m.pendingTools, types.ToolUse{ID: "u2", Name: "read"}, types.ToolUse{ID: "u3", Name: "escalate"})
+	if got := waitingLabel(m.pendingTools); got != "Running 2 calls…" {
+		t.Fatalf("batch label must count calls and skip escalate: %q", got)
+	}
+	if got := waitingLabel(nil); got != "" {
+		t.Fatalf("no calls, no label: %q", got)
+	}
+}
