@@ -185,7 +185,9 @@ func (s *tuiSide) OpenSession(id string) error {
 	// session's value (or 0) until the next provider event lands — the bar
 	// updates only after the first reply. mirrors what /compact does via
 	// SetEstimatedInput. exact count overwrites this on the next Record.
+	// reset first: it also clears the estimate set right after it
 	if s.m.eng.Costs != nil {
+		s.m.eng.Costs.Reset()
 		s.m.eng.Costs.SetEstimatedInput(prompt.EstimateTokens(messagesText(prior)))
 	}
 	s.m.partial = ""
@@ -198,9 +200,6 @@ func (s *tuiSide) OpenSession(id string) error {
 	// terminal scrollback. The slash-command caller (runSlash) calls flush
 	// after Run() returns.
 	s.m.printedCount = 0
-	if s.m.eng.Costs != nil {
-		s.m.eng.Costs.Reset()
-	}
 	return nil
 }
 
