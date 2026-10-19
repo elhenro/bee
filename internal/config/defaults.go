@@ -102,6 +102,8 @@ func Defaults() Config {
 				ReportsCost: true,
 				// OpenRouter honors ephemeral cache_control on the system prefix.
 				SupportsPromptCache: true,
+				// cheapest upstream first; same as opencode's sort=price.
+				RouteSort: "price",
 			},
 			"openai": {
 				BaseURL:      "https://api.openai.com/v1",

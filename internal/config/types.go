@@ -295,6 +295,10 @@ type ProviderConfig struct {
 	// breakpoints on the system prefix. On by default for OpenRouter; off for
 	// strict endpoints that reject the content-parts system message.
 	SupportsPromptCache bool `toml:"supports_prompt_cache"`
+	// RouteSort orders a routed aggregator's upstreams by "price" (cheapest
+	// first), "throughput" or "latency". On by default (price) for OpenRouter;
+	// "none" or empty omits it. Strict endpoints reject the field.
+	RouteSort string `toml:"route_sort"`
 	// NumCtx sets Ollama's runtime context window. >0 is sent verbatim (operator
 	// override). 0 lets bee auto-allocate the probed window (clamped) for
 	// ollama-shaped servers. Only meaningful for local providers.

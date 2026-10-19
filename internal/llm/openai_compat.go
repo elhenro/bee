@@ -60,6 +60,10 @@ type OpenAICompatConfig struct {
 	// honor it (OpenRouter) should enable this; strict endpoints reject the
 	// content-parts system message, and local servers cache by prefix anyway.
 	PromptCache bool
+	// RouteSort asks a routed aggregator to order upstreams by this key
+	// ("price" | "throughput" | "latency"). Empty or "none" = omit and let the router pick.
+	// Per-provider (TOML `route_sort`); only routers that honor it should set it.
+	RouteSort string
 }
 
 // OpenAICompatProvider implements Provider against an OpenAI-compatible API.
@@ -331,6 +335,11 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 	// strict endpoints never see the extra field.
 	if p.cfg.ReportsCost {
 		wr.Usage = &wire.UsageRequest{Include: true}
+	}
+	// cheapest-first upstream routing. gated so strict endpoints never see the
+	// extra field.
+	if p.cfg.RouteSort != "" && p.cfg.RouteSort != "none" {
+		wr.Provider = &wire.ProviderRouting{Sort: p.cfg.RouteSort}
 	}
 	// OpenAI o-series + compatible: pass thinking level as reasoning_effort.
 	// Omit on Off, and omit for models that don't honor the field — a non-

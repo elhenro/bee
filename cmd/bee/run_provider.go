@@ -151,6 +151,7 @@ func buildProviderInner(cfg config.Config) (llm.Provider, error) {
 			KeepAlive:          prov.KeepAlive,
 			PromptCache:        prov.SupportsPromptCache,
 			NumCtx:             prov.NumCtx,
+			RouteSort:          prov.RouteSort,
 		}), nil
 	case "gemini":
 		key := cfg.APIKey

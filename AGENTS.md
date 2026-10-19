@@ -122,6 +122,7 @@ wire_api      = "chat"
 env_key       = "OPENROUTER_API_KEY"
 default_model = "anthropic/claude-sonnet-4.5"
 reports_cost  = true
+route_sort    = "price"   # cheapest upstream first (default for openrouter); "none" omits
 
 [providers.deepseek]
 base_url      = "https://api.deepseek.com/v1"

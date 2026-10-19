@@ -54,6 +54,16 @@ type ChatRequest struct {
 	// to a sampling constraint, so the completion is valid by construction.
 	// Omitted when nil.
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+	// Provider is the routed-aggregator upstream preference (e.g. sort by price).
+	// Omitted when nil; only routers that understand it get it, so strict
+	// endpoints never see the field.
+	Provider *ProviderRouting `json:"provider,omitempty"`
+}
+
+// ProviderRouting steers which upstream a routed aggregator picks. Sort is
+// "price" | "throughput" | "latency".
+type ProviderRouting struct {
+	Sort string `json:"sort,omitempty"`
 }
 
 // ResponseFormat is OpenAI's structured-output envelope. Type is

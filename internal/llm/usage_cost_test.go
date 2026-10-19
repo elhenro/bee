@@ -44,3 +44,19 @@ func TestUsageFromWireCapturesCostAndCached(t *testing.T) {
 		t.Errorf("cached = %d, want 4", u.CachedTokens)
 	}
 }
+
+func TestRouteSortGatesProviderField(t *testing.T) {
+	for _, tc := range []struct {
+		sort string
+		want bool
+	}{{"price", true}, {"latency", true}, {"", false}, {"none", false}} {
+		p := NewOpenAICompat(OpenAICompatConfig{Name: "agg", RouteSort: tc.sort})
+		wr := p.buildWireRequest(Request{Model: "m", Stream: true})
+		if got := wr.Provider != nil; got != tc.want {
+			t.Fatalf("RouteSort=%q: provider set=%v, want %v", tc.sort, got, tc.want)
+		}
+		if tc.want && wr.Provider.Sort != tc.sort {
+			t.Fatalf("RouteSort=%q: got sort %q", tc.sort, wr.Provider.Sort)
+		}
+	}
+}
