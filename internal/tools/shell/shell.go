@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/elhenro/bee/internal/approval"
+	"github.com/elhenro/bee/internal/jobs"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/safety"
 	"github.com/elhenro/bee/internal/tools"
@@ -44,11 +45,15 @@ const (
 // Allowed, when non-nil, enables untrusted-mode gating: a command it rejects
 // is put to the approver (if any) before running, even when no dangerous
 // pattern matched. nil leaves only the dangerous-pattern gate.
+//
+// Jobs, when non-nil, enables `background: true`: the command is handed to the
+// manager and the call returns at once. nil leaves the flag out of the schema.
 type Options struct {
 	UseUserRC bool
 	Shell     string
 	RCFile    string
 	Allowed   func(cmd string) bool
+	Jobs      *jobs.Manager
 }
 
 // Tool is the shell executor.
@@ -78,28 +83,37 @@ func NewWithOptions(app approval.Approver, opts Options) tools.Tool {
 
 // Spec advertises the tool to the model.
 func (t *Tool) Spec() llm.ToolSpec {
+	props := map[string]any{
+		"command": map[string]any{
+			"type":        "string",
+			"minLength":   1,
+			"description": "Command line passed to bash -c. Do not prepend `cd <dir> &&` — process cwd is already set.",
+		},
+		"timeout_seconds": map[string]any{
+			"type":        "integer",
+			"description": "Hard timeout in seconds (default 120, background 1800). Raise it for long builds or test suites.",
+		},
+		"cwd": map[string]any{
+			"type":        "string",
+			"description": "Override working directory. Omit to inherit bee's cwd (the usual case).",
+		},
+	}
+	desc := "Run a shell command via `bash -c`. Combined stdout+stderr returned, capped at 20 KB. Already runs in bee's cwd — do NOT prepend `cd <dir> &&`; use the cwd field only to override."
+	if t.opts.Jobs != nil {
+		props["background"] = map[string]any{
+			"type":        "boolean",
+			"description": backgroundHint,
+		}
+		desc += " Slow command (build, test suite, server)? Set background=true: it returns at once and the result arrives as a new message when it exits. Never sleep or poll."
+	}
 	return llm.ToolSpec{
 		Name:          toolName,
-		Description:   "Run a shell command via `bash -c`. Combined stdout+stderr returned, capped at 20 KB. Already runs in bee's cwd — do NOT prepend `cd <dir> &&`; use the cwd field only to override.",
+		Description:   desc,
 		PromptSnippet: "Execute bash.",
 		Schema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"command": map[string]any{
-					"type":        "string",
-					"minLength":   1,
-					"description": "Command line passed to bash -c. Do not prepend `cd <dir> &&` — process cwd is already set.",
-				},
-				"timeout_seconds": map[string]any{
-					"type":        "integer",
-					"description": "Hard timeout in seconds (default 120). Raise it for long builds or test suites.",
-				},
-				"cwd": map[string]any{
-					"type":        "string",
-					"description": "Override working directory. Omit to inherit bee's cwd (the usual case).",
-				},
-			},
-			"required": []string{"command"},
+			"type":       "object",
+			"properties": props,
+			"required":   []string{"command"},
 		},
 	}
 }
@@ -160,6 +174,10 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 				}, nil
 			}
 		}
+	}
+
+	if wantsBackground(input) {
+		return t.runBackground(input, cmdStr, displayCmd, stripNote), nil
 	}
 
 	timeout := defaultTimeout

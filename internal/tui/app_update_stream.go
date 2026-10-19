@@ -475,6 +475,12 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		nm, runCmd := m.submit(nxt)
 		return nm, tea.Batch(flushCmd, costCmd, recapCmd, runCmd, snapCmd)
 	}
+	// a background job finished after the loop's last look: start its turn now
+	if msg.err == nil {
+		if nm, jobCmd := m.startJobTurn(); jobCmd != nil {
+			return nm, tea.Batch(flushCmd, costCmd, recapCmd, jobCmd, snapCmd)
+		}
+	}
 	// post-scout handoff: a clean scout turn produced a plan, but scout strips
 	// mutators so "do it" silently no-ops. Offer to switch into worker
 	// (optionally a fresh session carrying just the plan). Queue is empty here

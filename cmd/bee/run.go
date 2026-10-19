@@ -162,11 +162,18 @@ func runHeadlessReal(args []string) {
 	if c, ok := app.(*approval.Cache); ok {
 		defer c.Flush()
 	}
+	// background commands, only for a run shape that waits for them (see awaitJobs)
+	jm := headlessJobs(*bgLoop, *skillName, userMsg)
+	defer jm.Close()
+	var jobOpts []buildOpt
+	if jm != nil {
+		jobOpts = append(jobOpts, withJobs(jm))
+	}
 	var reg *tools.Registry
 	if writeRe != nil {
-		reg, err = buildToolsFilteredWithApprover(cwd, cfg, writeRe, prov, storeDir, app)
+		reg, err = buildToolsFilteredWithApprover(cwd, cfg, writeRe, prov, storeDir, app, jobOpts...)
 	} else {
-		reg, err = buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
+		reg, err = buildToolsWithApprover(cwd, cfg, prov, storeDir, app, jobOpts...)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee run: tools: %v\n", err)
@@ -227,6 +234,7 @@ func runHeadlessReal(args []string) {
 	// os.Exit skips defers: every exit below goes through exit so the session
 	// file closes and pending AllowAlways grants reach disk first.
 	exit := func(code int) {
+		jm.Close()
 		roll.Close()
 		herdr.Close()
 		if c, ok := app.(*approval.Cache); ok {
@@ -256,6 +264,7 @@ func runHeadlessReal(args []string) {
 		Cwd:         cwd,
 		Stdout:      os.Stdout,
 		Costs:       cost.New(),
+		Jobs:        jm,
 	}
 
 	if *jsonOut {
@@ -336,6 +345,12 @@ func runHeadlessReal(args []string) {
 			eng.InitialMessages = loop.StripDanglingToolUse(res.Messages)
 		}
 		msg = d.Continuation
+	}
+
+	// background jobs outlive the turn that started them: keep going until they
+	// have all reported back and the model has had its say on each
+	if err == nil && eng.Jobs != nil {
+		res, err = awaitJobs(parent, eng, cfg, res, *jsonOut)
 	}
 
 	if err != nil {

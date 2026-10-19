@@ -92,6 +92,9 @@ func (m Model) Init() tea.Cmd {
 	if c := m.waitWarn(); c != nil {
 		cmds = append(cmds, c)
 	}
+	if c := m.waitJobs(); c != nil {
+		cmds = append(cmds, c)
+	}
 	// Init has a value receiver, so flushing here would advance printedCount
 	// on a throwaway copy and the first real flush would print the resumed
 	// transcript a second time. Do it in Update instead.

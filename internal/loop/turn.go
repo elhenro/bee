@@ -9,6 +9,7 @@ import (
 	"github.com/elhenro/bee/internal/ask"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
+	"github.com/elhenro/bee/internal/jobs"
 	"github.com/elhenro/bee/internal/jsonmode"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/llm"
@@ -53,6 +54,10 @@ type Engine struct {
 	// SteerCh, when non-nil, is drained at the top of each iteration to
 	// inject mid-turn user steering between LLM rounds.
 	SteerCh chan string
+	// Jobs, when non-nil, holds the background shell commands. Jobs that finish
+	// mid-turn are folded into the transcript at the top of the next iteration
+	// (see jobs.go); a UI that is idle starts a turn for them via JobNotice.
+	Jobs *jobs.Manager
 	// StreamCh, when non-nil, receives every text delta produced by the
 	// provider in lieu of writing them to Stdout. The TUI uses this to
 	// route deltas through bubbletea so the alt-screen isn't corrupted.

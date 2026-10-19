@@ -231,6 +231,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			default:
 			}
 		}
+		e.injectJobNotice(ctx, &res.Messages)
 
 		// auto-compact when prompt+history nears the budget. Check at loop
 		// top so newly-appended tool/assistant messages from prior iteration

@@ -21,6 +21,7 @@ const (
 	glyphSep    = "·" // inline separator in status rows and hints
 	glyphMore   = "…"
 	glyphGap    = "⋯" // unchanged lines skipped inside a diff
+	glyphJob    = "◌" // background job running
 )
 
 // verbs for built-in tools; unknown ids (user tools, skills) render as-is

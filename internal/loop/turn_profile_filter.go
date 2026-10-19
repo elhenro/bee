@@ -21,6 +21,7 @@ var profileToolAllowlist = map[string]map[string]bool{
 		"web_fetch":  true,
 		"web_search": true,
 		"escalate":   true,
+		"job":        true,
 	},
 	"normal": {
 		"bash":             true,
@@ -35,6 +36,7 @@ var profileToolAllowlist = map[string]map[string]bool{
 		"knowledge_search": true,
 		"knowledge_write":  true,
 		"escalate":         true,
+		"job":              true,
 	},
 }
 

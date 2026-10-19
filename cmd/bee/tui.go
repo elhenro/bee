@@ -20,6 +20,7 @@ import (
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/herdr"
+	"github.com/elhenro/bee/internal/jobs"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/loop"
@@ -162,7 +163,11 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	app := approval.NewCacheWithRequire(herdr.WrapApprover(tuiApprover), cfg.Sandbox.CommandAllowlist,
 		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
 	defer app.Flush()
-	reg, err := buildToolsAsker(cwd, cfg, prov, storeDir, app, tuiAsker)
+	// background commands: finished jobs wake the TUI (idle) or ride into the
+	// running turn. closed on exit so no process outlives bee.
+	jm := jobs.New()
+	defer jm.Close()
+	reg, err := buildToolsAsker(cwd, cfg, prov, storeDir, app, tuiAsker, withJobs(jm))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tools: %v\n", err)
 		os.Exit(1)
@@ -241,6 +246,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		// buffered so a quick burst of Enter-steers from the TUI doesn't
 		// block; loop drains one per iteration anyway.
 		SteerCh:         make(chan string, 4),
+		Jobs:            jm,
 		StreamCh:        streamCh,
 		ThinkCh:         thinkCh,
 		ProgressCh:      progressCh,
@@ -262,7 +268,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		if err != nil {
 			return err
 		}
-		newReg, err := buildToolsAsker(cwd, e.Cfg, newProv, storeDir, app, tuiAsker)
+		newReg, err := buildToolsAsker(cwd, e.Cfg, newProv, storeDir, app, tuiAsker, withJobs(jm))
 		if err != nil {
 			return err
 		}
@@ -330,6 +336,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	if err := tui.RunSeededAsker(context.Background(), eng, cmdReg, km, tuiApprover, tuiAsker, seedPrompt); err != nil {
 		fmt.Fprintf(os.Stderr, "bee: tui: %v\n", err)
 		// os.Exit skips defers: persist the allowlist and sync the rollout first
+		jm.Close()
 		herdr.Close()
 		app.Flush()
 		_ = roll.Close()

@@ -8,7 +8,7 @@ import (
 
 // syntheticPrefixes mark user-role messages the loop or compaction wrote, not
 // the user.
-var syntheticPrefixes = []string{"[compacted history]", "[nudge]", "[steer]", "[resume]", "[state card]", "[iter cap reached]"}
+var syntheticPrefixes = []string{"[compacted history]", "[nudge]", "[steer]", "[resume]", "[state card]", "[iter cap reached]", "[job "}
 
 // isSyntheticUserText reports whether text is a loop-injected turn rather than
 // a real user ask.

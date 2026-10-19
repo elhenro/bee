@@ -240,6 +240,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onWarning(msg)
 	case warningFadeMsg:
 		return m.onWarningFade(msg)
+	case jobsWakeMsg:
+		return m.onJobsWake(msg)
 	case loaderTickMsg:
 		return m.onLoaderTick(msg)
 	case glowTickMsg:

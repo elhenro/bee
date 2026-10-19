@@ -15,6 +15,7 @@ import (
 	"github.com/elhenro/bee/internal/ask"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/herdr"
+	"github.com/elhenro/bee/internal/jobs"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/sandbox"
 	"github.com/elhenro/bee/internal/tools"
@@ -132,8 +133,8 @@ func buildTools(cwd string, cfg config.Config, prov llm.Provider, storeDir strin
 
 // buildToolsAsker is buildToolsWithApprover plus the ask_user picker adapter.
 // Used by the TUI; other surfaces leave asker nil (auto-pick recommended).
-func buildToolsAsker(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver, asker ask.Asker) (*tools.Registry, error) {
-	r, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
+func buildToolsAsker(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver, asker ask.Asker, opts ...buildOpt) (*tools.Registry, error) {
+	r, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -147,18 +148,19 @@ func buildToolsAsker(cwd string, cfg config.Config, prov llm.Provider, storeDir 
 
 // newShellTool returns a shell tool with optional approval gating and the
 // shell-environment options from cfg. nil app = no gating (matches
-// pre-approval behavior).
-func newShellTool(app approval.Approver, cfg config.Config) tools.Tool {
+// pre-approval behavior). jm non-nil enables background commands.
+func newShellTool(app approval.Approver, cfg config.Config, jm *jobs.Manager) tools.Tool {
 	opts := shell.Options{
 		UseUserRC: cfg.Shell.UseUserRC,
 		Shell:     cfg.Shell.Shell,
 		RCFile:    cfg.Shell.RCFile,
+		Jobs:      jm,
 	}
 	if sandbox.ApprovalMode(cfg.Sandbox.Approval) == sandbox.Untrusted {
 		pol := sandbox.Policy{AllowList: config.ActiveProfile(cfg).Safety.ExtraSafeCommands}
 		opts.Allowed = pol.IsAllowed
 	}
-	if !opts.UseUserRC && opts.Shell == "" && opts.RCFile == "" && opts.Allowed == nil {
+	if jm == nil && !opts.UseUserRC && opts.Shell == "" && opts.RCFile == "" && opts.Allowed == nil {
 		if app == nil {
 			return shell.New()
 		}
@@ -199,7 +201,8 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 // buildToolsWithApprover is buildTools that wires app into the shell tool so
 // safety.DetectDangerous matches consult the user before running. Pass nil to
 // disable gating.
-func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver) (*tools.Registry, error) {
+func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver, opts ...buildOpt) (*tools.Registry, error) {
+	bo := collectBuildOpts(opts)
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
 
@@ -231,7 +234,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	}
 
 	all := []tools.Tool{
-		newShellTool(app, cfg),
+		newShellTool(app, cfg, bo.jobs),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines, confined),
 		grep.NewWithMax(containRoot, prof.GrepMaxMatches),
 		find.New(containRoot),
@@ -267,6 +270,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	all = appendUserTools(all, cfg.UserTools, execSandbox(cfg, cwd)...)
 	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
+	all = appendJobTool(all, bo.jobs)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue
@@ -344,7 +348,8 @@ func isDisabledTool(disabled []string, name string) bool {
 
 // buildToolsFilteredWithApprover combines buildToolsFiltered with the shell
 // approval hook.
-func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *regexp.Regexp, prov llm.Provider, storeDir string, app approval.Approver) (*tools.Registry, error) {
+func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *regexp.Regexp, prov llm.Provider, storeDir string, app approval.Approver, opts ...buildOpt) (*tools.Registry, error) {
+	bo := collectBuildOpts(opts)
 	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
 
@@ -358,7 +363,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	}
 
 	all := []tools.Tool{
-		newShellTool(app, cfg),
+		newShellTool(app, cfg, bo.jobs),
 		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines, confined),
 		grep.NewWithMax(containRoot, prof.GrepMaxMatches),
 		find.New(containRoot),
@@ -382,6 +387,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	all = appendUserTools(all, cfg.UserTools, execSandbox(cfg, cwd)...)
 	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
+	all = appendJobTool(all, bo.jobs)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue

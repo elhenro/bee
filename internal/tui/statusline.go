@@ -36,6 +36,7 @@ var statusRegistry = map[string]statusItem{
 	"effort":        {id: "effort", align: alignLeft, draw: drawStatusEffort},
 	"yolo":          {id: "yolo", align: alignLeft, draw: func(m Model) string { return m.renderYoloBadge() }},
 	"goal":          {id: "goal", align: alignLeft, draw: drawStatusGoal},
+	"jobs":          {id: "jobs", align: alignLeft, draw: drawStatusJobs},
 	"session_title": {id: "session_title", align: alignLeft, draw: drawStatusSessionTitle},
 	"cwd":           {id: "cwd", align: alignRight, draw: drawStatusCwd},
 	"git_branch":    {id: "git_branch", align: alignRight, draw: drawStatusGitBranch},
@@ -51,7 +52,7 @@ var statusRegistry = map[string]statusItem{
 // (nil); an explicit empty list hides the line
 func defaultStatusLineIDs() []string {
 	return []string{
-		"context", "model", "role", "effort", "yolo", "goal",
+		"context", "model", "role", "effort", "yolo", "goal", "jobs",
 		"cwd", "git_branch", "cost", "total_tokens", "turn_timer", "expand", "hints",
 	}
 }
@@ -59,7 +60,7 @@ func defaultStatusLineIDs() []string {
 // shed order (first goes first) when the footer doesn't fit; identity items
 // (context, model, role, safety) truncate instead
 var statusDropOrder = []string{
-	"hints", "total_tokens", "turn_timer", "expand", "git_branch", "cwd", "cost", "goal", "session_title",
+	"hints", "total_tokens", "turn_timer", "expand", "git_branch", "cwd", "cost", "goal", "jobs", "session_title",
 }
 
 // last resort on a narrow terminal, after the model name is shortened: the
