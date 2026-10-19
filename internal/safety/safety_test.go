@@ -114,6 +114,13 @@ func TestCheckShellCommand_Blocks(t *testing.T) {
 		"/sbin/mkfs.ext4 /dev/sda1",
 		"pa''rted /dev/sda",
 		"echo hi; sudo diskutil eraseDisk JHFS+ none disk2",
+		"timeout 5 parted /dev/sda",
+		"{ parted /dev/sda; }",
+		"! fdisk -l",
+		"if true; then parted; fi",
+		"sudo -u root parted /dev/sda mklabel gpt",
+		"find / -exec fdisk -l {} +",
+		"xargs -n1 parted /dev/sda",
 	}
 	for _, c := range bad {
 		if err := CheckShellCommand(c); err == nil {
@@ -136,6 +143,7 @@ func TestCheckShellCommand_Allows(t *testing.T) {
 		`git commit -m "fix parted lips"`,
 		"grep -rn fdisk docs/",
 		"echo diskutil erase",
+		"echo then parted lips",
 	}
 	for _, c := range ok {
 		if err := CheckShellCommand(c); err != nil {

@@ -15,14 +15,20 @@ var rmRfRoot = regexp.MustCompile(
 var ddToDisk = regexp.MustCompile(`(?i)\bdd\b[^|]*\bof=/dev/(disk|sd|nvme|hd)`)
 
 // cmdPos anchors a match to command position: start of line, after a
-// separator or subshell opener, optionally behind wrappers (sudo, env,
-// sh -c, ...) and a path prefix. a bare word in an argument ("echo parted
-// lips") must not trip the disk checks.
-const cmdPos = "(?:^|[;&|(\\n`]|\\$\\()\\s*" +
-	`(?:(?:sudo|doas|env|exec|command|nohup|nice|time|xargs|eval|(?:ba|z)?sh\s+-c)\s+(?:-\S+\s+|\w+=\S+\s+)*)*` +
+// separator, group opener or negation, optionally behind control keywords,
+// wrappers (sudo, env, sh -c, ...) and a path prefix. a bare word in an
+// argument ("echo parted lips") must not trip the disk checks.
+const cmdPos = "(?:^|[;&|(\\n`{!]|\\$\\()\\s*" +
+	`(?:(?:if|then|do|else|elif|while|until)\s+)*` +
+	`(?:(?:sudo|doas|env|exec|command|nohup|nice|time|timeout|stdbuf|ionice|chroot|busybox|strace|setsid|xargs|eval|(?:ba|z)?sh\s+-c)\s+(?:-\S+\s+|\w+=\S+\s+)*)*` +
 	`(?:\S*/)?`
 
-var diskFormat = regexp.MustCompile(cmdPos + `(mkfs(\.[a-z0-9]+)?|fdisk|parted)\b`)
+// diskTool followed by a flag or a /dev path is blocked wherever it sits, so
+// a wrapper cmdPos does not list (or one taking a flag value, sudo -u root)
+// cannot hide a real invocation. a bare word followed by prose passes.
+const diskTool = `(?:mkfs(?:\.[a-z0-9]+)?|fdisk|parted)\b`
+
+var diskFormat = regexp.MustCompile(cmdPos + diskTool + `|\b` + diskTool + `\s+(?:-\w|/dev/)`)
 var diskutilErase = regexp.MustCompile(`(?i)` + cmdPos + `diskutil\s+erase`)
 
 // CheckShellCommand heuristically blocks commands that almost certainly mean
