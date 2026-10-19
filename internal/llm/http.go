@@ -44,7 +44,15 @@ func effectiveStallTimeout() time.Duration {
 //   - transport-level timeouts (dial, TLS, response headers)
 //   - the per-call ctx for cancellation
 //   - streamWatchdog for idle-hold detection
+//
+// The header wait uses the stall window rather than a tight cap: servers that
+// only flush headers with the first token (slow prefill on a long prompt) are
+// alive, not stalled. A disabled watchdog leaves the wait to the ctx.
 func newStreamingClient() *http.Client {
+	headerWait := effectiveStallTimeout()
+	if headerWait < 0 {
+		headerWait = 0
+	}
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -53,7 +61,7 @@ func newStreamingClient() *http.Client {
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
 			TLSHandshakeTimeout:   15 * time.Second,
-			ResponseHeaderTimeout: 90 * time.Second,
+			ResponseHeaderTimeout: headerWait,
 			ExpectContinueTimeout: 1 * time.Second,
 			IdleConnTimeout:       90 * time.Second,
 			ForceAttemptHTTP2:     true,
