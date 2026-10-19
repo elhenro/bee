@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestCLI_AcceptsFirstChar(t *testing.T) {
+func TestCLI_AcceptsExplicitAnswers(t *testing.T) {
 	cases := []struct {
 		in   string
 		want Decision
@@ -38,6 +38,25 @@ func TestCLI_AcceptsFirstChar(t *testing.T) {
 				t.Errorf("prompt missing reason: %q", out.String())
 			}
 		})
+	}
+}
+
+func TestParseAnswer_UnknownWordsDeny(t *testing.T) {
+	for _, in := range []string{"stop", "skip", "sorry no", "sure", "forbid", "false", "fail", "abort", "absolutely not", "yikes", "STOP", "q"} {
+		if got := parseAnswer(in); got != Deny {
+			t.Errorf("parseAnswer(%q) = %v, want Deny", in, got)
+		}
+	}
+	allow := map[string]Decision{
+		"a": AllowOnce, "Y": AllowOnce, "yes": AllowOnce, "allow": AllowOnce, "once": AllowOnce,
+		"s": AllowSession, "session": AllowSession,
+		"f": AllowAlways, "always": AllowAlways, "forever": AllowAlways,
+		"n": Deny, "no": Deny, "d": Deny, "deny": Deny, "cancel": Deny, "": Deny,
+	}
+	for in, want := range allow {
+		if got := parseAnswer(in + "\n"); got != want {
+			t.Errorf("parseAnswer(%q) = %v, want %v", in, got, want)
+		}
 	}
 }
 

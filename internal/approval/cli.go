@@ -36,12 +36,12 @@ func NewCLI(in io.Reader, out io.Writer) *CLI {
 
 // Request prints a prompt and reads the user's choice.
 //
-// Accepted answers (case-insensitive, first char):
+// Accepted answers (case-insensitive, whole word; anything else denies):
 //
-//	a / y → AllowOnce
-//	s     → AllowSession
-//	f     → AllowAlways
-//	d / n → Deny (also the default on empty input or EOF)
+//	a / y / yes / allow / once   → AllowOnce
+//	s / session                  → AllowSession
+//	f / always / forever         → AllowAlways
+//	d / n / no / deny / cancel   → Deny (also the default on empty input or EOF)
 func (c *CLI) Request(ctx context.Context, cmd, key, desc string) (Decision, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -71,16 +71,12 @@ func (c *CLI) Request(ctx context.Context, cmd, key, desc string) (Decision, err
 }
 
 func parseAnswer(s string) Decision {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if s == "" {
-		return Deny
-	}
-	switch s[0] {
-	case 'a', 'y':
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "a", "y", "yes", "allow", "once":
 		return AllowOnce
-	case 's':
+	case "s", "session":
 		return AllowSession
-	case 'f':
+	case "f", "always", "forever":
 		return AllowAlways
 	default:
 		return Deny
