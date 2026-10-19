@@ -87,3 +87,21 @@ func TestView_AnyWidthDoesNotPanic(t *testing.T) {
 		}
 	}
 }
+
+func TestView_LongWarningWrapsToWidth(t *testing.T) {
+	const warn = `model "z-ai/glm-5.3-flash" has no vision and no [vision] fallback set — image dropped. run /vision <model> or set [vision] in config`
+	for _, w := range []int{minRenderWidth, 30, 60, 100} {
+		m := narrowModel(t, w)
+		m.warning = warn
+		assertFits(t, "warning", w, m.renderWarning())
+		assertFits(t, "warning view", w, m.View())
+		if rows := strings.Count(m.renderWarning(), "\n") + 1; rows > maxWarningRows {
+			t.Errorf("width %d: warning took %d rows, cap %d", w, rows, maxWarningRows)
+		}
+	}
+	m := narrowModel(t, 100)
+	m.warning = warn
+	if got := stripANSI(m.renderWarning()); !strings.Contains(got, "in config") {
+		t.Errorf("wide terminal should show the whole notice, got %q", got)
+	}
+}

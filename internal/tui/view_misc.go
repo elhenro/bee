@@ -112,15 +112,32 @@ func buildIntroBannerLine(width int, bold bool) string {
 	return label
 }
 
-// renderWarning returns a tiny dim notice line for transient engine events
-// (stream retry, watchdog stall). Empty when no warning is active.
+// maxWarningRows caps a wrapped notice so a verbose one can't eat the live
+// region; the last row is ellipsized when text is cut.
+const maxWarningRows = 3
+
+// renderWarning returns a tiny dim notice for transient engine events (stream
+// retry, watchdog stall), wrapped under a hanging indent so every row fits the
+// terminal. Empty when no warning is active.
 func (m Model) renderWarning() string {
 	if m.warning == "" {
 		return ""
 	}
 	bee := lipgloss.NewStyle().Foreground(accentHoney).Render("◌")
-	body := lipgloss.NewStyle().Foreground(semWarning).Italic(true).Render(m.warning)
-	return bee + " " + body
+	style := lipgloss.NewStyle().Foreground(semWarning).Italic(true)
+	rows := strings.Split(wrapText(m.warning, max(m.width-2, minTextWidth)), "\n")
+	if len(rows) > maxWarningRows {
+		rows = rows[:maxWarningRows]
+		rows[maxWarningRows-1] = truncateVisible(rows[maxWarningRows-1]+" …", lipgloss.Width(rows[maxWarningRows-1]))
+	}
+	for i, r := range rows {
+		prefix := "  "
+		if i == 0 {
+			prefix = bee + " "
+		}
+		rows[i] = prefix + style.Render(r)
+	}
+	return strings.Join(rows, "\n")
 }
 
 type gitBranchEntry struct {
