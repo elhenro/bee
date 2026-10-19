@@ -171,9 +171,8 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 				case SteerAbort:
 					run.Status = StatusAborted
 					run.StopCause = "operator abort"
-					_ = SaveMeta(run)
 					ui.Println("[zzz] abort honored.")
-					return nil
+					goto finish
 				}
 			default:
 				drained = false
@@ -183,17 +182,15 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 		case <-stopCh:
 			run.Status = StatusAborted
 			run.StopCause = "graceful stop requested"
-			_ = SaveMeta(run)
 			ui.Println("[zzz] graceful stop honored.")
-			return nil
+			goto finish
 		default:
 		}
 		if stopRequested {
 			run.Status = StatusAborted
 			run.StopCause = "operator stop"
-			_ = SaveMeta(run)
 			ui.Println("[zzz] operator stop honored.")
-			return nil
+			goto finish
 		}
 
 		run.IterCount++
@@ -209,8 +206,10 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 
 		// DONE wins regardless of iter shape — an agent that says "objective
 		// already complete" without touching files must not be force-looped.
-		// a red tree is not done: the repair iteration runs first.
-		if res.Sentinel == sentinel.KindDone && res.Status != IterRepair {
+		// a red tree is not done: the repair iteration runs first. a change the
+		// gate dropped or a failed iteration is not done either: nothing landed.
+		if res.Sentinel == sentinel.KindDone && res.Status != IterRepair &&
+			res.Status != IterReset && res.Status != IterFailed {
 			markIter(eng, res)
 			if res.Status == IterCommitted {
 				run.Commits = append(run.Commits, res.CommitSHA)
