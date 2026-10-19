@@ -46,14 +46,20 @@ var forbiddenWritePrefixes = []string{
 	"/private/var/db/",
 }
 
-// normalize collapses path separators to "/" and resolves "." / ".." segments
-// without touching the filesystem. relative paths stay relative.
+// normalize makes p absolute (against the process cwd) and collapses path
+// separators to "/", resolving "." / ".." segments without touching the
+// filesystem. absolutizing first lets the protected-dir segments, which are
+// matched with a leading "/", also catch relative spellings like ".aws/config".
 func normalize(p string) string {
 	if p == "" {
 		return p
 	}
-	clean := filepath.Clean(p)
-	return filepath.ToSlash(clean)
+	if !filepath.IsAbs(p) {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+	}
+	return filepath.ToSlash(filepath.Clean(p))
 }
 
 func baseName(p string) string {
