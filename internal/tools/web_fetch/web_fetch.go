@@ -15,12 +15,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-// isBlockedIP reports whether an IP is in a range the fetcher must never reach
-// (loopback, private, unspecified, link-local — e.g. cloud metadata 169.254/16).
-func isBlockedIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast()
-}
-
 // CacheEntry stores fetched content with metadata
 type CacheEntry struct {
 	Bytes       int
@@ -107,21 +101,21 @@ type DomainPolicy struct {
 	Block []string
 }
 
-// IsAllowed checks if a domain is allowed based on the policy
+// IsAllowed checks if a domain is allowed based on the policy. Matching is
+// case-insensitive and ignores a trailing root dot.
 func (p *DomainPolicy) IsAllowed(domain string) bool {
+	domain = normHost(domain)
 	// If block list is not empty, check it first
-	if len(p.Block) > 0 {
-		for _, blocked := range p.Block {
-			if domain == blocked || strings.HasSuffix(domain, "."+blocked) {
-				return false
-			}
+	for _, blocked := range p.Block {
+		if hostMatches(domain, blocked) {
+			return false
 		}
 	}
 
 	// If allow list is not empty, check it
 	if len(p.Allow) > 0 {
 		for _, allowed := range p.Allow {
-			if domain == allowed || strings.HasSuffix(domain, "."+allowed) {
+			if hostMatches(domain, allowed) {
 				return true
 			}
 		}
