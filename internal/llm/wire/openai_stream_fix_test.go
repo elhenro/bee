@@ -61,3 +61,24 @@ func TestFinalizeTruncatedStillTrimsTrailingJunk(t *testing.T) {
 		t.Errorf("got %+v", calls[0])
 	}
 }
+
+// legit content must survive arg sanitising: trailing newlines and fullwidth
+// bars used as separators are user data, only leaked special tokens go.
+func TestFinalize_PreservesUserContent(t *testing.T) {
+	cases := []struct{ name, args, key, want string }{
+		{"trailing newline", `{"content":"all:\n\techo hi\n"}`, "content", "all:\n\techo hi\n"},
+		{"trailing spaces", `{"new_string":"x  \n"}`, "new_string", "x  \n"},
+		{"fullwidth separators", `{"content":"ホーム｜会社概要｜お問い合わせ"}`, "content", "ホーム｜会社概要｜お問い合わせ"},
+		{"latin fullwidth bars", `{"content":"a｜b｜c"}`, "content", "a｜b｜c"},
+		{"trailing leak still removed", "{\"command\":\"ls\"}</｜DSML｜invoke", "command", "ls"},
+		{"bare token still removed", `{"command":"ls ｜DSML｜"}`, "command", "ls"},
+	}
+	for _, c := range cases {
+		acc := NewToolCallAccumulator()
+		acc.Apply([]StreamToolCall{{Index: 0, ID: "a", Function: StreamFunctionDelta{Name: "write", Arguments: c.args}}})
+		out, _ := acc.Finalize()
+		if got := out[0].Input[c.key]; got != c.want {
+			t.Errorf("%s: got %q want %q", c.name, got, c.want)
+		}
+	}
+}
