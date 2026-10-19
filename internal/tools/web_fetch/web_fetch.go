@@ -311,8 +311,10 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 		ExpiresAt:   time.Now().Add(15 * time.Minute),
 	}
 
-	// Store in cache
-	cache.Set(rawURL, entry)
+	// only successes are cached: a transient 5xx/429 must not stick for 15 minutes
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		cache.Set(rawURL, entry)
+	}
 
 	return &FetchResult{
 		URL:         rawURL,
