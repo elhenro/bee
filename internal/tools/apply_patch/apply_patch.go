@@ -99,10 +99,13 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 
 	// strip git-style a/ and b/ prefixes; gitdiff only strips when the
 	// "diff --git" header is present, but models often emit bare unified
-	// diffs with only --- a/path / +++ b/path.
-	for _, f := range files {
-		f.OldName = stripDiffPrefix(f.OldName)
-		f.NewName = stripDiffPrefix(f.NewName)
+	// diffs with only --- a/path / +++ b/path. stripping again after gitdiff
+	// would eat a real top-level dir named a or b.
+	if !strings.Contains("\n"+patchStr, "\ndiff --git ") {
+		for _, f := range files {
+			f.OldName = stripDiffPrefix(f.OldName)
+			f.NewName = stripDiffPrefix(f.NewName)
+		}
 	}
 
 	// under a confined scope, contain every patch target to the workspace root
