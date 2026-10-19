@@ -286,7 +286,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 			Model:              e.Cfg.DefaultModel,
 			System:             reqSys,
 			SystemDynamic:      reqDynamic,
-			Messages:           e.applyVisionFallback(ctx, wireMsgs),
+			Messages:           capRecentImages(e.applyVisionFallback(ctx, wireMsgs)),
 			Tools:              specs,
 			Stream:             true,
 			MaxTokens:          config.OutputCap(e.Cfg),
