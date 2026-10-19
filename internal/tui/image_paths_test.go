@@ -106,3 +106,24 @@ func TestExtractImagePaths_MissingFileUntouched(t *testing.T) {
 		t.Errorf("missing file must not become an image block")
 	}
 }
+
+// only the matched path is swapped for a label; the rest of the prompt keeps
+// its newlines, indentation and runs of spaces.
+func TestExtractImagePaths_PreservesSurroundingWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "shot.png")
+	if err := os.WriteFile(p, []byte("PNGDATA"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, nl := range []string{"\n", "\r\n"} {
+		text := "why crash?  " + p + nl + nl + "```go" + nl + "func main() {" + nl + "\tpanic(1)" + nl + "}" + nl + "```" + nl + "- a" + nl + "    - b"
+		want := strings.Replace(text, p, "[Image: shot.png]", 1)
+		clean, imgs := extractImagePaths(text)
+		if len(imgs) != 1 {
+			t.Fatalf("want 1 image, got %d", len(imgs))
+		}
+		if clean != want {
+			t.Errorf("clean = %q\nwant    %q", clean, want)
+		}
+	}
+}

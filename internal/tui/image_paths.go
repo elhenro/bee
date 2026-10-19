@@ -44,18 +44,25 @@ func imageLabel(base string) string { return "[Image: " + truncLabel(base) + "]"
 func extractImagePaths(text string) (string, []types.ContentBlock) {
 	var (
 		imgs []types.ContentBlock
-		out  []string
+		out  strings.Builder
 	)
+	rs := []rune(text)
+	last := 0 // runes before this offset are already in out
 	for _, tk := range splitShellLike(text) {
 		blk, base, ok := loadImage(tk.unescaped)
 		if !ok {
-			out = append(out, tk.raw)
 			continue
 		}
 		imgs = append(imgs, blk)
-		out = append(out, imageLabel(base))
+		out.WriteString(string(rs[last:tk.start]))
+		out.WriteString(imageLabel(base))
+		last = tk.end
 	}
-	return strings.Join(out, " "), imgs
+	if len(imgs) == 0 {
+		return text, nil
+	}
+	out.WriteString(string(rs[last:]))
+	return out.String(), imgs
 }
 
 // unescape drops a backslash before any following rune — the inverse of the
@@ -75,7 +82,11 @@ func unescape(s string) string {
 	return b.String()
 }
 
-type shellToken struct{ raw, unescaped string }
+// start/end are rune offsets of the token in the scanned text
+type shellToken struct {
+	raw, unescaped string
+	start, end     int
+}
 
 // splitShellLike splits on unescaped whitespace, keeping both the original
 // token (raw, escapes intact) and a backslash-unescaped form. Mirrors how a
@@ -83,31 +94,38 @@ type shellToken struct{ raw, unescaped string }
 func splitShellLike(s string) []shellToken {
 	var toks []shellToken
 	var raw, un strings.Builder
-	flush := func() {
+	rs := []rune(s)
+	start := 0
+	flush := func(end int) {
 		if raw.Len() > 0 {
-			toks = append(toks, shellToken{raw.String(), un.String()})
+			toks = append(toks, shellToken{raw.String(), un.String(), start, end})
 			raw.Reset()
 			un.Reset()
 		}
 	}
-	rs := []rune(s)
 	for i := 0; i < len(rs); i++ {
 		c := rs[i]
 		if c == '\\' && i+1 < len(rs) && (rs[i+1] == ' ' || rs[i+1] == '\\') {
+			if raw.Len() == 0 {
+				start = i
+			}
 			raw.WriteRune(c)
 			raw.WriteRune(rs[i+1])
 			un.WriteRune(rs[i+1])
 			i++
 			continue
 		}
-		if c == ' ' || c == '\t' || c == '\n' {
-			flush()
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+			flush(i)
 			continue
+		}
+		if raw.Len() == 0 {
+			start = i
 		}
 		raw.WriteRune(c)
 		un.WriteRune(c)
 	}
-	flush()
+	flush(len(rs))
 	return toks
 }
 
