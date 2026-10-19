@@ -70,6 +70,10 @@ func (p *MeteringProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	copyHeaders(up.Header, r.Header)
+	// an explicit Accept-Encoding stops the transport from decoding the reply,
+	// and usage can only be metered from a plain body; the transport asks for
+	// gzip itself and unwraps it
+	up.Header.Del("Accept-Encoding")
 	up.ContentLength = int64(len(body))
 
 	resp, err := p.rt.RoundTrip(up)
