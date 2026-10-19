@@ -452,7 +452,10 @@ func (p *SettingsPane) View(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	for i, m := range p.matches {
+	// title, filter, blank, blank, hint, border (2), "+N more"
+	rng := windowRange(len(p.matches), p.cursor, paneRows(height, 8))
+	for i := rng.start; i < rng.end; i++ {
+		m := p.matches[i]
 		r := settingsRows[m.Index]
 		marker := "  "
 		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
@@ -478,6 +481,9 @@ func (p *SettingsPane) View(width, height int) string {
 		b.WriteString("\n")
 	}
 
+	if more := moreRow(rng, len(p.matches)); more != "" {
+		b.WriteString(more + "\n")
+	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("type filter · ↑/↓ pick · enter/tab toggle · esc close · saved to ~/.bee/config.toml"))
 	return boxRows(b.String(), width)

@@ -165,24 +165,7 @@ type rowRange struct{ start, end int }
 
 // visibleRange computes a window around the cursor that fits in maxRows.
 func (p *ResumePicker) visibleRange(maxRows int) rowRange {
-	n := len(p.entries)
-	if maxRows < 3 {
-		maxRows = 3
-	}
-	if n <= maxRows {
-		return rowRange{0, n}
-	}
-	half := maxRows / 2
-	start := p.selected - half
-	if start < 0 {
-		start = 0
-	}
-	end := start + maxRows
-	if end > n {
-		end = n
-		start = end - maxRows
-	}
-	return rowRange{start, end}
+	return windowRange(len(p.entries), p.selected, maxRows)
 }
 
 func renderResumeRow(e ResumeEntry, selected bool, width int) string {

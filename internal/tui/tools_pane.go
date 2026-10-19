@@ -101,7 +101,10 @@ func (p *ToolsPane) View(width, height int) string {
 			nameWidth = len(r.Name)
 		}
 	}
-	for i, r := range p.rows {
+	// title, blank, blank, hint, border (2), "+N more"
+	rng := windowRange(len(p.rows), p.cursor, paneRows(height, 7))
+	for i := rng.start; i < rng.end; i++ {
+		r := p.rows[i]
 		marker := "  "
 		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
 		if i == p.cursor {
@@ -127,6 +130,9 @@ func (p *ToolsPane) View(width, height int) string {
 		b.WriteString("\n")
 	}
 
+	if more := moreRow(rng, len(p.rows)); more != "" {
+		b.WriteString(more + "\n")
+	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ pick · enter/space toggle · esc close · /tools add NAME CMD adds new"))
 	return boxRows(b.String(), width)

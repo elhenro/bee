@@ -178,10 +178,26 @@ func (t *SessionTree) View(width, height int) string {
 		activePath[n.Msg.ID] = true
 	}
 
+	var nodes strings.Builder
+	t.renderNode(&nodes, t.root, "", true, true, activePath, width-4)
+	// one line per node, in the same DFS order as t.flat
+	lines := strings.Split(strings.TrimSuffix(nodes.String(), "\n"), "\n")
+	sel := 0
+	for i, n := range t.flat {
+		if n.Msg.ID == t.selected {
+			sel = i
+		}
+	}
+	// title, blank, blank, hint, border (2), "+N more"
+	rng := windowRange(len(lines), sel, paneRows(height, 7))
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n\n")
-	t.renderNode(&b, t.root, "", true, true, activePath, width-4)
+	b.WriteString(strings.Join(lines[rng.start:rng.end], "\n"))
+	b.WriteString("\n")
+	if more := moreRow(rng, len(lines)); more != "" {
+		b.WriteString(more + "\n")
+	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ nav · enter switch · f fork · c clone · esc close"))
 	return boxModal(b.String(), width)
