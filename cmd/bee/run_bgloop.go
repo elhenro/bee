@@ -135,7 +135,16 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		// sessions (non-agent mode) ignore sentinels and just sit awaiting.
 		final := res.FinalText
 		if agentMode {
-			switch sentinel.Classify(final) {
+			kind := sentinel.Classify(final)
+			// a reply queued while this turn ran must not die with a DONE or
+			// BLOCKED exit: run it as the next turn instead of finalizing.
+			if kind == sentinel.KindDone || kind == sentinel.KindBlocked {
+				if next, nc, ok := pendingInbox(sessID, cursor); ok {
+					cursor, msg = nc, next
+					continue
+				}
+			}
+			switch kind {
 			case sentinel.KindDone:
 				s = base
 				s.State = bgreg.StateDone
@@ -239,6 +248,23 @@ func failAgentCommit(base bgreg.Status, reason string) error {
 	return errors.New(s.LastResponse)
 }
 
+// pendingInbox returns whatever is in the inbox right now without waiting.
+func pendingInbox(sessID string, cursor int64) (string, int64, bool) {
+	msgs, nc, err := bgreg.InboxDrain(sessID, cursor)
+	if err != nil || len(msgs) == 0 {
+		return "", cursor, false
+	}
+	return joinInbox(msgs), nc, true
+}
+
+func joinInbox(msgs []bgreg.Inbox) string {
+	texts := make([]string, len(msgs))
+	for i, m := range msgs {
+		texts[i] = m.Text
+	}
+	return strings.Join(texts, "\n\n")
+}
+
 // waitForInbox polls the inbox until a message arrives or ctx is cancelled.
 // Returns the concatenated text of all new messages and the advanced cursor.
 func waitForInbox(ctx context.Context, sessID string, cursor int64) (string, int64, error) {
@@ -254,14 +280,7 @@ func waitForInbox(ctx context.Context, sessID string, cursor int64) (string, int
 				return "", cursor, err
 			}
 			if len(msgs) > 0 {
-				var b strings.Builder
-				for i, m := range msgs {
-					if i > 0 {
-						b.WriteString("\n\n")
-					}
-					b.WriteString(m.Text)
-				}
-				return b.String(), nc, nil
+				return joinInbox(msgs), nc, nil
 			}
 		}
 	}
