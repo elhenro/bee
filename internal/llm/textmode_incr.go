@@ -45,3 +45,18 @@ func completeCallsEnd(s string, known map[string]bool) (end int, sawOpen bool) {
 	}
 	return end, sawOpen
 }
+
+// openCallPending reports whether s holds a known `<name>` call that has not
+// closed yet, i.e. text appended to s lands inside that call's body.
+func openCallPending(s string, known map[string]bool) bool {
+	end, sawOpen := completeCallsEnd(s, known)
+	if !sawOpen {
+		return false
+	}
+	for _, loc := range openTagRe.FindAllStringSubmatchIndex(s[end:], -1) {
+		if known[strings.ToLower(s[end+loc[2]:end+loc[3]])] {
+			return true
+		}
+	}
+	return false
+}

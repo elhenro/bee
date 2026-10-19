@@ -15,6 +15,10 @@ var (
 type thinkSplitter struct {
 	inThink bool
 	hold    string
+	// inCall, when set, reports whether the answer text so far ends inside an
+	// open tool call; a think tag there is file content, not reasoning.
+	inCall func(answer string) bool
+	answer strings.Builder
 }
 
 // feed consumes one delta and returns the answer and reasoning parts of
@@ -36,9 +40,15 @@ func (s *thinkSplitter) feed(delta string) (text, think string) {
 			break
 		}
 		dst.WriteString(in[:idx])
+		if !s.inThink && s.inCall != nil && s.inCall(s.answer.String()+tb.String()) {
+			dst.WriteString(in[idx : idx+n])
+			in = in[idx+n:]
+			continue
+		}
 		in = in[idx+n:]
 		s.inThink = !s.inThink
 	}
+	s.answer.WriteString(tb.String())
 	return tb.String(), kb.String()
 }
 

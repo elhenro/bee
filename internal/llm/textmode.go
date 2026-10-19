@@ -62,6 +62,7 @@ func (p *TextModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 
 	inj := buildToolInstruction(req.Tools, p.opts.ExtraHint)
 	req.System = mergeSystem(req.System, inj)
+	kinds := paramKinds(req.Tools)
 	req.Tools = nil
 
 	// stop sequences: halt decode at first tool-call close tag. Saves
@@ -92,7 +93,7 @@ func (p *TextModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 	}
 
 	out := make(chan Event, 16)
-	go p.relay(ctx, innerCh, out, known, canonical)
+	go p.relay(ctx, innerCh, out, known, canonical, kinds)
 	return out, nil
 }
 
@@ -105,7 +106,7 @@ func (p *TextModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 // the synthesized ToolUse events early. Cuts post-stream latency on
 // providers that emit one delta per token by amortizing the parse over the
 // stream instead of doing it all at EventDone.
-func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<- Event, known map[string]bool, canonical map[string]string) {
+func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<- Event, known map[string]bool, canonical map[string]string, kinds map[string]map[string]string) {
 	defer close(out)
 	// an early return must not strand the inner producer on a full channel
 	defer func() {
@@ -115,7 +116,7 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 		}()
 	}()
 	var buf strings.Builder
-	var think thinkSplitter
+	think := thinkSplitter{inCall: func(answer string) bool { return openCallPending(answer, known) }}
 	var done Event
 	gotDone := false
 	// dedup: qwen3 / hermes models occasionally re-emit the same call twice
@@ -125,6 +126,7 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 	// per stream; later identical calls dropped.
 	seen := map[string]bool{}
 	dispatch := func(c parsedCall) bool {
+		c.Input = coerceArgs(c.Input, kinds[strings.ToLower(c.Name)])
 		fp := callFingerprint(c)
 		if seen[fp] {
 			return false

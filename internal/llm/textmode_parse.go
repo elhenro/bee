@@ -63,7 +63,7 @@ var hermesParamRe = regexp.MustCompile(`(?is)<parameter=([a-z_][a-z0-9_\-]*)>\s*
 var dsmlInvokeOpenRe = regexp.MustCompile(`(?is)<\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*invoke\s+name\s*=\s*["']([a-z_][a-z0-9_\-]*)["']\s*>`)
 var dsmlInvokeCloseRe = regexp.MustCompile(`(?is)</\s*\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*invoke\s*>`)
 var dsmlToolCallsWrapperRe = regexp.MustCompile(`(?is)</?\s*\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*tool_calls\s*>`)
-var dsmlParamRe = regexp.MustCompile(`(?is)<\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*parameter\s+name\s*=\s*["']([a-z_][a-z0-9_\-]*)["'](?:\s+string\s*=\s*["'](?:true|false)["'])?\s*>\s*(.*?)\s*</\s*\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*parameter\s*>`)
+var dsmlParamRe = regexp.MustCompile(`(?is)<\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*parameter\s+name\s*=\s*["']([a-z_][a-z0-9_\-]*)["'](?:\s+string\s*=\s*["'](true|false)["'])?\s*>\s*(.*?)\s*</\s*\x{FF5C}+\s*DSML\s*\x{FF5C}+\s*parameter\s*>`)
 
 // normalizeHermesEnvelopes rewrites qwen3 / hermes-style tool-call wrappers
 // into shapes the existing XML / JSON extractors already handle. Specifically:
@@ -128,10 +128,10 @@ func normalizeHermesEnvelopes(s string, known map[string]bool) string {
 			if len(p) != 3 {
 				continue
 			}
-			// hermes parameter bodies are raw scalars (numbers/strings) not
-			// quoted JSON. decodeHermesScalar tries numeric/bool first so
-			// `<parameter=n>3</parameter>` becomes a number, else string.
-			args[p[1]] = decodeHermesScalar(strings.TrimSpace(p[2]))
+			// hermes parameter bodies are raw text with no type marker, so they
+			// stay strings here; relay coerces them against the tool schema
+			// (coerceArgs), which keeps a JSON-looking file body a string.
+			args[p[1]] = decodeHermesString(strings.TrimSpace(p[2]))
 		}
 		buf, err := json.Marshal(args)
 		if err != nil {
@@ -199,14 +199,18 @@ func normalizeDSMLEnvelopes(s string) string {
 		params := dsmlParamRe.FindAllStringSubmatch(body, -1)
 		args := make(map[string]any, len(params))
 		for _, p := range params {
-			if len(p) != 3 {
+			if len(p) != 4 {
 				continue
 			}
-			// DSML param values are always raw strings (string="true" attr is
-			// just a type hint, value still arrives as text). Try scalar
-			// decode for parity with hermes params so `{"n":3}` → number,
-			// else keep verbatim.
-			args[p[1]] = decodeHermesScalar(strings.TrimSpace(p[2]))
+			// the string attr is the template's own type hint: only an explicit
+			// string="false" is decoded as a scalar; anything else stays text
+			// (schema coercion in relay handles typed params).
+			v := strings.TrimSpace(p[3])
+			if strings.EqualFold(p[2], "false") {
+				args[p[1]] = decodeHermesScalar(v)
+			} else {
+				args[p[1]] = decodeHermesString(v)
+			}
 		}
 		buf, err := json.Marshal(args)
 		if err != nil {
@@ -432,6 +436,12 @@ func findHermesClose(tail, name string) (bodyEnd, advance int) {
 	}
 }
 
+// decodeHermesString is a hermes parameter body kept as text: only the
+// surrounding code fence some models add is dropped.
+func decodeHermesString(v string) string {
+	return stripCodeFence(v)
+}
+
 // decodeHermesScalar turns a raw hermes parameter body into a Go value. Tries
 // JSON number/bool/null first (so `3` → float64(3), `true` → true), then a
 // fenced JSON object/array literal (so a parameter holding `{"a":1}` decodes
@@ -543,7 +553,7 @@ func parseToolArgs(body string) map[string]any {
 				if len(p) != 3 {
 					continue
 				}
-				args[p[1]] = decodeHermesScalar(strings.TrimSpace(p[2]))
+				args[p[1]] = decodeHermesString(strings.TrimSpace(p[2]))
 			}
 			return args
 		}
