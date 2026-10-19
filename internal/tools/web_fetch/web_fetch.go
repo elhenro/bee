@@ -295,8 +295,8 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Convert HTML to markdown
-	markdown, err := htmlToMarkdown(body)
+	// Convert HTML to markdown; other content types pass through raw
+	markdown, err := renderBody(resp.Header.Get("Content-Type"), body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert HTML to markdown: %w", err)
 	}
