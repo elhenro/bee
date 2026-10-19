@@ -75,6 +75,9 @@ func (o *overlay) plan(f *gitdiff.File) (fileChange, error) {
 		if !st.exists {
 			return fileChange{}, missing(f.OldName)
 		}
+		if err := verifyDelete(f, st.data); err != nil {
+			return fileChange{}, err
+		}
 		st.exists, st.data = false, nil
 		return fileChange{path: f.OldName, kind: "delete", removed: removed}, nil
 	case f.IsNew:
@@ -123,6 +126,23 @@ func (o *overlay) plan(f *gitdiff.File) (fileChange, error) {
 	}
 	st.data = buf.Bytes()
 	return fileChange{path: path, kind: "modify", added: added, removed: removed}, nil
+}
+
+// verifyDelete checks the removed lines against the file so a delete built
+// from a wrong picture of the contents fails like any other context mismatch.
+// A header-only delete (no hunks) has nothing to check.
+func verifyDelete(f *gitdiff.File, data []byte) error {
+	if len(f.TextFragments) == 0 {
+		return nil
+	}
+	var buf bytes.Buffer
+	if err := gitdiff.Apply(&buf, bytes.NewReader(data), f); err != nil {
+		return err
+	}
+	if buf.Len() > 0 {
+		return fmt.Errorf("delete patch for %s leaves content behind; the file differs from what the patch removes", f.OldName)
+	}
+	return nil
 }
 
 // planMove handles rename and copy: content comes from the old path, lands on
