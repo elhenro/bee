@@ -228,7 +228,7 @@ func (t *SessionTree) renderNode(b *strings.Builder, n *types.MessageNode, prefi
 			cut = 4
 		}
 		if cut < len(label) {
-			label = label[:cut] + "…"
+			label = cutBytes(label, cut) + "…"
 		}
 	}
 	style := StyleLabel
@@ -260,7 +260,7 @@ func nodeLabel(n *types.MessageNode) string {
 	}
 	preview := firstText(n.Msg)
 	if len(preview) > 40 {
-		preview = preview[:40] + "…"
+		preview = cutBytes(preview, 40) + "…"
 	}
 	preview = strings.ReplaceAll(preview, "\n", " ")
 	return fmt.Sprintf("%s [%s] %s", id, n.Msg.Role, preview)

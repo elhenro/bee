@@ -144,5 +144,5 @@ func truncateOneLine(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
 	}
-	return s[:max-1] + "…"
+	return cutBytes(s, max-1) + "…"
 }

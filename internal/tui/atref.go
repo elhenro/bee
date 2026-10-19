@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // CompletionCandidates returns names in dir starting with prefix.
@@ -29,7 +30,8 @@ func LongestCommonPrefix(ss []string) string {
 	p := ss[0]
 	for _, s := range ss[1:] {
 		for !strings.HasPrefix(s, p) {
-			p = p[:len(p)-1]
+			_, size := utf8.DecodeLastRuneInString(p)
+			p = p[:len(p)-size]
 			if p == "" {
 				return ""
 			}
