@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -54,17 +55,30 @@ func (m Model) onPaletteDismissed(_ PaletteDismissedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onAtPickerSelect(msg AtPickerSelectMsg) (tea.Model, tea.Cmd) {
-	// replace last `@partial` with the picked path. textarea exposes
-	// only column-cursor, not row+col SetCursor, so we set the value
-	// and land the cursor at end of buffer.
-	val := m.input.Value()
-	atIdx := strings.LastIndex(val, "@")
-	if atIdx < 0 {
-		m.input.SetValue(val + msg.Path)
-	} else {
-		m.input.SetValue(val[:atIdx] + msg.Path)
+	// the picker opened with the cursor right behind the "@" it inserted, and
+	// the input has been frozen since: swap that rune for the path in place so
+	// text after the cursor (and later lines) survives
+	if cursorAfterAt(m.input) {
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		m.input.InsertString(msg.Path)
+		return m, cmd
 	}
+	m.input.InsertString(msg.Path)
 	return m, nil
+}
+
+// cursorAfterAt reports whether the rune just before the cursor is "@".
+func cursorAfterAt(in textarea.Model) bool {
+	lines := strings.Split(in.Value(), "\n")
+	row := in.Line()
+	if row < 0 || row >= len(lines) {
+		return false
+	}
+	li := in.LineInfo()
+	col := li.StartColumn + li.ColumnOffset
+	rs := []rune(lines[row])
+	return col >= 1 && col <= len(rs) && rs[col-1] == '@'
 }
 
 func (m Model) onHistorySelect(msg HistorySelectMsg) (tea.Model, tea.Cmd) {
