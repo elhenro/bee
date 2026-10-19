@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,7 +131,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.YoloToggle):
 		m.yolo = !m.yolo
 		m.mirrorToEngine()
-		_ = PersistSetting("", "yolo", fmt.Sprintf("%v", m.yolo))
+		_ = PersistSetting("", "yolo", m.yolo)
 		// loud one-shot warning when arming; disarming is quiet.
 		if m.yolo {
 			m.warning = "yolo ON — dangerous shell auto-approves, no prompt"
