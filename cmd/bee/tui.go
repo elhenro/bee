@@ -248,6 +248,8 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		WarnCh:          warnCh,
 		Costs:           costs,
 		InitialMessages: prior,
+		VisionAsker:     herdr.WrapAsker(tuiAsker),
+		PersistVision:   persistVisionModel,
 	}
 	// rebuild closure: invoked by the TUI after /model or the picker switches
 	// provider/model so the next turn uses a freshly-constructed client (and

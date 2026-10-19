@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/elhenro/bee/internal/ask"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/jsonmode"
@@ -112,6 +113,17 @@ type Engine struct {
 	// pair. The hive uses it to put workers and reviewers on their own model
 	// tier. nil = every spawned engine shares Provider.
 	ProviderFor func(cfg config.Config) (llm.Provider, error)
+
+	// VisionAsker, when non-nil, lets the loop ask the user once whether an
+	// unclassifiable main model accepts images (see vision_ask.go). nil =
+	// never ask (headless, hive workers): the model counts as blind.
+	VisionAsker ask.Asker
+	// PersistVision, when non-nil, saves the user's answer so it survives the
+	// session. Called only for a real answer, never for a dismissal.
+	PersistVision func(model string, hasVision bool) error
+	// visionAsked dedupes the question per model for this engine's lifetime,
+	// so a dismissal isn't re-asked every turn.
+	visionAsked map[string]bool
 
 	// PromptTail, when non-nil, is called at the top of every iteration and its
 	// text is appended to the volatile system-prompt tail, after the prompt-cache

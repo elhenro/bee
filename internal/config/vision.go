@@ -14,4 +14,8 @@ type VisionConfig struct {
 	// as the main model needs only `provider` + `model`. Explicit Endpoint /
 	// EnvKey here still win.
 	Provider string `toml:"provider"`
+	// Models records the user's own verdict on whether a main model accepts
+	// images, keyed by model id. It outranks every autodetected answer and is
+	// filled by the one-time question bee asks for models it can't classify.
+	Models map[string]bool `toml:"models"`
 }

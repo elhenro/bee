@@ -91,22 +91,40 @@ func SupportsVision(modelID string) bool {
 	return false
 }
 
-// ActiveModelHasVision is SupportsVision plus one catalogue lookup when the
-// name list can't vouch for the active model, so models it has never heard of
-// are judged by what their provider declares. Best-effort: a failed lookup is
-// retried next call, a successful one is cached by ListModels.
-func ActiveModelHasVision(ctx context.Context, cfg *config.Config) bool {
+// ModelVision reports whether the active model accepts images and whether
+// that is actually known. Order: the user's own verdict ([vision.models]), a
+// catalogue verdict, the name list, then one catalogue lookup. known is false
+// only when none of them could say, which is when asking the user is useful.
+// The lookup runs once per (provider, model); ListModels caches the result.
+func ModelVision(ctx context.Context, cfg *config.Config) (has, known bool) {
 	id := cfg.DefaultModel
-	if SupportsVision(id) {
-		return true
+	if v, ok := cfg.Vision.Models[id]; ok {
+		return v, true
 	}
-	if _, known := liveVisionVerdict(id); known {
-		return false
+	if SupportsVision(id) {
+		return true, true
+	}
+	if v, ok := liveVisionVerdict(id); ok {
+		return v, true
 	}
 	pc, ok := cfg.Providers[cfg.DefaultProvider]
 	if !ok {
-		return false
+		return false, false
 	}
-	_, _ = ListModels(ctx, cfg.DefaultProvider, pc)
-	return SupportsVision(id)
+	// one lookup per (provider, model): this runs on every iteration of a
+	// session that holds an image, so a dead catalogue must not stall each one.
+	if key := "vision:" + cfg.DefaultProvider; !wasProbed(key, id) {
+		markProbed(key, id)
+		_, _ = ListModels(ctx, cfg.DefaultProvider, pc)
+	}
+	if v, ok := liveVisionVerdict(id); ok {
+		return v, true
+	}
+	return false, false
+}
+
+// ActiveModelHasVision is ModelVision without the known flag.
+func ActiveModelHasVision(ctx context.Context, cfg *config.Config) bool {
+	has, _ := ModelVision(ctx, cfg)
+	return has
 }

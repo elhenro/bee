@@ -17,7 +17,14 @@ import (
 // configured fallback vision model, or a placeholder + one-time hint if none is
 // configured. Original msgs (with real image bytes) stay intact for the session.
 func (e *Engine) applyVisionFallback(ctx context.Context, msgs []types.Message) []types.Message {
-	if !hasImageBlocks(msgs) || llm.ActiveModelHasVision(ctx, &e.Cfg) {
+	if !hasImageBlocks(msgs) {
+		return msgs
+	}
+	has, known := llm.ModelVision(ctx, &e.Cfg)
+	if !known {
+		has = e.askVisionSupport(ctx)
+	}
+	if has {
 		return msgs
 	}
 	client, ok := e.visionClient()
