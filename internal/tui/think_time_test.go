@@ -21,7 +21,7 @@ func TestThinking_HiddenKeepsTimeDropsText(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	r.SetShowThoughts(false)
 	got := stripANSI(r.RenderMessage(thoughtMsg("secret plan", 4200)))
-	if !strings.Contains(got, "Thought for 4.2s") {
+	if !strings.Contains(got, "Thought for 4s") {
 		t.Fatalf("hidden thoughts should still show the time: %q", got)
 	}
 	if strings.Contains(got, "secret plan") {
@@ -33,7 +33,7 @@ func TestThinking_ShownCarriesTimeAndText(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	r.SetShowThoughts(true)
 	got := stripANSI(r.RenderMessage(thoughtMsg("secret plan", 1500)))
-	for _, want := range []string{"Thought for 1.5s", "secret plan"} {
+	for _, want := range []string{"Thought for 1s", "secret plan"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q: %q", want, got)
 		}
@@ -53,7 +53,7 @@ func TestThinking_TimedWithoutTextStillShowsLabel(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	r.SetShowThoughts(true)
 	got := stripANSI(r.RenderMessage(thoughtMsg("", 900)))
-	if !strings.Contains(got, "Thought for 0.9s") {
+	if !strings.Contains(got, "Thought for 0s") {
 		t.Fatalf("signature-only block lost its label: %q", got)
 	}
 }

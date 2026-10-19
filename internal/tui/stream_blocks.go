@@ -107,14 +107,14 @@ func (r *StreamRenderer) renderThinking(s string, ms int64) string {
 
 // verb and time, "for " dropped when the row would not fit a narrow terminal
 func (r *StreamRenderer) thoughtLabel(verb string, d time.Duration) string {
-	label := verb + formatElapsed(d)
+	label := verb + formatClock(d)
 	if r.textWidth(markIndent) < lipgloss.Width(label) {
-		label = strings.Replace(verb, " for ", " ", 1) + formatElapsed(d)
+		label = strings.Replace(verb, " for ", " ", 1) + formatClock(d)
 	}
 	return label
 }
 
-// label row `✻ Thought for 4.2s` over faint italic reasoning, indented under
+// label row `✻ Thought for 4s` over faint italic reasoning, indented under
 // it; the text rows drop away when thoughts are hidden. stripped like tool
 // output so escapes can't blit over the chrome
 func (r *StreamRenderer) thoughtBlock(s, label string) string {
