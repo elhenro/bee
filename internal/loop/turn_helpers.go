@@ -160,19 +160,21 @@ func hasThinkingOnly(msg types.Message) bool {
 	return sawThinking
 }
 
-// expandAtPathsInContent rewrites text blocks in-place with `@path` expansions.
-// Image / tool blocks pass through untouched. Empty cwd disables expansion.
+// expandAtPathsInContent returns content with `@path` expansions applied to its
+// text blocks. Image / tool blocks pass through untouched. Empty cwd disables
+// expansion. The caller's slice is never written: a UI may share it.
 func expandAtPathsInContent(content []types.ContentBlock, cwd string) []types.ContentBlock {
 	if cwd == "" {
 		return content
 	}
-	for i, c := range content {
+	out := append([]types.ContentBlock(nil), content...)
+	for i, c := range out {
 		if c.Type != types.BlockText || c.Text == "" {
 			continue
 		}
-		content[i].Text = prompt.ExpandAtPaths(c.Text, cwd)
+		out[i].Text = prompt.ExpandAtPaths(c.Text, cwd)
 	}
-	return content
+	return out
 }
 
 // collectUserText concatenates the text blocks in a user message — used to
