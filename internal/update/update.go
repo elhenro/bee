@@ -88,12 +88,12 @@ func Probe(ctx context.Context, repo, branch, currentSHA string) (Info, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return Info{}, fmt.Errorf("decode: %w", err)
 	}
-	// the compare API names them from base→head. base=current, head=branch.
-	// "behind_by" reports commits in head not in base — i.e. new on main.
+	// compare/{base}...{head} with base=current, head=branch: ahead_by is the
+	// commits head has that base lacks (new on main), behind_by the reverse.
 	info := Info{
 		CurrentSHA: currentSHA,
-		Ahead:      body.BehindBy,
-		Behind:     body.AheadBy,
+		Ahead:      body.AheadBy,
+		Behind:     body.BehindBy,
 		Repo:       repo,
 		Branch:     branch,
 	}

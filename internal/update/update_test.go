@@ -25,9 +25,9 @@ func TestProbe_BehindMain(t *testing.T) {
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
 		resp := map[string]any{
-			"status":    "behind",
-			"ahead_by":  0,
-			"behind_by": 3,
+			"status":    "ahead", // head (main) is ahead of the build
+			"ahead_by":  3,
+			"behind_by": 0,
 			"commits": []map[string]string{
 				{"sha": "1111111111111111111111111111111111111111"},
 				{"sha": "2222222222222222222222222222222222222222"},
@@ -54,6 +54,31 @@ func TestProbe_BehindMain(t *testing.T) {
 	}
 	if info.ShortSHA != "abcdef0" {
 		t.Errorf("short = %q, want abcdef0", info.ShortSHA)
+	}
+}
+
+// a build holding commits main lacks has nothing to update to
+func TestProbe_BuildAheadOfMainNotAvailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":    "behind",
+			"ahead_by":  0,
+			"behind_by": 2,
+			"commits":   []map[string]string{},
+		})
+	}))
+	defer srv.Close()
+
+	old := httpClient.Transport
+	httpClient.Transport = &stubTransport{base: srv.URL}
+	defer func() { httpClient.Transport = old }()
+
+	info, err := Probe(context.Background(), "elhenro/bee", "main", "deadbee")
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if info.Available() || info.Behind != 2 {
+		t.Fatalf("want unavailable with behind=2; got %+v", info)
 	}
 }
 
