@@ -67,7 +67,12 @@ func (m Model) handleGoal(args []string) (tea.Model, tea.Cmd) {
 		m.goalGen++
 		return m.goalText("goal cleared")
 	}
-	// set: store state, then submit the condition as the first turn.
+	// set: store state, then submit the condition as the first turn. a second
+	// submit over a running turn would orphan the first run's cancel func.
+	if m.state == StateStreaming {
+		m.messages = append(m.messages, ephemeral("(/goal can only be set while idle, esc stops the running turn first)"))
+		return m, m.flush()
+	}
 	cond := joinArgs(args)
 	m.goal.Set(cond, currentCumTokens(m), time.Now())
 	m.goalGen++

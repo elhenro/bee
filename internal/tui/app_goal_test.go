@@ -79,3 +79,33 @@ func TestGoalStopsOnIdenticalReplies(t *testing.T) {
 		t.Fatalf("stop message = %q", last)
 	}
 }
+
+// setting a goal mid-turn used to start a second submit that dropped the
+// running turn's cancel func; show/clear must keep working during a run.
+func TestHandleGoalSetWhileStreamingIsRefused(t *testing.T) {
+	m := newTestModel(t)
+	m.state = StateStreaming
+	m.turnGen = 3
+	cancelled := false
+	m.cancelRun = func() { cancelled = true }
+	m.input.SetValue("/goal ship it")
+	out, _ := m.handleSubmit()
+	got := out.(Model)
+	if got.goal.Active || got.turnGen != 3 || cancelled {
+		t.Fatalf("goal set mid-run: active=%v turnGen=%d cancelled=%v", got.goal.Active, got.turnGen, cancelled)
+	}
+	if got.cancelRun == nil || got.state != StateStreaming {
+		t.Fatalf("running turn was disturbed: state=%v", got.state)
+	}
+	last := got.messages[len(got.messages)-1]
+	if !last.Ephemeral || !strings.Contains(joinText(last), "idle") {
+		t.Fatalf("no refusal notice: %+v", last)
+	}
+
+	got.goal.Set("fix lint", 0, time.Now())
+	got.input.SetValue("/goal clear")
+	out, _ = got.handleSubmit()
+	if out.(Model).goal.Active {
+		t.Fatalf("/goal clear must work during a run")
+	}
+}
