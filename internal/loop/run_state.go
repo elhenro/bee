@@ -1,6 +1,10 @@
 package loop
 
-import "github.com/elhenro/bee/internal/tools/escalate"
+import (
+	"time"
+
+	"github.com/elhenro/bee/internal/tools/escalate"
+)
 
 // runState is the per-Run scratch state. Reset at the top of every Run so
 // cross-Run dedupes (warnings, nudges, streaks) fire once per Run, not once per
@@ -62,6 +66,19 @@ type runState struct {
 	// auto-recovered (compact + re-arm) this Run, instead of hard-stopping.
 	// bounds total spend at ~(maxBudgetRecoveries+1)×budget. reset per Run.
 	budgetRecoveries int
+	// spec is the background compaction summary for this Run (turn_compact_spec.go);
+	// specFailed stops a failed one from restarting every iteration.
+	spec       *specCompact
+	specFailed bool
+	// harness gauge (turn_gauge.go): wall time the harness itself spends between
+	// a trigger (Run start, stream end) and the next provider request.
+	gaugeFrom    time.Time
+	gaugeKind    string // "first" | "between"
+	gaugePending bool
+	toolDur      time.Duration // dispatch time since the last stream end, excluded from "between"
+	// early holds the read-only calls started while the stream was still open
+	// (turn_early.go). nil outside a turn.
+	early *earlyState
 	// nudgedReasoningOnly flips true after one synthetic continuation nudge
 	// is injected in response to a thinking-only assistant turn. dedupes per
 	// Run so a wedged provider can't burn the whole iter budget.

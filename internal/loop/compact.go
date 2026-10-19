@@ -145,8 +145,15 @@ func ShouldAutoCompact(sys string, msgs []types.Message, budget int, threshold f
 //
 // budget<=0 or threshold<=0 disables.
 func ShouldAutoCompactWithUsage(sys string, msgs []types.Message, actualInputTokens, budget int, threshold float64) bool {
+	return compactPressure(sys, msgs, actualInputTokens, budget, threshold) > 1
+}
+
+// compactPressure is ShouldAutoCompactWithUsage's measure before the cut: the
+// token count as a multiple of the compaction trigger (budget*threshold), so 1 is
+// the trigger itself. 0 means disabled (budget<=0 or threshold<=0).
+func compactPressure(sys string, msgs []types.Message, actualInputTokens, budget int, threshold float64) float64 {
 	if budget <= 0 || threshold <= 0 {
-		return false
+		return 0
 	}
 	// the reported count predates messages appended since that request (the
 	// assistant reply and fresh tool results), so never trust it below the
@@ -155,7 +162,7 @@ func ShouldAutoCompactWithUsage(sys string, msgs []types.Message, actualInputTok
 	if actualInputTokens > total {
 		total = actualInputTokens
 	}
-	return float64(total) > float64(budget)*threshold
+	return float64(total) / (float64(budget) * threshold)
 }
 
 // summaryToolResultCap bounds how much of a single tool result feeds the

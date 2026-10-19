@@ -113,6 +113,9 @@ func trimSpace(b []byte) []byte {
 type ToolCallAccumulator struct {
 	slots map[int]*partialCall // current slot per stream index
 	order []*partialCall
+	// sealed is how many leading calls TakeSealed already handed out; Finalize
+	// returns only the rest.
+	sealed int
 	// truncated marks a stream cut short (length stop, or ended without a
 	// finish signal). Finalize then refuses to close open JSON: a half-written
 	// argument object would run as if complete.
@@ -175,42 +178,65 @@ type FinalizedCall struct {
 // can surface a structured error to the model rather than silently mis-
 // executing.
 func (a *ToolCallAccumulator) Finalize() ([]FinalizedCall, error) {
-	out := make([]FinalizedCall, 0, len(a.order))
-	for _, p := range a.order {
-		name := SanitizeToolName(p.Name)
-		rawBytes := StripMarkupBytes(p.Args)
-		args := map[string]any{}
-		var rawArgs, parseErr string
-		if len(rawBytes) > 0 {
-			if err := json.Unmarshal(rawBytes, &args); err != nil {
-				repaired, ok := repairToolArgs(rawBytes, !a.truncated)
-				if !ok {
-					rawArgs = string(p.Args)
-					parseErr = fmt.Sprintf("decode tool args for %s: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
-					args = map[string]any{}
-				} else if err := json.Unmarshal(repaired, &args); err != nil {
-					rawArgs = string(p.Args)
-					parseErr = fmt.Sprintf("decode tool args for %s after repair: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
-					args = map[string]any{}
-				}
-			}
-		}
-		StripMarkupInValues(args)
-		if name == "" && p.Name != "" {
-			// every char in the name was markup/junk. surface as parse error
-			// so the loop can return a useful diagnostic to the model.
-			if parseErr == "" {
-				parseErr = fmt.Sprintf("tool name unrecognizable after stripping model markup (raw=%q)", truncForErr([]byte(p.Name)))
-			}
-			name = p.Name
-		}
-		out = append(out, FinalizedCall{
-			ID:         p.ID,
-			Name:       name,
-			Input:      args,
-			RawArgs:    rawArgs,
-			ParseError: parseErr,
-		})
+	out := make([]FinalizedCall, 0, len(a.order)-a.sealed)
+	for _, p := range a.order[a.sealed:] {
+		out = append(out, a.finalizeCall(p))
 	}
 	return out, nil
+}
+
+// TakeSealed hands out, in order, the leading calls that are provably complete
+// mid-stream: a later call has started and the call's arguments already form a
+// valid JSON value, so nothing legitimate can still be appended. This lets the
+// loop begin running a call while the model is still writing its siblings. It
+// stops at the first call that is not yet provable to keep emission order; the
+// rest wait for Finalize.
+func (a *ToolCallAccumulator) TakeSealed() []FinalizedCall {
+	var out []FinalizedCall
+	for a.sealed < len(a.order)-1 {
+		p := a.order[a.sealed]
+		if p.Name == "" || len(p.Args) == 0 || !json.Valid(p.Args) {
+			break
+		}
+		out = append(out, a.finalizeCall(p))
+		a.sealed++
+	}
+	return out
+}
+
+func (a *ToolCallAccumulator) finalizeCall(p *partialCall) FinalizedCall {
+	name := SanitizeToolName(p.Name)
+	rawBytes := StripMarkupBytes(p.Args)
+	args := map[string]any{}
+	var rawArgs, parseErr string
+	if len(rawBytes) > 0 {
+		if err := json.Unmarshal(rawBytes, &args); err != nil {
+			repaired, ok := repairToolArgs(rawBytes, !a.truncated)
+			if !ok {
+				rawArgs = string(p.Args)
+				parseErr = fmt.Sprintf("decode tool args for %s: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
+				args = map[string]any{}
+			} else if err := json.Unmarshal(repaired, &args); err != nil {
+				rawArgs = string(p.Args)
+				parseErr = fmt.Sprintf("decode tool args for %s after repair: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
+				args = map[string]any{}
+			}
+		}
+	}
+	StripMarkupInValues(args)
+	if name == "" && p.Name != "" {
+		// every char in the name was markup/junk. surface as parse error
+		// so the loop can return a useful diagnostic to the model.
+		if parseErr == "" {
+			parseErr = fmt.Sprintf("tool name unrecognizable after stripping model markup (raw=%q)", truncForErr([]byte(p.Name)))
+		}
+		name = p.Name
+	}
+	return FinalizedCall{
+		ID:         p.ID,
+		Name:       name,
+		Input:      args,
+		RawArgs:    rawArgs,
+		ParseError: parseErr,
+	}
 }

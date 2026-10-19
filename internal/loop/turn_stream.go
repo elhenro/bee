@@ -26,6 +26,7 @@ var preContentRetryDelay = 800 * time.Millisecond
 // On pre-content transient errors it reopens up to maxPreContentRetries times
 // and emits a WarnCh notice per retry.
 func (e *Engine) streamOnce(ctx context.Context, req llm.Request) (types.Message, string, []types.ToolUse, error) {
+	e.earlyDrain() // nothing from a turn that never reached dispatch
 	var (
 		textBuf  strings.Builder
 		thinkBuf strings.Builder
@@ -92,6 +93,7 @@ func (e *Engine) streamAttempt(
 	// disturbing the caller's ctx (which still governs real cancellation).
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	e.gaugeRequest()
 	ch, err := e.Provider.Stream(sctx, req)
 	if err != nil {
 		// pre-stream HTTP errors already exhaust the provider's own retry
@@ -162,6 +164,7 @@ events:
 			if ev.ToolUse != nil {
 				think.answered()
 				*toolUses = append(*toolUses, *ev.ToolUse)
+				e.earlyOffer(ctx, len(*toolUses)-1, *ev.ToolUse)
 				gotContent = true
 				if e.JSONEmitter != nil {
 					e.JSONEmitter.Emit(jsonmode.Event{

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -103,6 +104,11 @@ func buildProvider(cfg config.Config) (llm.Provider, error) {
 	// calls become impossible on servers that compile the schema to a
 	// sampling constraint. "" auto-resolves (json on local providers);
 	// "native" forces the native tool_calls channel.
+	// open the connection while the rest of startup (tools, skills, session)
+	// runs, so the first request skips dial + TLS. no-op for loopback servers.
+	if w, ok := inner.(llm.Prewarmer); ok {
+		go w.Prewarm(context.Background())
+	}
 	switch resolveToolFormat(cfg) {
 	case "xml":
 		inner = llm.NewTextMode(inner, llm.TextModeOptions{})

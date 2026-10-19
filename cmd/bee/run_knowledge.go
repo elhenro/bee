@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/knowledge"
@@ -76,14 +77,20 @@ func tagLRUPut(query string, tags []string) {
 	}
 }
 
+// hintBudget caps the phase-2 tag call. it sits in front of the turn's first
+// request, so a slow side model gets skipped rather than waited for.
+const hintBudget = 400 * time.Millisecond
+
 // knowledgeAdapter satisfies loop.KnowledgeStore using the knowledge
-// package. phase 1 of the query is deterministic; phase 2 fires a tiny
-// side-LLM call only when phase 1 returns fewer than two candidates.
+// package. phase 1 of the query is deterministic; phase 2 (opt-in via
+// [memory] llm_hints) fires a tiny side-LLM call when phase 1 returns fewer
+// than two candidates.
 type knowledgeAdapter struct {
 	prov    llm.Provider
 	model   string
 	dir     string
 	enabled bool
+	hints   bool
 	topK    int
 }
 
@@ -98,6 +105,7 @@ func newKnowledgeAdapter(p llm.Provider, cfg config.Config) *knowledgeAdapter {
 		model:   cfg.DefaultModel,
 		dir:     dir,
 		enabled: cfg.Memory.Enabled,
+		hints:   cfg.Memory.LLMHints,
 		topK:    topK,
 	}
 }
@@ -122,15 +130,17 @@ func (k *knowledgeAdapter) Query(ctx context.Context, query string, _ []string) 
 	if err != nil {
 		return nil, err
 	}
-	if len(recs) >= 2 || k.prov == nil {
+	if len(recs) >= 2 || k.prov == nil || !k.hints {
 		return recs, nil
 	}
 	// phase 2: ask a small side-LLM for keyword tags and re-score. cache
-	// the lookup so repeat queries skip the 2-5s blocking call.
+	// the lookup so repeat queries skip the blocking call.
 	hints, ok := tagLRUGet(query)
 	if !ok {
+		hctx, cancel := context.WithTimeout(ctx, hintBudget)
+		defer cancel()
 		var herr error
-		hints, herr = knowledge.ExtractTags(ctx, k.prov, k.model, query)
+		hints, herr = knowledge.ExtractTags(hctx, k.prov, k.model, query)
 		if herr != nil || len(hints) == 0 {
 			return recs, nil
 		}

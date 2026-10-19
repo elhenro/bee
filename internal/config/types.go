@@ -462,6 +462,10 @@ type MemoryConfig struct {
 	Enabled             bool `toml:"enabled"`
 	TopK                int  `toml:"top_k"`
 	BackgroundExtractor bool `toml:"background_extractor"`
+	// LLMHints lets a thin deterministic lookup ask a side model for keyword
+	// tags before the first request. Off by default: it puts a model round trip
+	// in front of every turn's first token.
+	LLMHints bool `toml:"llm_hints"`
 }
 
 // WaggleConfig gates procedure memory: crystallizing repeated read-only routes

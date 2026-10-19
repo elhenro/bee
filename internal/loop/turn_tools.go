@@ -41,6 +41,7 @@ var safeParallelTools = map[string]bool{
 // synthetic canceled result, finished ones keep theirs, so the caller can
 // persist a tool message that answers every tool_use.
 func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]types.ToolResult, error) {
+	defer e.earlyDrain()
 	results := make([]types.ToolResult, len(uses))
 	started := make([]bool, len(uses))
 	var wg sync.WaitGroup
@@ -61,6 +62,15 @@ func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]typ
 		if safeParallelTools[u.Name] {
 			started[i] = true
 			wg.Add(1)
+			if c := e.earlyTake(i, u); c != nil {
+				// already running (or done) since the stream delivered it
+				go func(idx int, c *earlyCall) {
+					defer wg.Done()
+					<-c.done
+					results[idx] = c.res
+				}(i, c)
+				continue
+			}
 			go func(idx int, use types.ToolUse) {
 				defer wg.Done()
 				results[idx] = e.runOneTrapped(ctx, use)

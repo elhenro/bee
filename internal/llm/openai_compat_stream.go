@@ -176,6 +176,13 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 			if len(ch.Delta.ToolCalls) > 0 {
 				hasRealOutput = true
 				acc.Apply(ch.Delta.ToolCalls)
+				// a call whose arguments are complete while a sibling is still
+				// streaming goes out now, so the loop can start running it.
+				for _, c := range acc.TakeSealed() {
+					if !emit(ctx, out, toolUseEvent(c)) {
+						return
+					}
+				}
 			}
 			if ch.FinishReason != nil && *ch.FinishReason != "" {
 				hasRealOutput = true
@@ -214,20 +221,7 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 		return
 	}
 	for _, c := range calls {
-		id := c.ID
-		if id == "" {
-			id = "call_" + uuid.NewString()
-		}
-		input := c.Input
-		// parse failure: stop silently swallowing — pass a structured error
-		// down so the tool layer surfaces a real diagnostic to the model on
-		// the next turn instead of acting on empty input.
-		if c.ParseError != "" && len(input) == 0 {
-			input = map[string]any{"_parse_error": c.ParseError, "_raw_args": c.RawArgs}
-		}
-		if !emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-			ID: id, Name: c.Name, Input: input,
-		}}) {
+		if !emit(ctx, out, toolUseEvent(c)) {
 			return
 		}
 	}
@@ -246,4 +240,20 @@ func usageFromWire(u *wire.StreamUsage) *Usage {
 		out.CachedTokens = u.PromptTokensDetails.CachedTokens
 	}
 	return out
+}
+
+// toolUseEvent turns an assembled call into its stream event.
+func toolUseEvent(c wire.FinalizedCall) Event {
+	id := c.ID
+	if id == "" {
+		id = "call_" + uuid.NewString()
+	}
+	input := c.Input
+	// parse failure: stop silently swallowing — pass a structured error
+	// down so the tool layer surfaces a real diagnostic to the model on
+	// the next turn instead of acting on empty input.
+	if c.ParseError != "" && len(input) == 0 {
+		input = map[string]any{"_parse_error": c.ParseError, "_raw_args": c.RawArgs}
+	}
+	return Event{Type: EventToolUse, ToolUse: &types.ToolUse{ID: id, Name: c.Name, Input: input}}
 }

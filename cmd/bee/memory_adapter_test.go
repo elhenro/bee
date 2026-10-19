@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
@@ -109,4 +110,53 @@ func TestProfileMemoryBodyCharsDefaults(t *testing.T) {
 	if d["large"].MemoryBodyChars != 0 {
 		t.Errorf("large.MemoryBodyChars=%d want 0", d["large"].MemoryBodyChars)
 	}
+}
+
+// thin phase-1 (<2 hits) must not put a model call in front of the turn unless
+// [memory] llm_hints opts in.
+func TestKnowledgeAdapterThinStoreNoSideQueryByDefault(t *testing.T) {
+	dir := t.TempDir()
+	body := "---\nname: one\ndescription: d\ntags: [misc]\npriority: 3\nexpires: never\n---\nbody"
+	if err := os.WriteFile(filepath.Join(dir, "one.md"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prov := &countingProvider{}
+	k := &knowledgeAdapter{prov: prov, model: "test", dir: dir, enabled: true, topK: 3}
+	if _, err := k.Query(context.Background(), "anything", nil); err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if n := prov.calls.Load(); n != 0 {
+		t.Errorf("llm_hints off: expected zero side-LLM calls; got %d", n)
+	}
+}
+
+// opted in, a side model that never answers is cut at hintBudget, not waited on.
+func TestKnowledgeAdapterHintsBoundedByBudget(t *testing.T) {
+	dir := t.TempDir()
+	body := "---\nname: one\ndescription: d\ntags: [misc]\npriority: 3\nexpires: never\n---\nbody"
+	if err := os.WriteFile(filepath.Join(dir, "one.md"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	k := &knowledgeAdapter{prov: hangingProvider{}, model: "test", dir: dir, enabled: true, hints: true, topK: 3}
+	start := time.Now()
+	if _, err := k.Query(context.Background(), "anything", nil); err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if d := time.Since(start); d > 3*hintBudget {
+		t.Errorf("Query blocked %v on a hung side model, budget is %v", d, hintBudget)
+	}
+}
+
+type hangingProvider struct{}
+
+func (hangingProvider) Name() string { return "hanging" }
+
+func (hangingProvider) Stream(ctx context.Context, _ llm.Request) (<-chan llm.Event, error) {
+	ch := make(chan llm.Event)
+	go func() {
+		<-ctx.Done()
+		ch <- llm.Event{Type: llm.EventError, Err: ctx.Err()}
+		close(ch)
+	}()
+	return ch, nil
 }

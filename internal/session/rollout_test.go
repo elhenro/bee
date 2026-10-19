@@ -189,3 +189,50 @@ func TestList_EmptyDir(t *testing.T) {
 		t.Fatalf("expected empty, got %+v", got)
 	}
 }
+
+func TestRollout_ConcurrentAppendClose(t *testing.T) {
+	withTempSessionsDir(t)
+	sid := uuid.NewString()
+	r, err := Open(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			// errors after Close are expected; the race detector is the assertion.
+			_ = r.Append(ctx, mkMsg(uuid.NewString(), "", types.RoleUser, "x"))
+			_ = r.Flush()
+		}
+	}()
+	time.Sleep(time.Millisecond)
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if err := r.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+}
+
+func TestRollout_AppendDoesNotBlockOnSync(t *testing.T) {
+	withTempSessionsDir(t)
+	r, err := Open(uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	ctx := context.Background()
+	start := time.Now()
+	for i := 0; i < 64; i++ {
+		if err := r.Append(ctx, mkMsg(uuid.NewString(), "", types.RoleUser, "x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 64 inline fsyncs would take ~250ms on a macOS disk; page-cache writes take well under 50ms.
+	if d := time.Since(start); d > 100*time.Millisecond {
+		t.Fatalf("64 appends took %v, fsync is back on the Append path", d)
+	}
+}

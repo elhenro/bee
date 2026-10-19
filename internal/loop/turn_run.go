@@ -38,20 +38,21 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	if e.Sessions != nil {
 		defer func() { _ = e.Sessions.Flush() }()
 	}
+	defer e.cancelSpecCompact()
+	defer e.earlyDrain()
 	// reset per-Run state. freshRunState allocates the dedupe/streak maps;
 	// sticky fields (sysPromptCache, profileScaledFor, warnedThinkingIgnored)
 	// live on Engine and survive this assignment. The previous runState is
 	// dropped — Run identity is the dedupe scope.
 	e.run = e.freshRunState()
+	e.gaugeArm("first")
 	res := RunResult{}
 
-	// probe the active model's context window before the first iteration so
-	// auto-compact knows the real budget for novel models the hardcoded table
-	// doesn't carry (e.g. fresh ollama pulls, deepseek-v4-pro, lm-studio
-	// custom configs). Best-effort; dedupes per (provider,model) via probe.go.
-	if pc, ok := e.Cfg.Providers[e.Cfg.DefaultProvider]; ok {
-		_ = llm.ProbeContextLength(ctx, e.Cfg.DefaultProvider, pc, e.Cfg.DefaultModel)
-	}
+	// probe the active model's context window so auto-compact knows the real
+	// budget for novel models the hardcoded table doesn't carry (e.g. fresh
+	// ollama pulls, deepseek-v4-pro, lm-studio custom configs). Best-effort;
+	// dedupes per (provider,model) via probe.go; hosted lookups run detached.
+	e.probeContextWindow(ctx)
 	// scale tiny-profile budgets up when the active model has much more
 	// context than the 4k default tiny assumes (sparse MoE: Qwen3-A3B-128k,
 	// etc.). Re-runs on model switch via profileScaledFor sentinel.
@@ -235,20 +236,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// top so newly-appended tool/assistant messages from prior iteration
 		// are also accounted for. Prefer the provider's last reported input
 		// token count (most accurate, works for every wire format that
-		// surfaces usage); fall back to the estimator on the first turn.
-		if e.compactionEnabled() {
-			budget := contextBudget(e.Cfg)
-			if ShouldAutoCompactWithUsage(sys, res.Messages, e.run.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
-				if compacted, stats, cerr := e.compact(ctx, res.Messages); cerr == nil {
-					res.Messages = e.emitCompactNotice(compacted, stats)
-					// post-compact: reset lastInputTokens so the next
-					// iteration re-evaluates against the smaller history.
-					e.run.lastInputTokens = 0
-				} else {
-					fmt.Fprintf(os.Stderr, "loop: auto-compact failed: %v\n", cerr)
-				}
-			}
-		}
+		// surfaces usage); fall back to the estimator on the first turn. A
+		// background summary started below the trigger makes the swap free.
+		res.Messages = e.autoCompactStep(ctx, res.Messages, sys)
 
 		prof := config.ActiveProfile(e.Cfg)
 		// thinking is baked per-role when the user hasn't pinned an explicit
@@ -308,6 +298,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		if err != nil {
 			return res, err
 		}
+		e.gaugeArm("between")
 		assistantMsg.ParentID = lastID(res.Messages)
 		if err := e.appendMessage(ctx, assistantMsg); err != nil {
 			return res, err
@@ -458,7 +449,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		}
 
 		// dispatch tools (read-only ones run in parallel, mutators serial)
+		toolStart := time.Now()
 		toolResults, err := e.dispatchTools(ctx, toolUses)
+		e.gaugeToolTime(time.Since(toolStart))
 		if err != nil {
 			// canceled mid-batch: persist what ran plus synthetic results so no
 			// tool_use stays orphaned in the rollout. the turn ctx is dead, so

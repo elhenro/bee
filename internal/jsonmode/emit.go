@@ -18,6 +18,8 @@ type Event struct {
 	Error   bool   `json:"error,omitempty"`
 	Message string `json:"message,omitempty"`
 	Usage   *Usage `json:"usage,omitempty"`
+	// Ms is a duration in milliseconds. A pointer so a measured 0 is still emitted.
+	Ms *float64 `json:"ms,omitempty"`
 }
 
 // Usage mirrors llm.Usage but stays decoupled to avoid an import cycle.
