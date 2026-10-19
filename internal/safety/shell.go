@@ -13,8 +13,17 @@ var rmRfRoot = regexp.MustCompile(
 )
 
 var ddToDisk = regexp.MustCompile(`(?i)\bdd\b[^|]*\bof=/dev/(disk|sd|nvme|hd)`)
-var diskFormat = regexp.MustCompile(`\b(mkfs(\.[a-z0-9]+)?|fdisk|parted)\b`)
-var diskutilErase = regexp.MustCompile(`(?i)\bdiskutil\s+erase`)
+
+// cmdPos anchors a match to command position: start of line, after a
+// separator or subshell opener, optionally behind wrappers (sudo, env,
+// sh -c, ...) and a path prefix. a bare word in an argument ("echo parted
+// lips") must not trip the disk checks.
+const cmdPos = "(?:^|[;&|(\\n`]|\\$\\()\\s*" +
+	`(?:(?:sudo|doas|env|exec|command|nohup|nice|time|xargs|eval|(?:ba|z)?sh\s+-c)\s+(?:-\S+\s+|\w+=\S+\s+)*)*` +
+	`(?:\S*/)?`
+
+var diskFormat = regexp.MustCompile(cmdPos + `(mkfs(\.[a-z0-9]+)?|fdisk|parted)\b`)
+var diskutilErase = regexp.MustCompile(`(?i)` + cmdPos + `diskutil\s+erase`)
 
 // CheckShellCommand heuristically blocks commands that almost certainly mean
 // the model went off the rails. user approval is the primary gate; this just

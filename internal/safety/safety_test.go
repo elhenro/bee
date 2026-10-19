@@ -108,6 +108,12 @@ func TestCheckShellCommand_Blocks(t *testing.T) {
 		"mkfs.ext4 /dev/sda1",
 		"diskutil eraseDisk JHFS+ none disk2",
 		"parted /dev/sda mklabel gpt",
+		"sudo parted /dev/sda mklabel gpt",
+		"ls && fdisk -l",
+		`bash -c "parted /dev/sda"`,
+		"/sbin/mkfs.ext4 /dev/sda1",
+		"pa''rted /dev/sda",
+		"echo hi; sudo diskutil eraseDisk JHFS+ none disk2",
 	}
 	for _, c := range bad {
 		if err := CheckShellCommand(c); err == nil {
@@ -124,6 +130,12 @@ func TestCheckShellCommand_Allows(t *testing.T) {
 		"rm -rf node_modules",
 		"echo hi",
 		"cat /etc/hosts",
+		`echo "parted lips"`,
+		`echo 'parted lips test'`,
+		`echo "par"ted lips`,
+		`git commit -m "fix parted lips"`,
+		"grep -rn fdisk docs/",
+		"echo diskutil erase",
 	}
 	for _, c := range ok {
 		if err := CheckShellCommand(c); err != nil {
