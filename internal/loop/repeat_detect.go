@@ -54,6 +54,29 @@ type repeatTracker struct {
 	familyActive bool
 	// failure fingerprint → times a test run returned it. see test_fail_loop.go.
 	testFails map[string]int
+	// failure keys already counted in the batch being observed; nil outside a
+	// batch. one dispatch batch is one step for the model, so N parallel calls
+	// failing the same way count once toward the failure streaks.
+	batchFails map[string]bool
+}
+
+// beginBatch starts one dispatch batch: each tool name and each call signature
+// extends its failure streak at most once until endBatch.
+func (t *repeatTracker) beginBatch() { t.batchFails = map[string]bool{} }
+
+func (t *repeatTracker) endBatch() { t.batchFails = nil }
+
+// firstFailIn reports whether key has not yet extended a streak in this batch.
+// outside a batch every failure counts.
+func (t *repeatTracker) firstFailIn(key string) bool {
+	if t.batchFails == nil {
+		return true
+	}
+	if t.batchFails[key] {
+		return false
+	}
+	t.batchFails[key] = true
+	return true
 }
 
 func newRepeatTracker() *repeatTracker {
@@ -80,7 +103,9 @@ func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultCon
 	resultHash := hashResult(resultContent)
 	t.sigCounts[sig]++
 	if isErr {
-		t.failByTool[u.Name]++
+		if t.firstFailIn("tool:" + u.Name) {
+			t.failByTool[u.Name]++
+		}
 		t.sameResult[sig] = 0
 	} else {
 		t.failByTool[u.Name] = 0
@@ -97,10 +122,14 @@ func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultCon
 		twoStrike = true
 	}
 	// failBySig: extend streak only when current is err AND sig matches last err sig.
+	sigKey := "sig:" + sig.Name + ":" + sig.ArgsHash
 	if isErr && t.hasLast && t.lastFailed && t.lastSig == sig {
-		t.failBySig++
+		if t.firstFailIn(sigKey) {
+			t.failBySig++
+		}
 	} else if isErr {
 		t.failBySig = 1
+		t.firstFailIn(sigKey)
 	} else {
 		t.failBySig = 0
 	}

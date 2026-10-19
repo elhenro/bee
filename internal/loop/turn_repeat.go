@@ -34,6 +34,8 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 	if e.run.repeats == nil {
 		e.run.repeats = newRepeatTracker()
 	}
+	e.run.repeats.beginBatch()
+	defer e.run.repeats.endBatch()
 	// index results by UseID so we can pair use ↔ content reliably even when
 	// safeParallelTools shuffles in-flight order.
 	resByID := make(map[string]types.ToolResult, len(results))
