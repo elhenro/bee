@@ -464,6 +464,8 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err == nil && m.showRecap && recapWorthwhile(msg.result.Messages, m.lastTurnDuration) {
 		recapCmd = recapIdleCmd(m.recapGen, msg.result.Messages)
 	}
+	// a steer the loop never got to read becomes a follow-up of its own
+	m.queue = append(m.queue, drainSteer(m.eng)...)
 	// drain one queued follow-up per turn so the TUI stays responsive
 	// between fires. Only when last turn didn't error.
 	if msg.err == nil && len(m.queue) > 0 && m.eng != nil {
