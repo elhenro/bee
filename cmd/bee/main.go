@@ -174,14 +174,18 @@ func repl() {
 	runTUI()
 }
 
-// stripVerboseFlag pulls --verbose / -v out of os.Args (any position) and
+// stripVerboseFlag pulls --verbose / -v out of os.Args (before any --) and
 // flips BEE_VERBOSE=1 so both the TUI and headless paths render full tool
 // output. Token isn't passed through to subcommands since flag.Parse would
 // fail on the rare overlap.
 func stripVerboseFlag() {
 	out := os.Args[:1]
 	hit := false
-	for _, a := range os.Args[1:] {
+	for i, a := range os.Args[1:] {
+		if a == "--" { // everything after is the message, not flags
+			out = append(out, os.Args[1+i:]...)
+			break
+		}
 		if a == "--verbose" {
 			hit = true
 			continue
@@ -206,6 +210,10 @@ func stripCavemanFlag() {
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		if a == "--" {
+			out = append(out, args[i:]...)
+			break
+		}
 		switch {
 		case a == "--caveman" || a == "-caveman":
 			if i+1 >= len(args) {
@@ -247,6 +255,10 @@ func stripEffortFlag() {
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		if a == "--" {
+			out = append(out, args[i:]...)
+			break
+		}
 		switch {
 		case a == "--effort" || a == "-effort":
 			if i+1 >= len(args) {
