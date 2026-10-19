@@ -99,10 +99,16 @@ func ScanStore(ctx context.Context, dir string) ([]Entry, error) {
 		}(i, p)
 	}
 	wg.Wait()
+	// a canceled scan is partial; hand back the cancellation, cache nothing.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	out := entries[:0]
+	complete := true
 	for i, e := range entries {
 		if errs[i] != nil || e.Path == "" {
+			complete = false
 			continue
 		}
 		out = append(out, e)
@@ -113,7 +119,10 @@ func ScanStore(ctx context.Context, dir string) ([]Entry, error) {
 	if len(out) > MaxEntries {
 		out = out[:MaxEntries]
 	}
-	storeScanCache(dir, dirMtime, out)
+	// a listing that skipped unreadable files is not authoritative: rescan next time.
+	if complete {
+		storeScanCache(dir, dirMtime, out)
+	}
 	return cloneEntries(out), nil
 }
 
