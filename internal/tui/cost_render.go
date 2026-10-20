@@ -10,8 +10,9 @@ import (
 	"github.com/elhenro/bee/internal/cost"
 )
 
-// renderTable formats a summary map as a 4-column aligned listing.
-func renderTable(m map[string]cost.Summary, width int) string {
+// renderTable formats a summary map as a 4-column aligned listing. The row
+// whose key equals selected gets the selection marker.
+func renderTable(m map[string]cost.Summary, selected string, width int) string {
 	if len(m) == 0 {
 		return StyleLabel.Render("  (none)")
 	}
@@ -27,8 +28,9 @@ func renderTable(m map[string]cost.Summary, width int) string {
 	for _, k := range keys {
 		s := m[k]
 		name := truncateRune(k, nameW)
-		row := fmt.Sprintf("  %-*s  %8s  in %7s  out %7s",
+		row := fmt.Sprintf("%-*s  %8s  in %7s  out %7s",
 			nameW, name, fmtUSD(s.USD), humanTokens(s.Input), humanTokens(s.Output))
+		b.WriteString(selectMark(selected != "" && k == selected))
 		b.WriteString(lipgloss.NewStyle().Foreground(fgAsh).Render(row))
 		b.WriteString("\n")
 	}

@@ -183,13 +183,14 @@ func (c *CostPane) renderSparkline(events []cost.Event, width int) string {
 
 // renderBreakdown prints two tables: by provider, then by model.
 func (c *CostPane) renderBreakdown(width int) string {
+	prov, model := c.activeFilter()
 	var b strings.Builder
 	b.WriteString(lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render("by provider"))
 	b.WriteString("\n")
-	b.WriteString(renderTable(c.tracker.ByProvider(), width))
+	b.WriteString(renderTable(c.tracker.ByProvider(), prov, width))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render("by model"))
 	b.WriteString("\n")
-	b.WriteString(renderTable(c.tracker.ByModel(), width))
+	b.WriteString(renderTable(c.tracker.ByModel(), model, width))
 	return b.String()
 }

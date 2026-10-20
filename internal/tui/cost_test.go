@@ -78,6 +78,20 @@ func TestCostPane_TabCyclesFilter(t *testing.T) {
 	}
 }
 
+func TestCostPane_FilterMarksSelectedRow(t *testing.T) {
+	tr := cost.New()
+	tr.Record("openai", "gpt-4o-mini", 100, 100)
+	c := NewCostPane(tr)
+	c, _ = c.Update(ToggleCostPaneMsg{})
+	if strings.Contains(c.View(120, 40), glyphSel) {
+		t.Fatal("no marker expected in all mode")
+	}
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if !strings.Contains(c.View(120, 40), glyphSel) {
+		t.Fatal("provider mode should mark the selected provider row")
+	}
+}
+
 func TestCostPane_EscClosesPane(t *testing.T) {
 	c := NewCostPane(cost.New())
 	c, _ = c.Update(ToggleCostPaneMsg{})
