@@ -92,6 +92,28 @@ func TestCostPane_FilterMarksSelectedRow(t *testing.T) {
 	}
 }
 
+func TestCostPane_FilterChangesTotals(t *testing.T) {
+	tr := cost.New()
+	tr.Record("openai", "gpt-4o-mini", 1_000_000, 0)
+	tr.Record("openai", "gpt-4o", 1_000_000, 0)
+	c := NewCostPane(tr)
+	c, _ = c.Update(ToggleCostPaneMsg{})
+	all := c.View(120, 40)
+
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyTab})
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyTab})
+	first := c.View(120, 40)
+	c, _ = c.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	second := c.View(120, 40)
+
+	if !strings.Contains(all, "2 calls") || !strings.Contains(first, "1 calls") || !strings.Contains(second, "1 calls") {
+		t.Fatalf("call counts did not follow the filter:\nall=%q\nfirst=%q\nsecond=%q", all, first, second)
+	}
+	if first == second {
+		t.Fatal("j should switch to a different model's totals")
+	}
+}
+
 func TestCostPane_EscClosesPane(t *testing.T) {
 	c := NewCostPane(cost.New())
 	c, _ = c.Update(ToggleCostPaneMsg{})
