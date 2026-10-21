@@ -93,6 +93,15 @@ func (w gated) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		if msg := w.g.Check(ctx, p); msg != "" {
 			return tools.Result{Content: msg, IsError: true}, nil
 		}
+		// inner tools stat the path as given, so hand them the expanded form
+		if ex := tools.ExpandHome(p); ex != p {
+			cp := make(map[string]any, len(in))
+			for k, v := range in {
+				cp[k] = v
+			}
+			cp["path"] = ex
+			in = cp
+		}
 	}
 	return w.Tool.Run(ctx, in)
 }

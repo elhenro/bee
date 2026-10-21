@@ -30,6 +30,9 @@ func isRooted(p string) bool {
 	return len(p) > 0 && (p[0] == '/' || p[0] == '\\')
 }
 
+// ExpandHome expands a leading ~ or ~/ against $HOME. Other paths pass through.
+func ExpandHome(p string) string { return expandHome(p) }
+
 // expandHome expands a leading ~ or ~/ against $HOME. Other paths pass through.
 func expandHome(p string) string {
 	if p == "~" {

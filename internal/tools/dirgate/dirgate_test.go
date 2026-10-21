@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/elhenro/bee/internal/approval"
+	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/tools"
 )
 
 type counting struct {
@@ -67,5 +69,26 @@ func TestSeedFromAllowlist(t *testing.T) {
 	g := New(t.TempDir(), a, []string{"rm-recursive", KeyPrefix + other})
 	if msg := g.Check(context.Background(), filepath.Join(other, "f")); msg != "" || a.n != 0 {
 		t.Fatalf("msg=%q asks=%d", msg, a.n)
+	}
+}
+
+type pathEcho struct{ got string }
+
+func (p *pathEcho) Spec() llm.ToolSpec { return llm.ToolSpec{Name: "echo"} }
+func (p *pathEcho) Run(_ context.Context, in map[string]any) (tools.Result, error) {
+	p.got, _ = in["path"].(string)
+	return tools.Result{}, nil
+}
+
+func TestWrapExpandsHomeForInnerTool(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	inner := &pathEcho{}
+	g := New(home, approval.Static{Verdict: approval.AllowOnce}, nil)
+	if _, err := g.Wrap(inner).Run(context.Background(), map[string]any{"path": "~/a.md"}); err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(home, "a.md"); inner.got != want {
+		t.Fatalf("inner saw %q, want %q", inner.got, want)
 	}
 }
