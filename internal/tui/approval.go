@@ -156,64 +156,81 @@ func (m ApprovalModel) decide(d ApprovalDecision) (ApprovalModel, tea.Cmd) {
 	return m, cmd
 }
 
-// approvalActionLines caps how many lines of the action (command) the modal
+// approvalActionLines caps how many lines of the action (command) the panel
 // shows; the rest collapse into a `… +N more` note so a long script can't
-// blow the box up to full-screen.
+// blow it up to full-screen.
 const approvalActionLines = 8
 
-// View renders the modal box. The parent overlays it on the main view.
+// approvalChoices are the decision labels in focus order, each with its key.
+var approvalChoices = [4]struct{ key, label string }{
+	{"a", "allow once"}, {"s", "session"}, {"f", "forever"}, {"d", "deny"},
+}
+
+// title names what is being asked: a path outside the project for the
+// directory gate, the tool otherwise
+func (r ApprovalRequest) title() string {
+	if strings.HasPrefix(r.Key, "dir:") {
+		return "outside project"
+	}
+	return r.ToolName
+}
+
+// View renders the panel between two hairlines, like the prompt it sits above:
+// honey marker + title, the command on a dim rail, choices on one quiet row.
 func (m ApprovalModel) View() string {
 	if !m.Active {
 		return ""
 	}
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
-	inner := modalInner(m.width)
+	body := lipgloss.NewStyle().Foreground(fgSmoke)
+	ruleW := min(max(m.width-2, 10), askModalWidth)
+	if m.width <= 0 {
+		ruleW = askModalWidth
+	}
+	inner := max(ruleW-4, 6)
+	rule := " " + m.styles.Rule.Render(strings.Repeat(glyphRule, ruleW))
+
+	head := " " + m.styles.Mark.Render(glyphBee) + " " +
+		lipgloss.NewStyle().Foreground(fgButter).Bold(true).Render(m.Request.title())
+	if r := m.Request.Reason; r != "" {
+		head += dim.Render("  " + glyphSep + "  " + r)
+	}
+	lines := []string{rule, clipLine(head, ruleW), ""}
 
 	action := strings.TrimRight(m.Request.Action, "\n")
 	if action == "" {
 		action = "(no detail)"
 	}
-	reason := m.Request.Reason
-	if reason == "" {
-		reason = "(unspecified)"
+	rail := dim.Render("   " + glyphDetail + " ")
+	for _, l := range clipActionLines(action, inner) {
+		lines = append(lines, rail+body.Render(l))
 	}
-
-	lines := []string{
-		m.styles.ModalTitle.Render("permission request") + "  " + m.styles.ToolName.Render(m.Request.ToolName),
-		"",
-	}
-	lines = append(lines, dim.Render("reason"))
-	for _, rl := range wrapHanging(reason, inner) {
-		lines = append(lines, "  "+rl)
-	}
-	lines = append(lines, "", dim.Render("command"))
-	lines = append(lines, clipActionLines(action, inner)...)
 	lines = append(lines, "")
 
-	labels := []string{"[a]llow once", "[s]ession", "[f]orever", "[d]eny"}
-	btns := make([]string, 4)
-	for i, lbl := range labels {
+	items := make([]string, len(approvalChoices))
+	for i, c := range approvalChoices {
 		if i == m.focus {
-			btns[i] = m.styles.ButtonHot.Render(lbl)
+			items[i] = m.styles.Mark.Render(glyphSel+" "+c.label) + " " + dim.Render(c.key)
 		} else {
-			btns[i] = m.styles.Button.Render(lbl)
+			items[i] = "  " + body.Render(c.label) + " " + dim.Render(c.key)
 		}
 	}
-	lines = append(lines, packRow(btns, inner)...)
-
-	return m.styles.Modal.Width(inner + 4).Render(strings.Join(lines, "\n"))
+	for _, row := range packRow(items, ruleW-2) {
+		lines = append(lines, "  "+row)
+	}
+	lines = append(lines, "", " "+dim.Render("←→ move "+glyphSep+" enter pick"), rule)
+	return strings.Join(lines, "\n")
 }
 
-// clipActionLines truncates each command line to the inner width and caps the
-// total at approvalActionLines, appending a `… +N more` note when over.
-func clipActionLines(action string, inner int) []string {
+// clipActionLines truncates each command line to the width and caps the total
+// at approvalActionLines, appending a `… +N more` note when over.
+func clipActionLines(action string, w int) []string {
 	raw := strings.Split(action, "\n")
 	var out []string
 	for _, l := range raw {
-		out = append(out, "  "+clipLine(l, inner-2))
+		out = append(out, clipLine(l, w))
 		if len(out) >= approvalActionLines && len(raw) > approvalActionLines {
-			dim := lipgloss.NewStyle().Foreground(fgOyster)
-			out = append(out, dim.Render(fmt.Sprintf("  … +%d more", len(raw)-approvalActionLines)))
+			out = append(out, fmt.Sprintf("%s +%d more", glyphMore, len(raw)-approvalActionLines))
 			break
 		}
 	}

@@ -113,7 +113,7 @@ func TestApproval_EnterSubmitsFocused(t *testing.T) {
 func TestApproval_ViewRendersAction(t *testing.T) {
 	m := newApprovalFixture()
 	out := stripANSI(m.View())
-	for _, want := range []string{"permission request", "bash", "rm -rf /tmp/x", "[a]", "[d]"} {
+	for _, want := range []string{"bash", "rm -rf /tmp/x", "allow once", "deny"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("view missing %q: %q", want, out)
 		}
