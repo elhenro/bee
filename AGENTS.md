@@ -152,6 +152,8 @@ default_model = "deepseek-chat"
 
 - **`internal/auth/`** — OAuth 2.0 PKCE flow for the ChatGPT provider. `flow.go` does the token exchange, `server.go` is the loopback callback listener, `jwt.go` decodes the OIDC `id_token` to cache `chatgpt_account_id`, `storage.go` persists tokens to `~/.bee/auth/`.
 
+- **`internal/tools/dirgate/`** — default-scope guard: `read`/`ls`/`search`/`glob`/`write`/`edit`/`hashline_edit` stay in the start directory. A path outside asks through the approval gate (key `dir:<path>`): once, session (covers the subtree), or forever (persisted in `sandbox.command_allowlist`, all agents). Off via `[sandbox] allow_outside_cwd = true`, `--yolo`, or a confined scope (which already contains them). Shell (`bash`) and `apply_patch` are not gated.
+
 - **`internal/approval/`** — gates dangerous shell commands behind a user decision. `safety.DetectDangerous` flags a command → `Approver.Request` asks. Decisions cache for the session; `AllowAlways` persists via the caller-supplied callback (writes `config.command_allowlist`). CLI implementation for headless; TUI implements its own approver. `Static{AllowOnce}` is the auto-approve path for the `--yes`/`--yolo` flag or the persisted `yolo` toggle (`cfg.Yolo`).
 
 - **`internal/cost/`** — process-local thread-safe tracker for per-turn token usage and dollar cost. Consumed by the TUI status bar (live session total) and the cost-monitor pane (historical breakdown). Prices come from `llm/models.go`.

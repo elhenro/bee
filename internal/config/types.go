@@ -419,6 +419,9 @@ type SandboxConfig struct {
 	Scope            string   `toml:"scope"`
 	Approval         string   `toml:"approval"`
 	CommandAllowlist []string `toml:"command_allowlist"`
+	// AllowOutsideCwd lifts the default confinement of file tools to the
+	// start directory. Off: a path outside it asks the user first.
+	AllowOutsideCwd bool `toml:"allow_outside_cwd"`
 }
 
 // Confined reports whether an OS-confinement scope is active. The default

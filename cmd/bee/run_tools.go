@@ -271,6 +271,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
 	all = appendJobTool(all, bo.jobs)
+	all = gateDirs(all, cwd, cfg, confined, app)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue
@@ -388,6 +389,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
 	all = appendJobTool(all, bo.jobs)
+	all = gateDirs(all, cwd, cfg, confined, app)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
 			continue
