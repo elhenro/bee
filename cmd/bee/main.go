@@ -48,6 +48,8 @@ var reservedSubcommands = map[string]bool{
 	"swarm":          true,
 	"hyperplan":      true,
 	"hive":           true,
+	"explain":        true,
+	"quiz":           true,
 	"bg":             true,
 	"agents":         true,
 	"remote-control": true,
@@ -85,6 +87,10 @@ func main() {
 		runHyperplan(os.Args[2:])
 	case "hive":
 		hive(os.Args[2:])
+	case "explain":
+		runExplain(os.Args[2:])
+	case "quiz":
+		runQuiz(os.Args[2:])
 	case "bg":
 		bg(os.Args[2:])
 	case "agents":
@@ -131,6 +137,8 @@ usage:
   bee swarm <task>          queen + workers for a complex task
   bee hyperplan <plan>      spawn 5 critics to attack a plan
   bee hive                  list active bees and recent sessions
+  bee explain [session-id]  review guide: what each request changed and why
+  bee quiz [session-id]     guess each change's reason, then reveal it
   bee bg [--skill <name>] <message>  run a task in the background
   bee bg --list                      list background bees
   bee bg --tail <id>                 follow a background log

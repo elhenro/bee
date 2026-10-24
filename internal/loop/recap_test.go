@@ -42,21 +42,23 @@ func TestRecapPrompt(t *testing.T) {
 	// executing them ("I need to craft a one-sentence recap…").
 	const prompt = recapSystem
 	for _, directive := range []string{
-		"Write a one-sentence recap",
+		"Write a recap",
 		"Example:",
 		"Past tense",
 		"No meta-commentary",
 		`"I need to"`,
 		`"The user wants me"`,
-		"Plain text only",
+		"plain sentences",
 	} {
 		if !strings.Contains(prompt, directive) {
 			t.Errorf("prompt missing directive %q", directive)
 		}
 	}
 	// Example should contain both what-was-done and next.
-	if !strings.Contains(prompt, "Next:") {
-		t.Error("example should show Next: format")
+	for _, label := range []string{"Check:", "Next:"} {
+		if !strings.Contains(prompt, label) {
+			t.Errorf("example should show %s format", label)
+		}
 	}
 }
 
@@ -117,5 +119,20 @@ func TestExtractRecapInput(t *testing.T) {
 	}
 	if extractRecapInput([]types.Message{user("hi")}) != "" {
 		t.Fatal("user-only msgs should yield empty input")
+	}
+}
+
+func TestExtractRecapInput_IncludesEditReasons(t *testing.T) {
+	msgs := []types.Message{
+		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "fix it"}}},
+		{Role: types.RoleAssistant, Content: []types.ContentBlock{
+			{Type: types.BlockToolUse, Use: &types.ToolUse{ID: "1", Name: "edit", Input: map[string]any{"path": "a.go", "why": "nil map panics"}}},
+			{Type: types.BlockToolUse, Use: &types.ToolUse{ID: "2", Name: "read", Input: map[string]any{"path": "b.go", "why": "ignored"}}},
+			{Type: types.BlockText, Text: "done"},
+		}},
+	}
+	got := extractRecapInput(msgs)
+	if !strings.Contains(got, "- a.go: nil map panics") || strings.Contains(got, "ignored") {
+		t.Fatalf("reasons wrong: %q", got)
 	}
 }

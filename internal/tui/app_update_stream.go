@@ -311,6 +311,22 @@ func (m Model) onRecapIdleTick(msg recapIdleTickMsg) (tea.Model, tea.Cmd) {
 	return m, m.recapCmd(msg.msgs)
 }
 
+// onChangeMap prints the review card in the same dim voice as the recap.
+func (m Model) onChangeMap(msg changeMapMsg) (tea.Model, tea.Cmd) {
+	if msg.text == "" {
+		return m, nil
+	}
+	w := m.width
+	if w < minRenderWidth {
+		w = 80
+	}
+	rows := strings.Split(expandTabs(msg.text), "\n")
+	for i, row := range rows {
+		rows[i] = m.styles.Dim.Render(clipLine(row, w-2))
+	}
+	return m, m.scroll.print(strings.Join(rows, "\n"))
+}
+
 func (m Model) onRecapReady(msg recapReadyMsg) (tea.Model, tea.Cmd) {
 	// Error case renders too so the toggle is observable. Skip is silent:
 	// a model that declines to recap produced no useful output, no point
@@ -465,6 +481,10 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err == nil && m.showRecap && recapWorthwhile(msg.result.Messages, m.lastTurnDuration) {
 		recapCmd = recapIdleCmd(m.recapGen, msg.result.Messages)
 	}
+	var mapCmd tea.Cmd
+	if msg.err == nil {
+		mapCmd = m.changeMapCmd(msg.result.Messages)
+	}
 	// a steer the loop never got to read becomes a follow-up of its own
 	m.queue = append(m.queue, drainSteer(m.eng)...)
 	// drain one queued follow-up per turn so the TUI stays responsive
@@ -473,12 +493,12 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		nxt := m.queue[0]
 		m.queue = m.queue[1:]
 		nm, runCmd := m.submit(nxt)
-		return nm, tea.Batch(flushCmd, costCmd, recapCmd, runCmd, snapCmd)
+		return nm, tea.Batch(flushCmd, costCmd, mapCmd, recapCmd, runCmd, snapCmd)
 	}
 	// a background job finished after the loop's last look: start its turn now
 	if msg.err == nil {
 		if nm, jobCmd := m.startJobTurn(); jobCmd != nil {
-			return nm, tea.Batch(flushCmd, costCmd, recapCmd, jobCmd, snapCmd)
+			return nm, tea.Batch(flushCmd, costCmd, mapCmd, recapCmd, jobCmd, snapCmd)
 		}
 	}
 	// post-scout handoff: a clean scout turn produced a plan, but scout strips
@@ -499,7 +519,7 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err == nil {
 		m, goalCmd = m.maybeStartGoalEval()
 	}
-	return m, tea.Batch(flushCmd, costCmd, recapCmd, goalCmd, errResumeCmd, snapCmd)
+	return m, tea.Batch(flushCmd, costCmd, mapCmd, recapCmd, goalCmd, errResumeCmd, snapCmd)
 }
 
 func (m Model) onCostTick(_ costTickMsg) (tea.Model, tea.Cmd) {

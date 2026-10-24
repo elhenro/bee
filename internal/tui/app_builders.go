@@ -71,8 +71,8 @@ func (m Model) WithShowNudges(v bool) Model {
 	return m
 }
 
-// WithShowRecap seeds the post-turn recap toggle from config. Default
-// false so recaps are explicitly opt-in (extra tokens per turn).
+// WithShowRecap seeds the post-turn recap toggle from config. Config
+// defaults it on; /settings toggles it.
 func (m Model) WithShowRecap(v bool) Model {
 	m.showRecap = v
 	return m

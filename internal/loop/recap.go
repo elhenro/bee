@@ -6,25 +6,27 @@ import (
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/tools/why"
 	"github.com/elhenro/bee/internal/types"
 )
 
-// recapSystem asks the model for a single short line summarising what
-// just happened in this turn and a suggested next step. Kept terse so it
-// fits any provider context, and to bound the side-call cost.
-const recapSystem = `Write a one-sentence recap of the assistant's last turn.
+// recapSystem asks for a short recap that also teaches: what changed and why,
+// the one thing worth a reviewer's eye, and the next step. Kept to two
+// sentences so it fits any provider context and bounds the side-call cost.
+const recapSystem = `Write a recap of the assistant's last turn for the developer who must understand and review it.
 
-Format: "<what was done>. Next: <suggested next step>."
+Format: "<what changed and why>. Check: <the assumption or unverified risk to look at first>. Next: <suggested next step>."
 
 Example:
-  Fix: snap second-story midFloor to wall base (h + 0.1). Next: test the floors connect correctly.
+  Snapped second-story midFloor to the wall base because the old offset left a gap. Check: only the square-room case was tried. Next: test an L-shaped floor.
 
 Rules:
-- Single sentence, max 200 characters.
-- Past tense, concrete verbs (fixed, added, removed, changed, etc.).
+- Max 300 characters, plain sentences, no markdown, no quotes, no prefix labels.
+- Past tense, concrete verbs. Name the reason, not just the action.
+- "Check:" names one specific thing, omit it if nothing is uncertain.
 - "Next:" suggests one specific follow-up.
 - No meta-commentary. No "I need to", "The user wants me", etc.
-- No prefix labels, no markdown, no quotes. Plain text only.
+- Reasons for edits may be listed under "Reasons:"; use them, do not invent others.
 - If the turn was a greeting, question, or no work, reply "skip".`
 
 // recapMaxInput caps how much of the assistant's text we feed back into
@@ -66,7 +68,7 @@ func GenerateRecap(ctx context.Context, p llm.Provider, model string, msgs []typ
 				{Type: types.BlockText, Text: text},
 			}},
 		},
-		MaxTokens:   80,
+		MaxTokens:   120,
 		Temperature: 0,
 		Stream:      true,
 	}
@@ -132,6 +134,32 @@ func extractRecapInput(msgs []types.Message) string {
 				}
 				b.WriteString(c.Text)
 			}
+		}
+	}
+	if reasons := editReasons(msgs[start:]); reasons != "" {
+		b.WriteString("\n\nReasons:\n" + reasons)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// editReasons lists "path: why" for each mutation in the turn that carried a
+// why, so the recap can state the real rationale instead of guessing it.
+func editReasons(msgs []types.Message) string {
+	var b strings.Builder
+	for _, m := range msgs {
+		for _, c := range m.Content {
+			if c.Type != types.BlockToolUse || c.Use == nil || !why.Mutators[c.Use.Name] {
+				continue
+			}
+			reason := why.Of(c.Use.Input)
+			if reason == "" {
+				continue
+			}
+			path, _ := c.Use.Input["path"].(string)
+			if path == "" {
+				path = c.Use.Name
+			}
+			b.WriteString("- " + path + ": " + reason + "\n")
 		}
 	}
 	return strings.TrimSpace(b.String())

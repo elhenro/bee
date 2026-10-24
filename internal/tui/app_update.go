@@ -262,6 +262,8 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return m.onRecapIdleTick(msg)
 	case recapReadyMsg:
 		return m.onRecapReady(msg)
+	case changeMapMsg:
+		return m.onChangeMap(msg)
 	case costTickMsg:
 		return m.onCostTick(msg)
 	case introTickMsg:

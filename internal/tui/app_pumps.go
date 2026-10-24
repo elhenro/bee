@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/elhenro/bee/internal/learn"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -19,7 +20,7 @@ const recapTimeout = 20 * time.Second
 // recapIdleDelay defers the side-call until the user has been idle for
 // this long after a turn finishes. New submits bump m.recapGen and the
 // scheduled tick drops itself when its captured gen no longer matches.
-const recapIdleDelay = 30 * time.Second
+const recapIdleDelay = 3 * time.Second
 
 // quitConfirmWindow is how long a single ctrl+d arms the quit-confirm flow.
 // After this elapses, the next ctrl+d re-arms instead of quitting.
@@ -387,5 +388,22 @@ func (m Model) recapCmd(msgs []types.Message) tea.Cmd {
 			msg.err = r.Err.Error()
 		}
 		return msg
+	}
+}
+
+// changeMapMsg carries the end-of-turn review card back into Update.
+type changeMapMsg struct{ text string }
+
+// changeMapCmd builds the review card for the turn's file mutations. It is
+// local work (git + code index), so it needs no model call and shows as soon
+// as the turn ends.
+func (m Model) changeMapCmd(msgs []types.Message) tea.Cmd {
+	if m.eng == nil {
+		return nil
+	}
+	cwd := m.eng.Cwd
+	copyMsgs := append([]types.Message(nil), msgs...)
+	return func() tea.Msg {
+		return changeMapMsg{text: learn.ChangeMap(context.Background(), cwd, copyMsgs)}
 	}
 }

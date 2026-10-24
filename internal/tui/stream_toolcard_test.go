@@ -377,3 +377,19 @@ func TestFooter_OffersCtrlOAfterAClippedCard(t *testing.T) {
 		t.Fatal("expanding did not retire the hint")
 	}
 }
+
+func TestToolCard_EditShowsWhy(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 100)
+	r.RenderMessage(useMsg("u1", "edit", map[string]any{
+		"path": "a.go", "old": "x", "new": "y", "why": "guard nil map, panics on first call",
+	}))
+	out := stripANSI(r.RenderMessage(resultMsg("u1", "ok", false)))
+	lines := strings.Split(strings.TrimLeft(out, "\n"), "\n")
+	if len(lines) < 2 || !strings.Contains(lines[1], glyphResult+"  guard nil map") {
+		t.Fatalf("why row should sit right under the header: %q", out)
+	}
+	r.RenderMessage(useMsg("u2", "edit", map[string]any{"path": "a.go", "old": "x", "new": "y"}))
+	if bare := stripANSI(r.RenderMessage(resultMsg("u2", "ok", false))); strings.Contains(bare, "guard") {
+		t.Fatalf("no why, no row: %q", bare)
+	}
+}

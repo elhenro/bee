@@ -39,6 +39,7 @@ import (
 	"github.com/elhenro/bee/internal/tools/waggle_lookup"
 	"github.com/elhenro/bee/internal/tools/web_fetch"
 	"github.com/elhenro/bee/internal/tools/web_search"
+	"github.com/elhenro/bee/internal/tools/why"
 	"github.com/elhenro/bee/internal/tools/write"
 	"github.com/elhenro/bee/internal/waggle"
 )
@@ -271,6 +272,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
 	all = appendJobTool(all, bo.jobs)
+	all = why.WrapAll(all)
 	all = gateDirs(all, cwd, cfg, confined, app)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
@@ -389,6 +391,7 @@ func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *rege
 	all = appendBrowserTools(all, cfg, confined)
 	all = appendWaggleLookup(all, cfg, cwd)
 	all = appendJobTool(all, bo.jobs)
+	all = why.WrapAll(all)
 	all = gateDirs(all, cwd, cfg, confined, app)
 	for _, t := range all {
 		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
