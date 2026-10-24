@@ -226,6 +226,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 					}
 					if err := e.appendMessage(ctx, steerMsg); err == nil {
 						res.Messages = append(res.Messages, steerMsg)
+						e.emitSteerDelivered(steer)
 					}
 				}
 			default:

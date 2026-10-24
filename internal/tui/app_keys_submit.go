@@ -104,7 +104,7 @@ func (m Model) handleSteer() (tea.Model, tea.Cmd) {
 	}
 	select {
 	case m.eng.SteerCh <- text:
-		m.messages = append(m.messages, userEcho(text, "steering"))
+		m.messages = append(m.messages, userEcho(text, "steer, sent at next step"))
 	default:
 		m.messages = append(m.messages, types.Message{
 			Role:      types.RoleAssistant,
