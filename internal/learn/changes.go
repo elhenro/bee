@@ -34,7 +34,8 @@ func Touched(msgs []types.Message, cwd string) []Change {
 	idx := map[string]int{}
 	var out []Change
 	add := func(path, reason string) {
-		path = rel(cwd, path)
+		path = Clean(rel(cwd, path))
+		reason = Clean(reason)
 		if path == "" || path == "/dev/null" {
 			return
 		}

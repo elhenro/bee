@@ -19,7 +19,7 @@ func Walkthrough(msgs []types.Message, cwd string) string {
 		if m.Role != types.RoleUser || m.Ephemeral {
 			continue
 		}
-		ask := firstLine(text(m))
+		ask := Clean(firstLine(text(m)))
 		if ask == "" {
 			continue
 		}
@@ -39,7 +39,7 @@ func Walkthrough(msgs []types.Message, cwd string) string {
 			}
 		}
 		if last := lastAssistantText(msgs[i:end]); last != "" {
-			b.WriteString("   " + clip(last, summaryChars) + "\n")
+			b.WriteString("   " + clip(Clean(last), summaryChars) + "\n")
 		}
 		b.WriteString("\n")
 	}

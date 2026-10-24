@@ -100,3 +100,25 @@ func TestCardsAndQuiz(t *testing.T) {
 		t.Fatalf("got %q", out.String())
 	}
 }
+
+func TestOutputStripsTerminalEscapes(t *testing.T) {
+	evil := "\x1b]0;pwn\x07\x1b[31mred\x1b[0m\rx"
+	msgs := []types.Message{
+		{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: evil}}},
+		{Role: types.RoleAssistant, Content: []types.ContentBlock{
+			use("edit", map[string]any{"path": "a\x1b[2J.go", "why": evil}),
+			{Type: types.BlockText, Text: evil},
+		}},
+	}
+	var q strings.Builder
+	Quiz(strings.NewReader("\n"), &q, Cards(msgs, "", 3))
+	for name, s := range map[string]string{
+		"walkthrough": Walkthrough(msgs, ""),
+		"changemap":   ChangeMap(context.Background(), t.TempDir(), msgs),
+		"quiz":        q.String(),
+	} {
+		if strings.ContainsAny(s, "\x1b\x07\r") {
+			t.Errorf("%s leaked control bytes: %q", name, s)
+		}
+	}
+}

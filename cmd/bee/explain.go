@@ -48,5 +48,5 @@ func explainSession(args []string, quiz bool) {
 		fmt.Fprintf(os.Stderr, "bee explain: session %s has nothing to explain\n", id)
 		os.Exit(1)
 	}
-	fmt.Printf("session %s\n\n%s\n", id, out)
+	fmt.Printf("session %s\n\n%s\n", learn.Clean(id), out)
 }

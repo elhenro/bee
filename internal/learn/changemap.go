@@ -105,7 +105,7 @@ func affectedTests(ctx context.Context, cwd string, paths []string) ([]string, b
 	}
 	var tests []string
 	for _, ln := range strings.Split(out, "\n") {
-		if ln = strings.TrimSpace(ln); ln != "" {
+		if ln = strings.TrimSpace(Clean(ln)); ln != "" {
 			tests = append(tests, ln)
 		}
 	}
