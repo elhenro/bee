@@ -162,8 +162,9 @@ func ApplyProfile(c Config) Config {
 	if c.Caveman == "" || c.Caveman == "auto" {
 		c.Caveman = p.Caveman
 	}
-	// profile-level override for recap (tiny forces off to avoid extra round-trip).
-	if p.ShowRecap != nil {
+	// profile-level recap override applies to on-host runs only, where the extra
+	// round-trip is slow. hosted tiny models are fast, and the recap teaches.
+	if p.ShowRecap != nil && IsLocalProvider(c.DefaultProvider) {
 		c.ShowRecap = *p.ShowRecap
 	}
 	return c

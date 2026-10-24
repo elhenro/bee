@@ -57,7 +57,7 @@ I've used claude code, codex, hermes, opencode, openclaw and pi. Each nails some
 
 **Three gaps bee closes:**
 
-1. **Tiny-context friendly.** Caveman-compressed system prompt, three tools, top-k memory. Scales from a 4k-context local Ollama up through small fine-tunes to million-token frontier models. Native [omlx](https://github.com/jundot/omlx) (Apple Silicon MLX server) and OpenRouter support out of the box. Shrinks itself when context gets tight.
+1. **Tiny-context friendly.** Compact system prompt, three tools, top-k memory. Scales from a 4k-context local Ollama up through small fine-tunes to million-token frontier models. Native [omlx](https://github.com/jundot/omlx) (Apple Silicon MLX server) and OpenRouter support out of the box. Shrinks itself when context gets tight.
 2. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. `bee criticize plan.md` just works, from any directory, in any shell.
 3. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint. All four are equally callable tools the model can invoke mid-task. Plug a personal-life agent in as a sub-agent (bundled `hermes.md` is a template). No IPC dance.
 
@@ -166,7 +166,7 @@ The snapshot assigns a short `[eN]` ref to every interactive element so the agen
 
 ## Caveman mode
 
-Token-compression rules injected into the system prompt. On by default. `caveman = "auto"` resolves per profile: `full` on `tiny` and `normal`, `lite` on `large`.
+Token-compression rules injected into the system prompt. Off by default: terse replies hide the reasoning you want to learn from. `caveman = "auto"` resolves to the profile value, which is `off` everywhere.
 
 Force a level regardless of profile:
 

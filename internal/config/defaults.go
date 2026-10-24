@@ -1,7 +1,7 @@
 package config
 
 // Defaults returns the canonical out-of-the-box configuration: OpenRouter +
-// deepseek-v4-flash, three profiles, caveman-full, danger-full-access +
+// deepseek-v4-flash, three profiles, caveman off, danger-full-access +
 // on-request sandbox, memory enabled with top_k=3.
 //
 // Zero-config startup: set OPENROUTER_API_KEY and bee runs.
@@ -9,9 +9,9 @@ func Defaults() Config {
 	return Config{
 		DefaultProvider: "openrouter",
 		DefaultModel:    "deepseek/deepseek-v4-flash",
-		// "auto" defers to the active profile's Caveman (tiny → full, normal →
-		// full, large → lite). Disable per-run with `--caveman off` or in
-		// config.toml: caveman = "off".
+		// "auto" defers to the active profile's Caveman, which is off everywhere:
+		// terse replies hide the rationale. Opt in per-run with `--caveman
+		// lite|full|ultra` or in config.toml: caveman = "ultra".
 		Caveman: "auto",
 		// "auto" picks tiny/normal/large by model class. Small/fast models
 		// (flash/mini/nano/haiku/8b…) get the 4-tool tiny surface — a
@@ -68,7 +68,7 @@ func Defaults() Config {
 		Verbose:             false,
 		ShowThoughts:        true,
 		ShowNudges:          true,
-		ShowRecap:           false,
+		ShowRecap:           true,
 		Compact:             false,
 		ShowContextBar:      true,
 		Highlight:           true,
@@ -180,9 +180,8 @@ func Defaults() Config {
 		},
 		Profiles: map[string]Profile{
 			// tiny: local + 4k-context models (ollama, lmstudio, flash/mini class).
-			// Caveman ULTRA: smallest rules block for tightest budget; small
-			// models still emit tool_calls. top_k=1 keeps memory injection cheap.
-			// Override per-run with `--caveman off` or in config: caveman = "off".
+			// top_k=1 keeps memory injection cheap. Caveman is off like every
+			// profile; ultra (335 bytes) is the opt-in for a 4k window.
 			"tiny": {
 				SystemPromptBudget: 3000,
 				MemoryTopK:         1,
@@ -192,7 +191,7 @@ func Defaults() Config {
 				// needs no extra advert, every saved byte counts on 4k-context
 				// local runs. 0 = unbounded; -1 = drop section entirely.
 				SkillManifestChars: -1,
-				Caveman:            "ultra",
+				Caveman:            "off",
 				MaxIterations:      DefaultMaxIterations,
 				// tool format inherits native tool_calls (the global default).
 				// capable local models emit clean native calls via the
@@ -215,7 +214,8 @@ func Defaults() Config {
 				// pin sampling: deterministic for tool turns, prevents temp drift on 4-bit MoE.
 				Temperature: 0.0,
 				TopP:        0.8,
-				// disable post-turn recap on tiny: side-LLM round-trip is ~2s on slow local runs.
+				// post-turn recap is on; only on-host runs drop it (see ApplyProfile): the
+				// side-LLM round-trip is ~2s on slow local models.
 				ShowRecap: boolPtr(false),
 				// destructive-op approval keys bypass the session AllowSession
 				// cache — small models that hallucinate intents can't reuse one
@@ -245,7 +245,7 @@ func Defaults() Config {
 				MemoryBodyChars:    2000,
 				ToolDescChars:      160,
 				SkillManifestChars: 100,
-				Caveman:            "full",
+				Caveman:            "off",
 				ToolOutputTokens:   8000,
 			},
 			// large: sonnet / opus class. headroom for richer prompts.
@@ -254,7 +254,7 @@ func Defaults() Config {
 				MemoryTopK:         5,
 				ToolDescChars:      400,
 				SkillManifestChars: 200,
-				Caveman:            "lite",
+				Caveman:            "off",
 				ToolOutputTokens:   50000,
 			},
 		},

@@ -7,8 +7,7 @@ package config
 // leaving ~95% of the window unused.
 //
 // Heuristic: at ctxWindow > 16k, scale SystemPromptBudget to min(ctx*0.05,
-// 8000) and ToolOutputTokens to min(ctx*0.02, 4000). Caveman ultra stays
-// on (reasoning depth doesn't grow with context); the 4-tool surface just
+// 8000) and ToolOutputTokens to min(ctx*0.02, 4000). The 4-tool surface just
 // gets room to breathe.
 //
 // Returns the input unchanged when profile isn't tiny or ctxWindow ≤ 16k.

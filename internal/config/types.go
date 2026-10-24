@@ -139,8 +139,8 @@ type Config struct {
 	ShowNudges bool `toml:"show_nudges"`
 
 	// ShowRecap enables a one-line post-turn recap synthesized by a cheap
-	// side-LLM call against the freshly finished assistant message. Off by
-	// default (extra tokens, off-fast-path). Toggle via /settings; persists
+	// side-LLM call against the freshly finished assistant message. On by
+	// default (off the fast path, a few tokens per turn). Toggle via /settings; persists
 	// across launches. Disabled = no generation, no render.
 	ShowRecap bool `toml:"show_recap"`
 
@@ -374,9 +374,9 @@ type Profile struct {
 	// turns) with top_p=0.8 to keep 4-bit MoE outputs anchored.
 	Temperature float64 `toml:"temperature"`
 	TopP        float64 `toml:"top_p"`
-	// ShowRecap, when non-nil, overrides Config.ShowRecap. Tiny sets false
-	// so the side-LLM recap round-trip doesn't double turn latency on slow
-	// local runs.
+	// ShowRecap, when non-nil, overrides Config.ShowRecap on on-host
+	// providers. Tiny sets false so the side-LLM recap round-trip doesn't
+	// double turn latency on slow local runs.
 	ShowRecap *bool `toml:"show_recap"`
 	// StateCard replaces the rolling transcript in each LLM request with a
 	// harness-maintained state card (goal, files touched, recent actions,
