@@ -1,6 +1,8 @@
 package waggle
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -50,15 +52,12 @@ func Mine(calls []Call, cfg MineConfig) []Candidate {
 	n := len(calls)
 	var out []Candidate
 	seen := map[string]bool{}
-	for l := cfg.MaxLen; l >= cfg.MinLen; l-- {
-		if l > n {
-			continue
-		}
+	for l := min(cfg.MaxLen, n); l >= cfg.MinLen; l-- {
 		groups := map[string][]int{}
 		var order []string
 		for i := 0; i+l <= n; i++ {
 			win := calls[i : i+l]
-			if windowHasMutator(win) && (!cfg.Mutating || !verifiedProcedure(win)) {
+			if hasMutator(win) && (!cfg.Mutating || !verifiedProcedure(win)) {
 				continue
 			}
 			if !isPrimitive(win) {
@@ -93,15 +92,6 @@ func Mine(calls []Call, cfg MineConfig) []Candidate {
 		return len(out[i].Steps)*out[i].Count > len(out[j].Steps)*out[j].Count
 	})
 	return out
-}
-
-func windowHasMutator(win []Call) bool {
-	for _, c := range win {
-		if c.Mutates {
-			return true
-		}
-	}
-	return false
 }
 
 // verifiedProcedure reports whether a window with mutators may be mined: every
@@ -199,21 +189,8 @@ func buildCandidate(windows [][]Call, l int) Candidate {
 }
 
 func cloneCall(c Call) Call {
-	out := c
-	if c.Args != nil {
-		out.Args = make(map[string]string, len(c.Args))
-		for k, v := range c.Args {
-			out.Args[k] = v
-		}
-	}
-	return out
+	c.Args = maps.Clone(c.Args)
+	return c
 }
 
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
+func sortedKeys(m map[string]string) []string { return slices.Sorted(maps.Keys(m)) }

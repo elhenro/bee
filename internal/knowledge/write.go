@@ -1,46 +1,24 @@
 package knowledge
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/goccy/go-yaml"
+
+	"github.com/elhenro/bee/internal/atomicfile"
 )
 
-// slugChar permits a tight set of leaf-name characters so the index and
+// slugPattern permits a tight set of leaf-name characters so the index and
 // filesystem path agree round-trip.
-var slugChar = func() func(string) bool {
-	allowed := map[byte]bool{}
-	for c := byte('a'); c <= 'z'; c++ {
-		allowed[c] = true
-	}
-	for c := byte('A'); c <= 'Z'; c++ {
-		allowed[c] = true
-	}
-	for c := byte('0'); c <= '9'; c++ {
-		allowed[c] = true
-	}
-	allowed['-'] = true
-	allowed['_'] = true
-	allowed['.'] = true
-	return func(s string) bool {
-		if s == "" {
-			return false
-		}
-		for i := 0; i < len(s); i++ {
-			if !allowed[s[i]] {
-				return false
-			}
-		}
-		return true
-	}
-}()
+var slugPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // tagPattern enforces lowercase-alphanumeric plus hyphen.
 var tagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -57,26 +35,8 @@ func WriteRecord(dir string, r Record) (string, error) {
 	}
 	storeMu.Lock()
 	defer storeMu.Unlock()
-	leaf := leafName(r.Name)
-	final := filepath.Join(dir, leaf)
-	tmp, err := os.CreateTemp(dir, leaf+".*.tmp")
-	if err != nil {
-		return "", err
-	}
-	tmpPath := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpPath) }
-
-	if _, err := tmp.WriteString(renderFile(r)); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return "", err
-	}
-	if err := os.Rename(tmpPath, final); err != nil {
-		cleanup()
+	final := filepath.Join(dir, leafName(r.Name))
+	if err := atomicfile.Write(final, []byte(renderFile(r)), 0o600); err != nil {
 		return "", err
 	}
 	// new file changes dir mtime on most filesystems, but invalidate
@@ -88,12 +48,7 @@ func WriteRecord(dir string, r Record) (string, error) {
 	return final, nil
 }
 
-func leafName(name string) string {
-	if strings.HasSuffix(name, ".md") {
-		return name
-	}
-	return name + ".md"
-}
+func leafName(name string) string { return strings.TrimSuffix(name, ".md") + ".md" }
 
 func validate(e Entry) error {
 	if strings.TrimSpace(e.Name) == "" {
@@ -108,7 +63,7 @@ func validate(e Entry) error {
 	case "INDEX", "MEMORY":
 		return fmt.Errorf("knowledge: name %q is reserved", e.Name)
 	}
-	if !slugChar(e.Name) && !slugChar(strings.TrimSuffix(e.Name, ".md")) {
+	if !slugPattern.MatchString(e.Name) && !slugPattern.MatchString(strings.TrimSuffix(e.Name, ".md")) {
 		return fmt.Errorf("knowledge: name %q must be a slug (a-z, 0-9, -, _, .)", e.Name)
 	}
 	if strings.TrimSpace(e.Description) == "" {
@@ -136,11 +91,7 @@ func renderFile(r Record) string {
 	if len(r.Tags) > 0 {
 		fmt.Fprintf(&b, "tags: [%s]\n", strings.Join(r.Tags, ", "))
 	}
-	prio := r.Priority
-	if prio == 0 {
-		prio = DefaultPriority
-	}
-	fmt.Fprintf(&b, "priority: %d\n", prio)
+	fmt.Fprintf(&b, "priority: %d\n", cmp.Or(r.Priority, DefaultPriority))
 	if r.ExpiresAt.IsZero() {
 		b.WriteString("expires: never\n")
 	} else {
@@ -163,15 +114,12 @@ func yamlEscape(s string) string {
 		return `""`
 	}
 	if strings.ContainsAny(s, ":#'\"\n\r\t[]{},&*!|>%@`") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") || !readsBackPlain(s) {
-		escaped := strings.ReplaceAll(s, `\`, `\\`)
-		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-		escaped = strings.ReplaceAll(escaped, "\n", `\n`)
-		escaped = strings.ReplaceAll(escaped, "\r", `\r`)
-		escaped = strings.ReplaceAll(escaped, "\t", `\t`)
-		return `"` + escaped + `"`
+		return `"` + yamlQuoter.Replace(s) + `"`
 	}
 	return s
 }
+
+var yamlQuoter = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
 
 // readsBackPlain reports whether s written unquoted parses back to s.
 func readsBackPlain(s string) bool {
@@ -181,47 +129,22 @@ func readsBackPlain(s string) bool {
 	return yaml.Unmarshal([]byte("v: "+s+"\n"), &v) == nil && v.V == s
 }
 
-// rebuildIndexLocked is the body of RebuildIndex; assumes storeMu is held.
+// rebuildIndexLocked rewrites INDEX.md from the record files; assumes storeMu
+// is held.
 func rebuildIndexLocked(dir string) error {
-	entries, err := os.ReadDir(dir)
+	paths, err := storePaths(dir)
 	if err != nil {
 		return err
 	}
-	type row struct {
-		name     string
-		tags     string
-		priority int
-		desc     string
+	var rows []Entry
+	for _, p := range paths {
+		if e, err := ReadEntry(p); err == nil {
+			e.Name = nameFromPath(p) // the index lists file names, not frontmatter names
+			rows = append(rows, e)
+		}
 	}
-	var rows []row
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		if e.Name() == IndexFileName || e.Name() == "MEMORY.md" {
-			continue
-		}
-		full := filepath.Join(dir, e.Name())
-		ent, err := ReadEntry(full)
-		if err != nil {
-			continue
-		}
-		desc := ent.Description
-		if desc == "" {
-			desc = "(no description)"
-		}
-		rows = append(rows, row{
-			name:     strings.TrimSuffix(e.Name(), ".md"),
-			tags:     strings.Join(ent.Tags, ", "),
-			priority: ent.Priority,
-			desc:     desc,
-		})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].priority != rows[j].priority {
-			return rows[i].priority > rows[j].priority
-		}
-		return rows[i].name < rows[j].name
+	slices.SortFunc(rows, func(a, b Entry) int {
+		return cmp.Or(b.Priority-a.Priority, strings.Compare(a.Name, b.Name))
 	})
 
 	var b strings.Builder
@@ -232,36 +155,16 @@ func rebuildIndexLocked(dir string) error {
 		b.WriteString("| name | tags | pri | desc |\n")
 		b.WriteString("|------|------|-----|------|\n")
 		for _, r := range rows {
-			tags := r.tags
-			if tags == "" {
-				tags = "—"
-			}
-			fmt.Fprintf(&b, "| %s | %s | %d | %s |\n", r.name, tags, r.priority, escapeTableCell(r.desc))
+			fmt.Fprintf(&b, "| %s | %s | %d | %s |\n", r.Name,
+				cmp.Or(strings.Join(r.Tags, ", "), "—"), r.Priority,
+				escapeTableCell(cmp.Or(r.Description, "(no description)")))
 		}
 	}
-	indexPath := filepath.Join(dir, IndexFileName)
-	tmp, err := os.CreateTemp(dir, IndexFileName+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.WriteString(b.String()); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	return os.Rename(tmpPath, indexPath)
+	return atomicfile.Write(filepath.Join(dir, IndexFileName), []byte(b.String()), 0o600)
 }
+
+var tableCellEscaper = strings.NewReplacer("\n", " ", "\r", " ", "|", `\|`)
 
 // escapeTableCell guards the pipe-delimited table cell against bare pipes
 // and newlines in user descriptions.
-func escapeTableCell(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.ReplaceAll(s, "|", `\|`)
-	return s
-}
+func escapeTableCell(s string) string { return tableCellEscaper.Replace(s) }

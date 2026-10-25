@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -69,21 +70,23 @@ func TestRegistry_LoadCollectsParseErrors(t *testing.T) {
 	}
 }
 
-func TestRegistry_UpsertAndRemove(t *testing.T) {
+func TestRegistry_LoadReplacesPrevious(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "calc.md")
 	mustWrite(t, p, calcMD)
 
 	r := NewRegistry()
-	if _, err := r.Upsert(p); err != nil {
-		t.Fatalf("upsert: %v", err)
+	if err := r.Load(dir); err != nil {
+		t.Fatalf("load: %v", err)
 	}
-	if _, ok := r.Get("calc"); !ok {
-		t.Fatal("not stored")
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
 	}
-	r.RemovePath(p)
+	if err := r.Load(dir); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
 	if _, ok := r.Get("calc"); ok {
-		t.Fatal("still present after remove")
+		t.Fatal("removed skill still present after reload")
 	}
 }
 

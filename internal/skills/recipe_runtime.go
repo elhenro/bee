@@ -9,7 +9,7 @@ import (
 // runtimeKinds validates the runtime fields of a step list. It reports
 // runtime=true when every step carries a Kind, false when none does, and an
 // error when the list mixes the two or a kinded step is malformed.
-func runtimeKinds(steps []RecipeStep, ids map[string]bool, knownTools map[string]bool) (bool, error) {
+func runtimeKinds(steps []RecipeStep, ids map[string]bool) (bool, error) {
 	kinded := 0
 	for _, st := range steps {
 		if st.Kind != "" {
@@ -23,14 +23,14 @@ func runtimeKinds(steps []RecipeStep, ids map[string]bool, knownTools map[string
 		return false, fmt.Errorf("runtime recipe: every step needs a kind (tool|shell|bee), %d of %d have one", kinded, len(steps))
 	}
 	for _, st := range steps {
-		if err := validateRuntimeStep(st, ids, knownTools); err != nil {
+		if err := validateRuntimeStep(st, ids); err != nil {
 			return false, fmt.Errorf("step %s: %w", st.ID, err)
 		}
 	}
 	return true, nil
 }
 
-func validateRuntimeStep(st RecipeStep, ids map[string]bool, knownTools map[string]bool) error {
+func validateRuntimeStep(st RecipeStep, ids map[string]bool) error {
 	switch st.Kind {
 	case StepTool:
 		if st.Tool == "" {
@@ -41,17 +41,15 @@ func validateRuntimeStep(st RecipeStep, ids map[string]bool, knownTools map[stri
 		if st.Tool == "bash" || st.Tool == "escalate" {
 			return fmt.Errorf("kind tool cannot name %q (use kind: shell, or next: escalate)", st.Tool)
 		}
-		if knownTools != nil && !knownTools[st.Tool] {
-			return fmt.Errorf("tool %q is not registered", st.Tool)
-		}
 	case StepShell:
 		if st.Run == "" {
 			return fmt.Errorf("kind shell needs run")
 		}
-		if placeholderInQuotes(st.Run) {
+		inQuotes, unsafe := scanShell(st.Run)
+		if inQuotes {
 			return fmt.Errorf("run: placeholder inside quotes; substitution quotes it already, write it bare")
 		}
-		if placeholderInUnsafeSyntax(st.Run) {
+		if unsafe {
 			return fmt.Errorf("run: templated runs may not use heredocs, comments, $(...), backticks, ${...}, unbalanced quotes, or a placeholder glued to other text; pass values as standalone arguments or env vars")
 		}
 	case StepBee:
@@ -77,16 +75,8 @@ func validateRuntimeStep(st RecipeStep, ids map[string]bool, knownTools map[stri
 // to invoke the recipe as a subcommand.
 func renderRuntimeBody(s Skill) string {
 	var b strings.Builder
-	b.WriteString("Runtime recipe: ")
-	b.WriteString(s.Name)
-	b.WriteString("\n\n")
-	if s.Description != "" {
-		b.WriteString(s.Description)
-		b.WriteString("\n\n")
-	}
-	b.WriteString("This recipe executes in Go, not by you. Run it with the bash tool: `bee ")
-	b.WriteString(s.Name)
-	b.WriteString(" [args...]` and report its output.\nSteps:\n")
+	b.WriteString(bodyHead("Runtime recipe", s))
+	b.WriteString("This recipe executes in Go, not by you. Run it with the bash tool: `bee " + s.Name + " [args...]` and report its output.\nSteps:\n")
 	for i, st := range s.Steps {
 		fmt.Fprintf(&b, "%d. [%s] (%s) %s\n", i+1, st.ID, st.Kind, st.Description)
 	}

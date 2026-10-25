@@ -70,9 +70,6 @@ func TestReplay_FollowsLiteralTail(t *testing.T) {
 	if !strings.Contains(block, "B-CONTENT") || !strings.Contains(block, "wag_x") {
 		t.Errorf("block missing content/name: %q", block)
 	}
-	if r.Yield() <= 0 {
-		t.Errorf("yield not accumulated: %d", r.Yield())
-	}
 }
 
 func TestReplay_DedupeNoDoubleFire(t *testing.T) {

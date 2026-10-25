@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/elhenro/bee/internal/beehome"
@@ -58,24 +59,12 @@ func StoreDir() (string, error) {
 		return "", err
 	}
 
+	modern, legacy := filepath.Join(root, StoreDirName), filepath.Join(root, legacyStoreLeaf)
 	if git, ok := findGitRoot(); ok {
 		slug := slugifyPath(git)
-		modern := filepath.Join(root, StoreDirName, slug)
-		if dirExists(modern) {
-			return modern, nil
-		}
-		legacy := filepath.Join(root, "projects", slug, legacyStoreLeaf)
-		if dirExists(legacy) {
-			return legacy, nil
-		}
-		return modern, nil
+		modern, legacy = filepath.Join(modern, slug), filepath.Join(root, "projects", slug, legacyStoreLeaf)
 	}
-	modern := filepath.Join(root, StoreDirName)
-	if dirExists(modern) {
-		return modern, nil
-	}
-	legacy := filepath.Join(root, legacyStoreLeaf)
-	if dirExists(legacy) {
+	if !dirExists(modern) && dirExists(legacy) {
 		return legacy, nil
 	}
 	return modern, nil
@@ -115,28 +104,13 @@ func djb2(s string) string {
 	for i := 0; i < len(s); i++ {
 		h = (h * 33) ^ uint64(s[i])
 	}
-	const digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-	if h == 0 {
-		return "0"
-	}
-	buf := make([]byte, 0, 13)
-	for h > 0 {
-		buf = append(buf, digits[h%36])
-		h /= 36
-	}
-	for i, j := 0, len(buf)-1; i < j; i, j = i+1, j-1 {
-		buf[i], buf[j] = buf[j], buf[i]
-	}
-	return string(buf)
+	return strconv.FormatUint(h, 36)
 }
 
 // validateStorePath rejects ambiguous or near-root inputs. tilde leads are
 // expanded; trailing separators stripped; NUL bytes refused.
 func validateStorePath(raw string) (string, bool) {
-	if raw == "" {
-		return "", false
-	}
-	if strings.ContainsRune(raw, 0) {
+	if raw == "" || strings.ContainsRune(raw, 0) {
 		return "", false
 	}
 	if strings.HasPrefix(raw, "~/") || strings.HasPrefix(raw, "~\\") {
@@ -145,33 +119,20 @@ func validateStorePath(raw string) (string, bool) {
 			return "", false
 		}
 		rest := raw[2:]
-		cleanRest := filepath.Clean(rest)
-		if cleanRest == "." || cleanRest == ".." {
+		if c := filepath.Clean(rest); c == "." || c == ".." {
 			return "", false
 		}
 		raw = filepath.Join(home, rest)
 	}
-	cleaned := filepath.Clean(raw)
-	cleaned = strings.TrimRight(cleaned, `/\`)
-	if len(cleaned) < 3 {
-		return "", false
-	}
-	if driveLike.MatchString(cleaned) {
-		return "", false
-	}
-	if strings.HasPrefix(cleaned, `\\`) || strings.HasPrefix(cleaned, `//`) {
-		return "", false
-	}
-	if !filepath.IsAbs(cleaned) {
+	cleaned := strings.TrimRight(filepath.Clean(raw), `/\`)
+	if len(cleaned) < 3 || driveLike.MatchString(cleaned) ||
+		strings.HasPrefix(cleaned, `\\`) || strings.HasPrefix(cleaned, `//`) || !filepath.IsAbs(cleaned) {
 		return "", false
 	}
 	return cleaned, true
 }
 
 func dirExists(p string) bool {
-	if p == "" {
-		return false
-	}
 	info, err := os.Stat(p)
 	return err == nil && info.IsDir()
 }

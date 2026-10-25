@@ -7,11 +7,15 @@ import (
 )
 
 // scanShell inspects a recipe shell line that carries placeholders. inQuotes
-// reports a {{ opener inside a quoted region. unsafe is a coarse fail-closed
-// verdict: shell syntax that lets a substituted value change meaning is
-// rejected outright instead of parsed (heredocs, whose terminator a value can
-// forge, and anything that could start a comment, which a newline in a value
-// escapes). Parsing those correctly proved a losing game; when unsure, reject.
+// reports a {{ opener inside a single- or double-quoted region. Substitution
+// single-quotes every value, so a placeholder the author also quoted would end
+// up with the value's quotes cancelling theirs and the text running unquoted:
+// `echo '{{x}}'` becomes `echo ”<x>”`. Rejecting it at parse time closes that
+// door. unsafe is a coarse fail-closed verdict: shell syntax that lets a
+// substituted value change meaning is rejected outright instead of parsed
+// (heredocs, whose terminator a value can forge, and anything that could start
+// a comment, which a newline in a value escapes). Parsing those correctly
+// proved a losing game; when unsure, reject.
 func scanShell(run string) (inQuotes, unsafe bool) {
 	if !strings.Contains(run, "{{") {
 		return false, false
@@ -76,21 +80,4 @@ func couldStartComment(run string, i int) bool {
 	}
 	p := rune(run[i-1])
 	return !(p == '$' || p == '{' || (p < unicode.MaxASCII && (unicode.IsLetter(p) || unicode.IsDigit(p))))
-}
-
-// placeholderInQuotes reports whether a {{...}} opener sits inside a single- or
-// double-quoted region of a shell line. Substitution single-quotes every value,
-// so a placeholder the author also quoted would end up with the value's quotes
-// cancelling theirs and the text running unquoted: `echo '{{x}}'` becomes
-// `echo ”<x>”`. Rejecting it at parse time closes that door.
-func placeholderInQuotes(run string) bool {
-	q, _ := scanShell(run)
-	return q
-}
-
-// placeholderInUnsafeSyntax reports a templated run that uses a heredoc or a
-// possible comment (see scanShell).
-func placeholderInUnsafeSyntax(run string) bool {
-	_, u := scanShell(run)
-	return u
 }

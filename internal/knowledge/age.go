@@ -40,10 +40,7 @@ func StalenessNote(expiresAt time.Time) string {
 }
 
 func stalenessNoteAt(expiresAt, now time.Time) string {
-	if expiresAt.IsZero() {
-		return ""
-	}
-	if expiresAt.After(now) {
+	if expiresAt.IsZero() || expiresAt.After(now) {
 		return ""
 	}
 	d := int(now.Sub(expiresAt) / (24 * time.Hour))

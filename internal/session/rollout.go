@@ -2,15 +2,9 @@ package session
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/elhenro/bee/internal/types"
 )
@@ -24,8 +18,7 @@ const maxLineBytes = 8 * 1024 * 1024
 // on the Append path. Not safe for cross-process use; callers are expected to
 // own the session.
 type Rollout struct {
-	id   string
-	path string
+	id string
 
 	mu      sync.Mutex
 	f       *os.File
@@ -56,7 +49,7 @@ func Open(id string) (*Rollout, error) {
 		_ = f.Close()
 		return nil, err
 	}
-	return &Rollout{id: id, path: p, f: f}, nil
+	return &Rollout{id: id, f: f}, nil
 }
 
 // terminateTornLine ends a last line a crash left without its newline. Without
@@ -76,9 +69,6 @@ func terminateTornLine(f *os.File) error {
 
 // ID returns the session id this rollout writes.
 func (r *Rollout) ID() string { return r.id }
-
-// Path returns the on-disk file path.
-func (r *Rollout) FilePath() string { return r.path }
 
 // Append writes one message as a single JSON line. The write lands in the page
 // cache immediately (readers and a killed process see it); the fsync that guards
@@ -133,215 +123,4 @@ func (r *Rollout) Close() error {
 	err := r.f.Close()
 	r.f = nil
 	return err
-}
-
-// Read decodes all messages in a session file, in append order.
-func Read(id string) ([]types.Message, error) {
-	p, err := Path(id)
-	if err != nil {
-		return nil, err
-	}
-	return readFile(p)
-}
-
-func readFile(path string) ([]types.Message, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	sc := newLineScanner(f)
-
-	var out []types.Message
-	for sc.Scan() {
-		line := sc.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		var m types.Message
-		if err := json.Unmarshal(line, &m); err != nil {
-			// crash-truncated or corrupt line: skip it instead of failing the
-			// whole session. lines before and after still load.
-			continue
-		}
-		out = append(out, m)
-	}
-	if err := sc.Err(); err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-	return out, nil
-}
-
-// ReadResume decodes a session like Read but collapses it at the last
-// compaction checkpoint: the checkpoint's summary stands in for everything
-// before PreserveFrom, so a resumed session sees the same shortened history the
-// live session had instead of the full raw log. Falls back to the raw read when
-// no checkpoint exists or PreserveFrom can't be located.
-func ReadResume(id string) ([]types.Message, error) {
-	msgs, err := Read(id)
-	if err != nil || len(msgs) == 0 {
-		return msgs, err
-	}
-	return collapseAtCheckpoint(msgs), nil
-}
-
-func collapseAtCheckpoint(msgs []types.Message) []types.Message {
-	last := -1
-	for i := range msgs {
-		if msgs[i].Checkpoint != nil {
-			last = i
-		}
-	}
-	if last < 0 {
-		return msgs
-	}
-	cp := msgs[last]
-	from := -1
-	for i := range msgs {
-		if msgs[i].ID == cp.Checkpoint.PreserveFrom {
-			from = i
-			break
-		}
-	}
-	if from < 0 {
-		// boundary lost; replay full rather than silently drop context.
-		return msgs
-	}
-	// summary first (marker stripped so it never re-folds), then the preserved
-	// tail plus everything appended after the checkpoint, minus any markers.
-	out := make([]types.Message, 0, len(msgs)-from)
-	summary := cp
-	summary.Checkpoint = nil
-	out = append(out, summary)
-	for i := from; i < len(msgs); i++ {
-		if msgs[i].Checkpoint != nil {
-			continue
-		}
-		out = append(out, msgs[i])
-	}
-	return out
-}
-
-// readFirstMessage reads the first parseable JSON line. Cheap for List().
-// corrupt leading lines (crash artifacts) are skipped so one bad write does
-// not make the session invisible; io.EOF means no parseable line at all.
-func readFirstMessage(path string) (types.Message, error) {
-	var m types.Message
-	f, err := os.Open(path)
-	if err != nil {
-		return m, err
-	}
-	defer f.Close()
-	sc := newLineScanner(f)
-	for sc.Scan() {
-		line := sc.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		if err := json.Unmarshal(line, &m); err == nil {
-			return m, nil
-		}
-	}
-	if err := sc.Err(); err != nil {
-		return m, err
-	}
-	return m, io.EOF
-}
-
-// List enumerates known sessions by scanning the sessions dir. Each session's
-// metadata is derived from its first message (timestamp = session created,
-// id from filename). Provider/model/cwd aren't in Message; downstream code
-// can enrich Session as it pleases — we fill what we can.
-func List() ([]types.Session, error) {
-	dir, err := SessionsDir()
-	if err != nil {
-		return nil, err
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var out []types.Session
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".jsonl") {
-			continue
-		}
-		id := strings.TrimSuffix(name, ".jsonl")
-		p := filepath.Join(dir, name)
-		first, err := readFirstMessage(p)
-		if err != nil {
-			// empty, corrupt, or unreadable file: skip it but never fail the
-			// whole listing over one bad session file.
-			continue
-		}
-		s := types.Session{ID: id, Created: first.Time}
-		if s.Created.IsZero() {
-			if fi, err := e.Info(); err == nil {
-				s.Created = fi.ModTime()
-			} else {
-				s.Created = time.Time{}
-			}
-		}
-		out = append(out, s)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
-	return out, nil
-}
-
-// FirstUserText returns the first user-role text block in a session, scanning
-// at most maxScanLines lines. Empty if the session has no user text yet.
-func FirstUserText(id string) (string, error) {
-	p, err := Path(id)
-	if err != nil {
-		return "", err
-	}
-	return firstUserTextFromFile(p)
-}
-
-const maxScanLines = 32
-
-func firstUserTextFromFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	sc := newLineScanner(f)
-	scanned := 0
-	for sc.Scan() {
-		scanned++
-		if scanned > maxScanLines {
-			break
-		}
-		line := sc.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		var m types.Message
-		if err := json.Unmarshal(line, &m); err != nil {
-			continue // torn or corrupt line: the first user turn may follow
-		}
-		if m.Role != types.RoleUser {
-			continue
-		}
-		for _, b := range m.Content {
-			if b.Type == types.BlockText {
-				if s := strings.TrimSpace(b.Text); s != "" {
-					return s, nil
-				}
-			}
-		}
-	}
-	if err := sc.Err(); err != nil && !errors.Is(err, io.EOF) {
-		return "", err
-	}
-	return "", nil
 }

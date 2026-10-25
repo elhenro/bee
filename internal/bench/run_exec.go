@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/elhenro/bee/internal/goal"
+	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -66,18 +67,26 @@ func runShell(ctx context.Context, line, sandbox string, timeout time.Duration) 
 	return string(out), err
 }
 
-// readTranscript reads the single session jsonl bee wrote into sessDir.
-func readTranscript(sessDir string) ([]types.Message, error) {
+// sessionFile finds the single session jsonl bee wrote into sessDir.
+func sessionFile(sessDir string) (string, error) {
 	entries, err := os.ReadDir(sessDir)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	for _, e := range entries {
 		if filepath.Ext(e.Name()) == ".jsonl" {
-			return parseJSONL(filepath.Join(sessDir, e.Name()))
+			return filepath.Join(sessDir, e.Name()), nil
 		}
 	}
-	return nil, fmt.Errorf("no session written")
+	return "", fmt.Errorf("no session written")
+}
+
+func readTranscript(sessDir string) ([]types.Message, error) {
+	path, err := sessionFile(sessDir)
+	if err != nil {
+		return nil, err
+	}
+	return session.ReadFile(path)
 }
 
 // goalAchieved reports whether the goal loop printed its achieved verdict as a

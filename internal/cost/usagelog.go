@@ -1,11 +1,11 @@
 package cost
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/elhenro/bee/internal/jsonl"
 )
 
 // UsageRecord is one completed-turn usage line in the append-only usage log.
@@ -23,23 +23,7 @@ type UsageRecord struct {
 
 var usageMu sync.Mutex
 
-// usagePath resolves the append-only usage log. BEE_USAGE_LOG pins it directly
-// (used by tests); otherwise it lands inside BEE_HOME or ~/.bee. Empty when no
-// home can be determined so callers degrade to a no-op.
-func usagePath() string {
-	if p := os.Getenv("BEE_USAGE_LOG"); p != "" {
-		return p
-	}
-	home := os.Getenv("BEE_HOME")
-	if home == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		home = filepath.Join(h, ".bee")
-	}
-	return filepath.Join(home, "usage.jsonl")
-}
+func usagePath() string { return statePath("BEE_USAGE_LOG", "usage.jsonl") }
 
 // AppendUsage appends one usage line. Unlike the lifetime counter this log is
 // append-only — a single O_APPEND write of a short line is atomic on local
@@ -55,21 +39,9 @@ func AppendUsage(r UsageRecord) {
 		return
 	}
 	r.Time = r.Time.UTC()
-	b, err := json.Marshal(r)
-	if err != nil {
-		return
-	}
 	usageMu.Lock()
 	defer usageMu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.Write(append(b, '\n'))
+	_ = jsonl.Append(path, r)
 }
 
 // ResetUsageForTest removes the usage log so a test starts from empty. Test-

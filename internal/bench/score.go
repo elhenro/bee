@@ -68,12 +68,4 @@ func efficiencyScore(b Budget, m RunMetrics) float64 {
 	return clamp01(1 - float64(m.Turns)/float64(b.MaxTurns))
 }
 
-func clamp01(f float64) float64 {
-	if f < 0 {
-		return 0
-	}
-	if f > 1 {
-		return 1
-	}
-	return f
-}
+func clamp01(f float64) float64 { return min(max(f, 0), 1) }

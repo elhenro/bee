@@ -1,16 +1,17 @@
 //go:build !windows
 
-package waggle
+// Package flock is a best-effort cross-process advisory file lock.
+package flock
 
 import (
 	"os"
 	"syscall"
 )
 
-// lockFile takes a cross-process advisory flock on path+".lock" and returns
-// the unlock. Best-effort: on any failure it returns a no-op and the caller
-// proceeds unlocked. The kernel drops the lock if the holder crashes.
-func lockFile(path string) func() {
+// Lock takes an exclusive flock on path+".lock" and returns the unlock.
+// Best-effort: on any failure it returns a no-op and the caller proceeds
+// unlocked. The kernel drops the lock if the holder crashes.
+func Lock(path string) func() {
 	f, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return func() {}

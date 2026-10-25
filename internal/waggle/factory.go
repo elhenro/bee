@@ -24,24 +24,25 @@ func ProjectManagerLearning(cwd string, mutating bool) *Manager {
 // replayer over the shared on-disk library, so concurrent agents (e.g. hive
 // workers) never share live match state.
 func ProjectReplayer(cwd string) *Replayer {
-	proj, errP := ProjectStore(cwd)
-	user, errU := UserStore()
-	var routes []Route
-	if errP == nil {
-		routes = append(routes, scopedRoutes(proj, ScopeProject)...)
+	stores := map[Scope]*Store{}
+	if s, err := ProjectStore(cwd); err == nil {
+		stores[ScopeProject] = s
 	}
-	if errU == nil {
-		routes = append(routes, scopedRoutes(user, ScopeUser)...)
+	if s, err := UserStore(); err == nil {
+		stores[ScopeUser] = s
+	}
+	var routes []Route
+	for _, scope := range []Scope{ScopeProject, ScopeUser} { // project routes match first
+		if s := stores[scope]; s != nil {
+			routes = append(routes, scopedRoutes(s, scope)...)
+		}
 	}
 	if len(routes) == 0 {
 		return nil
 	}
 	r := NewReplayer(routes, 2)
-	if errP == nil {
-		r.SetLedger(ScopeProject, NewLedger(proj.LedgerPath()))
-	}
-	if errU == nil {
-		r.SetLedger(ScopeUser, NewLedger(user.LedgerPath()))
+	for scope, s := range stores {
+		r.SetLedger(scope, NewLedger(s.LedgerPath()))
 	}
 	return r
 }

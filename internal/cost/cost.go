@@ -5,7 +5,8 @@
 package cost
 
 import (
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -129,12 +130,16 @@ func (t *Tracker) Total() Summary {
 	defer t.mu.RUnlock()
 	var s Summary
 	for _, e := range t.events {
-		s.Calls++
-		s.Input += e.Input
-		s.Output += e.Output
-		s.USD += e.USD
+		s.add(e.Input, e.Output, e.USD)
 	}
 	return s
+}
+
+func (s *Summary) add(in, out int, usd float64) {
+	s.Calls++
+	s.Input += in
+	s.Output += out
+	s.USD += usd
 }
 
 // Filter narrows events by provider and/or model. Empty string = no filter
@@ -157,46 +162,33 @@ func (t *Tracker) Filter(provider, model string) []Event {
 
 // ByModel groups events by model id.
 func (t *Tracker) ByModel() map[string]Summary {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	m := map[string]Summary{}
-	for _, e := range t.events {
-		s := m[e.Model]
-		s.Calls++
-		s.Input += e.Input
-		s.Output += e.Output
-		s.USD += e.USD
-		m[e.Model] = s
-	}
-	return m
+	return t.group(func(e Event) string { return e.Model })
 }
 
 // ByProvider groups events by provider name.
 func (t *Tracker) ByProvider() map[string]Summary {
+	return t.group(func(e Event) string { return e.Provider })
+}
+
+func (t *Tracker) group(key func(Event) string) map[string]Summary {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	m := map[string]Summary{}
 	for _, e := range t.events {
-		s := m[e.Provider]
-		s.Calls++
-		s.Input += e.Input
-		s.Output += e.Output
-		s.USD += e.USD
-		m[e.Provider] = s
+		addTo(m, key(e), e.Input, e.Output, e.USD)
 	}
 	return m
 }
 
+func addTo(m map[string]Summary, key string, in, out int, usd float64) {
+	s := m[key]
+	s.add(in, out, usd)
+	m[key] = s
+}
+
 // SortedKeys returns map keys sorted alphabetically — convenience for
 // deterministic rendering in the TUI pane.
-func SortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
+func SortedKeys[V any](m map[string]V) []string { return slices.Sorted(maps.Keys(m)) }
 
 // Lookup returns pricing for (provider, model). Tries the most specific key
 // first (provider+model), then bare model, then a stripped path-suffix
@@ -220,7 +212,7 @@ func Lookup(provider, model string) (Price, bool) {
 // prices is the embedded pricing table (USD per million tokens).
 // Numbers reflect public list prices as of early 2026. The TUI marks
 // unpriced models with a "—" so the user knows the dollar number isn't
-// gospel; override via SetPrice if a vendor changes rates mid-session.
+// gospel.
 var prices = map[string]Price{
 	// OpenAI
 	"gpt-4o-mini": {0.15, 0.60},
@@ -250,13 +242,4 @@ var prices = map[string]Price{
 	"kimi-k2":   {0.60, 2.50},
 	"kimi-k2.5": {0.60, 2.50},
 	"kimi-k2.6": {0.60, 2.50},
-}
-
-// SetPrice overrides a model's pricing in the active table. Returns the
-// previous value so a caller can restore it. Useful for tests and for
-// surfacing a /price command later.
-func SetPrice(model string, p Price) Price {
-	prev := prices[model]
-	prices[model] = p
-	return prev
 }

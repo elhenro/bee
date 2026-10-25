@@ -1,10 +1,6 @@
 package bench
 
-import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-)
+import "github.com/elhenro/bee/internal/jsonl"
 
 // LedgerRecord is one row in the append-only benchmark ledger: enough to rank
 // and audit a run without reopening its results JSON.
@@ -34,20 +30,5 @@ func AppendLedger(path string, rec LedgerRecord) error {
 	if path == "" {
 		return nil
 	}
-	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-	line, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.Write(append(line, '\n'))
-	return err
+	return jsonl.Append(path, rec)
 }

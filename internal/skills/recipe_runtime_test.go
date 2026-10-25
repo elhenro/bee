@@ -91,7 +91,7 @@ func TestPlaceholderInQuotes(t *testing.T) {
 		"grep -rn {{argv.0}} '{{s}}'": true,
 	}
 	for run, want := range cases {
-		if got := placeholderInQuotes(run); got != want {
+		if got, _ := scanShell(run); got != want {
 			t.Errorf("%q: got %v want %v", run, got, want)
 		}
 	}
@@ -155,7 +155,7 @@ func TestPlaceholderInUnsafeSyntax(t *testing.T) {
 		"echo hi # comment":     false,
 	}
 	for run, want := range cases {
-		if got := placeholderInUnsafeSyntax(run); got != want {
+		if _, got := scanShell(run); got != want {
 			t.Errorf("%q: got %v want %v", run, got, want)
 		}
 	}

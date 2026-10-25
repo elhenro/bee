@@ -1,6 +1,6 @@
 //go:build windows
 
-package waggle
+package flock
 
 import (
 	"os"
@@ -8,10 +8,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// lockFile takes an exclusive LockFileEx lock on path+".lock" and returns the
+// Lock takes an exclusive LockFileEx lock on path+".lock" and returns the
 // unlock. Best-effort like the unix flock: on any failure it returns a no-op
 // and the caller proceeds unlocked. The OS drops the lock if the holder dies.
-func lockFile(path string) func() {
+func Lock(path string) func() {
 	f, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return func() {}

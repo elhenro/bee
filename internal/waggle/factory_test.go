@@ -21,7 +21,7 @@ func TestProjectReplayer_LoadsSeededRoutes(t *testing.T) {
 	s, _ := ProjectStore("/p")
 	seedWaggle(t, s, "r1", []Call{{Tool: "ls", Args: map[string]string{"path": "x"}}, rd("a")})
 	r := ProjectReplayer("/p")
-	if r == nil || r.Routes() != 1 {
+	if r == nil || len(r.routes) != 1 {
 		t.Fatalf("expected replayer with 1 route, got %v", r)
 	}
 }

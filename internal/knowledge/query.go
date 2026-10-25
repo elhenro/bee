@@ -1,8 +1,9 @@
 package knowledge
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,16 +13,6 @@ import (
 
 // MaxResults caps the records Query returns regardless of caller intent.
 const MaxResults = 5
-
-// hintExtractPrompt asks a side-channel model for 1-3 keyword tags. it
-// returns plain text — one tag per line — which is easier to parse than
-// JSON for tiny models and adapts naturally to local backends.
-const hintExtractPrompt = `Pick 1-3 short keyword tags that describe what this query is about.
-Reply with one tag per line. Tags must be lowercase, no spaces, single-word
-or hyphenated (examples: "testing", "deployment", "rust"). No prose, no
-numbering, no punctuation other than hyphens.
-
-Query: %s`
 
 // Options tunes query behavior. zero values pick sensible defaults.
 type Options struct {
@@ -50,23 +41,21 @@ func Query(ctx context.Context, dir, userQuery string, limit int, opts Options) 
 	if err != nil {
 		return nil, err
 	}
-	if len(entries) == 0 {
-		return nil, nil
-	}
 	now := opts.Now
 	if now.IsZero() {
 		now = time.Now()
 	}
 
-	queryTokens := tokenize(userQuery)
-	// 2-char tags (go, ui, db) match whole query words; the general tokens
-	// drop them as noise.
-	shortTokens := tokenizeMin(userQuery, 2)
-	hintTags := map[string]bool{}
+	sc := scorer{
+		query: tokenize(userQuery),
+		// 2-char tags (go, ui, db) match whole query words; the general tokens
+		// drop them as noise.
+		short: tokenizeMin(userQuery, 2),
+		hints: map[string]bool{},
+	}
 	for _, t := range opts.HintTags {
-		t = strings.TrimSpace(strings.ToLower(t))
-		if t != "" {
-			hintTags[t] = true
+		if t = strings.TrimSpace(strings.ToLower(t)); t != "" {
+			sc.hints[t] = true
 		}
 	}
 
@@ -74,67 +63,58 @@ func Query(ctx context.Context, dir, userQuery string, limit int, opts Options) 
 		entry Entry
 		score int
 	}
-	candidates := make([]scored, 0, len(entries))
+	var candidates []scored
 	for _, e := range entries {
-		if !e.ExpiresAt.IsZero() && !e.ExpiresAt.After(now) {
+		if (!e.ExpiresAt.IsZero() && !e.ExpiresAt.After(now)) || opts.Exclude[e.Path] {
 			continue
 		}
-		if opts.Exclude[e.Path] {
-			continue
-		}
-		s := e.Priority + kindBoost(e.Tags)
-		for _, t := range e.Tags {
-			if hintTags[t] {
-				s += 2
-			}
-			if queryTokens[t] || (len(t) == 2 && shortTokens[t]) {
-				s++
-				continue
-			}
-			// slug-style tags like "testing-policy" should still hit plain
-			// queries like "testing"; tokenize splits + keeps the joined form.
-			tagToks := tokenize(t)
-			for qt := range queryTokens {
-				if tagToks[qt] {
-					s++
-					break
-				}
-			}
-		}
-		nameToks := tokenize(e.Name)
-		for tok := range queryTokens {
-			if nameToks[tok] {
-				s += 2
-			}
-		}
-		descToks := tokenize(e.Description)
-		for tok := range queryTokens {
-			if descToks[tok] {
-				s++
-			}
-		}
-		candidates = append(candidates, scored{entry: e, score: s})
+		candidates = append(candidates, scored{e, sc.score(e)})
 	}
+	slices.SortStableFunc(candidates, func(a, b scored) int {
+		return cmp.Or(b.score-a.score, b.entry.Modified.Compare(a.entry.Modified))
+	})
 	if len(candidates) == 0 {
 		return nil, nil
 	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].score != candidates[j].score {
-			return candidates[i].score > candidates[j].score
-		}
-		return candidates[i].entry.Modified.After(candidates[j].entry.Modified)
-	})
 
-	if len(candidates) > limit {
-		candidates = candidates[:limit]
-	}
-
-	out := make([]Record, 0, len(candidates))
-	for _, c := range candidates {
+	out := make([]Record, 0, min(limit, len(candidates)))
+	for _, c := range candidates[:min(limit, len(candidates))] {
 		body, _ := Body(c.entry.Path)
 		out = append(out, Record{Entry: c.entry, Body: body})
 	}
 	return out, nil
+}
+
+// scorer ranks entries against one query: its tokens, the 2-char-inclusive
+// tokens and the side-query hint tags.
+type scorer struct {
+	query, short, hints map[string]bool
+}
+
+func (s scorer) score(e Entry) int {
+	n := e.Priority + kindBoost(e.Tags)
+	for _, t := range e.Tags {
+		if s.hints[t] {
+			n += 2
+		}
+		// slug-style tags like "testing-policy" should still hit plain
+		// queries like "testing"; tokenize splits + keeps the joined form.
+		if s.query[t] || (len(t) == 2 && s.short[t]) || overlap(s.query, tokenize(t)) > 0 {
+			n++
+		}
+	}
+	return n + 2*overlap(s.query, tokenize(e.Name)) + overlap(s.query, tokenize(e.Description))
+}
+
+// overlap counts the tokens of a that also appear in b.
+func overlap(a, b map[string]bool) int {
+	n := 0
+	for tok := range a {
+		if b[tok] {
+			n++
+		}
+	}
+	return n
 }
 
 // ExtractTags drives a side-channel LLM call to map a free-text query onto
@@ -176,62 +156,42 @@ func ExtractTags(ctx context.Context, p llm.Provider, model, userQuery string) (
 }
 
 func trimQuery(s string) string {
-	const max = 400
-	if len(s) <= max {
+	const limit = 400
+	if len(s) <= limit {
 		return s
 	}
-	return s[:max] + "…"
+	return s[:limit] + "…"
 }
 
 func parseTagLines(s string) []string {
-	out := []string{}
-	seen := map[string]bool{}
+	var out []string
 	for _, raw := range strings.Split(s, "\n") {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
 		// strip common list prefixes models still emit
-		raw = strings.TrimPrefix(raw, "- ")
-		raw = strings.TrimPrefix(raw, "* ")
-		raw = strings.Trim(raw, "`\"")
-		raw = strings.ToLower(raw)
-		if !tagPattern.MatchString(raw) {
-			continue
+		raw = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(raw), "- "), "* ")
+		raw = strings.ToLower(strings.Trim(raw, "`\""))
+		if tagPattern.MatchString(raw) && !slices.Contains(out, raw) {
+			out = append(out, raw)
+			if len(out) == 3 {
+				break
+			}
 		}
-		if seen[raw] {
-			continue
-		}
-		seen[raw] = true
-		out = append(out, raw)
-		if len(out) == 3 {
-			break
-		}
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }
 
 // kindBoost adds a small constant to the score of records carrying a
-// well-known taxonomy tag. The taxonomy mirrors Claude Code's memory split
-// (user/feedback/project/reference); guidance entries are standing rules
-// that should rank above plain priority noise, personal preferences come
-// next, project and external context add no extra weight beyond the user-
-// set Priority field.
+// well-known taxonomy tag. The taxonomy mirrors the user/feedback/project/
+// reference memory split; guidance entries are standing rules that should rank
+// above plain priority noise, personal preferences come next, project and
+// external context add no extra weight beyond the user-set Priority field.
 func kindBoost(tags []string) int {
 	boost := 0
 	for _, t := range tags {
 		switch t {
 		case TagGuidance:
-			if boost < 2 {
-				boost = 2
-			}
+			boost = max(boost, 2)
 		case TagPersonal:
-			if boost < 1 {
-				boost = 1
-			}
+			boost = max(boost, 1)
 		}
 	}
 	return boost
@@ -245,41 +205,22 @@ func tokenize(s string) map[string]bool { return tokenizeMin(s, 3) }
 // tokenizeMin is tokenize with a configurable minimum token length.
 func tokenizeMin(s string, minLen int) map[string]bool {
 	out := map[string]bool{}
-	cur := strings.Builder{}
 	emit := func(t string) {
-		if len(t) < minLen {
-			return
+		if len(t) >= minLen {
+			out[t] = true
 		}
-		out[t] = true
 	}
-	flush := func() {
-		t := strings.ToLower(cur.String())
-		cur.Reset()
-		if t == "" {
-			return
-		}
-		emit(t)
+	isSep := func(r rune) bool { return r == '-' || r == '_' }
+	isWord := func(r rune) bool {
+		return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || isSep(r)
+	}
+	for _, w := range strings.FieldsFunc(s, func(r rune) bool { return !isWord(r) }) {
+		w = strings.ToLower(w)
+		emit(w)
 		// also emit sub-tokens for slug-style joined forms.
-		if strings.ContainsAny(t, "-_") {
-			for _, part := range splitSlug(t) {
-				emit(part)
-			}
+		for _, part := range strings.FieldsFunc(w, isSep) {
+			emit(part)
 		}
 	}
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			cur.WriteRune(r)
-		case r == '-' || r == '_':
-			cur.WriteRune(r)
-		default:
-			flush()
-		}
-	}
-	flush()
 	return out
-}
-
-func splitSlug(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool { return r == '-' || r == '_' })
 }
