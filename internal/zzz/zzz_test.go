@@ -280,3 +280,18 @@ func TestNewIDFormat(t *testing.T) {
 		t.Errorf("NewID should contain '-': %q", id)
 	}
 }
+
+// reading an unknown run must not create its directory.
+func TestLoadUnknownRunLeavesNoDir(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	if _, err := LoadMeta("nope"); err == nil {
+		t.Fatal("want error for unknown run")
+	}
+	if _, err := LoadPrompt("nope"); err == nil {
+		t.Fatal("want error for unknown prompt")
+	}
+	home, _ := HomeDir()
+	if _, err := os.Stat(filepath.Join(home, "runs", "nope")); !os.IsNotExist(err) {
+		t.Fatalf("runs/nope should not exist, stat err=%v", err)
+	}
+}

@@ -14,11 +14,16 @@ import (
 	"github.com/elhenro/bee/internal/beehome"
 )
 
-// zzzDir returns ~/.bee/zzz/<elem...>, creating it. BEE_HOME overrides
-// ~/.bee (matches bgreg/agents and lets tests stay hermetic on Windows where
-// os.UserHomeDir reads USERPROFILE, not HOME).
+// zzzPath returns ~/.bee/zzz/<elem...> without touching the disk. BEE_HOME
+// overrides ~/.bee (matches bgreg/agents and lets tests stay hermetic on
+// Windows where os.UserHomeDir reads USERPROFILE, not HOME).
+func zzzPath(elem ...string) (string, error) {
+	return beehome.Join(append([]string{"zzz"}, elem...)...)
+}
+
+// zzzDir is zzzPath, created.
 func zzzDir(elem ...string) (string, error) {
-	d, err := beehome.Join(append([]string{"zzz"}, elem...)...)
+	d, err := zzzPath(elem...)
 	if err != nil {
 		return "", err
 	}
@@ -66,13 +71,14 @@ func SaveMeta(r *Run) error {
 	return beehome.WriteAtomic(filepath.Join(dir, "meta.json"), data, 0o644)
 }
 
-// LoadMeta reads meta.json for an existing run.
+// LoadMeta reads meta.json for an existing run. An unknown id leaves no
+// directory behind.
 func LoadMeta(id string) (*Run, error) {
-	dir, err := RunDir(id)
+	p, err := zzzPath("runs", id, "meta.json")
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +102,11 @@ func SavePrompt(id, objective string) error {
 
 // LoadPrompt reads the saved objective.
 func LoadPrompt(id string) (string, error) {
-	dir, err := RunDir(id)
+	p, err := zzzPath("runs", id, "prompt.txt")
 	if err != nil {
 		return "", err
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
+	b, err := os.ReadFile(p)
 	if err != nil {
 		return "", err
 	}
