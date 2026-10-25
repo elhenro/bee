@@ -7,7 +7,10 @@
 // foraging route for the hive to repeat.
 package waggle
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 // Call is one recorded tool invocation in the forage log. Args holds the tool's
 // input flattened to strings (sorted-key iteration gives a deterministic shape).
@@ -46,7 +49,7 @@ func (r *Recorder) Record(c Call) {
 	defer r.mu.Unlock()
 	r.buf = append(r.buf, c)
 	if len(r.buf) > r.cap {
-		r.buf = append(r.buf[:0:0], r.buf[len(r.buf)-r.cap:]...)
+		r.buf = slices.Clone(r.buf[len(r.buf)-r.cap:])
 	}
 }
 
@@ -74,7 +77,5 @@ func (r *Recorder) MarkOutcome(ok bool) {
 func (r *Recorder) Calls() []Call {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]Call, len(r.buf))
-	copy(out, r.buf)
-	return out
+	return slices.Clone(r.buf)
 }

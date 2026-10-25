@@ -93,21 +93,19 @@ func (m *Manager) sweep() int {
 // becomes a recipe waggle (run only by `bee <name>`), a read-only route an exec
 // waggle (replayable). The name hashes the rendered script either way.
 func render(c Candidate, scope Scope) (name, md string, ok bool) {
+	var script string
+	renderFn := Render
 	if hasMutator(c.Steps) {
-		script, _, ok := recipeScriptOf(c)
-		if !ok {
-			return "", "", false
-		}
-		name = waggleName(script)
-		md, ok = RenderRecipe(name, c, scope)
-		return name, md, ok
+		script, _, ok = recipeCmds(c)
+		renderFn = RenderRecipe
+	} else {
+		script, ok = scriptOf(c)
 	}
-	script, _, ok := scriptOf(c)
 	if !ok {
 		return "", "", false
 	}
 	name = waggleName(script)
-	md, ok = Render(name, c, scope)
+	md, ok = renderFn(name, c, scope)
 	return name, md, ok
 }
 

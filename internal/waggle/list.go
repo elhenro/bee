@@ -23,19 +23,13 @@ type Meta struct {
 // List returns the waggles in a store, sorted by name. A missing store dir is
 // not an error (returns nil); unparseable files are skipped.
 func List(s *Store) ([]Meta, error) {
-	ents, err := os.ReadDir(s.dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	names, err := s.mdNames()
 	if err != nil {
 		return nil, err
 	}
 	var out []Meta
-	for _, e := range ents {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		p := filepath.Join(s.dir, e.Name())
+	for _, n := range names {
+		p := filepath.Join(s.dir, n)
 		if isDisabled(p) {
 			continue // demoted route: hidden from ls, the leaderboard, and lookup
 		}
@@ -53,38 +47,18 @@ func List(s *Store) ([]Meta, error) {
 // duplicate a script already kept. Returns the number removed. Safe to run any
 // time — it only touches files under the waggle store, which bee owns.
 func GC(s *Store) (int, error) {
-	ents, err := os.ReadDir(s.dir)
-	if os.IsNotExist(err) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	names := make([]string, 0, len(ents))
-	for _, e := range ents {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names) // deterministic: first occurrence of a script wins
-	seen := map[string]bool{}
-	removed := 0
-	for _, n := range names {
-		p := filepath.Join(s.dir, n)
-		sk, err := skills.ParseFile(p)
+	seen := map[string]bool{} // names come in sorted order: first occurrence of a script wins
+	return s.sweep(func(_, p string) bool {
 		script := ""
-		if err == nil {
+		if sk, err := skills.ParseFile(p); err == nil {
 			script = scriptOfSkill(sk)
 		}
 		if script == "" || seen[script] {
-			if os.Remove(p) == nil {
-				removed++
-			}
-			continue
+			return os.Remove(p) == nil
 		}
 		seen[script] = true
-	}
-	return removed, nil
+		return false
+	})
 }
 
 // scriptOfSkill is the dedup/display key of a stored waggle: the exec script

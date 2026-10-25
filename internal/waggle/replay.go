@@ -2,15 +2,14 @@ package waggle
 
 import (
 	"context"
-	"os"
+	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-
-	yaml "github.com/goccy/go-yaml"
 )
 
 // replaySeqCap bounds the live call window the replayer matches against, so a
@@ -82,7 +81,7 @@ func (r *Replayer) Observe(c Call) {
 	defer r.mu.Unlock()
 	r.seq = append(r.seq, c)
 	if len(r.seq) > replaySeqCap {
-		r.seq = append(r.seq[:0:0], r.seq[len(r.seq)-replaySeqCap:]...)
+		r.seq = slices.Clone(r.seq[len(r.seq)-replaySeqCap:])
 	}
 }
 
@@ -115,21 +114,21 @@ func (r *Replayer) Follow(ctx context.Context, exec func(context.Context, string
 	r.mu.Unlock()
 
 	out, err := exec(ctx, plan.script)
-	if err != nil || strings.TrimSpace(out) == "" {
-		// divergence: the prefix matched but the stored tail no longer runs
-		// clean. Record it so curation can demote a route the tree outgrew.
-		r.mu.Lock()
-		ledger := r.ledgers[plan.scope]
-		r.mu.Unlock()
-		_ = ledger.Append(LedgerEntry{Name: plan.name, Steps: plan.steps, Fail: true})
-		return "", false
+	// divergence: the prefix matched but the stored tail no longer runs clean.
+	// Record it so curation can demote a route the tree outgrew.
+	diverged := err != nil || strings.TrimSpace(out) == ""
+	gain := 0
+	if !diverged {
+		gain = len(out) / 4
 	}
-	gain := len(out) / 4
 	r.mu.Lock()
 	r.yield += gain
 	ledger := r.ledgers[plan.scope]
 	r.mu.Unlock()
-	_ = ledger.Append(LedgerEntry{Name: plan.name, Steps: plan.steps, Yield: gain})
+	_ = ledger.Append(LedgerEntry{Name: plan.name, Steps: plan.steps, Yield: gain, Fail: diverged})
+	if diverged {
+		return "", false
+	}
 	return formatBlock(plan, out), true
 }
 
@@ -149,18 +148,11 @@ func (r *Replayer) matchLocked() (replayPlan, bool) {
 	n := len(r.seq)
 	for _, rt := range r.routes {
 		total := len(rt.Steps)
-		pset := paramSet(rt.Params)
-		for j := r.minPrefix; j < total; j++ {
-			if j > n {
-				break
-			}
-			if !prefixMatch(rt, pset, r.seq[n-j:]) {
+		for j := r.minPrefix; j < min(total, n+1); j++ {
+			if !prefixMatch(rt, r.seq[n-j:]) || !tailLiteral(rt, j) {
 				continue
 			}
-			if !tailLiteral(rt, j) {
-				continue
-			}
-			script, _, ok := scriptOf(Candidate{Steps: rt.Steps[j:]})
+			script, ok := scriptOf(Candidate{Steps: rt.Steps[j:]})
 			if !ok {
 				continue
 			}
@@ -172,21 +164,19 @@ func (r *Replayer) matchLocked() (replayPlan, bool) {
 
 // prefixMatch reports whether calls equal the route's first len(calls) steps:
 // same tool, same arg-key set, and equal values on literal (non-param) keys.
-func prefixMatch(rt Route, pset map[string]bool, calls []Call) bool {
+func prefixMatch(rt Route, calls []Call) bool {
 	if len(calls) > len(rt.Steps) {
 		return false // caller aligns calls to a prefix; guard the index invariant
 	}
+	anyValue := func(_, _ string) bool { return true }
 	for i, c := range calls {
 		step := rt.Steps[i]
-		if step.Tool != c.Tool || !sameKeys(step.Args, c.Args) {
+		if step.Tool != c.Tool || !maps.EqualFunc(step.Args, c.Args, anyValue) {
 			return false
 		}
 		for k, v := range step.Args {
-			if pset[paramKey(i, k)] {
-				continue // param position: any value is fine
-			}
-			if c.Args[k] != v {
-				return false
+			if c.Args[k] != v && !slices.Contains(rt.Params, Param{Step: i, Key: k}) {
+				return false // a param position accepts any value
 			}
 		}
 	}
@@ -197,37 +187,7 @@ func prefixMatch(rt Route, pset map[string]bool, calls []Call) bool {
 // param references), so the remaining route is deterministic without knowing
 // what the model would have passed next.
 func tailLiteral(rt Route, j int) bool {
-	for _, p := range rt.Params {
-		if p.Step >= j {
-			return false
-		}
-	}
-	return true
-}
-
-func paramSet(params []Param) map[string]bool {
-	if len(params) == 0 {
-		return nil
-	}
-	m := make(map[string]bool, len(params))
-	for _, p := range params {
-		m[paramKey(p.Step, p.Key)] = true
-	}
-	return m
-}
-
-func paramKey(step int, key string) string { return strconv.Itoa(step) + "\x00" + key }
-
-func sameKeys(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k := range a {
-		if _, ok := b[k]; !ok {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(rt.Params, func(p Param) bool { return p.Step >= j })
 }
 
 func formatBlock(p replayPlan, out string) string {
@@ -241,44 +201,25 @@ var paramTokenRe = regexp.MustCompile(`^\$(\d+)$`)
 // error (returns nil). Files without a structured route block are skipped (they
 // still work as exec-skills, just aren't replayed).
 func LoadRoutes(s *Store) ([]Route, error) {
-	ents, err := os.ReadDir(s.dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
+	names, err := s.mdNames()
 	var out []Route
-	for _, e := range ents {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		if rt, ok := loadRouteFile(filepath.Join(s.dir, e.Name())); ok {
+	for _, n := range names {
+		if rt, ok := loadRouteFile(filepath.Join(s.dir, n)); ok {
 			out = append(out, rt)
 		}
 	}
-	return out, nil
+	return out, err
 }
 
 func loadRouteFile(path string) (Route, bool) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return Route{}, false
-	}
-	fm, ok := frontmatterBytes(raw)
-	if !ok {
-		return Route{}, false
-	}
 	var meta struct {
 		Name     string      `yaml:"name"`
 		Disabled bool        `yaml:"disabled"`
 		Route    []routeStep `yaml:"route"`
 	}
-	if err := yaml.Unmarshal(fm, &meta); err != nil || len(meta.Route) == 0 {
+	// a demoted route keeps its file but is skipped by replay
+	if readFrontmatter(path, &meta) != nil || len(meta.Route) == 0 || meta.Disabled {
 		return Route{}, false
-	}
-	if meta.Disabled {
-		return Route{}, false // demoted by curation; keep the file, skip replay
 	}
 	if meta.Name == "" {
 		meta.Name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -311,34 +252,4 @@ func routeFromSteps(name string, steps []routeStep) Route {
 		r.Params = append(r.Params, o.p)
 	}
 	return r
-}
-
-// frontmatterBytes returns the YAML between the leading `---` fences.
-func frontmatterBytes(raw []byte) ([]byte, bool) {
-	s := strings.TrimLeft(string(raw), " \t\r\n")
-	if !strings.HasPrefix(s, "---") {
-		return nil, false
-	}
-	nl := strings.IndexByte(s, '\n')
-	if nl < 0 {
-		return nil, false
-	}
-	rest := s[nl+1:]
-	for start := 0; start < len(rest); {
-		end := strings.IndexByte(rest[start:], '\n')
-		var line string
-		if end < 0 {
-			line = rest[start:]
-		} else {
-			line = rest[start : start+end]
-		}
-		if strings.TrimRight(line, "\r ") == "---" {
-			return []byte(rest[:start]), true
-		}
-		if end < 0 {
-			break
-		}
-		start += end + 1
-	}
-	return nil, false
 }

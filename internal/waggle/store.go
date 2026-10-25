@@ -5,6 +5,11 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/elhenro/bee/internal/atomicfile"
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // Store is a directory of waggle skill files for one scope. Project stores are
@@ -17,23 +22,20 @@ type Store struct {
 // ProjectStore returns the per-project waggle store, rooted at
 // <beeHome>/waggle/proj/<hash>/skills.
 func ProjectStore(projectRoot string) (*Store, error) {
-	home, err := beeHome()
-	if err != nil {
-		return nil, err
-	}
 	sum := sha256.Sum256([]byte(projectRoot))
-	hash := hex.EncodeToString(sum[:])[:16]
-	return &Store{dir: filepath.Join(home, "waggle", "proj", hash, "skills")}, nil
+	return storeAt("proj", hex.EncodeToString(sum[:])[:16])
 }
 
 // UserStore returns the cross-project waggle store at
 // <beeHome>/waggle/user/skills.
-func UserStore() (*Store, error) {
-	home, err := beeHome()
+func UserStore() (*Store, error) { return storeAt("user") }
+
+func storeAt(sub ...string) (*Store, error) {
+	dir, err := beehome.Join(slices.Concat([]string{"waggle"}, sub, []string{"skills"})...)
 	if err != nil {
 		return nil, err
 	}
-	return &Store{dir: filepath.Join(home, "waggle", "user", "skills")}, nil
+	return &Store{dir: dir}, nil
 }
 
 // Dir is the absolute skills directory for this store.
@@ -60,44 +62,34 @@ func (s *Store) Write(name, md string) error {
 		return err
 	}
 	// 0600: mined commands may carry paths and arguments worth keeping private
-	return writeFileAtomic(filepath.Join(s.dir, name+".md"), []byte(md), 0o600)
+	return atomicfile.Write(filepath.Join(s.dir, name+".md"), []byte(md), 0o600)
 }
 
-// writeFileAtomic writes to a unique temp file then renames it into place: a
-// concurrent reader never sees a half-written file, a crash mid-write can't
-// leave a torn one, and the unique name keeps goroutines or processes writing
-// the same target from clobbering each other's temp.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp.*")
-	if err != nil {
-		return err
+// mdNames lists the stored waggle file names in name order. A missing dir is an
+// empty store, not an error.
+func (s *Store) mdNames() ([]string, error) {
+	ents, err := os.ReadDir(s.dir)
+	if os.IsNotExist(err) {
+		return nil, nil
 	}
-	tmp := f.Name()
-	_, werr := f.Write(data)
-	if cerr := f.Close(); werr == nil {
-		werr = cerr
+	var names []string
+	for _, e := range ents {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			names = append(names, e.Name())
+		}
 	}
-	if werr == nil {
-		werr = os.Chmod(tmp, perm)
-	}
-	if werr == nil {
-		werr = os.Rename(tmp, path)
-	}
-	if werr != nil {
-		_ = os.Remove(tmp)
-	}
-	return werr
+	return names, err
 }
 
-// beeHome resolves ~/.bee, overridable via BEE_HOME for hermetic tests. Mirrors
-// the resolution used by the checkpoint store and skills base dir.
-func beeHome() (string, error) {
-	if root := os.Getenv("BEE_HOME"); root != "" {
-		return root, nil
+// sweep calls fn with each waggle's name and path and counts the files fn
+// reports as changed.
+func (s *Store) sweep(fn func(name, path string) bool) (int, error) {
+	names, err := s.mdNames()
+	changed := 0
+	for _, n := range names {
+		if fn(strings.TrimSuffix(n, ".md"), filepath.Join(s.dir, n)) {
+			changed++
+		}
 	}
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(h, ".bee"), nil
+	return changed, err
 }

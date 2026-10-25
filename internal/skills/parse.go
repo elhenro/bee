@@ -35,7 +35,7 @@ func ParseFile(path string) (Skill, error) {
 
 // Parse parses raw frontmatter+body content. Path is informational.
 func Parse(path string, raw []byte) (Skill, error) {
-	fm, body, err := splitFrontmatter(raw)
+	fm, body, err := SplitFrontmatter(raw)
 	if err != nil {
 		return Skill{}, fmt.Errorf("%s: %w", path, err)
 	}
@@ -96,64 +96,32 @@ func Parse(path string, raw []byte) (Skill, error) {
 	return s, nil
 }
 
-// splitFrontmatter extracts the YAML block delimited by `---` lines at the
-// top of the file. Returns (frontmatter bytes, body bytes, error).
-func splitFrontmatter(raw []byte) ([]byte, []byte, error) {
+// SplitFrontmatter extracts the YAML block delimited by `---` lines at the
+// top of the file. Returns (frontmatter bytes, body bytes, error). A closing
+// delimiter is a line that contains only `---` (optionally followed by \r).
+func SplitFrontmatter(raw []byte) ([]byte, []byte, error) {
 	// strip optional UTF-8 BOM
 	raw = bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})
 	trimmed := bytes.TrimLeft(raw, " \t\r\n")
 	if !bytes.HasPrefix(trimmed, []byte("---")) {
 		return nil, nil, fmt.Errorf("missing frontmatter delimiter")
 	}
-	// drop the first --- line
-	rest := trimmed[3:]
-	// skip the rest of that opening line
-	if i := bytes.IndexByte(rest, '\n'); i >= 0 {
-		rest = rest[i+1:]
-	} else {
+	// skip the rest of the opening line
+	_, rest, found := bytes.Cut(trimmed[3:], []byte("\n"))
+	if !found {
 		return nil, nil, fmt.Errorf("malformed frontmatter")
 	}
-	// find closing --- on its own line
-	end := findClosingDelim(rest)
-	if end < 0 {
-		return nil, nil, fmt.Errorf("unterminated frontmatter")
-	}
-	fm := rest[:end]
-	body := rest[end:]
-	// drop the closing --- line
-	if i := bytes.IndexByte(body, '\n'); i >= 0 {
-		body = body[i+1:]
-	} else {
-		body = nil
-	}
-	return fm, body, nil
-}
-
-// findClosingDelim returns the byte offset where the closing `---` line begins.
-// A delimiter is a line that contains only `---` (optionally followed by \r).
-func findClosingDelim(b []byte) int {
-	start := 0
-	for start < len(b) {
-		nl := bytes.IndexByte(b[start:], '\n')
-		var line []byte
-		var lineEnd int
-		if nl < 0 {
-			line = b[start:]
-			lineEnd = len(b)
-		} else {
-			line = b[start : start+nl]
-			lineEnd = start + nl + 1
+	for off := 0; off < len(rest); {
+		line, after, found := bytes.Cut(rest[off:], []byte("\n"))
+		if string(bytes.TrimRight(line, "\r ")) == "---" {
+			return rest[:off], after, nil
 		}
-		stripped := bytes.TrimRight(line, "\r ")
-		if bytes.Equal(stripped, []byte("---")) {
-			return start
-		}
-		start = lineEnd
-		if nl < 0 {
+		if !found {
 			break
 		}
+		off = len(rest) - len(after)
 	}
-	return -1
+	return nil, nil, fmt.Errorf("unterminated frontmatter")
 }
 
 // validName enforces that the skill name is usable as a filename and

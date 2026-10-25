@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/elhenro/bee/internal/atomicfile"
+	"github.com/elhenro/bee/internal/flock"
 )
 
 // LedgerEntry is one recorded reuse of a waggle. Yield is the estimated tokens
@@ -44,7 +48,7 @@ func (l *Ledger) Append(e LedgerEntry) error {
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
 		return err
 	}
-	defer lockFile(l.path)()
+	defer flock.Lock(l.path)()
 	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
@@ -58,6 +62,22 @@ func (l *Ledger) Append(e LedgerEntry) error {
 	return err
 }
 
+// scanLedger calls fn for every well-formed named entry in a JSONL ledger,
+// with the entry's raw line. Malformed lines are skipped.
+func scanLedger(r io.Reader, fn func(e LedgerEntry, line []byte)) error {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		var e LedgerEntry
+		if len(line) == 0 || json.Unmarshal(line, &e) != nil || e.Name == "" {
+			continue
+		}
+		fn(e, line)
+	}
+	return sc.Err()
+}
+
 // CompactLedger rewrites a ledger, keeping only entries whose Name is in keep.
 // Run it after deleting waggle files so a later re-mine of the same (content-
 // stable) name starts with clean stats instead of inheriting a dead route's
@@ -66,7 +86,7 @@ func (l *Ledger) Append(e LedgerEntry) error {
 func CompactLedger(path string, keep map[string]bool) error {
 	// held across read and rename so a concurrent Append can't land in between
 	// and be dropped by the rewrite
-	defer lockFile(path)()
+	defer flock.Lock(path)()
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -74,32 +94,20 @@ func CompactLedger(path string, keep map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	var kept [][]byte
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		line := bytes.TrimSpace(sc.Bytes())
-		if len(line) == 0 {
-			continue
-		}
-		var e LedgerEntry
-		if json.Unmarshal(line, &e) != nil || e.Name == "" || !keep[e.Name] {
-			continue
-		}
-		kept = append(kept, append([]byte(nil), line...))
-	}
-	f.Close()
-	if err := sc.Err(); err != nil {
-		return err
-	}
 	var buf bytes.Buffer
-	for _, l := range kept {
-		buf.Write(l)
-		buf.WriteByte('\n')
+	err = scanLedger(f, func(e LedgerEntry, line []byte) {
+		if keep[e.Name] {
+			buf.Write(line)
+			buf.WriteByte('\n')
+		}
+	})
+	f.Close()
+	if err != nil {
+		return err
 	}
 	// atomic temp+rename: a concurrent Append (O_APPEND) or reader never sees a
 	// torn/truncated ledger mid-rewrite.
-	return writeFileAtomic(path, buf.Bytes(), 0o644)
+	return atomicfile.Write(path, buf.Bytes(), 0o644)
 }
 
 // Stat is a waggle's aggregated reuse: how many times it was followed and the
@@ -122,17 +130,7 @@ func ReadLedger(path string) (map[string]Stat, error) {
 	}
 	defer f.Close()
 	out := map[string]Stat{}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		line := bytes.TrimSpace(sc.Bytes())
-		if len(line) == 0 {
-			continue
-		}
-		var e LedgerEntry
-		if json.Unmarshal(line, &e) != nil || e.Name == "" {
-			continue
-		}
+	err = scanLedger(f, func(e LedgerEntry, _ []byte) {
 		s := out[e.Name]
 		if e.Fail {
 			s.Fails++
@@ -141,8 +139,8 @@ func ReadLedger(path string) (map[string]Stat, error) {
 			s.Yield += e.Yield
 		}
 		out[e.Name] = s
-	}
-	return out, sc.Err()
+	})
+	return out, err
 }
 
 // RecordUse logs one explicit follow of a waggle (the on-demand lookup path or
