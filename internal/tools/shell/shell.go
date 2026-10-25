@@ -9,11 +9,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -132,7 +132,8 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// an explicit cwd override means the cd is not redundant: the command runs
 	// there, so dropping the cd would change where it executes.
 	var stripNote string
-	if override, _ := input["cwd"].(string); override == "" {
+	cwd, _ := input["cwd"].(string)
+	if cwd == "" {
 		cmdStr, stripNote = stripRedundantCd(cmdStr)
 	}
 	// display command = unwrapped form when engine pre-wrapped with sandbox-exec;
@@ -141,61 +142,18 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	if v, ok := input["_orig_command"].(string); ok && v != "" {
 		displayCmd = v
 	}
-	if err := safety.CheckShellCommand(displayCmd); err != nil {
-		return tools.Result{Content: err.Error(), IsError: true}, nil
-	}
-	// defense in depth: also vet the command that will actually execute, so a
-	// display/exec mismatch (a spoofed _orig_command slipping past input
-	// sanitization, or a wrapper bug) can never downgrade the hardline check.
-	if cmdStr != displayCmd {
-		if err := safety.CheckShellCommand(cmdStr); err != nil {
-			return tools.Result{Content: err.Error(), IsError: true}, nil
-		}
-	}
-	if t.approver != nil {
-		hits := safety.DetectAllDangerous(displayCmd)
-		if cmdStr != displayCmd {
-			hits = mergeDangers(hits, safety.DetectAllDangerous(cmdStr))
-		}
-		if len(hits) == 0 && t.opts.Allowed != nil && !t.opts.Allowed(displayCmd) {
-			hits = []safety.Danger{{Key: untrustedKey(displayCmd), Desc: "command is not on the known-safe list (approval = untrusted)"}}
-		}
-		// each matched pattern needs its own grant: approving rm-recursive must
-		// not carry a chained `curl | sh` through.
-		for _, h := range hits {
-			d, err := t.approver.Request(ctx, displayCmd, h.Key, h.Desc)
-			if err != nil {
-				return tools.Result{Content: fmt.Sprintf("approval error: %v", err), IsError: true}, nil
-			}
-			if d == approval.Deny {
-				return tools.Result{
-					Content: fmt.Sprintf("refused by user: %s (%s). Try a different approach.", h.Desc, h.Key),
-					IsError: true,
-				}, nil
-			}
-		}
+	if res, refused := t.vet(ctx, cmdStr, displayCmd); refused {
+		return res, nil
 	}
 
 	if wantsBackground(input) {
 		return t.runBackground(input, cmdStr, displayCmd, stripNote), nil
 	}
 
-	timeout := defaultTimeout
-	if v, ok := input["timeout_seconds"]; ok {
-		secs, err := toInt(v)
-		if err != nil {
-			return tools.Result{Content: fmt.Sprintf("bad timeout_seconds: %v", err), IsError: true}, nil
-		}
-		if secs > 0 {
-			timeout = time.Duration(secs) * time.Second
-		}
+	timeout, err := timeoutArg(input, defaultTimeout)
+	if err != nil {
+		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
-
-	cwd := ""
-	if v, ok := input["cwd"].(string); ok {
-		cwd = v
-	}
-
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -210,58 +168,88 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// surviving child still holds.
 	tools.GroupKill(cmd, 2*time.Second)
 
-	err := cmd.Start()
-	if err != nil {
-		return tools.Result{
-			Content: fmt.Sprintf("exec error: %v", err),
-			IsError: true,
-		}, nil
+	if err := cmd.Start(); err != nil {
+		return tools.Result{Content: fmt.Sprintf("exec error: %v", err), IsError: true}, nil
 	}
 	err = cmd.Wait()
-	output := buf.String()
 	// a backgrounded child kept the pipes open after bash exited cleanly:
 	// the command itself succeeded, so report success with a note.
-	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+	if tools.PipeHeldOpen(cmd, err) {
 		err = nil
-		stripNote = joinNote(stripNote, "[a background process still holds the output pipe; returned without waiting for it]")
-	}
-
-	switch {
-	case errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
-		return tools.Result{
-			Content: fmt.Sprintf("timeout after %s\n%s", timeout, output),
-			IsError: true,
-		}, nil
-	case ctx.Err() != nil:
-		// parent cancellation: propagate up
-		return tools.Result{Content: ctx.Err().Error(), IsError: true}, ctx.Err()
-	case err != nil:
-		// cmd.Wait() may return EPERM when the process group is already dead
-		// (cancel → killProcessGroup → cmd.Wait() tries another kill).
-		if strings.Contains(err.Error(), "operation not permitted") {
-			return tools.Result{
-				Content: fmt.Sprintf("timeout after %s\n%s", timeout, output),
-				IsError: true,
-			}, nil
+		if stripNote != "" {
+			stripNote += "\n"
 		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return tools.Result{
-				Content: fmt.Sprintf("exit %d\n%s", exitErr.ExitCode(), output),
-				IsError: true,
-			}, nil
-		}
-		return tools.Result{
-			Content: fmt.Sprintf("exec error: %v\n%s", err, output),
-			IsError: true,
-		}, nil
+		stripNote += "[a background process still holds the output pipe; returned without waiting for it]"
 	}
-	if stripNote != "" {
+	res, err := tools.CommandResult(ctx, runCtx, err, buf.String(), timeout)
+	if !res.IsError && stripNote != "" {
 		// prepend so the model sees the nudge even when output is truncated
 		// from the tail by the loop's per-tool token cap.
-		output = stripNote + "\n" + output
+		res.Content = stripNote + "\n" + res.Content
 	}
-	return tools.Result{Content: output}, nil
+	return res, err
+}
+
+// vet runs the safety and approval gates. refused is true with the result to
+// hand back when the command must not run.
+func (t *Tool) vet(ctx context.Context, cmdStr, displayCmd string) (res tools.Result, refused bool) {
+	fail := func(msg string) (tools.Result, bool) { return tools.Result{Content: msg, IsError: true}, true }
+	if err := safety.CheckShellCommand(displayCmd); err != nil {
+		return fail(err.Error())
+	}
+	// defense in depth: also vet the command that will actually execute, so a
+	// display/exec mismatch (a spoofed _orig_command slipping past input
+	// sanitization, or a wrapper bug) can never downgrade the hardline check.
+	if cmdStr != displayCmd {
+		if err := safety.CheckShellCommand(cmdStr); err != nil {
+			return fail(err.Error())
+		}
+	}
+	if t.approver == nil {
+		return res, false
+	}
+	hits := safety.DetectAllDangerous(displayCmd)
+	if cmdStr != displayCmd {
+		hits = mergeDangers(hits, safety.DetectAllDangerous(cmdStr))
+	}
+	if len(hits) == 0 && t.opts.Allowed != nil && !t.opts.Allowed(displayCmd) {
+		hits = []safety.Danger{{Key: untrustedKey(displayCmd), Desc: "command is not on the known-safe list (approval = untrusted)"}}
+	}
+	// each matched pattern needs its own grant: approving rm-recursive must
+	// not carry a chained `curl | sh` through.
+	for _, h := range hits {
+		d, err := t.approver.Request(ctx, displayCmd, h.Key, h.Desc)
+		if err != nil {
+			return fail(fmt.Sprintf("approval error: %v", err))
+		}
+		if d == approval.Deny {
+			return fail(fmt.Sprintf("refused by user: %s (%s). Try a different approach.", h.Desc, h.Key))
+		}
+	}
+	return res, false
+}
+
+// timeoutArg reads timeout_seconds; absent or non-positive keeps def.
+func timeoutArg(input map[string]any, def time.Duration) (time.Duration, error) {
+	v, ok := input["timeout_seconds"]
+	if !ok {
+		return def, nil
+	}
+	var secs int
+	switch n := v.(type) {
+	case int:
+		secs = n
+	case int64:
+		secs = int(n)
+	case float64:
+		secs = int(n)
+	default:
+		return 0, fmt.Errorf("bad timeout_seconds: not a number: %T", v)
+	}
+	if secs > 0 {
+		return time.Duration(secs) * time.Second, nil
+	}
+	return def, nil
 }
 
 // buildInvocation picks the shell binary and wraps cmdStr with an optional
@@ -327,38 +315,11 @@ func shellQuote(s string) string {
 // mergeDangers appends the entries of extra whose key is not already in base.
 func mergeDangers(base, extra []safety.Danger) []safety.Danger {
 	for _, d := range extra {
-		dup := false
-		for _, b := range base {
-			if b.Key == d.Key {
-				dup = true
-				break
-			}
-		}
-		if !dup {
+		if !slices.ContainsFunc(base, func(b safety.Danger) bool { return b.Key == d.Key }) {
 			base = append(base, d)
 		}
 	}
 	return base
-}
-
-func joinNote(a, b string) string {
-	if a == "" {
-		return b
-	}
-	return a + "\n" + b
-}
-
-func toInt(v any) (int, error) {
-	switch n := v.(type) {
-	case int:
-		return n, nil
-	case int64:
-		return int(n), nil
-	case float64:
-		return int(n), nil
-	default:
-		return 0, fmt.Errorf("not a number: %T", v)
-	}
 }
 
 // untrustedKey scopes a grant to this exact command line. Keying on the

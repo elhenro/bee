@@ -38,15 +38,9 @@ func (t *Tool) runBackground(input map[string]any, cmdStr, displayCmd, note stri
 	if t.opts.Jobs == nil {
 		return tools.Result{Content: "background jobs are not available here; run it in the foreground", IsError: true}
 	}
-	timeout := backgroundTimeout
-	if v, ok := input["timeout_seconds"]; ok {
-		secs, err := toInt(v)
-		if err != nil {
-			return tools.Result{Content: fmt.Sprintf("bad timeout_seconds: %v", err), IsError: true}
-		}
-		if secs > 0 {
-			timeout = time.Duration(secs) * time.Second
-		}
+	timeout, err := timeoutArg(input, backgroundTimeout)
+	if err != nil {
+		return tools.Result{Content: err.Error(), IsError: true}
 	}
 	cwd, _ := input["cwd"].(string)
 	shellBin, finalCmd := t.buildInvocation(cmdStr)
