@@ -6,37 +6,22 @@ import (
 	"github.com/elhenro/bee/internal/pidlock"
 )
 
-// MergeLock is an advisory single-host lock for the merge coordinator. Held
-// for the full rebase+FF window so two agents can't race onto main. Backed by
-// a kernel lock, so a crashed holder frees it with no stale-pid heuristics.
-type MergeLock struct {
-	l *pidlock.Lock
-}
-
-// AcquireLock attempts to take the merge lock. Returns ok=false (no error)
-// when another live process holds it; the caller can retry later.
-func AcquireLock() (*MergeLock, bool, error) {
+// AcquireLock attempts to take the merge lock: an advisory single-host lock
+// held for the full rebase+FF window so two agents can't race onto main. Backed
+// by a kernel lock, so a crashed holder frees it with no stale-pid heuristics.
+// Returns ok=false (no error) when another live process holds it; the caller
+// can retry later. Release is safe on a nil lock.
+func AcquireLock() (l *pidlock.Lock, ok bool, err error) {
 	p, err := MergeLockPath()
 	if err != nil {
 		return nil, false, err
 	}
-	l, err := pidlock.Acquire(p, "merge")
+	l, err = pidlock.Acquire(p, "merge")
 	var held *pidlock.HeldError
 	if errors.As(err, &held) {
 		return nil, false, nil
 	}
-	if err != nil {
-		return nil, false, err
-	}
-	return &MergeLock{l: l}, true, nil
-}
-
-// Release frees the lock. Safe to call on a nil receiver.
-func (l *MergeLock) Release() {
-	if l == nil {
-		return
-	}
-	l.l.Release()
+	return l, err == nil, err
 }
 
 // mergeLockHeld reports whether a live process currently holds the merge

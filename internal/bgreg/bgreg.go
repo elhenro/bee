@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 type State string
@@ -72,34 +74,21 @@ type Status struct {
 
 const currentSchema = 2
 const previewMax = 240
-const envBeeHome = "BEE_HOME"
 
-func beeHome() (string, error) {
-	if v := os.Getenv(envBeeHome); v != "" {
-		return v, nil
-	}
-	h, err := os.UserHomeDir()
+// Dir is <beeHome>/sessions/bg, where session sidecars, logs and pidfiles live.
+func Dir() (string, error) { return beehome.Join("sessions", "bg") }
+
+// File is the path of one of a session's files in Dir: its suffix names the
+// kind (".status.json", ".log", ".pid", ...). Nothing is created on disk.
+func File(sessionID, suffix string) (string, error) {
+	d, err := Dir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(h, ".bee"), nil
+	return filepath.Join(d, sessionID+suffix), nil
 }
 
-func dir() (string, error) {
-	h, err := beeHome()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(h, "sessions", "bg"), nil
-}
-
-func path(sessionID string) (string, error) {
-	d, err := dir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, sessionID+".status.json"), nil
-}
+func path(sessionID string) (string, error) { return File(sessionID, ".status.json") }
 
 func Truncate(s string) string {
 	s = strings.TrimSpace(s)
@@ -149,18 +138,26 @@ func writeRaw(s Status) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(p), s.SessionID+"-*.tmp")
+	b, err := json.MarshalIndent(&s, "", "  ")
 	if err != nil {
 		return err
 	}
-	enc := json.NewEncoder(tmp)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(&s); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+	return writeAtomic(p, s.SessionID+"-*.tmp", append(b, '\n'))
+}
+
+// writeAtomic replaces p with data via a temp file in the same dir plus
+// rename, so a reader never sees a torn file.
+func writeAtomic(p, tmpPattern string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(p), tmpPattern)
+	if err != nil {
 		return err
 	}
-	if err := tmp.Close(); err != nil {
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(tmp.Name())
 		return err
 	}
 	return os.Rename(tmp.Name(), p)
@@ -244,7 +241,7 @@ func Read(sessionID string) (Status, error) {
 }
 
 func List() ([]Status, error) {
-	d, err := dir()
+	d, err := Dir()
 	if err != nil {
 		return nil, err
 	}

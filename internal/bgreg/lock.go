@@ -1,27 +1,24 @@
-//go:build windows
-
 package bgreg
 
 import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
-
-	"golang.org/x/sys/windows"
 )
 
 // sessionLock is a per-session advisory lock used by Update to serialize
-// read-modify-write cycles. Stored next to the status JSON as <id>.lock.
-// Backed by Windows LockFileEx with LOCKFILE_EXCLUSIVE_LOCK so a crashed
-// holder's lock is released by the OS when the handle closes.
+// read-modify-write cycles. Stored next to the status JSON as <id>.lock. The
+// OS holds it (tryLock/unlock per platform), so a crashed holder's lock is
+// released when its handle closes; no stale-pid heuristic needed.
 type sessionLock struct {
 	path string
 	f    *os.File
 }
 
 func acquireSessionLock(id string) (*sessionLock, error) {
-	d, err := dir()
+	d, err := Dir()
 	if err != nil {
 		return nil, err
 	}
@@ -35,13 +32,14 @@ func acquireSessionLock(id string) (*sessionLock, error) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		var ol windows.Overlapped
-		err := windows.LockFileEx(
-			windows.Handle(f.Fd()),
-			windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY,
-			0, 1, 0, &ol,
-		)
-		if err == nil {
+		ok, err := tryLock(f)
+		if err != nil {
+			_ = f.Close()
+			return nil, err
+		}
+		if ok {
+			// record pid for diagnostics. Truncate first since prior holder
+			// may have written its own pid.
 			_ = f.Truncate(0)
 			_, _ = f.Seek(0, 0)
 			fmt.Fprintf(f, "%d\n", os.Getpid())
@@ -59,10 +57,13 @@ func (l *sessionLock) release() {
 	if l == nil || l.f == nil {
 		return
 	}
-	var ol windows.Overlapped
-	_ = windows.UnlockFileEx(windows.Handle(l.f.Fd()), 0, 1, 0, &ol)
+	// unlock explicitly so a later reopen in the same process can't
+	// accidentally hold it.
+	unlock(l.f)
 	_ = l.f.Close()
-	// never unlink, see lock_unix.go.
+	// never unlink: a waiter already holding an fd on this inode would lock
+	// the old file while the next arrival creates a new one, giving two
+	// holders. Remove deletes the lock with the session.
 }
 
-func lockPath(d, id string) string { return d + string(os.PathSeparator) + id + ".lock" }
+func lockPath(d, id string) string { return filepath.Join(d, id+".lock") }

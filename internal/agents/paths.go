@@ -8,47 +8,27 @@ package agents
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
-// envBeeHome lets tests redirect ~/.bee.
-const envBeeHome = "BEE_HOME"
-
-func beeHome() (string, error) {
-	if v := os.Getenv(envBeeHome); v != "" {
-		return v, nil
-	}
-	h, err := os.UserHomeDir()
+// beeDir returns the bee home subdir elem, created on demand.
+func beeDir(elem ...string) (string, error) {
+	p, err := beehome.Join(elem...)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(h, ".bee"), nil
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		return "", err
+	}
+	return p, nil
 }
 
 // Root returns ~/.bee/agents (created on demand).
-func Root() (string, error) {
-	h, err := beeHome()
-	if err != nil {
-		return "", err
-	}
-	p := filepath.Join(h, "agents")
-	if err := os.MkdirAll(p, 0o755); err != nil {
-		return "", err
-	}
-	return p, nil
-}
+func Root() (string, error) { return beeDir("agents") }
 
 // WorktreeRoot returns ~/.bee/agents/worktrees.
-func WorktreeRoot() (string, error) {
-	r, err := Root()
-	if err != nil {
-		return "", err
-	}
-	p := filepath.Join(r, "worktrees")
-	if err := os.MkdirAll(p, 0o755); err != nil {
-		return "", err
-	}
-	return p, nil
-}
+func WorktreeRoot() (string, error) { return beeDir("agents", "worktrees") }
 
 // WorktreePath returns ~/.bee/agents/worktrees/<id>.
 func WorktreePath(id string) (string, error) {

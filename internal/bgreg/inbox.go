@@ -19,13 +19,7 @@ type Inbox struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func inboxPath(sessionID string) (string, error) {
-	d, err := dir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, sessionID+".inbox.jsonl"), nil
-}
+func inboxPath(sessionID string) (string, error) { return File(sessionID, ".inbox.jsonl") }
 
 func InboxAppend(sessionID, text string) error {
 	if strings.TrimSpace(text) == "" {

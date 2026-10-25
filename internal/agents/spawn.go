@@ -72,11 +72,7 @@ func Spawn(opts SpawnOpts) (SpawnResult, error) {
 	}
 
 	id := uuid.NewString()
-	short := id
-	if len(short) > 8 {
-		short = short[:8]
-	}
-	branch := "agents/" + short
+	branch := "agents/" + id[:8] // uuid
 
 	wt, err := WorktreePath(id)
 	if err != nil {
@@ -187,13 +183,12 @@ func launch(repoRoot string, st bgreg.Status, msg string) (int, string, error) {
 
 // logFilePath returns ~/.bee/sessions/bg/<id>.log, creating the dir.
 func logFilePath(id string) (string, error) {
-	h, err := beeHome()
+	p, err := bgreg.File(id, ".log")
 	if err != nil {
 		return "", err
 	}
-	d := filepath.Join(h, "sessions", "bg")
-	if err := os.MkdirAll(d, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
 	}
-	return filepath.Join(d, id+".log"), nil
+	return p, nil
 }

@@ -34,16 +34,7 @@ func Wake(repoRoot string, st bgreg.Status) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	pid, _, err := launch(repoRoot, st, agentPreamble+wakePrompt(st.Task))
-	if err != nil {
-		Block(st.SessionID, "wake failed: "+err.Error())
-		return false, err
-	}
-	_ = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
-		s.PID = pid
-		return nil
-	})
-	return true, nil
+	return restart(repoRoot, st, wakePrompt(st.Task), "wake")
 }
 
 // WakeWaiting wakes every listed agent that is stopped with a reply waiting.
@@ -62,6 +53,5 @@ func WakeWaiting(all []bgreg.Status) {
 }
 
 func wakePrompt(task string) string {
-	return task + "\n\nYou worked on this task before in this worktree; your earlier commits are on the branch.\n" +
-		"You signalled you were done or stuck, then the user sent you a follow-up. It is below."
+	return task + priorWork + "You signalled you were done or stuck, then the user sent you a follow-up. It is below."
 }
