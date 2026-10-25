@@ -81,15 +81,6 @@ func StoreDir() (string, error) {
 	return modern, nil
 }
 
-// Index returns the INDEX.md path inside StoreDir.
-func Index() (string, error) {
-	b, err := StoreDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(b, IndexFileName), nil
-}
-
 // findGitRoot returns the canonical git root for cwd if any. symlinks are
 // resolved so worktrees that link back to the same repo collapse.
 func findGitRoot() (string, bool) {

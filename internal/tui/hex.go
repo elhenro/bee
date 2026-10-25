@@ -24,8 +24,6 @@ const (
 	ColorMuted     = "#888888"
 )
 
-func fg(c string) lipgloss.Style { return lipgloss.NewStyle().Foreground(lipgloss.Color(c)) }
-
 // Pre-built styles. Public so 3A may compose without redefining.
 var (
 	StyleActive   = lipgloss.NewStyle().Foreground(accentHoney).Bold(true)

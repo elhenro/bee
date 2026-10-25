@@ -22,12 +22,6 @@ func writeFile(t *testing.T, content string) string {
 	return path
 }
 
-// ref builds a "<n>#<tag>" anchor for the i-th 1-based line of content.
-func ref(content string, lineNum int) string {
-	tags := apply_patch.TagAll(strings.TrimSuffix(content, "\n"))
-	return apply_patch.Ref(strings.Split(strings.TrimSuffix(content, "\n"), "\n")[lineNum-1], lineNum) + "_" + tags[lineNum-1]
-}
-
 // anchor returns "<n>#<tag>" for the given live content's lineNum.
 func anchor(content string, lineNum int) string {
 	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
@@ -245,9 +239,6 @@ func TestUnknownOp(t *testing.T) {
 		t.Fatalf("expected unknown-op error, got success")
 	}
 }
-
-// Silence the unused helper warning if it ever stops being used.
-var _ = ref
 
 // replace with an empty lines array must be rejected; otherwise the
 // target line is spliced out with no replacement, silently deleting data.

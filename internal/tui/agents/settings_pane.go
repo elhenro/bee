@@ -74,13 +74,6 @@ func (p *settingsPane) show(prefs Prefs) {
 	p.recomputeMatches()
 }
 
-func (p *settingsPane) close() {
-	if p == nil {
-		return
-	}
-	p.open = false
-}
-
 func (p *settingsPane) recomputeMatches() {
 	needle := strings.TrimSpace(p.filter.Value())
 	if needle == "" {

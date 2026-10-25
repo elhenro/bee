@@ -46,12 +46,6 @@ func NewDrawilleCanvas(w, h int) *DrawilleCanvas {
 	}
 }
 
-// Width returns canvas width in pixels.
-func (c *DrawilleCanvas) Width() int { return c.w }
-
-// Height returns canvas height in pixels.
-func (c *DrawilleCanvas) Height() int { return c.h }
-
 // SetPixel turns one pixel on (true) or off (false). Out-of-bounds is a
 // no-op so animations can sweep sprites past the edge cleanly.
 func (c *DrawilleCanvas) SetPixel(x, y int, on bool) {

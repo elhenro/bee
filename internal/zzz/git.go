@@ -169,16 +169,6 @@ func Push(dir, branch string) error {
 	return err
 }
 
-// Fetch updates remote-tracking refs. remote defaults to "origin".
-// Best-effort: not having a remote configured is not fatal for local-only flows.
-func Fetch(dir, remote string) error {
-	if remote == "" {
-		remote = "origin"
-	}
-	_, err := gitRun(dir, "fetch", remote)
-	return err
-}
-
 // Rebase replays HEAD commits onto onto. Returns the raw error including
 // stderr on conflict so callers can surface it.
 func Rebase(dir, onto string) error {

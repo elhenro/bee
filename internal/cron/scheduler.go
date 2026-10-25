@@ -75,9 +75,6 @@ func (s *Scheduler) SetInterval(d time.Duration) {
 // SetLogger routes deferral and error notes. Call it before Start.
 func (s *Scheduler) SetLogger(f func(string, ...any)) { s.logf = f }
 
-// Jobs returns the scheduler's jobs.
-func (s *Scheduler) Jobs() []*Job { return append([]*Job(nil), s.jobs...) }
-
 // Queue exposes the busy queue so callers can serialize work that shares a
 // resource key with a scheduled job.
 func (s *Scheduler) Queue() *Queue { return s.queue }
