@@ -46,33 +46,6 @@ func limitFor(toolName string) int {
 	return MaxOutputTokens
 }
 
-// truncateMode controls which portion of the output is preserved when a
-// tool result exceeds its cap.
-type truncateMode int
-
-const (
-	truncateModeHead     truncateMode = iota // keep prefix only (read: file start)
-	truncateModeHeadTail                     // keep both ends with a marker between (default for execution tools: errors live at tail, context at head)
-)
-
-// truncateModes maps tool names to their preferred truncation shape. Tools
-// absent from the map fall back to truncateModeHead — safest for file
-// readers and search-style breadth tools.
-//
-// bash/shell-style outputs get head-tail: model loses the middle of a long
-// test log but keeps the panic/diff at the end, which is where the
-// actionable signal sits.
-var truncateModes = map[string]truncateMode{
-	"bash": truncateModeHeadTail,
-}
-
-func modeFor(toolName string) truncateMode {
-	if m, ok := truncateModes[toolName]; ok {
-		return m
-	}
-	return truncateModeHead
-}
-
 // Truncate caps content to limitFor(toolName) tokens (chars/4 heuristic). When
 // the content exceeds the cap, the head is kept and a trailer is appended.
 // Returns the (possibly modified) content and a bool indicating whether
@@ -94,20 +67,23 @@ func TruncateWithLimit(toolName, content string, limitTokens int) (string, bool)
 	return TruncateWithLimitSpill(toolName, content, limitTokens, defaultSpillDir())
 }
 
-// TruncateWithLimitSpill is the testable variant: caller supplies the spill
-// directory. Empty spillDir disables spillover (truncate-and-discard).
-//
-// Per-tool truncateMode controls shape: head-only by default; head-tail for
-// bash so the panic/error at the end of a long test log survives the cut.
-func TruncateWithLimitSpill(toolName, content string, limitTokens int, spillDir string) (string, bool) {
-	if content == "" {
-		return content, false
-	}
+// charCap is the byte budget for toolName: the smaller of the profile cap
+// (limitTokens, <=0 means none) and the per-tool default, in tokens*4 chars.
+func charCap(toolName string, limitTokens int) int {
 	limit := limitFor(toolName)
 	if limitTokens > 0 && limitTokens < limit {
 		limit = limitTokens
 	}
-	maxChars := limit * 4
+	return limit * 4
+}
+
+// TruncateWithLimitSpill is the testable variant: caller supplies the spill
+// directory. Empty spillDir disables spillover (truncate-and-discard).
+//
+// Head-only by default; bash gets head-tail so the panic/error at the end of a
+// long test log survives the cut.
+func TruncateWithLimitSpill(toolName, content string, limitTokens int, spillDir string) (string, bool) {
+	maxChars := charCap(toolName, limitTokens)
 	total := len(content)
 	if total <= maxChars {
 		return content, false
@@ -115,16 +91,14 @@ func TruncateWithLimitSpill(toolName, content string, limitTokens int, spillDir 
 	// head-tail mode for execution-style outputs: keep ~2/3 head + ~1/3
 	// tail so the actionable error block at the end of a test/build log
 	// reaches the model alongside the initial context.
-	if modeFor(toolName) == truncateModeHeadTail {
-		out, _ := truncateHeadTailWithSpill(toolName, content, limitTokens, maxChars/3, spillDir)
-		return out, true
+	if toolName == "bash" {
+		return truncateHeadTailWithSpill(toolName, content, maxChars, spillDir), true
 	}
-	head := content[:maxChars]
 	// avoid splitting mid-line: trim back to the last newline in head. when the
 	// output is one giant line (minified json, a long diff) there is no newline
 	// to snap to — back off the raw byte cut to a rune boundary so we never emit
 	// a partial UTF-8 sequence that breaks downstream encoding or model parse.
-	head = snapHead(head)
+	head := snapHead(content[:maxChars])
 	spillPath := writeSpill(spillDir, toolName, content)
 	var trailer string
 	if spillPath != "" {
@@ -226,36 +200,14 @@ func safeToolName(s string) string {
 	return strings.Map(repl, s)
 }
 
-// truncateHeadTailWithSpill is the head-tail variant of TruncateWithLimitSpill.
-// Identical spill behavior (full body persisted, trailer points to file when
-// available) but the message keeps both ends of the original.
-func truncateHeadTailWithSpill(toolName, content string, limitTokens, tailChars int, spillDir string) (string, bool) {
-	if content == "" {
-		return content, false
-	}
-	limit := limitFor(toolName)
-	if limitTokens > 0 && limitTokens < limit {
-		limit = limitTokens
-	}
-	maxChars := limit * 4
+// truncateHeadTailWithSpill is the head-tail variant of TruncateWithLimitSpill
+// for content already known to exceed maxChars. Identical spill behavior (full
+// body persisted, trailer points to file when available) but the message keeps
+// both ends of the original.
+func truncateHeadTailWithSpill(toolName, content string, maxChars int, spillDir string) string {
 	total := len(content)
-	if total <= maxChars {
-		return content, false
-	}
-	if tailChars < 0 {
-		tailChars = 4096
-	}
-	maxTailChars := total - maxChars
-	if tailChars > maxTailChars {
-		tailChars = maxTailChars
-	}
-	// floor the head at half the budget so a large tail can never starve the
-	// initial context (the command + start of the log the model needs to read).
-	if tailChars > maxChars/2 {
-		tailChars = maxChars / 2
-	}
-	head := content[:maxChars-tailChars]
-	head = snapHead(head)
+	tailChars := min(maxChars/3, total-maxChars)
+	head := snapHead(content[:maxChars-tailChars])
 	tailStart := total - tailChars
 	if nl := strings.Index(content[tailStart:], "\n"); nl >= 0 && nl <= tailChars/2 {
 		tailStart += nl
@@ -264,28 +216,16 @@ func truncateHeadTailWithSpill(toolName, content string, limitTokens, tailChars 
 	}
 	tail := content[tailStart:]
 	skipped := total - len(head) - len(tail)
-	spillPath := writeSpill(spillDir, toolName, content)
-	var trailer string
-	if spillPath != "" {
-		trailer = fmt.Sprintf("\n...\n(truncated middle: kept first %d and last %d of %d; skipped %d)\n\n[full output saved to %s]\n...",
-			len(head), len(tail), total, skipped, spillPath)
-	} else {
-		trailer = fmt.Sprintf("\n...\n(truncated middle: kept first %d and last %d of %d; skipped %d)\n...",
-			len(head), len(tail), total, skipped)
+	trailer := fmt.Sprintf("\n...\n(truncated middle: kept first %d and last %d of %d; skipped %d)\n", len(head), len(tail), total, skipped)
+	if spillPath := writeSpill(spillDir, toolName, content); spillPath != "" {
+		trailer += fmt.Sprintf("\n[full output saved to %s]\n", spillPath)
 	}
-	return head + trailer + tail, true
+	return head + trailer + "..." + tail
 }
 
 // TruncateHeadTailWithLimit is TruncateHeadTail with an explicit profile cap.
 func TruncateHeadTailWithLimit(toolName, content string, limitTokens int, tailChars int) (string, bool) {
-	if content == "" {
-		return content, false
-	}
-	limit := limitFor(toolName)
-	if limitTokens > 0 && limitTokens < limit {
-		limit = limitTokens
-	}
-	maxChars := limit * 4
+	maxChars := charCap(toolName, limitTokens)
 	total := len(content)
 	if total <= maxChars {
 		return content, false
@@ -294,23 +234,16 @@ func TruncateHeadTailWithLimit(toolName, content string, limitTokens int, tailCh
 	if tailChars < 0 {
 		tailChars = 4096
 	}
-	maxTailChars := total - maxChars
-	if tailChars > maxTailChars {
-		tailChars = maxTailChars
-	}
-	head := content[:maxChars]
+	tailChars = min(tailChars, total-maxChars)
 	// avoid splitting mid-line: trim back to the last newline in head; with no
 	// newline, back off to a rune boundary so we never emit a partial UTF-8 seq.
-	head = snapHead(head)
-	tailStart := strings.Index(content[len(content)-tailChars:], "\n")
-	if tailStart >= 0 {
-		tailStart += len(content) - tailChars
-	}
+	head := snapHead(content[:maxChars])
+	tailStart := strings.Index(content[total-tailChars:], "\n")
 	if tailStart < 0 {
 		// tail portion starts from beginning — no tail to show (pathological)
 		return trimPartialRune(content[:maxChars]), true
 	}
-	tail := content[tailStart:]
+	tail := content[tailStart+total-tailChars:]
 	skipped := total - len(head) - len(tail)
 	trailer := fmt.Sprintf("\n...\n(skipped %d chars; kept first %d chars of %d and last %d; use limit/offset on read or grep to see middle)\n...", skipped, len(head), total, len(tail))
 	return head + trailer + tail, true

@@ -36,8 +36,8 @@ func ValidateInput(spec llm.ToolSpec, input map[string]any) error {
 		return nil
 	}
 	required := schemaRequired(spec.Schema)
-	var problems []string
-	var missingRequired []string
+	var problems, missingRequired []string
+	emptyKeys := map[string]bool{}
 
 	// missing-required check first — most common failure on tiny models.
 	for _, key := range required {
@@ -49,15 +49,11 @@ func ValidateInput(spec llm.ToolSpec, input map[string]any) error {
 		}
 		if isEmptyValue(v) {
 			problems = append(problems, fmt.Sprintf("empty %q", key))
+			emptyKeys[key] = true
 		}
 	}
 
-	// wrong-type check on present keys. Skip required keys already flagged
-	// missing above so the diagnostic doesn't repeat.
-	missingSet := map[string]bool{}
-	for _, p := range problems {
-		missingSet[p] = true
-	}
+	// wrong-type check on present keys.
 	var unknownKeys []string
 	for key, raw := range input {
 		if strings.HasPrefix(key, "_") {
@@ -79,9 +75,9 @@ func ValidateInput(spec llm.ToolSpec, input map[string]any) error {
 		}
 		// minLength on strings rejects blank optional args too, not just
 		// required ones. skip keys already flagged empty above.
-		if s, ok := raw.(string); ok && !missingSet[fmt.Sprintf("empty %q", key)] {
-			if min, ok := schemaMinLength(propMap); ok && len(strings.TrimSpace(s)) < min {
-				problems = append(problems, fmt.Sprintf("%q too short: needs at least %d non-blank char(s)", key, min))
+		if s, ok := raw.(string); ok && !emptyKeys[key] {
+			if n := IntArg(propMap, "minLength", 0); len(strings.TrimSpace(s)) < n {
+				problems = append(problems, fmt.Sprintf("%q too short: needs at least %d non-blank char(s)", key, n))
 			}
 		}
 	}
@@ -188,9 +184,7 @@ func levenshtein(a, b string) int {
 func schemaRequired(schema map[string]any) []string {
 	switch rs := schema["required"].(type) {
 	case []string:
-		out := make([]string, len(rs))
-		copy(out, rs)
-		return out
+		return rs
 	case []any:
 		out := make([]string, 0, len(rs))
 		for _, r := range rs {
@@ -201,20 +195,6 @@ func schemaRequired(schema map[string]any) []string {
 		return out
 	}
 	return nil
-}
-
-// schemaMinLength reads minLength off a property map. json.Unmarshal yields
-// float64 for numbers, hand-coded Go schemas use int — accept both.
-func schemaMinLength(propMap map[string]any) (int, bool) {
-	switch n := propMap["minLength"].(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case float64:
-		return int(n), true
-	}
-	return 0, false
 }
 
 // isEmptyValue trips on the most common "model sent the key but value is
@@ -234,46 +214,19 @@ func isEmptyValue(v any) bool {
 	return false
 }
 
-// jsonTypeMismatch returns ("", true) when raw matches the declared JSON
+// jsonTypeMismatch returns (gotName, true) when raw matches the declared JSON
 // Schema type, or (gotName, false) otherwise. gotName is the JSON-ish label
-// for the actual value, used in the diagnostic.
+// for the actual value, used in the diagnostic. Unknown schema types match.
 func jsonTypeMismatch(raw any, want string) (string, bool) {
+	got := jsonTypeName(raw)
 	switch want {
-	case "string":
-		if _, ok := raw.(string); ok {
-			return "", true
-		}
+	case "string", "number", "boolean", "array", "object":
+		return got, got == want
 	case "integer":
-		switch n := raw.(type) {
-		case int, int32, int64:
-			return "", true
-		case float64:
-			if n == float64(int64(n)) {
-				return "", true
-			}
-			return "number", false
-		}
-	case "number":
-		switch raw.(type) {
-		case int, int32, int64, float64:
-			return "", true
-		}
-	case "boolean":
-		if _, ok := raw.(bool); ok {
-			return "", true
-		}
-	case "array":
-		if _, ok := raw.([]any); ok {
-			return "", true
-		}
-	case "object":
-		if _, ok := raw.(map[string]any); ok {
-			return "", true
-		}
-	default:
-		return "", true // unknown schema type — don't reject
+		f, isFloat := raw.(float64)
+		return got, got == "number" && (!isFloat || f == float64(int64(f)))
 	}
-	return jsonTypeName(raw), false
+	return got, true
 }
 
 func jsonTypeName(v any) string {
@@ -352,25 +305,27 @@ func renderArgList(props map[string]any, required []string) string {
 }
 
 // renderExampleEnvelope synthesizes the canonical XML envelope with sample
-// values for the required args. Single line — small models copy the literal
-// shape on next turn. Uses json.Marshal to escape values correctly.
+// values for the required args, in required order. Single line — small models
+// copy the literal shape on next turn. Uses json.Marshal to escape values
+// correctly.
 func renderExampleEnvelope(name string, props map[string]any, required []string) string {
-	example := map[string]any{}
-	for _, key := range required {
-		propRaw, ok := props[key]
-		if !ok {
-			example[key] = "VALUE"
-			continue
+	var b strings.Builder
+	fmt.Fprintf(&b, "<%s>{", name)
+	for i, key := range required {
+		var val any = "VALUE"
+		if propRaw, ok := props[key]; ok {
+			propMap, _ := propRaw.(map[string]any)
+			val = exampleValueForType(key, propMap)
 		}
-		propMap, _ := propRaw.(map[string]any)
-		example[key] = exampleValueForType(key, propMap)
+		k, _ := json.Marshal(key)
+		v, _ := json.Marshal(val)
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, "%s:%s", k, v)
 	}
-	// keys sorted for deterministic example (KV-cache friendly).
-	buf, err := json.Marshal(orderedJSON(example, required))
-	if err != nil {
-		buf = []byte(`{"...":"..."}`)
-	}
-	return fmt.Sprintf("<%s>%s</%s>", name, string(buf), name)
+	fmt.Fprintf(&b, "}</%s>", name)
+	return b.String()
 }
 
 // exampleValueForType picks a plausible placeholder for a schema property,
@@ -406,39 +361,4 @@ func exampleValueForType(key string, propMap map[string]any) any {
 		return "name"
 	}
 	return "value"
-}
-
-// orderedJSON wraps a map so json.Marshal emits keys in the order from
-// `order`. Keys not in `order` are skipped — the example only includes the
-// required keys, so optional keys naturally drop out.
-type orderedJSONMap struct {
-	m     map[string]any
-	order []string
-}
-
-func orderedJSON(m map[string]any, order []string) orderedJSONMap {
-	return orderedJSONMap{m: m, order: order}
-}
-
-func (o orderedJSONMap) MarshalJSON() ([]byte, error) {
-	var b strings.Builder
-	b.WriteByte('{')
-	first := true
-	for _, k := range o.order {
-		v, ok := o.m[k]
-		if !ok {
-			continue
-		}
-		if !first {
-			b.WriteByte(',')
-		}
-		first = false
-		key, _ := json.Marshal(k)
-		val, _ := json.Marshal(v)
-		b.Write(key)
-		b.WriteByte(':')
-		b.Write(val)
-	}
-	b.WriteByte('}')
-	return []byte(b.String()), nil
 }
