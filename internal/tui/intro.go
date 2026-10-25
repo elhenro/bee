@@ -56,37 +56,23 @@ var concreteIntroStyles = []IntroStyle{
 	IntroStyleOrbit,
 }
 
-// ParseIntroStyle maps BEE_BANNER values to a style.
-func ParseIntroStyle(s string) IntroStyle {
-	switch s {
-	case "", "random", "rand":
-		return IntroStyleRandom
-	case "default", "life", "lifecycle":
-		return IntroStyleLifecycle
-	case "swarm":
-		return IntroStyleSwarm
-	case "hex":
-		return IntroStyleHex
-	case "dance", "waggle":
-		return IntroStyleDance
-	case "drip", "honey":
-		return IntroStyleDrip
-	case "bloom", "pollen":
-		return IntroStyleBloom
-	case "constell", "constellation", "stars":
-		return IntroStyleConstell
-	case "rain":
-		return IntroStyleRain
-	case "spiral":
-		return IntroStyleSpiral
-	case "wave":
-		return IntroStyleWave
-	case "orbit":
-		return IntroStyleOrbit
-	default:
-		return IntroStyleRandom
-	}
+var introNames = map[string]IntroStyle{
+	"default": IntroStyleLifecycle, "life": IntroStyleLifecycle, "lifecycle": IntroStyleLifecycle,
+	"swarm": IntroStyleSwarm,
+	"hex":   IntroStyleHex,
+	"dance": IntroStyleDance, "waggle": IntroStyleDance,
+	"drip": IntroStyleDrip, "honey": IntroStyleDrip,
+	"bloom": IntroStyleBloom, "pollen": IntroStyleBloom,
+	"constell": IntroStyleConstell, "constellation": IntroStyleConstell, "stars": IntroStyleConstell,
+	"rain":   IntroStyleRain,
+	"spiral": IntroStyleSpiral,
+	"wave":   IntroStyleWave,
+	"orbit":  IntroStyleOrbit,
 }
+
+// ParseIntroStyle maps BEE_BANNER values to a style. Empty, "random" and
+// unknown names pick a random one.
+func ParseIntroStyle(s string) IntroStyle { return introNames[s] }
 
 // pickStyle resolves Random to a concrete style per launch. Uses crypto/rand
 // for true entropy — time-based modulo can repeat on quick relaunches.
