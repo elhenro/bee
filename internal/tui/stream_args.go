@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
 // summarizeArgs renders the tool input map as a single-line, truncated
@@ -132,13 +134,30 @@ func shortenPathsInline(s string) string {
 	pathRootsOnce.Do(initPathRoots)
 	if cachedCwd != "" {
 		s = strings.ReplaceAll(s, cachedCwd+string(filepath.Separator), "")
-		s = strings.ReplaceAll(s, cachedCwd, ".")
+		s = replaceRoot(s, cachedCwd, ".")
 	}
 	if cachedHome != "" {
 		s = strings.ReplaceAll(s, cachedHome+string(filepath.Separator), "~"+string(filepath.Separator))
-		s = strings.ReplaceAll(s, cachedHome, "~")
+		s = replaceRoot(s, cachedHome, "~")
 	}
 	return s
+}
+
+// replaceRoot swaps root for repl where it ends a path element, so a sibling
+// such as root-new keeps its name.
+func replaceRoot(s, root, repl string) string {
+	parts := strings.Split(s, root)
+	out := parts[0]
+	for _, p := range parts[1:] {
+		r, _ := utf8.DecodeRuneInString(p)
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			out += root
+		} else {
+			out += repl
+		}
+		out += p
+	}
+	return out
 }
 
 // humanBytes formats n as a short decimal-prefixed size ("812 B", "2.4 KB",
