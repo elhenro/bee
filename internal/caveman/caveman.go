@@ -34,14 +34,7 @@ var rulesFS embed.FS
 // Off returns "". Unknown levels return "" as well — callers should validate
 // with ParseLevel first.
 func Rules(level Level) string {
-	if level == Off {
-		return ""
-	}
-	name, ok := fileFor(level)
-	if !ok {
-		return ""
-	}
-	b, err := rulesFS.ReadFile(name)
+	b, err := rulesFS.ReadFile("rules/" + string(level) + ".md")
 	if err != nil {
 		return ""
 	}
@@ -63,19 +56,5 @@ func ParseLevel(s string) (Level, error) {
 		return Ultra, nil
 	default:
 		return "", fmt.Errorf("caveman: unknown level %q (want off|lite|full|ultra)", s)
-	}
-}
-
-// fileFor maps level to embedded path.
-func fileFor(level Level) (string, bool) {
-	switch level {
-	case Lite:
-		return "rules/lite.md", true
-	case Full:
-		return "rules/full.md", true
-	case Ultra:
-		return "rules/ultra.md", true
-	default:
-		return "", false
 	}
 }

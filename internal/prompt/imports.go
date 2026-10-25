@@ -74,8 +74,7 @@ func resolveImport(baseDir, ref string) (string, string, bool) {
 	if !pathAllowed(exact) {
 		return "", "", false
 	}
-	if data, ok := readImport(exact); ok {
-		abs, _ := filepath.Abs(exact)
+	if abs, data, ok := readAbs(exact); ok {
 		return abs, data, true
 	}
 	// fuzzy fallback only for relative path-like refs: absolute paths are
@@ -98,26 +97,25 @@ func looksLikePath(ref string) bool {
 	return strings.Contains(ref, "/") || filepath.Ext(ref) != ""
 }
 
-// readImport reads path with size cap + binary skip. Empty body returns false.
+// readImport reads path with size cap + binary skip, resolving links first so
+// the guard sees, and the read uses, the real target.
 func readImport(path string) (string, bool) {
-	// resolve links first so the guard sees, and the read uses, the real target
 	real, err := filepath.EvalSymlinks(path)
 	if err != nil || !pathAllowed(real) {
 		return "", false
 	}
-	path = real
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return "", false
+	data, _, ok := readCapped(real)
+	return string(data), ok
+}
+
+// readAbs is readImport plus the absolute path of what it read.
+func readAbs(path string) (string, string, bool) {
+	data, ok := readImport(path)
+	if !ok {
+		return "", "", false
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || isBinaryBytes(data) {
-		return "", false
-	}
-	if len(data) > MaxFileBytes {
-		data = data[:MaxFileBytes]
-	}
-	return string(data), true
+	abs, _ := filepath.Abs(path)
+	return abs, data, true
 }
 
 // fuzzyResolve walks baseDir (skipping noise dirs), runs fuzzy.Find, returns
@@ -135,11 +133,7 @@ func fuzzyResolve(baseDir, needle string) (string, string, bool) {
 	if !insideDir(baseDir, best) {
 		return "", "", false
 	}
-	if data, ok := readImport(best); ok {
-		abs, _ := filepath.Abs(best)
-		return abs, data, true
-	}
-	return "", "", false
+	return readAbs(best)
 }
 
 // insideDir guards against a symlink inside baseDir pointing out of it.
