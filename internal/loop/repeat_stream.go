@@ -244,3 +244,40 @@ func trimLoopedTail(s string, period int) string {
 	}
 	return s[:keep] + "\n…[truncated: output repeated the same text in a loop]"
 }
+
+// loopDetectors each return a trim for a looping tail of s, or nil. exact-period
+// loops trim by period, low-vocab and block loops by offset.
+var loopDetectors = []func(s string) func(string) string{
+	func(s string) func(string) string {
+		if p := degenerateTailPeriod(s); p > 0 {
+			return func(x string) string { return trimLoopedTail(x, p) }
+		}
+		return nil
+	},
+	trimByOffset(degenerateLowVocabTail),
+	trimByOffset(degenerateBlockTail),
+}
+
+// trimByOffset adapts a detector that reports where a loop begins (-1 for none).
+func trimByOffset(detect func(string) int) func(string) func(string) string {
+	return func(s string) func(string) string {
+		if off := detect(s); off >= 0 {
+			return func(x string) string { return trimLoopedTailAt(x, off) }
+		}
+		return nil
+	}
+}
+
+// scanLoop looks for a degenerate repeating tail in the text, then the
+// reasoning, per detector; the first hit wins. trim collapses the offending
+// buffer; inThink says it was the reasoning one. trim is nil when none loops.
+func scanLoop(text, think string) (trim func(string) string, inThink bool) {
+	for _, detect := range loopDetectors {
+		for i, buf := range [2]string{text, think} {
+			if t := detect(buf); t != nil {
+				return t, i == 1
+			}
+		}
+	}
+	return nil, false
+}

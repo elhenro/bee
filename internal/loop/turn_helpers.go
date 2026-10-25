@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
 	"strings"
 	"time"
 
@@ -102,6 +103,11 @@ func lastID(ms []types.Message) string {
 }
 
 func newID() string { return uuid.NewString() }
+
+// containsAny reports whether s contains any of subs.
+func containsAny(s string, subs ...string) bool {
+	return slices.ContainsFunc(subs, func(sub string) bool { return strings.Contains(s, sub) })
+}
 
 // hash8 is a short stable digest for fingerprints and dedupe keys.
 func hash8(s string) string {

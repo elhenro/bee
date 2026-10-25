@@ -45,24 +45,16 @@ func classifyToolError(err error) string {
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
-	case strings.Contains(msg, "invalid argument"),
-		strings.Contains(msg, "missing required"),
-		strings.Contains(msg, "missing field"),
-		strings.Contains(msg, "argparse"),
-		strings.Contains(msg, "unexpected type"),
-		strings.Contains(msg, "escapes workspace"),
-		strings.Contains(msg, "denied by write filter"),
-		strings.Contains(msg, "denied by"):
+	case containsAny(msg, "invalid argument", "missing required", "missing field", "argparse",
+		"unexpected type", "escapes workspace", "denied by write filter", "denied by"):
 		return toolErrInvalidArg
 	case strings.Contains(msg, "json"):
 		return toolErrParseError
-	case strings.Contains(msg, "no such file"),
-		strings.Contains(msg, "not found"):
+	case containsAny(msg, "no such file", "not found"):
 		return toolErrNotFound
 	case strings.Contains(msg, "permission denied"):
 		return toolErrPermissionDenied
-	case strings.Contains(msg, "timeout"),
-		strings.Contains(msg, "deadline exceeded"):
+	case containsAny(msg, "timeout", "deadline exceeded"):
 		return toolErrTimeout
 	}
 	return toolErrUnknown

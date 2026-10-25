@@ -162,17 +162,10 @@ func sayOnlyStopNudge(e *Engine, assistantMsg types.Message, userText string) *t
 // skipped for local ones (round-trip too expensive), so this keeps chat
 // turns ("hi", "what are you doing?") from paying a useless nudge.
 func looksActionable(userText string) bool {
-	low := strings.ToLower(userText)
-	for _, verb := range []string{
+	return containsAny(strings.ToLower(userText),
 		"add ", "fix", "implement", "create", "update", "remove", "delete",
 		"refactor", "write ", "build", "make ", "change", "rename", "install",
-		"setup", "set up", "run ", "test ", "debug",
-	} {
-		if strings.Contains(low, verb) {
-			return true
-		}
-	}
-	return false
+		"setup", "set up", "run ", "test ", "debug")
 }
 
 // buildFormatNudge composes the format-correction message. Uses the actual

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/jsonmode"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
@@ -27,13 +26,6 @@ var preContentRetryDelay = 800 * time.Millisecond
 // and emits a WarnCh notice per retry.
 func (e *Engine) streamOnce(ctx context.Context, req llm.Request) (types.Message, string, []types.ToolUse, error) {
 	e.earlyDrain() // nothing from a turn that never reached dispatch
-	var (
-		textBuf  strings.Builder
-		thinkBuf strings.Builder
-		thinkSig string
-		content  []types.ContentBlock
-		toolUses []types.ToolUse
-	)
 	for attempt := 0; ; attempt++ {
 		if attempt > 0 {
 			select {
@@ -42,14 +34,9 @@ func (e *Engine) streamOnce(ctx context.Context, req llm.Request) (types.Message
 			case <-time.After(preContentRetryDelay):
 			}
 		}
-		msg, finalText, uses, gotContent, retry, err := e.streamAttempt(ctx, req, &textBuf, &thinkBuf, &thinkSig, &content, &toolUses)
-		if retry && !gotContent && attempt < maxPreContentRetries {
+		msg, finalText, uses, retry, err := e.streamAttempt(ctx, req)
+		if retry && attempt < maxPreContentRetries {
 			e.warnf("stream hiccup (%v) — retrying %d/%d", err, attempt+1, maxPreContentRetries)
-			textBuf.Reset()
-			thinkBuf.Reset()
-			thinkSig = ""
-			content = content[:0]
-			toolUses = toolUses[:0]
 			continue
 		}
 		return msg, finalText, uses, err
@@ -62,10 +49,7 @@ func (e *Engine) warnf(format string, args ...any) {
 	if e == nil || e.WarnCh == nil {
 		return
 	}
-	select {
-	case e.WarnCh <- fmt.Sprintf(format, args...):
-	default:
-	}
+	trySend(e.WarnCh, fmt.Sprintf(format, args...))
 }
 
 // noticef is warnf with a headless fallback: when no WarnCh consumer is wired
@@ -78,17 +62,19 @@ func (e *Engine) noticef(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "bee: "+format+"\n", args...)
 }
 
-// streamAttempt runs one Provider.Stream pass into the supplied buffers.
-// Returns (msg, finalText, toolUses, gotContent, retryable, err). When
-// retryable is true and gotContent is false, the caller may reopen the stream.
-func (e *Engine) streamAttempt(
-	ctx context.Context,
-	req llm.Request,
-	textBuf, thinkBuf *strings.Builder,
-	thinkSig *string,
-	content *[]types.ContentBlock,
-	toolUses *[]types.ToolUse,
-) (types.Message, string, []types.ToolUse, bool, bool, error) {
+// turnStream accumulates one provider stream into an assistant turn.
+type turnStream struct {
+	text, think strings.Builder
+	sig         string // signature of the thinking block
+	uses        []types.ToolUse
+	clock       thinkClock
+	got         bool // any content arrived, so replaying the request would duplicate it
+	sinceScan   int  // bytes appended since the last repetition check
+}
+
+// streamAttempt runs one Provider.Stream pass. retry is true when the stream
+// failed before any content, so the caller may reopen it.
+func (e *Engine) streamAttempt(ctx context.Context, req llm.Request) (types.Message, string, []types.ToolUse, bool, error) {
 	// child context so the repetition watchdog can cut a wedged stream without
 	// disturbing the caller's ctx (which still governs real cancellation).
 	sctx, cancel := context.WithCancel(ctx)
@@ -102,164 +88,68 @@ func (e *Engine) streamAttempt(
 		// transport failure: only the former is wedge-class, since the same
 		// transcript will keep 400-ing until the bad tool_use is removed.
 		if isProviderRejectErr(err) {
-			return types.Message{}, "", nil, false, false, &ProviderRejectError{Raw: err.Error()}
+			return types.Message{}, "", nil, false, &ProviderRejectError{Raw: err.Error()}
 		}
-		return types.Message{}, "", nil, false, false, fmt.Errorf("provider stream: %w", err)
+		return types.Message{}, "", nil, false, fmt.Errorf("provider stream: %w", err)
 	}
-	gotContent := false
-	sinceScan := 0 // bytes appended since the last repetition check
-	looped := false
-	truncated := false // stream dropped mid-output on a transient error
-	loopPeriodText, loopPeriodThink := 0, 0
-	loopTrimText, loopTrimThink := -1, -1
-	var think thinkClock
+	var (
+		s         turnStream
+		trim      func(string) string // collapses the looped tail of the cut buffer
+		trimThink bool                // ...which is the reasoning one
+		truncated bool                // stream dropped mid-output on a transient error
+	)
 events:
 	for ev := range ch {
 		if ctx.Err() != nil {
-			return types.Message{}, "", nil, false, false, ctx.Err()
+			return types.Message{}, "", nil, false, ctx.Err()
 		}
 		switch ev.Type {
 		case llm.EventThinkingDelta:
-			think.reasoning()
-			if ev.Signature != "" {
-				*thinkSig = ev.Signature
-			}
-			thinkBuf.WriteString(ev.Delta)
-			gotContent = true
-			sinceScan += len(ev.Delta)
-			if e.JSONEmitter != nil {
-				e.JSONEmitter.Emit(jsonmode.Event{Type: "thinking", Delta: ev.Delta})
-			} else if e.ThinkCh != nil {
-				select {
-				case e.ThinkCh <- ev.Delta:
-				default:
-				}
-			}
+			s.reasoning(e, ev)
 		case llm.EventTextDelta:
-			think.answered()
-			textBuf.WriteString(ev.Delta)
-			gotContent = true
-			sinceScan += len(ev.Delta)
-			if e.JSONEmitter != nil {
-				e.JSONEmitter.Emit(jsonmode.Event{Type: "text", Delta: ev.Delta})
-			} else if e.StreamCh != nil {
-				select {
-				case e.StreamCh <- ev.Delta:
-				default:
-				}
-			} else {
-				_, _ = e.Stdout.Write([]byte(ev.Delta))
-			}
+			s.answer(e, ev.Delta)
 		case llm.EventProgress:
 			// withheld-output liveness from buffered tool-call modes. Not
-			// content (no gotContent): the wrapper re-emits the parsed text
+			// content (no got): the wrapper re-emits the parsed text
 			// at end-of-stream, and pre-content retry must stay replayable.
-			if e.ProgressCh != nil {
-				select {
-				case e.ProgressCh <- ev.N:
-				default:
-				}
-			}
+			trySend(e.ProgressCh, ev.N)
 		case llm.EventToolUse:
 			if ev.ToolUse != nil {
-				think.answered()
-				*toolUses = append(*toolUses, *ev.ToolUse)
-				e.earlyOffer(ctx, len(*toolUses)-1, *ev.ToolUse)
-				gotContent = true
-				if e.JSONEmitter != nil {
-					e.JSONEmitter.Emit(jsonmode.Event{
-						Type:  "tool_use",
-						Name:  ev.ToolUse.Name,
-						UseID: ev.ToolUse.ID,
-						Input: ev.ToolUse.Input,
-					})
-				}
+				s.toolUse(ctx, e, *ev.ToolUse)
 			}
 		case llm.EventError:
-			if ev.Err != nil {
-				// drain remaining events so the provider goroutine exits cleanly
-				for range ch {
-				}
-				if isTransientStreamErr(ev.Err) {
-					if !gotContent {
-						// pre-content hiccup: safe to replay the whole request.
-						return types.Message{}, "", nil, false, true, ev.Err
-					}
-					// mid-content drop: replaying would duplicate the tokens
-					// already streamed, so salvage the partial turn and let
-					// turn_run nudge the model to continue from here.
-					e.warnf("stream dropped mid-output (%v) — keeping partial turn, continuing", ev.Err)
-					truncated = true
-					break events
-				}
-				if e.JSONEmitter != nil {
-					e.JSONEmitter.Emit(jsonmode.Event{Type: "error", Message: ev.Err.Error()})
-				}
-				return types.Message{}, "", nil, gotContent, false, ev.Err
+			if ev.Err == nil {
+				break
 			}
-		case llm.EventDone:
+			// drain remaining events so the provider goroutine exits cleanly
+			for range ch {
+			}
+			if isTransientStreamErr(ev.Err) {
+				if !s.got {
+					// pre-content hiccup: safe to replay the whole request.
+					return types.Message{}, "", nil, true, ev.Err
+				}
+				// mid-content drop: replaying would duplicate the tokens
+				// already streamed, so salvage the partial turn and let
+				// the run loop nudge the model to continue from here.
+				e.warnf("stream dropped mid-output (%v) — keeping partial turn, continuing", ev.Err)
+				truncated = true
+				break events
+			}
 			if e.JSONEmitter != nil {
-				u := &jsonmode.Usage{}
-				if ev.Usage != nil {
-					u.Input = ev.Usage.InputTokens
-					u.Output = ev.Usage.OutputTokens
-				}
-				e.JSONEmitter.Emit(jsonmode.Event{Type: "done", Usage: u})
+				e.JSONEmitter.Emit(jsonmode.Event{Type: "error", Message: ev.Err.Error()})
 			}
-			if e.Costs != nil && ev.Usage != nil {
-				// prefer provider-reported spend over the static estimate.
-				cev := e.Costs.RecordReported(e.Cfg.DefaultProvider, req.Model, ev.Usage.InputTokens, ev.Usage.OutputTokens, ev.Usage.CostUSD)
-				usd, reported := cev.USD, ev.Usage.CostUSD > 0
-				cost.AppendUsage(cost.UsageRecord{
-					Time:         cev.Time,
-					Provider:     e.Cfg.DefaultProvider,
-					Model:        req.Model,
-					Input:        ev.Usage.InputTokens,
-					Output:       ev.Usage.OutputTokens,
-					Cached:       ev.Usage.CachedTokens,
-					USD:          usd,
-					CostReported: reported,
-				})
-			}
-			// Bump persisted lifetime totals so the splash banner can show
-			// "1.2M tok" across all bee sessions ever. Separate from the
-			// process-local Costs tracker (which resets on /new), and
-			// hooked here so unit tests using cost.New() directly stay
-			// hermetic — production has exactly one place tokens enter.
-			if ev.Usage != nil {
-				cost.AddLifetime(ev.Usage.InputTokens, ev.Usage.OutputTokens)
-			}
-			if ev.Usage != nil && ev.Usage.InputTokens > 0 {
-				e.run.lastInputTokens = ev.Usage.InputTokens
-			}
-			// cumulative spend feeds the adaptive token-budget cap in
-			// turn_run. tracked separately from lastInputTokens (which is
-			// a per-request snapshot, not a sum).
-			if ev.Usage != nil {
-				e.run.cumInputTokens += ev.Usage.InputTokens
-				e.run.cumOutputTokens += ev.Usage.OutputTokens
-			}
+			return types.Message{}, "", nil, false, ev.Err
+		case llm.EventDone:
+			e.recordDone(req.Model, ev.Usage)
 		}
 		// repetition watchdog: a wedged local model can loop the same phrase
 		// until max_tokens, so the stream never closes and the turn can't make
-		// progress. detect a periodic tail and cut the stream — turn_run then
+		// progress. detect a periodic tail and cut the stream — the run loop then
 		// nudges, or bails after loopCutBailAt consecutive cuts.
-		if sinceScan >= loopScanStride {
-			sinceScan = 0
-			if p := degenerateTailPeriod(textBuf.String()); p > 0 {
-				loopPeriodText, looped = p, true
-			} else if p := degenerateTailPeriod(thinkBuf.String()); p > 0 {
-				loopPeriodThink, looped = p, true
-			} else if off := degenerateLowVocabTail(textBuf.String()); off >= 0 {
-				loopTrimText, looped = off, true
-			} else if off := degenerateLowVocabTail(thinkBuf.String()); off >= 0 {
-				loopTrimThink, looped = off, true
-			} else if off := degenerateBlockTail(textBuf.String()); off >= 0 {
-				loopTrimText, looped = off, true
-			} else if off := degenerateBlockTail(thinkBuf.String()); off >= 0 {
-				loopTrimThink, looped = off, true
-			}
-			if looped {
+		if s.sinceScan >= loopScanStride {
+			s.sinceScan = 0
+			if trim, trimThink = scanLoop(s.text.String(), s.think.String()); trim != nil {
 				e.warnf("output stuck repeating — cut the stream")
 				cancel()
 				for range ch { // drain so the provider goroutine exits cleanly
@@ -274,117 +164,73 @@ events:
 	// races between cancel() and the provider goroutine exit can swallow
 	// the cancellation entirely.
 	if ctx.Err() != nil {
-		return types.Message{}, "", nil, gotContent, false, ctx.Err()
+		return types.Message{}, "", nil, false, ctx.Err()
 	}
-	thinkStr, textStr := thinkBuf.String(), textBuf.String()
-	if looped {
+	thinkStr, textStr := s.think.String(), s.text.String()
+	if trim != nil {
 		// collapse the repeated tail so it doesn't bloat the transcript, and
-		// flag the turn so turn_run nudges/bails instead of finishing on garbage.
-		// exact-period loops trim by period; low-vocab loops trim by offset.
-		if loopPeriodThink > 0 {
-			thinkStr = trimLoopedTail(thinkStr, loopPeriodThink)
-		} else if loopTrimThink >= 0 {
-			thinkStr = trimLoopedTailAt(thinkStr, loopTrimThink)
-		}
-		if loopPeriodThink > 0 || loopTrimThink >= 0 {
-			*thinkSig = "" // edited text no longer matches its signature
-		}
-		if loopPeriodText > 0 {
-			textStr = trimLoopedTail(textStr, loopPeriodText)
-		} else if loopTrimText >= 0 {
-			textStr = trimLoopedTailAt(textStr, loopTrimText)
+		// flag the turn so the run loop nudges/bails instead of finishing on garbage.
+		if trimThink {
+			thinkStr = trim(thinkStr)
+			s.sig = "" // edited text no longer matches its signature
+		} else {
+			textStr = trim(textStr)
 		}
 		e.run.lastTurnLooped = true
 	}
 	if truncated {
 		e.run.lastTurnTruncated = true
 	}
+	var content []types.ContentBlock
 	// thinking block first so the rendered transcript reads in causal order
-	if thinkStr != "" || *thinkSig != "" {
-		*content = append(*content, types.ContentBlock{Type: types.BlockThinking, Text: thinkStr, Signature: *thinkSig, ThinkMs: think.ms()})
+	if thinkStr != "" || s.sig != "" {
+		content = append(content, types.ContentBlock{Type: types.BlockThinking, Text: thinkStr, Signature: s.sig, ThinkMs: s.clock.ms()})
 	}
 	if textStr != "" {
-		*content = append(*content, types.ContentBlock{Type: types.BlockText, Text: textStr})
+		content = append(content, textBlock(textStr))
 	}
-	for i := range *toolUses {
-		tu := (*toolUses)[i]
-		*content = append(*content, types.ContentBlock{Type: types.BlockToolUse, Use: &tu})
+	for _, tu := range s.uses {
+		content = append(content, types.ContentBlock{Type: types.BlockToolUse, Use: &tu})
 	}
-	msg := types.Message{
-		ID:      newID(),
-		Role:    types.RoleAssistant,
-		Content: *content,
-		Time:    time.Now().UTC(),
-	}
-	return msg, textStr, *toolUses, gotContent, false, nil
+	return newMessage(types.RoleAssistant, "", content...), textStr, s.uses, false, nil
 }
 
-// isTransientStreamErr returns true for momentary network / provider hiccups.
-// Safe to retry only before any content was emitted — caller's responsibility.
-func isTransientStreamErr(err error) bool {
-	if err == nil {
-		return false
+func (s *turnStream) reasoning(e *Engine, ev llm.Event) {
+	s.clock.reasoning()
+	if ev.Signature != "" {
+		s.sig = ev.Signature
 	}
-	s := err.Error()
-	for _, m := range []string{
-		"sse scan",
-		"stream stalled",
-		"context deadline",
-		"Client.Timeout",
-		"EOF",
-		"connection reset",
-		"broken pipe",
-		"i/o timeout",
-		"use of closed network",
-	} {
-		if strings.Contains(s, m) {
-			return true
-		}
+	s.think.WriteString(ev.Delta)
+	s.got = true
+	s.sinceScan += len(ev.Delta)
+	if e.JSONEmitter != nil {
+		e.JSONEmitter.Emit(jsonmode.Event{Type: "thinking", Delta: ev.Delta})
+	} else {
+		trySend(e.ThinkCh, ev.Delta)
 	}
-	return false
 }
 
-// isProviderRejectErr reports whether err is a wire-level request-body
-// rejection (HTTP 400 from the upstream with markers that the payload was
-// malformed) rather than a transport / auth / rate-limit failure. We rely on
-// the body text the providers include in 4xx responses (different per vendor
-// but all share a small set of phrases), and on a status 400 specifically —
-// 401/403/429/5xx have different recovery paths.
-//
-// Why this is a separate predicate: replaying the same transcript 400s
-// forever. The first turn that produced a tool_use with invalid arguments
-// was persisted to the session; on resume we must strip that tool_use block
-// (or the model must re-emit it) before the next provider call has a chance
-// of succeeding. ErrProviderReject is the signal the resume path uses to
-// trigger that cleanup.
-func isProviderRejectErr(err error) bool {
-	if err == nil {
-		return false
+func (s *turnStream) answer(e *Engine, delta string) {
+	s.clock.answered()
+	s.text.WriteString(delta)
+	s.got = true
+	s.sinceScan += len(delta)
+	switch {
+	case e.JSONEmitter != nil:
+		e.JSONEmitter.Emit(jsonmode.Event{Type: "text", Delta: delta})
+	case e.StreamCh != nil:
+		trySend(e.StreamCh, delta)
+	default:
+		_, _ = e.Stdout.Write([]byte(delta))
 	}
-	s := err.Error()
-	// openai_compat and the chatgpt/claude adapters all format the wire
-	// error as "provider <name> status 400: <body>". look for the 400 +
-	// a body shape that names the bad field. be conservative: prefer
-	// phrases that explicitly finger tool arguments, not generic 400s
-	// (auth/quota/etc). when in doubt, fall through and treat as
-	// non-recoverable so the user sees the raw error.
-	if !strings.Contains(s, "status 400") {
-		return false
+}
+
+func (s *turnStream) toolUse(ctx context.Context, e *Engine, u types.ToolUse) {
+	s.clock.answered()
+	s.uses = append(s.uses, u)
+	e.earlyOffer(ctx, len(s.uses)-1, u)
+	s.got = true
+	if e.JSONEmitter != nil {
+		e.JSONEmitter.Emit(jsonmode.Event{Type: "tool_use", Name: u.Name, UseID: u.ID, Input: u.Input})
 	}
-	markers := []string{
-		"invalid function arguments", // openai-compat openrouter / minimax
-		"invalid tool_call",          // openai responses API
-		"invalid tool call",          // anthropic
-		"tool_call_id",               // minimax: "<phrase>, tool_call_id: <id>"
-		"invalid_request_error",      // anthropic envelope
-		"invalid parameters",         // openai envelope
-		"tools.0.function.arguments", // openai strict mode
-		"invalid_argument",           // generic
-	}
-	for _, m := range markers {
-		if strings.Contains(s, m) {
-			return true
-		}
-	}
-	return false
 }
