@@ -140,18 +140,12 @@ type Side interface {
 	GetCompact() bool
 	// SetShowContextBar toggles the bottom context-fill strip. Persists to config.
 	SetShowContextBar(v bool) error
-	// GetShowContextBar returns the current show-context-bar flag.
-	GetShowContextBar() bool
 	// SetShowCallDetail toggles the full-call row under labeled tool calls.
 	// Persists to config.
 	SetShowCallDetail(v bool) error
-	// GetShowCallDetail returns the current show-call-detail flag.
-	GetShowCallDetail() bool
 	// SetHighlight toggles chroma syntax-highlighting across diff/file/bash
 	// previews. Persists to config.
 	SetHighlight(v bool) error
-	// GetHighlight returns the current highlight flag.
-	GetHighlight() bool
 	// SetShellBangSilent flips the default behavior of `!cmd`. true = run
 	// locally without forwarding; false = legacy forward-to-LLM. `!!` always
 	// inverts. Persists to config.
@@ -161,28 +155,17 @@ type Side interface {
 	// Top-bar chrome toggles. Each persists to config; flipping all five off
 	// collapses the entire status row.
 	SetShowBee(v bool) error
-	GetShowBee() bool
 	SetShowContextPct(v bool) error
-	GetShowContextPct() bool
 	SetShowModel(v bool) error
-	GetShowModel() bool
 	SetShowCwd(v bool) error
-	GetShowCwd() bool
 	SetShowEffort(v bool) error
-	GetShowEffort() bool
 	SetShowTurnTimer(v bool) error
-	GetShowTurnTimer() bool
 	SetShowGitBranch(v bool) error
-	GetShowGitBranch() bool
 	SetShowTotalTokens(v bool) error
-	GetShowTotalTokens() bool
 	// loader readout figure toggles: ↑ input, ↓ output, avg tok/s. Persist.
 	SetShowLoaderIn(v bool) error
-	GetShowLoaderIn() bool
 	SetShowLoaderOut(v bool) error
-	GetShowLoaderOut() bool
 	SetShowLoaderRate(v bool) error
-	GetShowLoaderRate() bool
 	// SetShowBanner toggles the startup intro animation + bee logo. Persists.
 	// Takes effect on next launch (intro is one-shot).
 	SetShowBanner(v bool) error
