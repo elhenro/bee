@@ -52,7 +52,7 @@ func (p *OpenAICompatProvider) nonStreamLoop(resp *http.Response, out chan<- Eve
 	out <- Event{Type: EventDone, StopReason: choice.FinishReason, Usage: usageFromWire(body.Usage)}
 }
 
-// compatStream accumulates an OpenAI-compatible SSE stream: tool-call deltas
+// compatStream accumulates a chat-completions SSE stream: tool-call deltas
 // thread through an accumulator, text and reasoning go out per chunk.
 type compatStream struct {
 	name    string

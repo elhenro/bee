@@ -48,12 +48,12 @@ func emitAll(ctx context.Context, out chan<- Event, evs ...Event) {
 	}
 }
 
-// readSSE feeds every non-empty `data:` payload of resp to handle and owns what
-// all streaming providers share: the inactivity watchdog (stall <= 0 disables
-// it), cancellation, and the terminal error events. handle may call bump to
-// count live output it produced as liveness. A handler error other than the
-// sentinels above is emitted as an error event. Returns false when the stream
-// ended in an error event, so the caller must not finish with a done event.
+// readSSE feeds each non-empty `data:` payload to handle and owns what every
+// streaming provider shares: stall watchdog (stall <= 0 disables it),
+// cancellation, terminal error events. handle may call bump to count output as
+// liveness. a handler error other than the sentinels becomes an error event.
+// returns false when the stream ended in an error event, so the caller must not
+// send a done event.
 func readSSE(ctx context.Context, resp *http.Response, name string, stall time.Duration, out chan<- Event, handle func(payload []byte, bump func()) error) bool {
 	bump, stalled, cancel := streamWatchdog(ctx, resp.Body, stall)
 	defer cancel()

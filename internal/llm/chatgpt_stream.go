@@ -51,13 +51,13 @@ type respCall struct {
 	args         strings.Builder
 }
 
-// fill takes the call id and name from item, keeping what is already set.
+// fill takes call id and name from item, keeping what is set.
 func (c *respCall) fill(item *wire.ResponsesOutputItem) {
 	c.callID = cmp.Or(c.callID, item.CallID)
 	c.name = cmp.Or(c.name, item.Name)
 }
 
-// setArgs replaces the accumulated arguments with the authoritative final form.
+// setArgs replaces accumulated arguments with the authoritative final form.
 func (c *respCall) setArgs(args string) {
 	if args != "" {
 		c.args.Reset()
@@ -65,7 +65,7 @@ func (c *respCall) setArgs(args string) {
 	}
 }
 
-// respStream accumulates a Responses SSE stream. Tool-call arguments arrive as
+// respStream accumulates a Responses SSE stream. tool-call arguments arrive as
 // deltas keyed by item id (also call id for function_call items); each call
 // goes out as one tool_use once the stream ends.
 type respStream struct {

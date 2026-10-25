@@ -168,8 +168,8 @@ func loadCatalogue(ctx context.Context, name string, cfg config.ProviderConfig) 
 // enrichContextLengths fills missing ContextLength values by probing the
 // non-standard /models/status endpoint. omlx 0.3.x reports per-model
 // max_context_window there even though plain /v1/models follows the stock
-// OpenAI shape (no context_length field). Errors are swallowed — this is
-// best-effort enrichment, not a hard requirement.
+// chat-completions shape (no context_length field). Errors are swallowed;
+// this is best-effort enrichment, not a hard requirement.
 func enrichContextLengths(ctx context.Context, name string, cfg config.ProviderConfig, models []Model) {
 	missing := slices.ContainsFunc(models, func(m Model) bool { return m.ContextLength == 0 })
 	if !missing || strings.TrimSpace(cfg.BaseURL) == "" {

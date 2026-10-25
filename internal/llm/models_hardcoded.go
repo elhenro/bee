@@ -15,8 +15,8 @@ var ctxCache = struct {
 	m map[string]int
 }{m: map[string]int{}}
 
-// modelTail is the last path segment of a model id, so openrouter-style ids
-// ("anthropic/claude-sonnet-4-6") resolve to the bare model name.
+// modelTail is the last path segment of a model id, so routed ids
+// ("vendor/model-name") resolve to the bare model name.
 func modelTail(modelID string) string {
 	return modelID[strings.LastIndex(modelID, "/")+1:]
 }
@@ -143,7 +143,7 @@ func SupportsThinking(modelID string) bool {
 	return slices.ContainsFunc(thinkingModelSubstrings, func(s string) bool { return strings.Contains(id, s) })
 }
 
-// anthropicModels is the curated list for the Anthropic wire, whose /models
+// anthropicModels is the curated list for the messages wire, whose /models
 // endpoint is unavailable or gated.
 func anthropicModels() []Model {
 	return []Model{

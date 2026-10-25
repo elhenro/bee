@@ -2,10 +2,10 @@ package wire
 
 import "iter"
 
-// OutsideStrings yields the index and byte of every byte of s that is not
-// inside a JSON string literal. The quotes delimiting a literal are yielded,
-// its contents (escapes included) are skipped, so structural scans see only
-// braces, brackets, commas and quotes.
+// OutsideStrings yields index and byte of every byte of s outside a JSON
+// string literal. quotes delimiting a literal are yielded, its contents
+// (escapes included) skipped, so structural scans see only braces, brackets,
+// commas and quotes.
 func OutsideStrings[T ~string | ~[]byte](s T) iter.Seq2[int, byte] {
 	return func(yield func(int, byte) bool) {
 		inStr, esc := false, false

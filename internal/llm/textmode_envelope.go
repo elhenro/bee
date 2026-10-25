@@ -78,8 +78,8 @@ func normalizeHermesEnvelopes(s string, known map[string]bool) string {
 	return rewriteInvokes(s, hermesFunctionOpenRe, hermesBounds, hermesParams)
 }
 
-// envelope renders the canonical `<NAME>{json}</NAME>` tool call. Args hold
-// strings and values decoded from JSON, so marshaling cannot fail.
+// envelope renders the canonical `<NAME>{json}</NAME>` tool call. args hold
+// strings and decoded JSON, so marshaling cannot fail.
 func envelope(name string, args map[string]any) string {
 	buf, _ := json.Marshal(args)
 	return "<" + name + ">" + string(buf) + "</" + name + ">"
@@ -108,9 +108,9 @@ func rewriteInvokes(s string, openRe *regexp.Regexp, bounds func(tail, name stri
 }
 
 // bodyBounds returns where a block body ends and where scanning resumes: the
-// earliest match of any finder, the first listed winning a tie. A finder
-// returns the [start,end) of its marker in text, nil when absent. No marker
-// means the body consumes the rest of the buffer.
+// earliest match of any finder, first listed wins a tie. a finder returns the
+// [start,end) of its marker, nil when absent. no marker means the body takes
+// the rest of the buffer.
 func bodyBounds(tail string, finders ...func(string) []int) (bodyEnd, advance int) {
 	bodyEnd, advance = len(tail), len(tail)
 	for _, find := range finders {

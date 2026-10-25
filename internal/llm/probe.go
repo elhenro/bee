@@ -103,9 +103,9 @@ func isOllamaProvider(name string, cfg config.ProviderConfig) bool {
 	return strings.Contains(strings.ToLower(cfg.BaseURL), "11434")
 }
 
-// probeOllamaShow asks ollama's native API for the architecture context length
-// in model_info. baseURL is the openai-compat base (`http://host:11434/v1`).
-// Returns 0 on any failure.
+// probeOllamaShow reads the architecture context length from the native show
+// endpoint's model_info. baseURL is the chat-completions base
+// (`http://host:11434/v1`). 0 on any failure.
 func probeOllamaShow(ctx context.Context, baseURL, modelID string) int {
 	root := cmp.Or(OllamaBaseURL(baseURL), "http://localhost:11434")
 	show, err := ollamaShow(ctx, probeHTTPClient, root, modelID)

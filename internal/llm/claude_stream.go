@@ -15,10 +15,9 @@ type claudeCall struct {
 	args     strings.Builder
 }
 
-// claudeStream accumulates a Messages SSE stream. Tool-call inputs arrive as
-// incremental JSON deltas keyed by block index (blocks are numbered
-// sequentially within a message); each call goes out as one tool_use once the
-// stream ends.
+// claudeStream accumulates a Messages SSE stream. tool-call inputs arrive as
+// incremental JSON deltas keyed by block index; each call goes out as one
+// tool_use once the stream ends.
 type claudeStream struct {
 	calls map[int]*claudeCall
 	order []int
@@ -100,8 +99,8 @@ func (s *claudeStream) handle(ctx context.Context, out chan<- Event, payload []b
 	return nil
 }
 
-// anthropicUsage maps the wire usage block to the internal Usage. Anthropic
-// reports input_tokens as the NON-cached portion only; the cached prefix lands
+// anthropicUsage maps the wire usage block to the internal Usage. The messages
+// wire reports input_tokens as the NON-cached portion only; the cached prefix lands
 // in cache_read/cache_creation. Fold them into InputTokens so it reflects the
 // true prompt size — matching the openai-compat convention (CachedTokens ⊆
 // InputTokens). Without this, once prompt caching kicks in input_tokens
