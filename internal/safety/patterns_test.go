@@ -2,8 +2,6 @@ package safety
 
 import (
 	"testing"
-
-	"github.com/elhenro/bee/internal/config"
 )
 
 func TestDetectDangerous_Hits(t *testing.T) {
@@ -117,33 +115,6 @@ func TestDangerousKeys_Unique(t *testing.T) {
 			t.Errorf("duplicate pattern key: %q", p.Key)
 		}
 		seen[p.Key] = true
-	}
-}
-
-// tiny forces a re-prompt for destructive keys and warns on duplicate writes;
-// every such key must name a real pattern, or a typo silently makes the
-// feature a no-op.
-func TestTinyProfileApprovalKeys(t *testing.T) {
-	real := map[string]bool{}
-	for _, p := range dangerousPatterns {
-		real[p.Key] = true
-	}
-	tiny := config.Defaults().Profiles["tiny"].Safety
-	if !tiny.WarnOnDuplicateWrites {
-		t.Errorf("tiny must enable WarnOnDuplicateWrites")
-	}
-	got := map[string]bool{}
-	for _, k := range tiny.RequireApprovalKeys {
-		got[k] = true
-		if !real[k] {
-			t.Errorf("tiny RequireApprovalKey %q does not match any DangerousPattern", k)
-		}
-	}
-	for _, k := range []string{"rm-recursive", "git-push-force", "git-push-force-short", "git-reset-hard",
-		"git-clean-force", "git-branch-delete", "find-delete"} {
-		if !got[k] {
-			t.Errorf("tiny RequireApprovalKeys missing %q", k)
-		}
 	}
 }
 

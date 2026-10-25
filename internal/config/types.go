@@ -1,8 +1,7 @@
 // Package config holds the bee runtime configuration schema and loader.
 //
-// Layered resolution: Defaults() < ~/.bee/config.toml < env vars. Profiles
-// (tiny/normal/large) overlay budgets onto the top-level fields so the rest
-// of the codebase only ever reads flat values.
+// Layered resolution: Defaults() < ~/.bee/config.toml < env vars. The rest of
+// the codebase only ever reads the flat values.
 package config
 
 // DefaultMaxIterations is the default safety cap for tool-use rounds.
@@ -17,7 +16,6 @@ type Config struct {
 	// empty => use default_model.
 	FastModel string `toml:"fast_model"`
 	Caveman   string `toml:"caveman"`
-	Profile   string `toml:"profile"`
 	// Thinking is the reasoning budget. Empty = derive from Role per turn
 	// (worker→auto, scout→high, queen→max). A non-empty value (set via
 	// --thinking/--effort/BEE_EFFORT) is an explicit override that wins.
@@ -44,7 +42,6 @@ type Config struct {
 	Cron       CronConfig                `toml:"cron"`
 	Swarm      SwarmConfig               `toml:"swarm"`
 	Providers  map[string]ProviderConfig `toml:"providers"`
-	Profiles   map[string]Profile        `toml:"profiles"`
 
 	// APIKey is the resolved key for the active provider. Populated by Load
 	// from os.Getenv(provider.EnvKey). Not persisted to disk.
@@ -77,6 +74,31 @@ type Config struct {
 	// token-budget or read-only-stall guard fires). Defaults() seeds DefaultMaxIterations;
 	// raise for tool-heavy agents, set 0 to lift the cap, lower to fail fast.
 	MaxIterations int `toml:"max_iterations"`
+
+	// SystemPromptBudget caps the assembled system prompt in estimated tokens
+	// (chars/4): over it, memories, then skills, then context files are dropped.
+	// 0 = unbounded.
+	SystemPromptBudget int `toml:"system_prompt_budget"`
+	// MemoryBodyChars caps each injected memory body; 0 = unbounded.
+	MemoryBodyChars int `toml:"memory_body_chars"`
+	// ToolDescChars caps each tool's line in the system prompt manifest.
+	ToolDescChars int `toml:"tool_desc_chars"`
+	// SkillManifestChars caps the skills section; 0 = unbounded, -1 = omit.
+	SkillManifestChars int `toml:"skill_manifest_chars"`
+	// ToolOutputTokens caps one tool result in estimated tokens (chars/4);
+	// 0 = each tool's own default.
+	ToolOutputTokens int `toml:"tool_output_tokens"`
+	// ToolFormat selects how tools are advertised. "" = auto: local providers
+	// use "json", hosted ones native tool_calls. "json" = grammar-constrained
+	// JSON (response_format json_schema) for servers that compile it; "xml" =
+	// text advert + `<name>{...}</name>` parsing for models that ignore native
+	// tool_calls; "native" forces tool_calls everywhere.
+	ToolFormat string `toml:"tool_format"`
+	// StateCard replaces the rolling transcript in each LLM request with a
+	// harness-maintained state card (goal, files touched, recent actions,
+	// last error) plus the last few raw messages, and skips auto-compact. The
+	// on-disk session keeps the full history. Opt-in.
+	StateCard bool `toml:"state_card"`
 
 	// MaxOutputTokens caps one model response (thinking included). 0 = auto:
 	// local providers get LocalMaxOutputTokens, hosted ones keep their own
@@ -185,15 +207,8 @@ type Config struct {
 	// `outer_pad_lr <n>`; persists across launches.
 	OuterPadLR int `toml:"outer_pad_lr"`
 
-	// ExtraTools opts specific tools into the manifest beyond the active
-	// profile's allowlist. Names match tool Spec().Name (e.g. "apply_patch",
-	// "hashline_edit"). The default keeps the surface minimal; this is the
-	// escape hatch for power users who want expert-mode mutators without
-	// bumping to the `large` profile.
-	ExtraTools []string `toml:"extra_tools"`
-
-	// DisabledTools hides specific tools from the model regardless of profile
-	// allowlists. Toggled via /tools. Names match tool Spec().Name.
+	// DisabledTools hides specific tools from the model. Toggled via /tools.
+	// Names match tool Spec().Name.
 	DisabledTools []string `toml:"disabled_tools"`
 
 	// UserTools are caller-defined shell-alias tools. Each entry registers a

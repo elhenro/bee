@@ -3,11 +3,9 @@ package loop
 import (
 	"context"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/herdr"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -37,7 +35,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	defer e.cancelSpecCompact()
 	defer e.earlyDrain()
 	// reset per-Run state. freshRunState allocates the dedupe/streak maps;
-	// sticky fields (sysPromptCache, profileScaledFor, warnedThinkingIgnored)
+	// sticky fields (sysPromptCache, warnedThinkingIgnored)
 	// live on Engine and survive this assignment. The previous runState is
 	// dropped — Run identity is the dedupe scope.
 	e.run = e.freshRunState()
@@ -49,13 +47,6 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// ollama pulls, deepseek-v4-pro, lm-studio custom configs). Best-effort;
 	// dedupes per (provider,model) via probe.go; hosted lookups run detached.
 	e.probeContextWindow(ctx)
-	// scale tiny-profile budgets up when the active model has much more
-	// context than the 4k default tiny assumes (sparse MoE: Qwen3-A3B-128k,
-	// etc.). Re-runs on model switch via profileScaledFor sentinel.
-	if e.profileScaledFor != e.Cfg.DefaultModel {
-		e.rescaleProfile()
-		e.profileScaledFor = e.Cfg.DefaultModel
-	}
 
 	// `@path` expansion: inline file contents for any `@<rel>` token the
 	// user typed. Applied to text blocks only; image blocks pass through.
@@ -86,7 +77,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// state card mode: per-Run card replaces the rolling transcript on the
 	// wire (see statecard.go). reset every Run so the goal tracks the latest
 	// user ask; the session transcript itself is untouched.
-	if config.ActiveProfile(e.Cfg).StateCard {
+	if e.Cfg.StateCard {
 		e.run.card = newStateCard(e.cardGoalFor(pl.userText, e.InitialMessages))
 	} else {
 		e.run.card = nil
@@ -95,12 +86,8 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// resolve the per-Run iteration ceiling. 0 (or negative) = unlimited: the
 	// loop runs until a real guard fires (token budget or read-only stall).
 	// config.Defaults() seeds config.DefaultMaxIterations, so 0 only appears when the user explicitly
-	// lifted the cap (/iterations 0 or max_iterations = 0). A profile's
-	// MaxIterations overrides the config value when set (0 = inherit).
+	// lifted the cap (/iterations 0 or max_iterations = 0).
 	maxIter := e.Cfg.MaxIterations
-	if p := config.ActiveProfile(e.Cfg); p.MaxIterations != 0 {
-		maxIter = p.MaxIterations
-	}
 	tokenBudget := computeTokenBudget(e.Cfg)
 	for i := 0; maxIter <= 0 || i < maxIter; i++ {
 		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget); err != nil {
@@ -191,18 +178,10 @@ func (e *Engine) runTools(ctx context.Context, res *RunResult, parentID string, 
 	if e.run.card != nil {
 		e.run.card.observe(uses, results)
 	}
-	// track mutation cadence for stall detection
-	if slices.ContainsFunc(uses, func(u types.ToolUse) bool { return mutatorTools[u.Name] }) {
-		e.run.noMutationStreak = 0
-	} else {
-		e.run.noMutationStreak++
-	}
-
 	blocks := toolResultBlocks(results)
 	blocks, repeatErr := observeRepeats(e, uses, results, blocks)
-	blocks = observeDuplicateWrites(e, uses, results, blocks)
 	blocks = observeEditNoVerify(e, uses, results, blocks)
-	blocks = injectIterAndTokenWarnings(e, blocks, iter, maxIter, tokenBudget, readOnly)
+	blocks = injectIterAndTokenWarnings(e, blocks, iter, maxIter, tokenBudget)
 	blocks = append(blocks, toolImageBlocks(results)...)
 	// a cancel landing while the last tool ran must not drop its results:
 	// the assistant tool_use is already on disk, so the append ignores ctx.

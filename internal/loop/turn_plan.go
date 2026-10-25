@@ -84,18 +84,7 @@ func (e *Engine) advertisedSpecs(pl runPlan) []llm.ToolSpec {
 	}
 	// drop user-disabled tools before any other filter
 	specs = filterToolSpecsDisabled(specs, e.Cfg.DisabledTools)
-	// trim tool surface for tiny-profile models — see filterToolSpecsForProfile.
-	// user_tools force-pass the profile gate so they're always advertised when not disabled.
-	extras := append([]string(nil), e.Cfg.ExtraTools...)
-	for _, u := range e.Cfg.UserTools {
-		extras = append(extras, u.Name)
-	}
-	specs = filterToolSpecsForProfile(specs, e.Cfg.Profile, extras...)
-	// strip per-parameter descriptions on tiny: saves ~600 toks for 4k models.
-	// no-op when the profile uses tool_format=xml (schema is nilled by the
-	// textmode wrapper before it reaches the wire).
-	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg)
-	specs = addDisplayArgs(specs, e.Cfg)
+	specs = addDisplayArgs(specs)
 	// then narrow by role/posture: a read-only turn drops mutators entirely.
 	specs = filterToolSpecsForRole(specs, pl.role, pl.readOnly)
 	// re-add any plan-only tool a prompt skill granted for this turn (e.g.
@@ -115,7 +104,6 @@ func (e *Engine) advertisedSpecs(pl runPlan) []llm.ToolSpec {
 
 // buildRequest assembles the provider request for one iteration of a Run.
 func (e *Engine) buildRequest(ctx context.Context, pl runPlan, msgs []types.Message) llm.Request {
-	prof := config.ActiveProfile(e.Cfg)
 	// thinking is baked per-role when the user hasn't pinned an explicit
 	// override (Cfg.Thinking empty). a CLI/env override sets a concrete
 	// value that wins here.
@@ -164,8 +152,6 @@ func (e *Engine) buildRequest(ctx context.Context, pl runPlan, msgs []types.Mess
 		Tools:              pl.specs,
 		Stream:             true,
 		MaxTokens:          config.OutputCap(e.Cfg),
-		Temperature:        prof.Temperature,
-		TopP:               prof.TopP,
 		Thinking:           resolvedThinking,
 		ChatTemplateKwargs: templateKwargs,
 	}

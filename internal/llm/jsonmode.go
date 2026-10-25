@@ -19,7 +19,7 @@ import (
 //   - buffers the (JSON) completion and emits EventToolUse or the say text.
 //
 // Same wrapper shape as TextModeProvider so every adapter gains the mode
-// for free; opt in per profile via tool_format = "json".
+// for free; opt in via tool_format = "json".
 type JSONModeProvider struct {
 	inner Provider
 }

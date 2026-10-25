@@ -27,7 +27,7 @@ const (
 	defaultTimeout = 120 * time.Second
 
 	// capture window per run: first and last bytes kept, middle dropped. the
-	// loop owns the per-profile cap (and the spill file) on top of this; this
+	// loop owns the tool-output cap (and the spill file) on top of this; this
 	// only bounds memory for runaway output.
 	captureHead = 256 << 10
 	captureTail = 256 << 10

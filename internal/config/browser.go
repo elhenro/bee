@@ -1,7 +1,7 @@
 package config
 
 // BrowserConfig gates and configures the native browser tools. Off by
-// default to keep the tool surface lean for tiny-context profiles; flip via
+// default to keep the tool surface lean; flip via
 // config or the --browser flag.
 type BrowserConfig struct {
 	Enabled    bool                `toml:"enabled"`

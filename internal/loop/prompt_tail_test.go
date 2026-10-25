@@ -65,7 +65,6 @@ func TestRun_PromptTailRidesTheDynamicSuffix(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Caveman = "off"
 	cfg.Role = "worker"
-	cfg.Profile = "normal"
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	eng := &Engine{Provider: p, Tools: tools.NewRegistry(), Cfg: cfg, Cwd: ".", Stdout: &strings.Builder{}}
 	eng.SetPromptTail(func() string { return "[pheromone] CARD-MARKER" })

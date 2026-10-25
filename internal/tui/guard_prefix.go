@@ -8,10 +8,12 @@ import "strings"
 // human view strips them unless show_nudges is on — they're guidance for the
 // model, noise for the reader. Source of these markers:
 //   - internal/loop/turn_repeat.go      [repeat] [two-strike] [tool-fail]
-//   - internal/loop/turn_warnings.go    [stall] [iter] [tokens]
-//   - internal/loop/turn_idempotency.go [dup-write]
+//   - internal/loop/turn_warnings.go    [iter] [tokens]
 //   - internal/loop/edit_verify.go      [verify]
 //   - internal/prompt/context_warning.go [context …]
+//
+// stall and dup-write are no longer emitted but stay listed so old sessions
+// replayed with `bee back` still render clean.
 //
 // keyed on the first word inside the brackets so arg-carrying tags
 // ("iter 3/6", "context at 80%", "stall 12 iters") still match.

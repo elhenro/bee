@@ -17,35 +17,15 @@ func baseCfg() config.Config {
 	return c
 }
 
-func TestTinyDisciplineInjection(t *testing.T) {
-	cfg := baseCfg()
-	cfg.Profile = "tiny"
-	out := Assemble(cfg, nil, "", nil, nil)
-	if !strings.Contains(out, "## Discipline") {
-		t.Errorf("tiny profile missing Discipline section, got: %q", out)
-	}
-	if !strings.Contains(out, "verify path with `read` before `edit`") {
-		t.Errorf("tiny profile missing path-verify rule")
-	}
-	if !strings.Contains(out, "switch approach or call `escalate`") {
-		t.Errorf("tiny profile missing stuck-loop rule")
-	}
-}
-
-func TestNormalProfileNoDiscipline(t *testing.T) {
-	cfg := baseCfg()
-	cfg.Profile = "normal"
-	out := Assemble(cfg, nil, "", nil, nil)
+func TestNoTinyDiscipline(t *testing.T) {
+	out := Assemble(baseCfg(), nil, "", nil, nil)
 	if strings.Contains(out, "## Discipline") {
-		t.Errorf("non-tiny profile should not get Discipline section")
+		t.Errorf("no profile gets a Discipline section: %q", out)
 	}
 }
 
 func TestAssembleSectionOrder(t *testing.T) {
 	cfg := baseCfg()
-	// pin normal profile: default "auto" resolves to tiny for flash, which
-	// drops the skills section (SkillManifestChars=-1) and breaks this test.
-	cfg.Profile = "normal"
 	specs := []llm.ToolSpec{
 		{Name: "shell", Description: "run shell"},
 		{Name: "read", Description: "read file"},
@@ -120,7 +100,7 @@ func TestAssembleNoStalenessForLive(t *testing.T) {
 
 func TestAssembleTruncatesToolDesc(t *testing.T) {
 	cfg := baseCfg()
-	cfg.Profile = "tiny" // ToolDescChars=80
+	cfg.ToolDescChars = 80
 	long := strings.Repeat("x", 500)
 	specs := []llm.ToolSpec{{Name: "shell", Description: long}}
 	out := Assemble(cfg, specs, "", nil, nil)
@@ -135,10 +115,8 @@ func TestAssembleTruncatesToolDesc(t *testing.T) {
 func TestAssembleBudgetDropsMemoriesFirst(t *testing.T) {
 	cfg := baseCfg()
 	// shrink budget aggressively
-	cfg.Profiles["normal"] = config.Profile{
-		SystemPromptBudget: 60, // ~240 chars
-		ToolDescChars:      40,
-	}
+	cfg.SystemPromptBudget = 60 // ~240 chars
+	cfg.ToolDescChars = 40
 	bigBody := strings.Repeat("memory-content ", 50)
 	recs := []knowledge.Record{
 		{Entry: knowledge.Entry{Name: "a", Modified: time.Now(), Priority: 3}, Body: bigBody},
@@ -168,9 +146,9 @@ func TestAssembleEmptySections(t *testing.T) {
 	}
 }
 
-func TestAssembleTruncatesRecordBodyTiny(t *testing.T) {
+func TestAssembleTruncatesRecordBody(t *testing.T) {
 	cfg := baseCfg()
-	cfg.Profile = "tiny"                      // MemoryBodyChars=400
+	cfg.MemoryBodyChars = 400
 	body := strings.Repeat("ab ", 667)[:2000] // 2000-char word-aligned body
 	recs := []knowledge.Record{{
 		Entry: knowledge.Entry{Name: "big", Modified: time.Now(), Priority: 3},
@@ -195,9 +173,9 @@ func TestAssembleTruncatesRecordBodyTiny(t *testing.T) {
 	}
 }
 
-func TestAssembleKeepsFullRecordBodyLarge(t *testing.T) {
+func TestAssembleKeepsFullRecordBodyUnbounded(t *testing.T) {
 	cfg := baseCfg()
-	cfg.Profile = "large" // MemoryBodyChars=0 → unbounded
+	cfg.MemoryBodyChars = 0 // unbounded
 	body := strings.Repeat("alpha beta ", 200)
 	recs := []knowledge.Record{{
 		Entry: knowledge.Entry{Name: "big", Modified: time.Now(), Priority: 3},
@@ -205,32 +183,32 @@ func TestAssembleKeepsFullRecordBodyLarge(t *testing.T) {
 	}}
 	out := Assemble(cfg, nil, "", recs, nil)
 	if !strings.Contains(out, strings.TrimSpace(body)) {
-		t.Errorf("large profile should keep full body")
+		t.Errorf("unbounded body cap should keep full body")
 	}
 }
 
-func TestAssembleDropsSkillsManifestTiny(t *testing.T) {
+func TestAssembleDropsSkillsManifestWhenOmitted(t *testing.T) {
 	cfg := baseCfg()
-	cfg.Profile = "tiny" // SkillManifestChars=-1 → drop entirely
+	cfg.SkillManifestChars = -1 // drop entirely
 	manifest := "calc: stage-and-commit one-shot flow (prompt)\n" +
 		"hermes: daily-driver agent (exec)\n" +
 		"strudel: live-coding music tool (prompt)"
 	out := Assemble(cfg, nil, manifest, nil, nil)
 	if strings.Contains(out, "calc:") || strings.Contains(out, "strudel:") {
-		t.Errorf("tiny profile must drop skills section entirely, got:\n%s", out)
+		t.Errorf("-1 must drop skills section entirely, got:\n%s", out)
 	}
 	if strings.Contains(out, "## Skills") {
-		t.Errorf("tiny profile must not emit Skills header, got:\n%s", out)
+		t.Errorf("-1 must not emit Skills header, got:\n%s", out)
 	}
 }
 
-func TestAssembleKeepsFullSkillsManifestLarge(t *testing.T) {
+func TestAssembleKeepsFullSkillsManifest(t *testing.T) {
 	cfg := baseCfg()
-	cfg.Profile = "large" // SkillManifestChars=200
+	cfg.SkillManifestChars = 200
 	manifest := "calc: stage-and-commit (prompt)\nhermes: daily-driver (exec)"
 	out := Assemble(cfg, nil, manifest, nil, nil)
 	if !strings.Contains(out, "calc:") || !strings.Contains(out, "hermes:") {
-		t.Errorf("large profile should keep full manifest, got:\n%s", out)
+		t.Errorf("manifest under the cap should be kept, got:\n%s", out)
 	}
 }
 

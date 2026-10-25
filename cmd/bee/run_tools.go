@@ -104,8 +104,7 @@ func newShellTool(app approval.Approver, cfg config.Config, jm *jobs.Manager) to
 		Jobs:      jm,
 	}
 	if sandbox.ApprovalMode(cfg.Sandbox.Approval) == sandbox.Untrusted {
-		pol := sandbox.Policy{AllowList: config.ActiveProfile(cfg).Safety.ExtraSafeCommands}
-		opts.Allowed = pol.IsAllowed
+		opts.Allowed = sandbox.Policy{}.IsAllowed
 	}
 	return shell.NewWithOptions(app, opts)
 }
@@ -132,11 +131,7 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 		fmt.Fprintln(os.Stderr, "bee: stdin is not a terminal — dangerous-command prompts will auto-deny. pass --yes to auto-approve, or allowlist commands in config.")
 	}
 	cli := approval.NewCLI(os.Stdin, os.Stderr)
-	// profile-level RequireApprovalKeys bypass the session AllowSession cache:
-	// destructive ops re-prompt every time on tiny so a hallucinating small
-	// model can't snowball one yes into a series of dangerous commands.
-	return approval.NewCacheWithRequire(herdr.WrapApprover(cli), cfg.Sandbox.CommandAllowlist,
-		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
+	return approval.NewCache(herdr.WrapApprover(cli), cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
 }
 
 // buildToolsWithApprover is buildTools that wires app into the shell tool so
@@ -144,7 +139,6 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 // disable gating.
 func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, storeDir string, app approval.Approver, opts ...buildOpt) (*tools.Registry, error) {
 	bo := collectBuildOpts(opts)
-	prof := config.ActiveProfile(cfg)
 	r := tools.NewRegistry()
 
 	// scope gate: file tools confine to the workspace + block secret paths only
@@ -160,28 +154,25 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 
 	all := []tools.Tool{
 		newShellTool(app, cfg, bo.jobs),
-		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines, confined),
-		grep.NewWithMax(containRoot, prof.GrepMaxMatches),
+		read.NewWithLimits(0, 0, confined),
+		grep.New(containRoot),
 		find.New(containRoot),
 		ls.New(containRoot),
 		write.NewWithFilter(containRoot, bo.writeRe),
 		edit_diff.NewWithFilter(containRoot, bo.writeRe),
 		hashline_edit.NewWithFilter(containRoot, bo.writeRe),
-		// escalate gives the model an explicit exit door — important for
-		// small models that wedge on uncertain tasks instead of asking.
+		// escalate gives the model an explicit exit door when it wedges on an
+		// uncertain task instead of asking.
 		escalate.New(),
 	}
 	// write-filtered runs have never carried godoc or the web tools
 	if bo.writeRe == nil {
-		// godoc lets tiny models verify Go APIs before calling them, killing
+		// godoc lets the model verify Go APIs before calling them, killing
 		// phantom-function hallucinations at source.
 		all = append(all, godoc.New(cwd))
 		all = appendWebTools(all, confined)
 	}
-	// apply_patch dropped on tiny — small models mis-emit unified diffs.
-	if !prof.SkipApplyPatch {
-		all = append(all, apply_patch.NewWithFilter(containRoot, bo.writeRe))
-	}
+	all = append(all, apply_patch.NewWithFilter(containRoot, bo.writeRe))
 	if cfg.Memory.Enabled && storeDir != "" {
 		all = append(all,
 			knowledge_search.New(prov, cfg.DefaultModel, storeDir, cfg.Memory.TopK),

@@ -9,7 +9,7 @@ Paste the output of `bee version`.
 
 **What you ran**
 ```sh
-# exact command + relevant env vars (BEE_PROVIDER, BEE_MODEL, BEE_PROFILE, ...)
+# exact command + relevant env vars (BEE_PROVIDER, BEE_MODEL, ...)
 ```
 
 **What you expected**
@@ -26,4 +26,3 @@ or knowledge file, link or paste the relevant snippet.
 - OS / arch:
 - Go version (if built from source):
 - Provider / model:
-- Profile (`tiny|normal|large`):

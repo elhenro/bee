@@ -28,7 +28,7 @@ check health, find state. Be safe: read freely, mutate carefully.
 
 Env overrides (check before assuming paths):
 `BEE_CONFIG`, `BEE_SESSIONS_DIR`, `BEE_PROVIDER`, `BEE_MODEL`, `BEE_ROLE`,
-`BEE_PROFILE`, `BEE_EFFORT`, `BEE_YOLO`.
+`BEE_EFFORT`, `BEE_YOLO`.
 
 ## Search session / history
 
@@ -105,8 +105,8 @@ Don't trust "compiles" as "works"; run `bee doctor`.
 
 - `bee doctor` — provider reachability, model presence, config sanity.
 - `bee waggle ls` / `bee agents` — background + scheduled agent state.
-- Stuck small model spinning multi-file work → suggest a model switch or a
-  tighter profile; don't just wait it out.
+- Stuck small model spinning multi-file work → suggest a model switch or
+  tighter budgets; don't just wait it out.
 
 ## Anti-patterns
 

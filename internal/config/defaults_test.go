@@ -27,23 +27,11 @@ func TestDefaults_OpenRouterPreconfigured(t *testing.T) {
 	}
 }
 
-func TestDefaults_ThreeProfiles(t *testing.T) {
+func TestDefaults_Budgets(t *testing.T) {
 	c := Defaults()
-	for _, name := range []string{"tiny", "normal", "large"} {
-		if _, ok := c.Profiles[name]; !ok {
-			t.Errorf("profile %q missing", name)
-		}
-	}
-	// tiny should have the smallest budget, large the largest
-	tiny := c.Profiles["tiny"]
-	normal := c.Profiles["normal"]
-	large := c.Profiles["large"]
-	if !(tiny.SystemPromptBudget < normal.SystemPromptBudget && normal.SystemPromptBudget < large.SystemPromptBudget) {
-		t.Errorf("budget order broken: tiny=%d normal=%d large=%d",
-			tiny.SystemPromptBudget, normal.SystemPromptBudget, large.SystemPromptBudget)
-	}
-	if tiny.MemoryTopK != 1 {
-		t.Errorf("tiny.MemoryTopK = %d, want 1", tiny.MemoryTopK)
+	if c.SystemPromptBudget <= 0 || c.ToolOutputTokens <= 0 || c.ToolDescChars <= 0 {
+		t.Errorf("budgets unset: prompt=%d toolOut=%d toolDesc=%d",
+			c.SystemPromptBudget, c.ToolOutputTokens, c.ToolDescChars)
 	}
 }
 
@@ -83,7 +71,7 @@ func TestDefaults_SandboxAndMemory(t *testing.T) {
 	if c.Memory.TopK != 3 {
 		t.Errorf("memory top_k = %d, want 3", c.Memory.TopK)
 	}
-	if c.Caveman != "auto" {
-		t.Errorf("caveman = %q, want auto (resolves to profile.Caveman in ApplyProfile)", c.Caveman)
+	if c.Caveman != "off" {
+		t.Errorf("caveman = %q, want off", c.Caveman)
 	}
 }

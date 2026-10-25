@@ -49,12 +49,11 @@ func headlessRun(args []string) int {
 	skillName := fs.String("skill", "", "run a skill as the user message (prompt-kind only in Wave 2)")
 	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high|max (default: from config)")
 	effort := fs.String("effort", "", "alias for --thinking: auto|off|low|medium|high|max")
-	cavemanLvl := fs.String("caveman", "", "force caveman level: off|lite|full|ultra (overrides profile, even on tiny)")
+	cavemanLvl := fs.String("caveman", "", "force caveman level: off|lite|full|ultra")
 	jsonOut := fs.Bool("json", false, "emit NDJSON events to stdout instead of text")
 	allowedTools := fs.String("allowed-tools", "", "comma-list of tool names to expose (default: all)")
 	sessionID := fs.String("session", "", "use this session id instead of a fresh uuid")
 	writeFilter := fs.String("write-path-re", "", "regex; writes restricted to paths matching this regex (default: no filter)")
-	extraTools := fs.String("extra-tools", "", "comma-list of expert-mode tools to add to the manifest (e.g. apply_patch,hashline_edit). default: off")
 	verbose := fs.Bool("verbose", false, "show full tool output (default: compact one-line preview)")
 	bgLoop := fs.Bool("bg-loop", false, "persist after first turn: write status sidecar, poll inbox for follow-ups")
 	yes := fs.Bool("yes", false, "auto-approve any dangerous shell command without prompting (still blocks hardline-refused commands)")
@@ -96,7 +95,6 @@ func headlessRun(args []string) int {
 	if err := applyThinkingCaveman(&cfg, *thinking, *effort, *cavemanLvl); err != nil {
 		exitf(2, "bee run: %v", err)
 	}
-	cfg.ExtraTools = append(cfg.ExtraTools, splitCSV(*extraTools)...)
 	if *browserOn {
 		cfg.Browser.Enabled = true
 	}

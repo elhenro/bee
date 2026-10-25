@@ -71,14 +71,18 @@ bee runs against any OpenAI-compatible local server. Confirmed working:
 - **Ollama** (`localhost:11434/v1`). `llama3.1:8b`, `qwen2.5-coder:7b`, `qwen3.6:35b`, `gemma4:12b`.
 - **LM Studio** (`localhost:1234/v1`).
 
-For sub-8k-context models, switch to the tiny profile. `--profile` is not a CLI flag. Set it via env or `~/.bee/config.toml`:
+There are no profiles: every model gets the same defaults. For a small context window, shrink the budgets in `~/.bee/config.toml`:
 
-    BEE_PROFILE=tiny bee run --provider omlx --model Qwen3.6-35B-A3B-4bit -- "..."
-
-    # or persist in ~/.bee/config.toml
-    profile = "tiny"
     default_provider = "omlx"
     default_model = "Qwen3.6-35B-A3B-4bit"
+    system_prompt_budget = 3000   # estimated tokens, default 12000
+    tool_output_tokens = 1500     # per tool result, default 8000
+    memory_body_chars = 400
+    tool_desc_chars = 80
+    skill_manifest_chars = -1     # -1 drops the skills section
+    # disable tools you don't want advertised: disabled_tools = ["apply_patch"]
+
+Local providers default to grammar-constrained JSON tool calls; set `tool_format = "xml"` for models that ignore native tool calls.
 
 ## Modes: worker / scout / queen
 
@@ -166,9 +170,9 @@ The snapshot assigns a short `[eN]` ref to every interactive element so the agen
 
 ## Caveman mode
 
-Token-compression rules injected into the system prompt. Off by default: terse replies hide the reasoning you want to learn from. `caveman = "auto"` resolves to the profile value, which is `off` everywhere.
+Token-compression rules injected into the system prompt. Off by default: terse replies hide the reasoning you want to learn from.
 
-Force a level regardless of profile:
+Turn it on:
 
     bee --caveman full
     bee run --caveman full -- "..."
@@ -178,8 +182,6 @@ Disable:
 
     bee --caveman off
     # or set caveman = "off" in ~/.bee/config.toml
-
-Explicit value beats profile.
 
 ## Overnight loop: `bee zzz`
 

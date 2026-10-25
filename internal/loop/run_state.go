@@ -19,7 +19,7 @@ import (
 //     doesn't grow the struct by a field.
 //  2. Counters/streaks: numeric progress signals (iter/token/stall). Reset
 //     because they describe a single Run's run-time behavior.
-//  3. Per-Run trackers (repeats, dupWrites, editVerify, escalateErr, card,
+//  3. Per-Run trackers (repeats, editVerify, escalateErr, card,
 //     allowedTools, lastReasoningSig): trackers or buffers that have a clear
 //     "start of Run" lifecycle.
 //
@@ -43,11 +43,8 @@ type runState struct {
 	// injected into a tool result this Run. dedupes — caller sees one notice.
 	warnedContext bool
 	// iteration progress / stall tracking; reset per Run.
-	warnedIterHalf      bool
-	warnedIterEighty    bool
-	warnedStall         bool
-	warnedStallEscalate bool
-	noMutationStreak    int
+	warnedIterHalf   bool
+	warnedIterEighty bool
 	// editsByFile counts edits per path since the last verify (build/test
 	// run or read of the same path). Resets per Run.
 	editsByFile map[string]int
@@ -122,14 +119,11 @@ type runState struct {
 	// truncCutStreak counts consecutive turns that dropped mid-output with no
 	// progress. drives TruncatedStreamError at truncCutBailAt; reset by progress.
 	truncCutStreak int
-	// dupWrites tracks (path, content-hash) of writes within one Run so the
-	// engine can warn on duplicate identical writes. opt-in per profile.
-	dupWrites *duplicateWriteTracker
 	// escalateErr stashes the escalate-tool payload during dispatch so
 	// dispatchTools can return ErrEscalate after the synthetic tool_result
 	// lands in the transcript. nil = no escalation in flight.
 	escalateErr *escalate.Error
-	// card is the per-Run state card when the active profile opts in
+	// card is the per-Run state card when the config opts in
 	// (state_card = true). nil = transcript mode (default). See statecard.go.
 	card *stateCard
 	// emptyCompletionStreak counts consecutive turns that produced no text, no
@@ -165,7 +159,7 @@ const (
 
 // freshRunState builds a zeroed per-Run state. All map fields are allocated
 // so callers can read+write without nil-checks. Sticky fields (vision cache,
-// warnedThinkingIgnored, jsonModeNoticeShown, sysPromptCache, profileScaledFor)
+// warnedThinkingIgnored, jsonModeNoticeShown, sysPromptCache)
 // stay on Engine and are NOT touched here.
 //
 // session-level memoization that lives on runState (visionCache, visionWarned)

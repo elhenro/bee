@@ -28,7 +28,6 @@ func TestRun_MaxTokensCapOnLocalProviders(t *testing.T) {
 			cfg := config.Defaults()
 			cfg.Caveman = "off"
 			cfg.Role = "worker"
-			cfg.Profile = "normal"
 			cfg.DefaultProvider = tc.provider
 			cfg.MaxOutputTokens = tc.set
 			cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}

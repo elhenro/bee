@@ -4,7 +4,7 @@
 // Use case: after auto-compact the tool manifest may be summarized or out
 // of cache. tool_lookup lets the model re-acquire one tool's full spec on
 // demand instead of paying the prefix cost of advertising every tool's
-// full schema every turn. Useful for tiny-profile models that drop most
+// full schema every turn. Useful for models that drop most
 // per-parameter descriptions to save tokens.
 package tool_lookup
 

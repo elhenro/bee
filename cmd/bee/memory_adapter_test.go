@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 )
 
@@ -94,21 +93,6 @@ func TestKnowledgeAdapterDisabledNoCalls(t *testing.T) {
 	_, _ = k.Query(context.Background(), "any", nil)
 	if n := prov.calls.Load(); n != 0 {
 		t.Errorf("disabled adapter should never call provider; got %d", n)
-	}
-}
-
-// guard: defaults wire MemoryBodyChars per profile (tiny=400, normal=2000,
-// large=0). this caps the per-record body in the assembled prompt.
-func TestProfileMemoryBodyCharsDefaults(t *testing.T) {
-	d := config.Defaults().Profiles
-	if d["tiny"].MemoryBodyChars != 400 {
-		t.Errorf("tiny.MemoryBodyChars=%d want 400", d["tiny"].MemoryBodyChars)
-	}
-	if d["normal"].MemoryBodyChars != 2000 {
-		t.Errorf("normal.MemoryBodyChars=%d want 2000", d["normal"].MemoryBodyChars)
-	}
-	if d["large"].MemoryBodyChars != 0 {
-		t.Errorf("large.MemoryBodyChars=%d want 0", d["large"].MemoryBodyChars)
 	}
 }
 

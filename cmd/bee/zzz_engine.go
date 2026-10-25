@@ -51,33 +51,6 @@ func buildZzzDeps(model, provider, sandboxScope, thinking, effort, cavemanLvl st
 	return cfg, prov, approval.Static{Verdict: verdict}, newSkillRegistry(), nil
 }
 
-// resolveZzzBudgets turns the auto sentinels into concrete caps. Small/local
-// ("tiny") models get tighter defaults because they spin more; explicit flag
-// values (iter>0, tok>=0) always win. Returns (maxIterations, maxTokens) where
-// maxTokens 0 means unlimited.
-func resolveZzzBudgets(cfg config.Config, maxIter, maxTok int) (int, int) {
-	prof := cfg.Profile
-	if prof == "" || prof == "auto" {
-		prof = config.ResolveAutoProfileForProvider(cfg.DefaultProvider, cfg.DefaultModel)
-	}
-	tiny := prof == "tiny"
-	if maxIter <= 0 {
-		if tiny {
-			maxIter = 40
-		} else {
-			maxIter = loop.MaxIterations
-		}
-	}
-	if maxTok < 0 {
-		if tiny {
-			maxTok = 400000
-		} else {
-			maxTok = 0
-		}
-	}
-	return maxIter, maxTok
-}
-
 // buildZzzEngine assembles a *loop.Engine rooted at cwd (which may be a
 // worktree). out routes engine deltas — pass os.Stdout for plain runs or
 // the TUI's sink for live TUI mode. Returns a cleanup fn that closes the

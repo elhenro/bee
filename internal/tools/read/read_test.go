@@ -86,12 +86,12 @@ func TestListDirectoryCappedTiny(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "zsub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < dirEntriesTiny+50; i++ {
+	for i := 0; i < dirEntriesTight+50; i++ {
 		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%04d.txt", i)), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// tiny profile passes maxLines=500 -> dirEntriesTiny cap.
+	// maxLines=500 -> dirEntriesTight cap.
 	tool := NewWithLimits(100, 500, false)
 	res, err := tool.Run(context.Background(), map[string]any{"path": dir})
 	if err != nil || res.IsError {
@@ -104,7 +104,7 @@ func TestListDirectoryCappedTiny(t *testing.T) {
 		t.Errorf("dirs sort first and must survive the cap, missing zsub/")
 	}
 	lines := strings.Count(res.Content, "\n")
-	if lines > dirEntriesTiny+4 { // header + cap + footer, small slack
+	if lines > dirEntriesTight+4 { // header + cap + footer, small slack
 		t.Errorf("listing not capped: %d lines", lines)
 	}
 }

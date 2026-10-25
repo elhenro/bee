@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/jsonmode"
 	"github.com/elhenro/bee/internal/safety"
 	"github.com/elhenro/bee/internal/tools"
@@ -17,7 +16,7 @@ import (
 )
 
 // hardResultCapTokens is the universal context-safety floor for a single tool
-// result (chars/4 heuristic; ~100k chars). Far above any profile's per-tool
+// result (chars/4 heuristic; ~100k chars). Far above any per-tool
 // cap so it only catches results that bypassed runOne's truncation.
 const hardResultCapTokens = 25_000
 
@@ -92,8 +91,8 @@ func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]typ
 	// in runOne, no single result (a Go-level error body, replay-appended route
 	// output, or a tool whose name carries no per-tool limit) may balloon the
 	// transcript and evict turn history on a tiny-context model. head-tail so
-	// an error block at the tail survives. ~100k chars, well above any profile
-	// cap so it only bites the paths that bypassed runOne's truncation.
+	// an error block at the tail survives. ~100k chars, well above any
+	// per-tool cap so it only bites the paths that bypassed runOne's truncation.
 	for i := range results {
 		if capped, did := tools.TruncateHeadTailWithLimit("", results[i].Content, hardResultCapTokens, -1); did {
 			results[i].Content = capped
@@ -231,7 +230,7 @@ func (e *Engine) shapeOutput(tool, content string) (string, bool) {
 	if e.Cfg.Sandbox.Confined() {
 		content = safety.Redact(content)
 	}
-	return tools.TruncateWithLimit(tool, content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
+	return tools.TruncateWithLimit(tool, content, e.Cfg.ToolOutputTokens)
 }
 
 // allowedNames returns the tool names advertised this turn, sorted, for the

@@ -24,7 +24,6 @@ func runBench(args []string) {
 	provider := fs.String("provider", "", "override default_provider for the runs")
 	model := fs.String("model", "", "override the model for the runs")
 	configFile := fs.String("config", "", "BEE_CONFIG overlay path (sweep knobs without touching ~/.bee/config.toml)")
-	profile := fs.String("profile", "", "BEE_PROFILE override (tiny|normal|large|<custom>)")
 	weightsCSV := fs.String("weights", "", "success,format,efficiency (e.g. 0.6,0.25,0.15)")
 	timeout := fs.Duration("timeout", 5*time.Minute, "per-task wall-clock cap")
 	runs := fs.Int("runs", 1, "repeats per task for variance (reports mean ± spread)")
@@ -51,7 +50,6 @@ func runBench(args []string) {
 		Provider:   *provider,
 		Model:      *model,
 		ConfigFile: *configFile,
-		Profile:    *profile,
 		Label:      *label,
 		Timeout:    *timeout,
 		Runs:       *runs,
@@ -92,7 +90,6 @@ func runBench(args []string) {
 		Label:            *label,
 		Provider:         *provider,
 		Model:            *model,
-		Profile:          *profile,
 		Config:           *configFile,
 		Suite:            *suite,
 		Tasks:            len(tasks),

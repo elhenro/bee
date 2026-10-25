@@ -17,7 +17,7 @@ internal/sandbox/ two-axis policy + sandbox-exec/bwrap
 internal/session/ JSONL rollouts + parent-pointer tree
 internal/hive/   fan-out + queen-and-workers
 internal/tui/    bubbletea app
-internal/config/ TOML config + profiles
+internal/config/ TOML config
 internal/types/  agent-owned message/tool types
 ```
 

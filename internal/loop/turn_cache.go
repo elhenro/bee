@@ -11,7 +11,7 @@ import (
 )
 
 // sysPromptCacheKey builds a cheap fingerprint of the inputs to prompt.Assemble.
-// inputs include cwd + role + posture + profile + caveman level + tool specs
+// inputs include cwd + role + posture + caveman level + tool specs
 // (name+desc/snippet hashes) + skill manifest hash + record names/body hashes +
 // ctx-file paths/body hashes. content is hashed, not measured: an edit that
 // keeps the length must still bust the cache. read-only is folded in because it flips the prompt prefix.
@@ -21,8 +21,6 @@ func sysPromptCacheKey(cfg config.Config, cwd string, role Role, readOnly bool, 
 	b.WriteString(cfg.DefaultProvider)
 	b.WriteByte('|')
 	b.WriteString(cfg.DefaultModel)
-	b.WriteByte('|')
-	b.WriteString(cfg.Profile)
 	b.WriteByte('|')
 	b.WriteString(cfg.Caveman)
 	b.WriteByte('|')

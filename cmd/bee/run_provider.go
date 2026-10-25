@@ -53,7 +53,7 @@ func resolveSafe(sandboxScope string, safe bool, def string) string {
 }
 
 // loadConfig loads config with the provider/model flags resolved up front (so
-// the right API key and profile apply), then pins the model, provider and
+// the right API key applies), then pins the model, provider and
 // sandbox scope. A test provider falls back to defaults so a missing key
 // cannot break offline smoke runs.
 func loadConfig(model, provider, sandboxScope string) (config.Config, error) {
@@ -99,7 +99,7 @@ func mustProvider(cmd string, cfg config.Config) llm.Provider {
 // applyThinkingCaveman applies --thinking, --effort (alias; the global flag
 // lands in BEE_EFFORT as the lowest-priority source) and --caveman (global
 // flag in BEE_CAVEMAN likewise). The caveman level is validated so a typo
-// fails fast instead of silently falling back to the profile default.
+// fails fast instead of silently falling back to the default.
 func applyThinkingCaveman(cfg *config.Config, thinking, effort, cavemanLvl string) error {
 	if effort == "" {
 		effort = os.Getenv("BEE_EFFORT")
@@ -129,7 +129,7 @@ func applyThinkingCaveman(cfg *config.Config, thinking, effort, cavemanLvl strin
 // a closed port fails fast on dial well before this.
 const localContextProbeTimeout = 12 * time.Second
 
-// resolveToolFormat maps the profile's ToolFormat to the effective mode.
+// resolveToolFormat maps cfg.ToolFormat to the effective mode.
 // "" = auto: local providers default to "json" — every server bee labels
 // local (ollama, llama.cpp, lmstudio, vllm, localai, omlx) compiles
 // response_format json_schema to a sampling constraint in current versions,
@@ -137,7 +137,7 @@ const localContextProbeTimeout = 12 * time.Second
 // JSON instruction) when an older build rejects the field. Hosted providers
 // keep native tool_calls on auto. "native" forces native everywhere.
 func resolveToolFormat(cfg config.Config) string {
-	tf := config.ActiveProfile(cfg).ToolFormat
+	tf := cfg.ToolFormat
 	if tf == "" && config.IsLocalProvider(cfg.DefaultProvider) {
 		return "json"
 	}
@@ -167,8 +167,7 @@ func buildProvider(cfg config.Config) (llm.Provider, error) {
 		inner = llm.NewJSONMode(inner)
 	}
 	// prewarm: without a learned window the loop's budget falls back to a
-	// useless 4*SystemPromptBudget, and ToolOutputTokens / SystemPromptBudget
-	// scaling in ScaleProfileForContext has nothing to scale against.
+	// useless 4*SystemPromptBudget.
 	if config.IsLocalProvider(cfg.DefaultProvider) {
 		prewarmLocalContext(cfg)
 	}
@@ -240,8 +239,7 @@ func buildProviderInner(cfg config.Config) (llm.Provider, error) {
 }
 
 // prewarmLocalContext learns the active local model's context window before
-// the first turn so contextBudget and the tiny-profile scaling start from
-// reality. Synchronous on purpose: a closed port fails fast on dial and a
+// the first turn so contextBudget starts from reality. Synchronous on purpose: a closed port fails fast on dial and a
 // running server answers well under a second.
 func prewarmLocalContext(cfg config.Config) {
 	pc, ok := cfg.Providers[cfg.DefaultProvider]

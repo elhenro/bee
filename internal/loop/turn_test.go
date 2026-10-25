@@ -83,9 +83,6 @@ func newEngine(p llm.Provider, reg *tools.Registry) (*Engine, *bytes.Buffer) {
 	cfg.Caveman = "off"
 	// worker role in tests, classifier disabled so it doesn't burn a stub script.
 	cfg.Role = "worker"
-	// pin profile so tests don't pick up tiny's MaxIterations=12 from the
-	// auto-resolution against deepseek-flash.
-	cfg.Profile = "normal"
 	// disable sandbox wrapping in tests so shell tool input stays inspectable
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	return &Engine{
@@ -98,77 +95,7 @@ func newEngine(p llm.Provider, reg *tools.Registry) (*Engine, *bytes.Buffer) {
 	}, buf
 }
 
-func TestFilterToolSpecsForProfile(t *testing.T) {
-	specs := []llm.ToolSpec{
-		{Name: "bash"}, {Name: "read"}, {Name: "write"}, {Name: "edit"},
-		{Name: "search"}, {Name: "glob"}, {Name: "ls"},
-		{Name: "apply_patch"}, {Name: "hashline_edit"}, {Name: "knowledge_search"},
-	}
-	// tiny: 4-tool minimum {bash, read, write, edit}
-	got := filterToolSpecsForProfile(specs, "tiny")
-	if len(got) != 4 {
-		t.Fatalf("tiny profile should keep 4 tools, got %d: %+v", len(got), got)
-	}
-	keep := map[string]bool{}
-	for _, s := range got {
-		keep[s.Name] = true
-	}
-	for _, want := range []string{"bash", "read", "write", "edit"} {
-		if !keep[want] {
-			t.Errorf("tiny profile missing %s", want)
-		}
-	}
-	// normal: 7-tool surface + knowledge_search.
-	// Drops apply_patch + hashline_edit (large-profile extras).
-	normal := filterToolSpecsForProfile(specs, "normal")
-	keepNormal := map[string]bool{}
-	for _, s := range normal {
-		keepNormal[s.Name] = true
-	}
-	for _, want := range []string{"bash", "read", "write", "edit", "search", "glob", "ls", "knowledge_search"} {
-		if !keepNormal[want] {
-			t.Errorf("normal profile missing %s", want)
-		}
-	}
-	for _, drop := range []string{"apply_patch", "hashline_edit"} {
-		if keepNormal[drop] {
-			t.Errorf("normal profile should drop %s (large-only)", drop)
-		}
-	}
-	// large (no allowlist) passes through unfiltered.
-	large := filterToolSpecsForProfile(specs, "large")
-	if len(large) != len(specs) {
-		t.Errorf("large profile should pass through, got %d/%d", len(large), len(specs))
-	}
-}
-
-// ExtraTools is the opt-in hatch: small profile + named extras = the expert
-// tools surface without paying for the large profile's prompt budget.
-func TestFilterToolSpecsForProfile_ExtrasUnionWithAllowlist(t *testing.T) {
-	specs := []llm.ToolSpec{
-		{Name: "bash"}, {Name: "read"}, {Name: "write"}, {Name: "edit"},
-		{Name: "apply_patch"}, {Name: "hashline_edit"},
-	}
-	got := filterToolSpecsForProfile(specs, "tiny", "apply_patch")
-	names := map[string]bool{}
-	for _, s := range got {
-		names[s.Name] = true
-	}
-	if !names["apply_patch"] {
-		t.Errorf("extras should force apply_patch into tiny manifest")
-	}
-	if names["hashline_edit"] {
-		t.Errorf("only listed extras should pass; hashline_edit leaked")
-	}
-	// baseline tiny tools must still be present.
-	for _, want := range []string{"bash", "read", "write", "edit"} {
-		if !names[want] {
-			t.Errorf("tiny baseline %q dropped when extras supplied", want)
-		}
-	}
-}
-
-// Disabled tools are dropped from the manifest regardless of profile.
+// disabled tools are dropped from the manifest.
 func TestFilterToolSpecsDisabled(t *testing.T) {
 	specs := []llm.ToolSpec{{Name: "bash"}, {Name: "read"}, {Name: "write"}}
 	got := filterToolSpecsDisabled(specs, []string{"write"})
@@ -191,17 +118,30 @@ func TestFilterToolSpecsDisabled_EmptyPassthrough(t *testing.T) {
 	}
 }
 
-// Canonical bee tool names: a stable 7-tool surface for the normal profile.
-func TestCanonicalToolNames(t *testing.T) {
-	// canonical set: bash, edit, glob, search, ls, read, write. normal profile
-	// also exposes knowledge_search as a bee extension.
-	want := map[string]bool{
-		"bash": true, "read": true, "write": true, "edit": true,
-		"search": true, "glob": true, "ls": true,
+// the full registry reaches the provider: no per-profile trimming.
+func TestAdvertisesWholeRegistry(t *testing.T) {
+	names := []string{"bash", "read", "write", "edit", "search", "glob", "ls", "apply_patch", "hashline_edit"}
+	reg := tools.NewRegistry()
+	for _, n := range names {
+		_ = reg.Register(&stubTool{name: n, desc: "x", fn: func(context.Context, map[string]any) (tools.Result, error) {
+			return tools.Result{Content: "ok"}, nil
+		}})
 	}
-	for name := range want {
-		if !profileToolAllowlist["normal"][name] {
-			t.Errorf("normal profile missing canonical tool %q", name)
+	p := &sysCaptureProvider{}
+	eng, _ := newEngine(p, reg)
+	if _, err := eng.Run(context.Background(), "hi"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(p.seen) != 1 {
+		t.Fatalf("calls = %d", len(p.seen))
+	}
+	got := map[string]bool{}
+	for _, s := range p.seen[0].Tools {
+		got[s.Name] = true
+	}
+	for _, n := range names {
+		if !got[n] {
+			t.Errorf("tool %q not advertised", n)
 		}
 	}
 }
@@ -685,7 +625,6 @@ func TestRun_NoClassifier_HostedWorkerRole(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Caveman = "off"
 	cfg.Role = "worker"
-	cfg.Profile = "normal"
 	cfg.DefaultProvider = "openrouter"
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	eng := &Engine{
@@ -710,7 +649,6 @@ func TestRun_ClassifierSkipped_LocalWorkerRole(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Caveman = "off"
 	cfg.Role = "worker"
-	cfg.Profile = "normal"
 	cfg.DefaultProvider = "ollama"
 	cfg.Sandbox = config.SandboxConfig{Scope: "danger-full-access", Approval: "never"}
 	eng := &Engine{
@@ -730,7 +668,7 @@ func TestRun_ClassifierSkipped_LocalWorkerRole(t *testing.T) {
 	}
 }
 
-func TestRun_MaxIter_TinyProfileOverrides(t *testing.T) {
+func TestRun_MaxIter_ConfigOverridesDefault(t *testing.T) {
 	reg := tools.NewRegistry()
 	_ = reg.Register(&stubTool{
 		name: "bash",
@@ -746,43 +684,14 @@ func TestRun_MaxIter_TinyProfileOverrides(t *testing.T) {
 		},
 	}}
 	eng, _ := newEngine(p, reg)
-	// override test default of normal: tiny → MaxIterations=100 from profile.
-	eng.Cfg.Profile = "tiny"
-	eng.Cfg.MaxIterations = 0 // clear cfg default so profile wins cleanly
+	eng.Cfg.MaxIterations = 7
 	_, err := eng.Run(context.Background(), "loop me")
 	if err == nil || !strings.Contains(err.Error(), "max iterations") {
 		t.Fatalf("expected max-iterations error, got %v", err)
 	}
-	// 100 tool rounds + 1 wind-down summary call on cap.
-	if got := p.calls.Load(); got != 101 {
-		t.Errorf("tiny profile maxIter: provider calls = %d, want 101", got)
-	}
-}
-
-func TestRun_MaxIter_NormalProfileFallsThrough(t *testing.T) {
-	reg := tools.NewRegistry()
-	_ = reg.Register(&stubTool{
-		name: "bash",
-		desc: "x",
-		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
-			return tools.Result{Content: "ok"}, nil
-		},
-	})
-	p := &stubProvider{scripts: [][]llm.Event{
-		{
-			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u", Name: "bash", Input: map[string]any{"command": "x"}}},
-			{Type: llm.EventDone, StopReason: "tool_use"},
-		},
-	}}
-	eng, _ := newEngine(p, reg)
-	// profile=normal pinned by newEngine; cfg.MaxIterations=100 from Defaults.
-	_, err := eng.Run(context.Background(), "loop me")
-	if err == nil || !strings.Contains(err.Error(), "max iterations") {
-		t.Fatalf("expected max-iterations error, got %v", err)
-	}
-	// 100 tool rounds + 1 wind-down summary call on cap.
-	if got := p.calls.Load(); got != 101 {
-		t.Errorf("normal profile maxIter: provider calls = %d, want 101 (cfg default)", got)
+	// 7 tool rounds + 1 wind-down summary call on cap.
+	if got := p.calls.Load(); got != 8 {
+		t.Errorf("provider calls = %d, want 8", got)
 	}
 }
 

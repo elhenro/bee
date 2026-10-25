@@ -23,8 +23,8 @@ const (
 	maxLimit        = 10000
 	maxTail         = 10000
 	binarySniffSize = 4096
-	// directory-listing caps: tiny profile vs everyone else.
-	dirEntriesTiny    = 200
+	// directory-listing caps: tight when line caps are low, roomy otherwise.
+	dirEntriesTight   = 200
 	dirEntriesDefault = 1000
 )
 
@@ -44,11 +44,11 @@ type Tool struct {
 }
 
 // New returns a fresh read tool with package-default limits (2000 default,
-// 10000 max) and secret-path blocking on. Used by non-tiny profiles.
+// 10000 max) and secret-path blocking on.
 func New() tools.Tool { return NewWithLimits(defaultLimit, maxLimit, true) }
 
-// NewWithLimits returns a read tool with custom default/max line caps. Tiny
-// profile passes 100/500 so one read can't torch a 4-8k local-model context.
+// NewWithLimits returns a read tool with custom default/max line caps; zero
+// falls back to the package defaults.
 // confine gates the CheckReadable secret-path guard: true under a confined
 // sandbox scope, false under danger-full-access where read may open any file
 // (including .git/.ssh), matching bee's default "read anything".
@@ -63,9 +63,7 @@ func NewWithLimits(def, max int, confine bool) tools.Tool {
 }
 
 // Spec advertises the tool to the model. defaultLines/maxLines values are
-// rendered into the limit description so tiny-profile models learn the
-// actual ceiling (was hardcoded "Default 2000" — wrong for tiny, which
-// caps at 500 with default 100).
+// rendered into the limit description so models learn the actual ceiling.
 func (t *Tool) Spec() llm.ToolSpec {
 	defLines, maxLines := t.lineCaps()
 	limitDesc := fmt.Sprintf("Max lines to return (file only). Default %d. Pass an explicit value up to %d to read more in one call instead of multiple offset-paged reads.", defLines, maxLines)
@@ -219,12 +217,12 @@ func readFile(path string, offset, limit, tail int, hashline bool) (string, erro
 	return readSlice(f, path, offset, limit, hashline)
 }
 
-// dirEntryCap bounds how many directory entries a single read returns. A tiny
-// profile (low maxLines) gets a tighter cap so `read .` on node_modules/.git
-// can't flood a 4-8k local context; richer profiles get headroom.
+// dirEntryCap bounds how many directory entries a single read returns. Low
+// maxLines gets a tighter cap so `read .` on node_modules/.git can't flood a
+// small context; the defaults get headroom.
 func (t *Tool) dirEntryCap() int {
 	if t.maxLines > 0 && t.maxLines <= 500 {
-		return dirEntriesTiny
+		return dirEntriesTight
 	}
 	return dirEntriesDefault
 }

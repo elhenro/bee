@@ -89,7 +89,7 @@ func (e *Engine) persistCheckpoint(ctx context.Context, out []types.Message, sta
 // a hang. Returns the stats and whether compaction actually ran; on success
 // e.InitialMessages is replaced with the shortened history.
 func (e *Engine) PrepareResume(ctx context.Context) (CompactStats, bool, error) {
-	// state-card profiles skip resume compaction too: the card view bounds the
+	// state-card mode skips resume compaction too: the card view bounds the
 	// request regardless of history length, so summarizing would only burn time.
 	if !e.compactionEnabled() || len(e.InitialMessages) == 0 {
 		return CompactStats{}, false, nil

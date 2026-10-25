@@ -97,7 +97,6 @@ func TestLoad_FileOverridesDefaults(t *testing.T) {
 default_provider = "openai"
 default_model = "gpt-5"
 caveman = "lite"
-profile = "large"
 
 [sandbox]
 scope = "read-only"
@@ -160,12 +159,10 @@ func TestLoad_EnvOverridesFile(t *testing.T) {
 	writeConfig(t, dir, `default_provider = "openai"
 default_model = "gpt-5"
 caveman = "lite"
-profile = "large"
 `)
 	t.Setenv("BEE_PROVIDER", "openrouter")
 	t.Setenv("BEE_MODEL", "x-ai/grok-4")
 	t.Setenv("BEE_CAVEMAN", "ultra")
-	t.Setenv("BEE_PROFILE", "tiny")
 	t.Setenv("OPENROUTER_API_KEY", "sk-or")
 
 	c, err := Load()
@@ -180,9 +177,6 @@ profile = "large"
 	}
 	if c.Caveman != "ultra" {
 		t.Errorf("Caveman = %q", c.Caveman)
-	}
-	if c.Profile != "tiny" {
-		t.Errorf("Profile = %q", c.Profile)
 	}
 }
 
@@ -230,5 +224,53 @@ func TestConfigPath_EnvOverride(t *testing.T) {
 	t.Setenv("BEE_CONFIG", "/tmp/custom-bee.toml")
 	if got := ConfigPath(); got != "/tmp/custom-bee.toml" {
 		t.Errorf("ConfigPath = %q", got)
+	}
+}
+
+// a retired profile = "..." key or [profiles.x] table in an old config.toml is
+// ignored, not an error, and "auto"/empty caveman resolves to off.
+func TestLoad_RetiredProfileKeysIgnored(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, `caveman = "auto"
+profile = "tiny"
+
+[profiles.tiny]
+system_prompt_budget = 3000
+`)
+	t.Setenv("OPENROUTER_API_KEY", "sk-or")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Caveman != "off" {
+		t.Errorf("Caveman = %q, want off", c.Caveman)
+	}
+	if c.SystemPromptBudget != Defaults().SystemPromptBudget {
+		t.Errorf("SystemPromptBudget = %d, want default", c.SystemPromptBudget)
+	}
+}
+
+func TestLoad_RecapOffOnLocalProvider(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, `default_provider = "ollama"
+default_model = "qwen3:8b"
+`)
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.ShowRecap {
+		t.Error("recap must be off on an on-host provider")
+	}
+
+	writeConfig(t, dir, `default_provider = "openrouter"`)
+	t.Setenv("OPENROUTER_API_KEY", "sk-or")
+	c, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.ShowRecap {
+		t.Error("recap stays on for hosted providers")
 	}
 }

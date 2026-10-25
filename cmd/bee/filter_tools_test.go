@@ -11,20 +11,8 @@ import (
 	"github.com/elhenro/bee/internal/config"
 )
 
-func tinyCfg() config.Config {
-	c := config.Defaults()
-	c.Profile = "tiny"
-	return c
-}
-
-func normalCfg() config.Config {
-	c := config.Defaults()
-	c.Profile = "normal"
-	return c
-}
-
 func TestFilterTools_subsetKeepsNamed(t *testing.T) {
-	reg, err := buildTools(t.TempDir(), normalCfg(), nil, "")
+	reg, err := buildTools(t.TempDir(), config.Defaults(), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +32,7 @@ func TestFilterTools_subsetKeepsNamed(t *testing.T) {
 }
 
 func TestFilterTools_unknownErrors(t *testing.T) {
-	reg, err := buildTools(t.TempDir(), normalCfg(), nil, "")
+	reg, err := buildTools(t.TempDir(), config.Defaults(), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +46,7 @@ func TestFilterTools_unknownErrors(t *testing.T) {
 }
 
 func TestFilterTools_emptyPassthrough(t *testing.T) {
-	reg, err := buildTools(t.TempDir(), normalCfg(), nil, "")
+	reg, err := buildTools(t.TempDir(), config.Defaults(), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,10 +60,9 @@ func TestFilterTools_emptyPassthrough(t *testing.T) {
 }
 
 // buildTools must register the canonical tool vocabulary so the names are
-// dispatchable. Profile filtering trims what the *model* sees; the registry
-// itself stays complete for non-tiny profiles.
+// dispatchable.
 func TestBuildTools_CanonicalNames(t *testing.T) {
-	reg, err := buildTools(t.TempDir(), normalCfg(), nil, "")
+	reg, err := buildTools(t.TempDir(), config.Defaults(), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,45 +71,28 @@ func TestBuildTools_CanonicalNames(t *testing.T) {
 			t.Errorf("registry missing canonical tool %q", want)
 		}
 	}
-	// non-tiny keeps apply_patch + hashline_edit.
+	// apply_patch + hashline_edit are registered too.
 	for _, extra := range []string{"apply_patch", "hashline_edit"} {
 		if _, ok := reg.Get(extra); !ok {
-			t.Errorf("registry missing extra %q (must be registered for opt-in dispatch)", extra)
+			t.Errorf("registry missing extra %q ", extra)
 		}
 	}
 }
 
-// tiny profile drops apply_patch — small models mis-emit unified diffs.
-func TestBuildTools_TinySkipsApplyPatch(t *testing.T) {
-	reg, err := buildTools(t.TempDir(), tinyCfg(), nil, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := reg.Get("apply_patch"); ok {
-		t.Error("tiny profile must not register apply_patch")
-	}
-	// other mutators stay.
-	for _, want := range []string{"write", "edit", "hashline_edit"} {
-		if _, ok := reg.Get(want); !ok {
-			t.Errorf("tiny profile missing %q (only apply_patch should be dropped)", want)
-		}
-	}
-}
-
-// normal keeps apply_patch in the registry — required for opt-in dispatch.
-func TestBuildTools_NormalKeepsApplyPatch(t *testing.T) {
-	reg, err := buildTools(t.TempDir(), normalCfg(), nil, "")
+// apply_patch is registered by default.
+func TestBuildTools_RegistersApplyPatch(t *testing.T) {
+	reg, err := buildTools(t.TempDir(), config.Defaults(), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := reg.Get("apply_patch"); !ok {
-		t.Error("normal profile must register apply_patch")
+		t.Error("apply_patch must be registered")
 	}
 }
 
 // DisabledTools removes named tools from the registry at build time.
 func TestBuildTools_DisabledToolsDropped(t *testing.T) {
-	cfg := normalCfg()
+	cfg := config.Defaults()
 	cfg.DisabledTools = []string{"write"}
 	reg, err := buildTools(t.TempDir(), cfg, nil, "")
 	if err != nil {
@@ -138,7 +108,7 @@ func TestBuildTools_DisabledToolsDropped(t *testing.T) {
 
 // UserTools are registered as dispatchable tools alongside builtins.
 func TestBuildTools_UserToolsRegistered(t *testing.T) {
-	cfg := normalCfg()
+	cfg := config.Defaults()
 	cfg.UserTools = []config.UserTool{{Name: "lint", Command: "true", Description: "run lint"}}
 	reg, err := buildTools(t.TempDir(), cfg, nil, "")
 	if err != nil {
@@ -159,7 +129,7 @@ func TestBuildTools_WriteFilterRestrictsWrites(t *testing.T) {
 	dir := t.TempDir()
 	// confined scope roots the write tool at dir; unconfined would resolve
 	// relative paths against the test process cwd.
-	cfg := normalCfg()
+	cfg := config.Defaults()
 	cfg.Sandbox.Scope = "workspace-write"
 	reg, err := buildToolsWithApprover(dir, cfg, nil, "", nil, withWriteFilter(regexp.MustCompile(`\.go$`)))
 	if err != nil {

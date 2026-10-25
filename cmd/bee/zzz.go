@@ -17,14 +17,15 @@ import (
 	"golang.org/x/term"
 
 	"github.com/elhenro/bee/internal/approval"
+	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/zzz"
 	zzztui "github.com/elhenro/bee/internal/zzz/tui"
 )
 
 func runZzz(args []string) {
 	fs := flag.NewFlagSet("zzz", flag.ContinueOnError)
-	maxIter := fs.Int("max-iterations", 0, "stop after N iterations (0 = auto: 100, or 40 for small/local models)")
-	maxTok := fs.Int("max-tokens", -1, "stop after N total tokens (-1 = auto per profile, 0 = unlimited)")
+	maxIter := fs.Int("max-iterations", 0, "stop after N iterations (0 = default: 100)")
+	maxTok := fs.Int("max-tokens", 0, "stop after N total tokens (0 = unlimited)")
 	stopWhen := fs.String("stop-when", "", "stop when assistant text contains this substring")
 	wantWorktree := fs.Bool("worktree", false, "run in isolated git worktree under ~/.bee/zzz/worktrees/")
 	currentBranch := fs.Bool("current-branch", false, "commit to the current branch instead of zzz/<id>")
@@ -96,9 +97,10 @@ func runZzz(args []string) {
 	stopCh := make(chan struct{})
 	go installShutdownHandler(stopCh, cancelCtx)
 
-	// resolve auto budgets by profile: small/local models get tighter caps so a
-	// confused model can't spin a whole night burning tokens. explicit flags win.
-	resolvedMaxIter, resolvedMaxTok := resolveZzzBudgets(cfg, *maxIter, *maxTok)
+	resolvedMaxIter, resolvedMaxTok := *maxIter, max(*maxTok, 0)
+	if resolvedMaxIter <= 0 {
+		resolvedMaxIter = loop.MaxIterations
+	}
 
 	zCfg := zzz.Config{
 		Objective:           objective,

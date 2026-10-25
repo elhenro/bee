@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -44,7 +43,7 @@ func newStateCard(goal string) *stateCard {
 // itself, so the side-LLM summarize round-trip would burn slow-local-model
 // minutes shrinking a transcript that never reaches the wire anyway.
 func (e *Engine) compactionEnabled() bool {
-	return e.Cfg.Compaction.Enabled && !config.ActiveProfile(e.Cfg).StateCard
+	return e.Cfg.Compaction.Enabled && !e.Cfg.StateCard
 }
 
 // observe folds one iteration's tool batch into the card. uses and results

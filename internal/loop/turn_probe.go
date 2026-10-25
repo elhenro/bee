@@ -8,8 +8,8 @@ import (
 )
 
 // probeContextWindow resolves the active model's context window for models the
-// hardcoded table lacks. A local backend answers from localhost in ms and the
-// tiny-profile scaling right after reads the result, so that probe stays inline.
+// hardcoded table lacks. A local backend answers from localhost in ms, so that
+// probe stays inline.
 // A hosted lookup is a network round trip the first request must not wait on:
 // it runs detached, and contextBudget reads the cache live so a later iteration
 // picks the window up.

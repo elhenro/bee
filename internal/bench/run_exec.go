@@ -41,9 +41,6 @@ func runBee(ctx context.Context, t Task, opt Options, sandbox, sessDir, beeHome 
 	if opt.ConfigFile != "" {
 		cmd.Env = append(cmd.Env, "BEE_CONFIG="+opt.ConfigFile)
 	}
-	if opt.Profile != "" {
-		cmd.Env = append(cmd.Env, "BEE_PROFILE="+opt.Profile)
-	}
 	cmd.Env = append(cmd.Env, opt.ExtraEnv...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

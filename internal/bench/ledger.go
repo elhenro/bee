@@ -9,7 +9,6 @@ type LedgerRecord struct {
 	Label            string  `json:"label"`
 	Provider         string  `json:"provider,omitempty"`
 	Model            string  `json:"model,omitempty"`
-	Profile          string  `json:"profile,omitempty"`
 	Config           string  `json:"config,omitempty"`
 	Suite            string  `json:"suite"`
 	Tasks            int     `json:"tasks"`

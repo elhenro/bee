@@ -9,12 +9,12 @@ func isolate(t *testing.T) {
 	t.Helper()
 	t.Setenv("BEE_CONFIG", filepath.Join(t.TempDir(), "absent.toml"))
 	t.Setenv("BEE_HOME", t.TempDir())
-	for _, k := range []string{"BEE_MODEL", "BEE_PROVIDER", "BEE_PROFILE", "BEE_CAVEMAN"} {
+	for _, k := range []string{"BEE_MODEL", "BEE_PROVIDER", "BEE_CAVEMAN"} {
 		t.Setenv(k, "")
 	}
 }
 
-func TestLoadWith_ProviderOverrideResolvesKeyModelProfile(t *testing.T) {
+func TestLoadWith_ProviderOverrideResolvesKeyAndModel(t *testing.T) {
 	isolate(t)
 	t.Setenv("GEMINI_API_KEY", "g-key")
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
@@ -28,9 +28,6 @@ func TestLoadWith_ProviderOverrideResolvesKeyModelProfile(t *testing.T) {
 	}
 	if c.DefaultModel != Defaults().Providers["gemini"].DefaultModel {
 		t.Errorf("DefaultModel = %q, want gemini default", c.DefaultModel)
-	}
-	if want := ResolveAutoProfileForProvider("gemini", c.DefaultModel); c.Profile != want {
-		t.Errorf("Profile = %q, want %q", c.Profile, want)
 	}
 }
 

@@ -1,7 +1,7 @@
 // `bee doctor` — read-only preflight check.
 //
 // Reports environment health: bee dirs, sandbox helper, configured
-// providers' creds, active config/profile/caveman level. Prints a
+// providers' creds, active config/caveman level. Prints a
 // human-readable table by default; --json emits one machine record.
 //
 // Pure-Go subcommand-dispatch model — no shim sprays to check.

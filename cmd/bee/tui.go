@@ -55,8 +55,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 
 	cfg := mustConfig("bee", "", "", "")
 	// global --caveman flag (stripped in main) lands here via env; pre-validated
-	// in stripCavemanFlag, so no re-parse. Overrides profile via ApplyProfile's
-	// non-auto branch.
+	// in stripCavemanFlag, so no re-parse.
 	if v := os.Getenv("BEE_CAVEMAN"); v != "" {
 		cfg.Caveman = v
 	}
@@ -73,8 +72,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	storeDir, _ := knowledge.StoreDir()
 	tuiApprover := tui.NewApprover()
 	tuiAsker := tui.NewAsker()
-	app := approval.NewCacheWithRequire(herdr.WrapApprover(tuiApprover), cfg.Sandbox.CommandAllowlist,
-		config.ActiveProfile(cfg).Safety.RequireApprovalKeys, PersistAllowlistEntry)
+	app := approval.NewCache(herdr.WrapApprover(tuiApprover), cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
 	defer app.Flush()
 	// background commands: finished jobs wake the TUI (idle) or ride into the
 	// running turn. closed on exit so no process outlives bee.

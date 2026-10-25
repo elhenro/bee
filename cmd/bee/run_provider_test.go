@@ -12,10 +12,7 @@ func TestResolveToolFormat(t *testing.T) {
 	mk := func(provider, format string) config.Config {
 		cfg := config.Defaults()
 		cfg.DefaultProvider = provider
-		cfg.Profile = "tiny"
-		p := cfg.Profiles["tiny"]
-		p.ToolFormat = format
-		cfg.Profiles["tiny"] = p
+		cfg.ToolFormat = format
 		return cfg
 	}
 	cases := []struct {

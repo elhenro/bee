@@ -3,7 +3,6 @@ package loop
 import (
 	"maps"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -15,13 +14,9 @@ const (
 
 // addDisplayArgs offers the model the optional display-only args: a
 // `description` label on tools whose raw args read poorly as a card title and
-// a `why` on the file mutators. Skipped on tiny: small models spend tokens on
-// them and the schema budget is tight. Registry specs are shared, so a schema
-// is copied, never edited in place.
-func addDisplayArgs(specs []llm.ToolSpec, cfg config.Config) []llm.ToolSpec {
-	if cfg.Profile == "tiny" {
-		return specs
-	}
+// a `why` on the file mutators. Registry specs are shared, so a schema is
+// copied, never edited in place.
+func addDisplayArgs(specs []llm.ToolSpec) []llm.ToolSpec {
 	out := make([]llm.ToolSpec, len(specs))
 	for i, s := range specs {
 		if types.LabelsCalls(s.Name) {

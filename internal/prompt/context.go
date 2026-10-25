@@ -65,7 +65,7 @@ func tryLoad(dir string) (ContextFile, bool) {
 
 // maxContextFileBytes caps each loaded context file (post-import-expansion)
 // so a chatty CLAUDE.md doesn't blow the system-prompt budget. ~8192 chars
-// ≈ 2K tokens — gives @imports headroom while the per-profile
+// ≈ 2K tokens — gives @imports headroom while the
 // SystemPromptBudget acts as the real backstop.
 const maxContextFileBytes = 8192
 

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/elhenro/bee/internal/config"
-	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -36,32 +35,6 @@ func TestCardGoalFor_KeepsGoalAcrossResume(t *testing.T) {
 	prior := []types.Message{mkMsg(types.RoleUser, "original ask")}
 	if g := fresh.cardGoalFor(resumeContinueMsg, prior); g != "original ask" {
 		t.Errorf("fresh engine goal = %q, want seeded from transcript", g)
-	}
-}
-
-func TestRescaleProfile_RevertsOnSmallerWindow(t *testing.T) {
-	llm.RememberContextLength("big-local", 128_000)
-	llm.RememberContextLength("small-local", 8_000)
-	t.Cleanup(llm.ResetLiveContextLengths)
-	cfg := config.Defaults()
-	cfg.DefaultProvider = "ollama"
-	cfg.Profile = "tiny"
-	base := cfg.Profiles["tiny"]
-	e := &Engine{Cfg: cfg}
-
-	e.Cfg.DefaultModel = "big-local"
-	e.rescaleProfile()
-	if e.Cfg.Profiles["tiny"].SystemPromptBudget <= base.SystemPromptBudget {
-		t.Fatal("large window should widen the tiny budget")
-	}
-	e.Cfg.DefaultModel = "small-local"
-	e.rescaleProfile()
-	got := e.Cfg.Profiles["tiny"]
-	if got.SystemPromptBudget != base.SystemPromptBudget || got.ToolOutputTokens != base.ToolOutputTokens {
-		t.Errorf("budgets did not revert: %+v want %+v", got, base)
-	}
-	if cfg.Profiles["tiny"].SystemPromptBudget != base.SystemPromptBudget {
-		t.Error("caller's profile map was mutated")
 	}
 }
 

@@ -16,7 +16,6 @@ type Options struct {
 	Provider   string        // --provider passthrough (empty = inherit config)
 	Model      string        // --model passthrough (empty = inherit config)
 	ConfigFile string        // BEE_CONFIG overlay path (empty = default ~/.bee/config.toml)
-	Profile    string        // BEE_PROFILE override (empty = inherit/auto)
 	Label      string        // tags the result set (config-variant identifier)
 	Weights    Weights       // scoring blend
 	Timeout    time.Duration // per-task wall-clock cap

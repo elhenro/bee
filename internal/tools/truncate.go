@@ -54,9 +54,9 @@ func Truncate(toolName, content string) (string, bool) {
 	return TruncateWithLimit(toolName, content, 0)
 }
 
-// TruncateWithLimit is Truncate with an explicit profile-provided cap in
+// TruncateWithLimit is Truncate with an explicit config-provided cap in
 // tokens (chars/4 heuristic). limitTokens<=0 → fall back to the per-tool
-// default. The smaller of (limitTokens, per-tool default) wins so a profile
+// default. The smaller of (limitTokens, per-tool default) wins so a config
 // override cannot accidentally raise a webfetch-style tight ceiling.
 //
 // When truncation occurs and a spill directory can be resolved (via
@@ -67,7 +67,7 @@ func TruncateWithLimit(toolName, content string, limitTokens int) (string, bool)
 	return TruncateWithLimitSpill(toolName, content, limitTokens, defaultSpillDir())
 }
 
-// charCap is the byte budget for toolName: the smaller of the profile cap
+// charCap is the byte budget for toolName: the smaller of the config cap
 // (limitTokens, <=0 means none) and the per-tool default, in tokens*4 chars.
 func charCap(toolName string, limitTokens int) int {
 	limit := limitFor(toolName)
@@ -223,7 +223,7 @@ func truncateHeadTailWithSpill(toolName, content string, maxChars int, spillDir 
 	return head + trailer + "..." + tail
 }
 
-// TruncateHeadTailWithLimit is TruncateHeadTail with an explicit profile cap.
+// TruncateHeadTailWithLimit is TruncateHeadTail with an explicit config cap.
 func TruncateHeadTailWithLimit(toolName, content string, limitTokens int, tailChars int) (string, bool) {
 	maxChars := charCap(toolName, limitTokens)
 	total := len(content)

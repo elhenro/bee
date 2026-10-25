@@ -36,7 +36,7 @@ type Request struct {
 	MaxTokens     int
 	Temperature   float64
 	// TopP pins nucleus sampling. 0 = use provider default (omit on wire).
-	// Set by the active profile (tiny pins 0.8 for 4-bit MoE).
+	// Zero = provider default.
 	TopP float64
 	// Stop is the optional list of stop sequences. textmode wraps tool calls
 	// in `<bash>{…}</bash>`-style envelopes; passing the closing tag halts
@@ -145,7 +145,7 @@ func ResolveThinking(t Thinking, modelID string) Thinking {
 // Description goes to the provider's tool-spec (API) — full sentence is fine.
 // PromptSnippet is the short prompt-manifest line (≤60 chars).
 // When PromptSnippet is empty, the prompt manifest falls back to the first
-// line of Description, truncated by the profile's ToolDescChars budget.
+// line of Description, truncated by the ToolDescChars budget.
 type ToolSpec struct {
 	Name          string         `json:"name"`
 	Description   string         `json:"description"`

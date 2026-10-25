@@ -1,8 +1,8 @@
 // Package prompt builds the system prompt for a bee turn.
 //
 // Layered assembly: caveman rules + agent identity + tool manifest +
-// skills + selected memories + behavioral nudge. Honors the active
-// profile's SystemPromptBudget by truncating low-priority sections.
+// skills + selected memories + behavioral nudge. Honors
+// cfg.SystemPromptBudget by truncating low-priority sections.
 package prompt
 
 import (
@@ -68,22 +68,21 @@ func AssembleWithDynamic(
 	selectedRecords []knowledge.Record,
 	ctxFiles []ContextFile,
 ) (full, dynamic string) {
-	prof := config.ActiveProfile(cfg)
 	level, _ := caveman.ParseLevel(cfg.Caveman)
 
 	rules := caveman.Rules(level)
 	identity := identityBlock(cwd, level)
-	discipline := join(tinyDiscipline(cfg.Profile), efficiencyRules(cfg.Profile), learnRules(cfg.Profile, cfg.Memory.Enabled))
-	toolMan := toolsManifest(regToolSpecs, prof.ToolDescChars)
+	discipline := join(efficiencyRules(), learnRules(cfg.Memory.Enabled))
+	toolMan := toolsManifest(regToolSpecs, cfg.ToolDescChars)
 
 	// knowledge + skills + context are the trimmable sections; render then enforce budget.
-	memSection := knowledgeSection(selectedRecords, prof.MemoryBodyChars)
-	skillSection := skillsSection(truncateManifest(skillManifest, prof.SkillManifestChars))
+	memSection := knowledgeSection(selectedRecords, cfg.MemoryBodyChars)
+	skillSection := skillsSection(truncateManifest(skillManifest, cfg.SkillManifestChars))
 	ctxSection := renderContextSection(ctxFiles)
 
 	out := join(rules, identity, discipline, ctxSection, toolMan, skillSection, memSection)
 
-	budget := prof.SystemPromptBudget
+	budget := cfg.SystemPromptBudget
 	if budget <= 0 {
 		return out, memSection
 	}
@@ -91,7 +90,7 @@ func AssembleWithDynamic(
 	// trim under budget: records tail-first, then skills, then ctx files tail-first.
 	for EstimateTokens(out) > budget && len(selectedRecords) > 0 {
 		selectedRecords = selectedRecords[:len(selectedRecords)-1]
-		memSection = knowledgeSection(selectedRecords, prof.MemoryBodyChars)
+		memSection = knowledgeSection(selectedRecords, cfg.MemoryBodyChars)
 		out = join(rules, identity, discipline, ctxSection, toolMan, skillSection, memSection)
 	}
 	if EstimateTokens(out) > budget && skillSection != "" {
@@ -104,8 +103,8 @@ func AssembleWithDynamic(
 		out = join(rules, identity, discipline, ctxSection, toolMan, skillSection, memSection)
 	}
 	if EstimateTokens(out) > budget {
-		log.Printf("prompt: assembled %d tokens > budget %d (model=%s profile=%s)",
-			EstimateTokens(out), budget, cfg.DefaultModel, cfg.Profile)
+		log.Printf("prompt: assembled %d tokens > budget %d (model=%s)",
+			EstimateTokens(out), budget, cfg.DefaultModel)
 	}
 	// memSection is the last joined part and carries no trailing newline, so out
 	// ends with it exactly — the wire layer splits on this suffix.
@@ -164,31 +163,6 @@ func identityBlockFor(cwd, gitRoot string, level caveman.Level) string {
 	return fmt.Sprintf("bee coding agent. cwd: %s.", cwd)
 }
 
-// tinyDiscipline returns a short anti-loop ruleset for the tiny profile.
-// Distinct from caveman (which is style compression): this targets the
-// failure modes observed in real local-model runs — phantom APIs, path
-// typos, write-test-before-impl, stuck-loop deliberation. Empty for any
-// profile other than tiny so larger models don't see redundant nags.
-//
-// Kept to ~7 short lines so the SystemPromptBudget=3000 for tiny isn't
-// blown. Each line a hard rule, not advice — 3B-active MoEs respond to
-// imperative > suggestive.
-func tinyDiscipline(profile string) string {
-	if profile != "tiny" {
-		return ""
-	}
-	return strings.Join([]string{
-		"## Discipline",
-		"- verify path with `read` before `edit`. typo wastes turn.",
-		"- use existing modules only. no `go get`. no new deps.",
-		"- run impl ONCE before writing tests. tests match observed output.",
-		"- 3 failed attempts on same fix → switch approach or call `escalate`.",
-		"- act, dont narrate. no multi-paragraph deliberation.",
-		"- wrong-key arg error → copy exact key from spec. retry once.",
-		"- build before claiming done. red test = not done.",
-	}, "\n")
-}
-
 // toolsManifest renders each tool as "name: snippet". When PromptSnippet is
 // empty it falls back to the first line of Description, with descBudget as a
 // safety cap on either source.
@@ -229,7 +203,7 @@ func skillsSection(manifest string) string {
 
 // truncateManifest caps the rendered skills manifest at maxChars, cutting at
 // line boundaries so no entry is half-printed. 0 = unbounded; -1 = drop the
-// section entirely (tiny profile: 4-tool surface needs no skill advert).
+// section entirely.
 func truncateManifest(manifest string, maxChars int) string {
 	if maxChars < 0 {
 		return ""
@@ -253,7 +227,7 @@ func truncateManifest(manifest string, maxChars int) string {
 
 // knowledgeSection emits one block per record. expired records carry a
 // staleness note; bodyCap > 0 truncates each body at the last word
-// boundary ≤ cap and appends an ellipsis. 0 = unbounded (large profile).
+// boundary ≤ cap and appends an ellipsis. 0 = unbounded.
 func knowledgeSection(rs []knowledge.Record, bodyCap int) string {
 	if len(rs) == 0 {
 		return ""

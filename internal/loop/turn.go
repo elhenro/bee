@@ -162,21 +162,13 @@ type Engine struct {
 	// confirmation per session. Deliberately NOT reset per Run.
 	jsonModeNoticeShown bool
 	// sysPromptCache memoizes Assemble output across Runs. key is a cheap
-	// digest of mode/profile + spec/skill/recs/ctxFile fingerprints. dynamic is
+	// digest of mode + spec/skill/recs/ctxFile fingerprints. dynamic is
 	// the volatile memory tail of value (for the prompt-cache breakpoint split).
 	sysPromptCache struct {
 		key     string
 		value   string
 		dynamic string
 	}
-	// profileScaled tracks whether the tiny-profile budget was already widened
-	// for the active model's context window. Sticky: scaling is idempotent
-	// for a given (model, ctx) pair, and we re-scale on model switch via the
-	// model-id check.
-	profileScaledFor string
-	// profileUnscaled remembers the pre-scale budgets so a model switch to a
-	// smaller window (or a non-scaling model) can restore them.
-	profileUnscaled *unscaledProfile
 	// cardGoal is the last real user ask; a synthetic continuation turn keeps
 	// it as the state card goal instead of replacing it.
 	cardGoal string

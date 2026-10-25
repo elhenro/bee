@@ -20,7 +20,7 @@ func (r *recordingApprover) Request(_ context.Context, _, _, _ string) (Decision
 
 func TestCache_Persistent_BypassesInner(t *testing.T) {
 	rec := &recordingApprover{verdict: Deny}
-	c := NewCacheWithRequire(rec, []string{"rm-recursive"}, nil, nil)
+	c := NewCache(rec, []string{"rm-recursive"}, nil)
 	d, err := c.Request(context.Background(), "rm -rf x", "rm-recursive", "")
 	if err != nil || d != AllowAlways {
 		t.Fatalf("got d=%v err=%v, want AllowAlways", d, err)
@@ -32,7 +32,7 @@ func TestCache_Persistent_BypassesInner(t *testing.T) {
 
 func TestCache_SessionCachesAfterFirst(t *testing.T) {
 	rec := &recordingApprover{verdict: AllowSession}
-	c := NewCacheWithRequire(rec, nil, nil, nil)
+	c := NewCache(rec, nil, nil)
 
 	for i := 0; i < 3; i++ {
 		d, _ := c.Request(context.Background(), "rm -rf x", "rm-recursive", "")
@@ -47,7 +47,7 @@ func TestCache_SessionCachesAfterFirst(t *testing.T) {
 
 func TestCache_AllowOnceDoesNotCache(t *testing.T) {
 	rec := &recordingApprover{verdict: AllowOnce}
-	c := NewCacheWithRequire(rec, nil, nil, nil)
+	c := NewCache(rec, nil, nil)
 
 	for i := 0; i < 3; i++ {
 		c.Request(context.Background(), "rm -rf x", "rm-recursive", "")
@@ -61,7 +61,7 @@ func TestCache_AllowAlwaysCallsPersist(t *testing.T) {
 	rec := &recordingApprover{verdict: AllowAlways}
 	var mu sync.Mutex
 	persisted := ""
-	c := NewCacheWithRequire(rec, nil, nil, func(k string) error {
+	c := NewCache(rec, nil, func(k string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		persisted = k
@@ -86,7 +86,7 @@ func TestCache_AllowAlwaysCallsPersist(t *testing.T) {
 
 func TestCache_DenyPropagates(t *testing.T) {
 	rec := &recordingApprover{verdict: Deny}
-	c := NewCacheWithRequire(rec, nil, nil, nil)
+	c := NewCache(rec, nil, nil)
 	d, _ := c.Request(context.Background(), "rm -rf /", "rm-recursive", "")
 	if d != Deny {
 		t.Fatalf("got %v, want Deny", d)
@@ -98,7 +98,7 @@ func TestCache_DenyPropagates(t *testing.T) {
 
 func TestCache_InnerError_DefaultsToDeny(t *testing.T) {
 	rec := &recordingApprover{verdict: AllowAlways, err: errors.New("nope")}
-	c := NewCacheWithRequire(rec, nil, nil, nil)
+	c := NewCache(rec, nil, nil)
 	d, err := c.Request(context.Background(), "x", "k", "")
 	if err == nil {
 		t.Fatal("expected error")

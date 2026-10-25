@@ -100,13 +100,12 @@ func checkConfigLoaded() ([]check, config.Config) {
 	if err != nil {
 		// load failures are not always fatal — keys missing is common.
 		out = append(out, check{"config", "warn", err.Error(), "set the env var or edit ~/.bee/config.toml"})
-		// fall back to defaults to still report profile/caveman.
+		// fall back to defaults to still report caveman.
 		cfg = config.Defaults()
 	} else {
 		out = append(out, check{"config", "ok", config.ConfigPath(), ""})
 	}
 	out = append(out,
-		check{"profile", "info", cfg.Profile, ""},
 		check{"caveman", "info", cfg.Caveman, ""},
 		check{"default provider", "info", cfg.DefaultProvider, ""},
 		check{"default model", "info", cfg.DefaultModel, ""},

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/types"
@@ -22,7 +21,7 @@ func labelSpecs() []llm.ToolSpec {
 
 func TestAddCallLabels_OffersLabelOnLabeledToolsOnly(t *testing.T) {
 	specs := labelSpecs()
-	out := addDisplayArgs(specs, config.Config{Profile: "normal"})
+	out := addDisplayArgs(specs)
 	bash := out[0].Schema["properties"].(map[string]any)
 	if _, ok := bash[types.CallLabelKey]; !ok {
 		t.Fatal("bash should offer a label")
@@ -35,18 +34,11 @@ func TestAddCallLabels_OffersLabelOnLabeledToolsOnly(t *testing.T) {
 	}
 }
 
-func TestAddCallLabels_SkippedOnTiny(t *testing.T) {
-	out := addDisplayArgs(labelSpecs(), config.Config{Profile: "tiny"})
-	if _, ok := out[0].Schema["properties"].(map[string]any)[types.CallLabelKey]; ok {
-		t.Fatal("tiny profile should not pay for labels")
-	}
-}
-
 func TestAddCallLabels_KeepsAnExistingDescriptionArg(t *testing.T) {
 	specs := []llm.ToolSpec{{Name: "bash", Schema: map[string]any{
 		"properties": map[string]any{"description": map[string]any{"type": "string", "description": "own"}},
 	}}}
-	out := addDisplayArgs(specs, config.Config{Profile: "normal"})
+	out := addDisplayArgs(specs)
 	got := out[0].Schema["properties"].(map[string]any)["description"].(map[string]any)["description"]
 	if got != "own" {
 		t.Fatalf("existing description arg replaced: %v", got)
@@ -106,7 +98,7 @@ func TestRunOne_ToolNeverSeesCallLabel(t *testing.T) {
 
 func TestAddDisplayArgs_OffersWhyOnMutators(t *testing.T) {
 	specs := []llm.ToolSpec{{Name: "edit", Schema: labelSpecs()[0].Schema}, {Name: "read", Schema: labelSpecs()[1].Schema}}
-	out := addDisplayArgs(specs, config.Config{Profile: "normal"})
+	out := addDisplayArgs(specs)
 	if _, ok := out[0].Schema["properties"].(map[string]any)[types.WhyKey]; !ok {
 		t.Fatal("edit should offer a why")
 	}
@@ -115,14 +107,6 @@ func TestAddDisplayArgs_OffersWhyOnMutators(t *testing.T) {
 	}
 	if _, ok := specs[0].Schema["properties"].(map[string]any)[types.WhyKey]; ok {
 		t.Fatal("registry spec was edited in place")
-	}
-}
-
-func TestAddDisplayArgs_SkippedOnTinyForWhyToo(t *testing.T) {
-	specs := []llm.ToolSpec{{Name: "edit", Schema: labelSpecs()[0].Schema}}
-	out := addDisplayArgs(specs, config.Config{Profile: "tiny"})
-	if _, ok := out[0].Schema["properties"].(map[string]any)[types.WhyKey]; ok {
-		t.Fatal("tiny should not pay for a why")
 	}
 }
 

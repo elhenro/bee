@@ -3,15 +3,14 @@ package loop
 import (
 	"fmt"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/prompt"
 	"github.com/elhenro/bee/internal/types"
 )
 
 // injectIterAndTokenWarnings prepends one-shot warning prefixes to the next
-// tool-result block when iter/token/stall thresholds cross. Each warning
+// tool-result block when iter/token thresholds cross. Each warning
 // fires at most once per Run (dedup via Engine flags).
-func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentIter, maxIter, tokenBudget int, readOnly bool) []types.ContentBlock {
+func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentIter, maxIter, tokenBudget int) []types.ContentBlock {
 	r := e.run
 	// context-window warning: if usage crosses threshold, prepend a one-shot
 	// notice so the model summarizes/drops noise on the following turn.
@@ -30,8 +29,8 @@ func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentI
 		*flag = true
 	}
 	// iteration warnings. Skipped entirely when the cap is lifted (maxIter <= 0)
-	// — there's no ceiling to warn about; the token-budget and stall guards
-	// below carry the load instead.
+	// — there's no ceiling to warn about; the token-budget guard
+	// below carries the load instead.
 	if maxIter > 0 {
 		warn(&r.warnedIterHalf, currentIter*2 >= maxIter,
 			"[iter %d/%d] half the budget spent. summarize progress; commit edits or stop if stuck.\n\n", currentIter, maxIter)
@@ -46,21 +45,6 @@ func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentI
 			"[tokens %d/%d] half the token budget spent. summarize and commit edits.\n\n", spent, tokenBudget)
 		warn(&r.warnedTokenEighty, spent*5 >= tokenBudget*4,
 			"[tokens %d/%d] near token cap. finish current edit or stop.\n\n", spent, tokenBudget)
-	}
-	// stall warning is opt-in: profile must set a positive threshold. skipped on
-	// read-only turns — mutators are filtered out there, so the read-only streak
-	// is expected, not a stall. nudging "commit edits" would contradict the
-	// read-only prompt that forbids edits.
-	if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 && !readOnly {
-		warn(&r.warnedStall, r.noMutationStreak >= t,
-			"[stall] %d read-only iters; commit edits when ready.\n\n", r.noMutationStreak)
-		// escalation tier: streak hit 2x threshold AND first nudge already
-		// fired. previous session evidence (5e20f3f8): two soft nudges
-		// fired, model ignored both, kept reading. Hard stop at 3x threshold
-		// arrives too late — burns more tokens. At 2x emit an actionable
-		// pointer to the escalate tool so the model exits cleanly.
-		warn(&r.warnedStallEscalate, r.warnedStall && r.noMutationStreak >= 2*t,
-			"[stall %d iters] previous nudge ignored. if stuck, call `escalate` with a reason — clean exit beats another read.\n\n", r.noMutationStreak)
 	}
 	// cross-turn reasoning loop: the model rehashed near-identical reasoning for
 	// reasoningDupBailAt turns running. independent of mutation state — fires

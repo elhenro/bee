@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/loop"
 )
 
@@ -99,9 +98,7 @@ func (s *tuiSide) SwitchModel(name string) error {
 }
 
 // SwitchProviderModel sets both fields. Called by the picker on commit.
-// Also re-resolves the active profile so a switch to/from a local provider
-// (ollama / lmstudio) flips between tiny and the model-class profile, then
-// invokes Engine.Rebuild so the next turn instantiates the new provider's
+// Then invokes Engine.Rebuild so the next turn instantiates the new provider's
 // HTTP client. Without the rebuild the engine kept streaming against the
 // pre-switch backend (e.g. ollama after picking openrouter).
 func (s *tuiSide) SwitchProviderModel(provider, model string) error {
@@ -116,9 +113,6 @@ func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 		if model != "" {
 			s.m.eng.Cfg.DefaultModel = model
 		}
-		// re-resolve the profile when auto is in play. An explicit
-		// tiny/normal/large choice is preserved.
-		s.m.eng.Cfg = reapplyAutoProfile(s.m.eng.Cfg)
 		if err := rebuildEngine(s.m.eng, "model"); err != nil {
 			return err
 		}
@@ -127,16 +121,6 @@ func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 		s.m.model = model
 	}
 	return nil
-}
-
-// reapplyAutoProfile re-runs ApplyProfile-style resolution for an in-flight
-// config change. Differs from ApplyProfile: leaves a concretely-named profile
-// alone and only re-resolves "auto"/empty. Safe to call repeatedly.
-func reapplyAutoProfile(c config.Config) config.Config {
-	if c.Profile == "auto" || c.Profile == "" {
-		c.Profile = config.ResolveAutoProfileForProvider(c.DefaultProvider, c.DefaultModel)
-	}
-	return c
 }
 
 // OpenPicker flips a sentinel that Model.Update consumes to display the

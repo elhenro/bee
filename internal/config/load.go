@@ -18,15 +18,14 @@ func Load() (Config, error) {
 }
 
 // Overrides are per-invocation choices (CLI flags) that must apply before the
-// profile and API key resolve, so a --provider flag picks that provider's key,
-// auto profile and model rather than the configured default's.
+// API key resolves, so a --provider flag picks that provider's key and model
+// rather than the configured default's.
 type Overrides struct {
 	Provider string
 	Model    string
 }
 
-// LoadWith is Load with flag overrides folded in ahead of profile/key
-// resolution. A provider override without a model takes that provider's
+// LoadWith is Load with flag overrides folded in ahead of key resolution. A provider override without a model takes that provider's
 // default_model, since the configured model id belongs to the old provider.
 func LoadWith(o Overrides) (Config, error) {
 	c := Defaults()
@@ -49,12 +48,23 @@ func LoadWith(o Overrides) (Config, error) {
 		c.DefaultModel = o.Model
 	}
 	migrateLegacyRoleFields(&c)
-	c = ApplyProfile(c)
+	normalizeCaveman(&c)
+	// the recap is a side-LLM round trip; on-host models are too slow for it.
+	if IsLocalProvider(c.DefaultProvider) {
+		c.ShowRecap = false
+	}
 
 	if err := resolveAPIKey(&c); err != nil {
 		return c, err
 	}
 	return c, nil
+}
+
+// normalizeCaveman maps the retired "auto" (and an empty value) to off.
+func normalizeCaveman(c *Config) {
+	if c.Caveman == "" || c.Caveman == "auto" {
+		c.Caveman = "off"
+	}
 }
 
 // useProviderModel sets the model to the active provider's default_model when
@@ -76,9 +86,9 @@ func mergeFile(c *Config, path string) error {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	// Decode onto the existing struct so unset TOML keys keep their default
-	// values. go-toml merges per-key: a partial [profiles.tiny] in the file
-	// overrides only the fields it names, leaving tiny's other fields and the
-	// other profiles intact. This is what lets a bench overlay flip one knob.
+	// values. go-toml merges per-key, so a partial file overrides only the
+	// fields it names. Unknown keys (a retired profile = "..." or [profiles.x])
+	// are ignored.
 	if err := toml.Unmarshal(data, c); err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -92,7 +102,6 @@ func mergeEnv(c *Config) {
 		"BEE_PROVIDER":      &c.DefaultProvider,
 		"BEE_MODEL":         &c.DefaultModel,
 		"BEE_CAVEMAN":       &c.Caveman,
-		"BEE_PROFILE":       &c.Profile,
 		"BEE_MODE":          &c.Mode,
 		"BEE_ROLE":          &c.Role,
 		"BEE_SHELL":         &c.Shell.Shell,
@@ -109,9 +118,6 @@ func mergeEnv(c *Config) {
 		if v := os.Getenv(env); v != "" {
 			*dst = boolEnv(v)
 		}
-	}
-	if v := os.Getenv("BEE_EXTRA_TOOLS"); v != "" {
-		c.ExtraTools = splitCSV(v)
 	}
 }
 
@@ -145,18 +151,6 @@ func boolEnv(s string) bool {
 		return true
 	}
 	return false
-}
-
-// splitCSV trims whitespace, drops empties.
-func splitCSV(s string) []string {
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 // ProviderKey resolves the credential for one provider block: env var

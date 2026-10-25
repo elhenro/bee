@@ -39,7 +39,7 @@ func New(cwd string) tools.Tool {
 }
 
 // Spec advertises the tool. PromptSnippet is the prompt-manifest one-liner
-// shown to tiny profiles; Description is the full API-spec text shown to
+// shown in the prompt manifest; Description is the full API-spec text shown to
 // hosted models that consume native tool schemas.
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{
@@ -68,7 +68,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 }
 
 // Run shells out to `go doc`. Combined stdout+stderr returned. Truncated at
-// maxOutputBytes so a `go doc <huge-pkg>` can't blow tiny-profile context.
+// maxOutputBytes so a `go doc <huge-pkg>` can't blow the context.
 //
 // Hard timeout: 5s. `go doc` is local and fast; a slow run usually means a
 // fetch attempt for a missing module, which we'd rather fail than hang on.
@@ -96,8 +96,8 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	cmd.Dir = t.cwd
 	// disable Go's automatic module fetch on miss: keeps the oracle hermetic.
 	// On a missing module, fail clean with the real error instead of stalling
-	// while Go contacts proxy.golang.org. Especially important for tiny
-	// profile runs where the user may be offline.
+	// while Go contacts proxy.golang.org. Especially important when the
+	// user may be offline.
 	cmd.Env = append(cmd.Environ(), "GOFLAGS=-mod=readonly", "GOPROXY=off")
 
 	var buf bytes.Buffer

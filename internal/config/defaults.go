@@ -1,7 +1,7 @@
 package config
 
 // Defaults returns the canonical out-of-the-box configuration: OpenRouter +
-// deepseek-v4-flash, three profiles, caveman off, danger-full-access +
+// deepseek-v4-flash, caveman off, danger-full-access +
 // on-request sandbox, memory enabled with top_k=3.
 //
 // Zero-config startup: set OPENROUTER_API_KEY and bee runs.
@@ -9,14 +9,9 @@ func Defaults() Config {
 	return Config{
 		DefaultProvider: "openrouter",
 		DefaultModel:    "deepseek/deepseek-v4-flash",
-		// "auto" defers to the active profile's Caveman, which is off everywhere:
-		// terse replies hide the rationale. Opt in per-run with `--caveman
+		// off: terse replies hide the rationale. Opt in per-run with `--caveman
 		// lite|full|ultra` or in config.toml: caveman = "ultra".
-		Caveman: "auto",
-		// "auto" picks tiny/normal/large by model class. Small/fast models
-		// (flash/mini/nano/haiku/8b…) get the 4-tool tiny surface — a
-		// minimal budget tuned for that class.
-		Profile: "auto",
+		Caveman: "off",
 		// "" = derive from Role per turn (worker→auto, scout→high, queen→max).
 		// Override per-run with `--thinking off|low|medium|high|max` (or "auto").
 		Thinking: "",
@@ -57,6 +52,14 @@ func Defaults() Config {
 		ShowBanner:    true,
 		ShowLoader:    true,
 		MaxIterations: DefaultMaxIterations,
+		// system prompt is a ceiling: sections are only trimmed when over it.
+		// tool output of 8000 tokens (~32k chars) per call keeps one fat read
+		// from flooding the window.
+		SystemPromptBudget: 12000,
+		MemoryBodyChars:    2000,
+		ToolDescChars:      160,
+		SkillManifestChars: 100,
+		ToolOutputTokens:   8000,
 		// mastermind off by default; when on, the hive spawns this many workers.
 		MastermindWorkers:   3,
 		MastermindReviewers: 1,
@@ -169,86 +172,6 @@ func Defaults() Config {
 					AccountIDHeader: "chatgpt-account-id",
 					AccountIDClaim:  "https://api.openai.com/auth.chatgpt_account_id",
 				},
-			},
-		},
-		Profiles: map[string]Profile{
-			// tiny: local + 4k-context models (ollama, lmstudio, flash/mini class).
-			// top_k=1 keeps memory injection cheap. Caveman is off like every
-			// profile; ultra (335 bytes) is the opt-in for a 4k window.
-			"tiny": {
-				SystemPromptBudget: 3000,
-				MemoryTopK:         1,
-				MemoryBodyChars:    400,
-				ToolDescChars:      220,
-				// skills section omitted on tiny (-1 sentinel): 4-tool surface
-				// needs no extra advert, every saved byte counts on 4k-context
-				// local runs. 0 = unbounded; -1 = drop section entirely.
-				SkillManifestChars: -1,
-				Caveman:            "off",
-				MaxIterations:      DefaultMaxIterations,
-				// tool format inherits native tool_calls (the global default).
-				// capable local models emit clean native calls via the
-				// oai-compatible server; the xml textmode wrapper handicaps
-				// them and fully breaks models that only speak native FC. opt
-				// into "xml" per-run for older models that ignore native call
-				// deltas (set tool_format = "xml" in config or a profile).
-				// ~1500 tokens (~6k chars) per tool result. one fat read of
-				// a 1.5k-line file would otherwise blow a 4-8k MLX context.
-				ToolOutputTokens: 1500,
-				// search-first discipline for 4k local models: read defaults
-				// to 100-line slices (max 500), grep capped at 50 matches.
-				// apply_patch dropped — tiny models mis-emit unified diffs.
-				SkipApplyPatch:   true,
-				ReadDefaultLines: 100,
-				ReadMaxLines:     500,
-				GrepMaxMatches:   50,
-				// nudge tiny after 3 read-only turns: small models loop on reads.
-				NoMutationStallThreshold: 3,
-				// pin sampling: deterministic for tool turns, prevents temp drift on 4-bit MoE.
-				Temperature: 0.0,
-				TopP:        0.8,
-				// post-turn recap is on; only on-host runs drop it (see ApplyProfile): the
-				// side-LLM round-trip is ~2s on slow local models.
-				ShowRecap: boolPtr(false),
-				// destructive-op approval keys bypass the session AllowSession
-				// cache — small models that hallucinate intents can't reuse one
-				// "yes" for the rest of the run. kept inline so users can see what
-				// they're getting.
-				Safety: ProfileSafety{
-					RequireApprovalKeys: []string{
-						"rm-recursive",
-						"find-delete",
-						"xargs-rm",
-						"find-exec-rm",
-						"git-reset-hard",
-						"git-push-force",
-						"git-push-force-short",
-						"git-clean-force",
-						"git-branch-delete",
-						"chown-root",
-						"chmod-world-write",
-					},
-					WarnOnDuplicateWrites: true,
-				},
-			},
-			// normal: deepseek-flash / gpt-4o-mini class. balanced.
-			"normal": {
-				SystemPromptBudget: 4000,
-				MemoryTopK:         3,
-				MemoryBodyChars:    2000,
-				ToolDescChars:      160,
-				SkillManifestChars: 100,
-				Caveman:            "off",
-				ToolOutputTokens:   8000,
-			},
-			// large: sonnet / opus class. headroom for richer prompts.
-			"large": {
-				SystemPromptBudget: 12000,
-				MemoryTopK:         5,
-				ToolDescChars:      400,
-				SkillManifestChars: 200,
-				Caveman:            "off",
-				ToolOutputTokens:   50000,
 			},
 		},
 	}

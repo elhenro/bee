@@ -67,15 +67,6 @@ const defaultMax = 200
 // New returns a grep tool rooted at root with the default match cap (200).
 func New(root string) *Tool { return &Tool{root: root, max: defaultMax} }
 
-// NewWithMax returns a grep tool with a custom match cap. Tiny profile uses
-// 50 so a single grep can't dump a wall of paths into a 4-8k context.
-func NewWithMax(root string, n int) *Tool {
-	if n <= 0 {
-		n = defaultMax
-	}
-	return &Tool{root: root, max: n}
-}
-
 // Spec advertises the tool to the model.
 func (t *Tool) Spec() llm.ToolSpec {
 	return llm.ToolSpec{

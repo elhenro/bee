@@ -1,7 +1,7 @@
 ---
 name: about
 type: prompt
-description: how bee works — skills, profiles, sandbox, sessions, env
+description: how bee works — skills, budgets, sandbox, sessions, env
 tools: [bash, read]
 auto_approve: [bash:ls, bash:grep, bash:cat, bash:find, bash:wc, read]
 ---
@@ -39,18 +39,12 @@ preserved on update.
 ls ~/.bee/skills/
 ```
 
-## Profiles
+## Budgets
 
-Set in `~/.bee/config.toml` or via `BEE_PROFILE`. Tunes system-prompt
-budget, memory top-k, tool descriptions, skill manifest chars, caveman
-level, iter cap, output token cap, sampling.
-
-| Profile | Use for |
-|---|---|
-| `tiny`   | 4k-context local Ollama / LM Studio. XML tool envelope. |
-| `normal` | Mid-size remote models. |
-| `large`  | Frontier APIs (Claude/GPT/Gemini). |
-| `auto`   | Resolves per provider+model; local → `tiny`. |
+One set of defaults for every model, tuned per field in
+`~/.bee/config.toml`: `system_prompt_budget`, `tool_output_tokens`,
+`memory_body_chars`, `tool_desc_chars`, `skill_manifest_chars`,
+`max_iterations`, `tool_format` (`json` | `xml` | `native`).
 
 ## Sandbox (two axes)
 
@@ -92,7 +86,7 @@ fallback and see images directly.
 
 ```
 ~/.bee/
-  config.toml         provider/model/profile/caveman + user_tools
+  config.toml         provider/model/caveman/budgets + user_tools
   skills/             user-editable skill markdown files
   sessions/<id>.jsonl append-only rollouts (tree, parent-pointer)
   memory/             knowledge store entries (frontmatter MD)
@@ -121,7 +115,6 @@ bee back <id-or-branch>
 | `BEE_HOME`          | Override `~/.bee` (hermetic). |
 | `BEE_PROVIDER`      | Override default provider. |
 | `BEE_MODEL`         | Override default model. |
-| `BEE_PROFILE`       | `tiny`/`normal`/`large`/`auto`. |
 | `BEE_CAVEMAN`       | Caveman level. |
 | `BEE_TEST_PROVIDER` | `stub` or `scripted` (offline tests). |
 
