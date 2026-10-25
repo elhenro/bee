@@ -148,16 +148,7 @@ func abbrevMatch(a, b string) bool {
 // levenshtein is the standard edit distance over bytes — tool-arg keys are
 // ASCII, so byte-wise is correct and cheap.
 func levenshtein(a, b string) int {
-	if a == b {
-		return 0
-	}
 	la, lb := len(a), len(b)
-	if la == 0 {
-		return lb
-	}
-	if lb == 0 {
-		return la
-	}
 	prev := make([]int, lb+1)
 	cur := make([]int, lb+1)
 	for j := 0; j <= lb; j++ {
