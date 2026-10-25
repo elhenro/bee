@@ -15,14 +15,10 @@ import (
 type Registry struct {
 	mu     sync.RWMutex
 	byName map[string]Skill
-	byPath map[string]string // path -> name (for watcher remove)
 }
 
 func NewRegistry() *Registry {
-	return &Registry{
-		byName: make(map[string]Skill),
-		byPath: make(map[string]string),
-	}
+	return &Registry{byName: make(map[string]Skill)}
 }
 
 // Load scans dir for *.md files and (re)populates the registry.
@@ -36,62 +32,26 @@ func (r *Registry) Load(dir string) error {
 		return fmt.Errorf("read skills dir %s: %w", dir, err)
 	}
 
-	r.mu.Lock()
-	r.byName = make(map[string]Skill)
-	r.byPath = make(map[string]string)
-	r.mu.Unlock()
-
+	loaded := make(map[string]Skill)
 	var errs []string
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".md") {
 			continue
 		}
-		p := filepath.Join(dir, e.Name())
-		s, err := ParseFile(p)
+		s, err := ParseFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
 		}
-		r.put(s)
+		loaded[s.Name] = s
 	}
+	r.mu.Lock()
+	r.byName = loaded
+	r.mu.Unlock()
 	if len(errs) > 0 {
 		return fmt.Errorf("skill parse errors: %s", strings.Join(errs, "; "))
 	}
 	return nil
-}
-
-// Upsert parses one path and stores it. Used by the watcher.
-func (r *Registry) Upsert(path string) (Skill, error) {
-	s, err := ParseFile(path)
-	if err != nil {
-		// if the path was previously loaded under another name, drop the stale
-		// entry so a broken edit doesn't leave a ghost.
-		r.RemovePath(path)
-		return Skill{}, err
-	}
-	r.put(s)
-	return s, nil
-}
-
-// RemovePath drops whatever skill was associated with this file path.
-func (r *Registry) RemovePath(path string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if name, ok := r.byPath[path]; ok {
-		delete(r.byName, name)
-		delete(r.byPath, path)
-	}
-}
-
-func (r *Registry) put(s Skill) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	// if the name already maps to a different path, evict the old path entry
-	if prev, ok := r.byName[s.Name]; ok && prev.Path != s.Path {
-		delete(r.byPath, prev.Path)
-	}
-	r.byName[s.Name] = s
-	r.byPath[s.Path] = s.Name
 }
 
 func (r *Registry) Get(name string) (Skill, bool) {
