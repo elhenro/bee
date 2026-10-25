@@ -34,15 +34,11 @@ type GeminiProvider struct {
 // NewGemini builds a provider. APIKey is read from GEMINI_API_KEY env when
 // the config field is blank, mirroring how callers wire other providers.
 func NewGemini(cfg GeminiConfig) *GeminiProvider {
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
-	}
+	cfg.BaseURL = cmp.Or(cfg.BaseURL, "https://generativelanguage.googleapis.com/v1beta")
 	if cfg.APIKey == "" {
 		cfg.APIKey = os.Getenv("GEMINI_API_KEY")
 	}
-	if cfg.HTTPClient == nil {
-		cfg.HTTPClient = newStreamingClient()
-	}
+	cfg.HTTPClient = cmp.Or(cfg.HTTPClient, newStreamingClient())
 	return &GeminiProvider{cfg: cfg, client: cfg.HTTPClient}
 }
 

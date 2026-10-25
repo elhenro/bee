@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 
@@ -40,15 +41,6 @@ func liveVisionVerdict(modelID string) (ok, known bool) {
 	return ok, known
 }
 
-func hasModality(list []string, want string) bool {
-	for _, m := range list {
-		if strings.EqualFold(m, want) {
-			return true
-		}
-	}
-	return false
-}
-
 // visionModelSubstrings names model families that accept image input. Matched
 // case-insensitively against the full id and the trailing path segment so
 // openrouter-style ids ("anthropic/claude-sonnet-4-6") resolve. Best-effort:
@@ -79,16 +71,7 @@ func SupportsVision(modelID string) bool {
 		return ok
 	}
 	id := strings.ToLower(modelID)
-	tail := id
-	if idx := strings.LastIndex(id, "/"); idx >= 0 {
-		tail = id[idx+1:]
-	}
-	for _, s := range visionModelSubstrings {
-		if strings.Contains(id, s) || strings.Contains(tail, s) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(visionModelSubstrings, func(s string) bool { return strings.Contains(id, s) })
 }
 
 // ModelVision reports whether the active model accepts images and whether

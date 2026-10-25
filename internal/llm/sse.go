@@ -55,7 +55,7 @@ func emitAll(ctx context.Context, out chan<- Event, evs ...Event) {
 // sentinels above is emitted as an error event. Returns false when the stream
 // ended in an error event, so the caller must not finish with a done event.
 func readSSE(ctx context.Context, resp *http.Response, name string, stall time.Duration, out chan<- Event, handle func(payload []byte, bump func()) error) bool {
-	bump, stalled, cancel := streamWatchdogWith(ctx, resp.Body, stall)
+	bump, stalled, cancel := streamWatchdog(ctx, resp.Body, stall)
 	defer cancel()
 	stalledErr := func() error {
 		return fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", name, stall)

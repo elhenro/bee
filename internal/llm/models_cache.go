@@ -1,6 +1,8 @@
 package llm
 
 import (
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -57,7 +59,7 @@ func storeCache(name string, models []Model) {
 			RememberContextLength(m.ID, m.ContextLength)
 		}
 		if len(m.InputModalities) > 0 {
-			RememberVision(m.ID, hasModality(m.InputModalities, "image"))
+			RememberVision(m.ID, slices.ContainsFunc(m.InputModalities, func(s string) bool { return strings.EqualFold(s, "image") }))
 		}
 	}
 }

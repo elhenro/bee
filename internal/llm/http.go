@@ -24,7 +24,7 @@ const streamStallTimeout = 10 * time.Minute
 
 // effectiveStallTimeout returns the default stall window, overridden by
 // BEE_STREAM_STALL_SECONDS when set to a positive integer. Anything <=0 there
-// disables the watchdog entirely (the no-op path in streamWatchdogWith).
+// disables the watchdog entirely (the no-op path in streamWatchdog).
 func effectiveStallTimeout() time.Duration {
 	if v := os.Getenv("BEE_STREAM_STALL_SECONDS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -85,21 +85,16 @@ func setJSONHeaders(r *http.Request, streaming bool) {
 //
 // Returns:
 //   - bump:    call after every successful scanner.Scan() to reset the timer
-//   - stalled: closed when no bump has arrived for streamStallTimeout
+//   - stalled: closed when no bump has arrived for timeout
 //   - cancel:  call from a defer to stop the watchdog goroutine
 //
 // On stall the watchdog closes body to unblock the scanner. The caller's
 // select on `stalled` then surfaces a clean error instead of the cryptic
-// "context deadline exceeded while reading body" from http.Client.Timeout.
-func streamWatchdog(ctx context.Context, body io.Closer) (bump func(), stalled <-chan struct{}, cancel func()) {
-	return streamWatchdogWith(ctx, body, effectiveStallTimeout())
-}
-
-// streamWatchdogWith is streamWatchdog with a caller-supplied timeout. A
+// "context deadline exceeded while reading body" from http.Client.Timeout. A
 // non-positive timeout returns a no-op watchdog (bump/cancel are noops, the
 // stalled channel never fires) — useful in tests and for callers that opt
 // out per-config.
-func streamWatchdogWith(ctx context.Context, body io.Closer, timeout time.Duration) (bump func(), stalled <-chan struct{}, cancel func()) {
+func streamWatchdog(ctx context.Context, body io.Closer, timeout time.Duration) (bump func(), stalled <-chan struct{}, cancel func()) {
 	if timeout <= 0 {
 		stalledCh := make(chan struct{})
 		return func() {}, stalledCh, func() {}
@@ -116,12 +111,6 @@ func streamWatchdogWith(ctx context.Context, body io.Closer, timeout time.Durati
 			case <-wdCtx.Done():
 				return
 			case <-activity:
-				if !t.Stop() {
-					select {
-					case <-t.C:
-					default:
-					}
-				}
 				t.Reset(timeout)
 			case <-t.C:
 				close(stalledCh)

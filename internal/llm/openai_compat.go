@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -83,14 +85,8 @@ type OpenAICompatProvider struct {
 
 // NewOpenAICompat builds a provider. Missing fields get sensible defaults.
 func NewOpenAICompat(cfg OpenAICompatConfig) *OpenAICompatProvider {
-	if cfg.Name == "" {
-		cfg.Name = "openai-compat"
-	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = newStreamingClient()
-	}
-	return &OpenAICompatProvider{cfg: cfg, client: client}
+	cfg.Name = cmp.Or(cfg.Name, "openai-compat")
+	return &OpenAICompatProvider{cfg: cfg, client: cmp.Or(cfg.HTTPClient, newStreamingClient())}
 }
 
 // num_ctx auto-allocation bounds for ollama-shaped servers.
@@ -132,12 +128,7 @@ func (p *OpenAICompatProvider) resolveNumCtx(model string) int {
 // drift; the model id is interpolated into the message so we anchor on the
 // suffix instead.
 func isNoToolSupportError(code int, body []byte) bool {
-	if code != 400 {
-		return false
-	}
-	s := strings.ToLower(string(body))
-	return strings.Contains(s, "does not support tools") ||
-		strings.Contains(s, "model does not support tool")
+	return badRequestMentions(code, body, "does not support tools", "model does not support tool")
 }
 
 // isNoResponseFormatError detects a 400 caused by the response_format field
@@ -145,11 +136,13 @@ func isNoToolSupportError(code int, body []byte) bool {
 // fields). Anchored on the field name so unrelated 400s never strip the
 // constraint.
 func isNoResponseFormatError(code int, body []byte) bool {
-	if code != 400 {
-		return false
-	}
+	return badRequestMentions(code, body, "response_format", "json_schema")
+}
+
+// badRequestMentions reports a 400 whose body contains any of subs, ignoring case.
+func badRequestMentions(code int, body []byte, subs ...string) bool {
 	s := strings.ToLower(string(body))
-	return strings.Contains(s, "response_format") || strings.Contains(s, "json_schema")
+	return code == http.StatusBadRequest && slices.ContainsFunc(subs, func(sub string) bool { return strings.Contains(s, sub) })
 }
 
 // Name returns the configured display name.

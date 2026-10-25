@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"slices"
 	"strings"
 	"sync"
 )
@@ -14,6 +15,12 @@ var ctxCache = struct {
 	m map[string]int
 }{m: map[string]int{}}
 
+// modelTail is the last path segment of a model id, so openrouter-style ids
+// ("anthropic/claude-sonnet-4-6") resolve to the bare model name.
+func modelTail(modelID string) string {
+	return modelID[strings.LastIndex(modelID, "/")+1:]
+}
+
 // RememberContextLength records a live-learned context window for modelID.
 // Both the raw id and its trailing path segment are stored so future
 // lookups resolve regardless of which form ContextWindow gets.
@@ -24,9 +31,7 @@ func RememberContextLength(modelID string, n int) {
 	ctxCache.Lock()
 	defer ctxCache.Unlock()
 	ctxCache.m[modelID] = n
-	if idx := strings.LastIndex(modelID, "/"); idx >= 0 {
-		ctxCache.m[modelID[idx+1:]] = n
-	}
+	ctxCache.m[modelTail(modelID)] = n
 }
 
 // ResetLiveContextLengths drops every learned entry. Tests call this.
@@ -38,34 +43,28 @@ func ResetLiveContextLengths() {
 
 // ContextWindow returns a best-effort context length (in tokens) for the
 // given model id. Live API-learned values win over the hardcoded table.
-// Tries the exact id, then the trailing path segment so OpenRouter ids
-// ("anthropic/claude-sonnet-4-6") resolve to the bare model name. Returns
-// 0 when unknown — TUI treats that as "no fill indicator".
+// Tries the exact id, then the trailing path segment. Returns 0 when unknown —
+// TUI treats that as "no fill indicator".
 func ContextWindow(modelID string) int {
 	if modelID == "" {
 		return 0
 	}
+	tail := modelTail(modelID)
 	ctxCache.RLock()
-	if c, ok := ctxCache.m[modelID]; ok {
-		ctxCache.RUnlock()
-		return c
-	}
-	if idx := strings.LastIndex(modelID, "/"); idx >= 0 {
-		if c, ok := ctxCache.m[modelID[idx+1:]]; ok {
-			ctxCache.RUnlock()
-			return c
-		}
-	}
+	c, ok := lookupBoth(ctxCache.m, modelID, tail)
 	ctxCache.RUnlock()
-	if c, ok := contextLengths[modelID]; ok {
-		return c
+	if !ok {
+		c, _ = lookupBoth(contextLengths, modelID, tail)
 	}
-	if idx := strings.LastIndex(modelID, "/"); idx >= 0 {
-		if c, ok := contextLengths[modelID[idx+1:]]; ok {
-			return c
-		}
+	return c
+}
+
+func lookupBoth(m map[string]int, id, tail string) (int, bool) {
+	if c, ok := m[id]; ok {
+		return c, true
 	}
-	return 0
+	c, ok := m[tail]
+	return c, ok
 }
 
 // contextLengths is a curated table of known model context windows. Keep in
@@ -136,39 +135,22 @@ var thinkingModelSubstrings = []string{
 
 // SupportsThinking reports whether modelID belongs to a family that honors a
 // reasoning_effort / thinking-budget request. Best-effort: substring match
-// against thinkingModelSubstrings on both the full id and trailing path
-// segment. Unknown models return false → ThinkingAuto resolves to off so we
-// don't break non-reasoning providers that choke on the field.
+// against thinkingModelSubstrings. Unknown models return false → ThinkingAuto
+// resolves to off so we don't break non-reasoning providers that choke on the
+// field.
 func SupportsThinking(modelID string) bool {
-	if modelID == "" {
-		return false
-	}
 	id := strings.ToLower(modelID)
-	tail := id
-	if idx := strings.LastIndex(id, "/"); idx >= 0 {
-		tail = id[idx+1:]
-	}
-	for _, s := range thinkingModelSubstrings {
-		if strings.Contains(id, s) || strings.Contains(tail, s) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(thinkingModelSubstrings, func(s string) bool { return strings.Contains(id, s) })
 }
 
-// hardcodedModels returns a curated list for wire families whose /models
-// endpoint is unavailable or gated (notably Anthropic).
-func hardcodedModels(wireAPI string) []Model {
-	switch wireAPI {
-	case "anthropic":
-		return []Model{
-			{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", ContextLength: 200000},
-			{ID: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5", ContextLength: 200000},
-			{ID: "claude-haiku-4-5", Name: "Claude Haiku 4.5", ContextLength: 200000},
-			{ID: "claude-opus-4-1", Name: "Claude Opus 4.1", ContextLength: 200000},
-		}
-	default:
-		return []Model{}
+// anthropicModels is the curated list for the Anthropic wire, whose /models
+// endpoint is unavailable or gated.
+func anthropicModels() []Model {
+	return []Model{
+		{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", ContextLength: 200000},
+		{ID: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5", ContextLength: 200000},
+		{ID: "claude-haiku-4-5", Name: "Claude Haiku 4.5", ContextLength: 200000},
+		{ID: "claude-opus-4-1", Name: "Claude Opus 4.1", ContextLength: 200000},
 	}
 }
 
@@ -177,7 +159,7 @@ func hardcodedModels(wireAPI string) []Model {
 func hardcodedFallback(name string) []Model {
 	switch name {
 	case "anthropic", "claude":
-		return hardcodedModels("anthropic")
+		return anthropicModels()
 	case "openai":
 		// Fallback only — live /models is preferred. Curated against the
 		// public Responses API surface; codex-tagged variants are routed to

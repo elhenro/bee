@@ -5,6 +5,7 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,17 +46,9 @@ type ClaudeProvider struct {
 
 // NewClaude builds a provider.
 func NewClaude(cfg ClaudeConfig) *ClaudeProvider {
-	if cfg.Name == "" {
-		cfg.Name = "claude"
-	}
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://api.anthropic.com/v1"
-	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = newStreamingClient()
-	}
-	return &ClaudeProvider{cfg: cfg, client: client}
+	cfg.Name = cmp.Or(cfg.Name, "claude")
+	cfg.BaseURL = cmp.Or(cfg.BaseURL, "https://api.anthropic.com/v1")
+	return &ClaudeProvider{cfg: cfg, client: cmp.Or(cfg.HTTPClient, newStreamingClient())}
 }
 
 // Name returns the configured display name.
