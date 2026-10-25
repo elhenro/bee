@@ -68,22 +68,31 @@ func readSummary(lines, bytes int) string {
 	if lines == 1 {
 		s = "1 line"
 	}
+	return withSize(s, bytes)
+}
+
+// s, plus the payload size once it is worth a mention
+func withSize(s string, bytes int) string {
 	if bytes >= 1000 {
 		s += " " + glyphSep + " " + humanBytes(bytes)
 	}
 	return s
 }
 
-// per-row highlighter for verbose reads (nil otherwise), lexer from the path
-func (r *StreamRenderer) readHighlighter(use types.ToolUse, haveUse bool, res types.ToolResult) func(string) string {
-	if !r.verbose || !r.highlight || res.IsError || !haveUse || use.Name != "read" {
-		return nil
+// per-row styling of a result: syntax colors (lexer from the path) for a
+// verbose read, a subtle location for search hits, base otherwise
+func (r *StreamRenderer) rowStyler(use types.ToolUse, res types.ToolResult, base lipgloss.Style) func(string) string {
+	if !res.IsError {
+		switch use.Name {
+		case "read":
+			if path, _ := use.Input["path"].(string); path != "" && r.verbose && r.highlight {
+				return func(s string) string { return r.hl(s, path) }
+			}
+		case "search":
+			return r.searchRow
+		}
 	}
-	path, _ := use.Input["path"].(string)
-	if path == "" {
-		return nil
-	}
-	return func(s string) string { return r.hl(s, path) }
+	return func(s string) string { return base.Render(s) }
 }
 
 // file-mutation tools whose call card carries a diff
