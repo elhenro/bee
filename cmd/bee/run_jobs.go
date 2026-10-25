@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/jobs"
@@ -16,12 +17,19 @@ import (
 // signature. Only entry points that can consume job results pass one.
 type buildOpt func(*buildOpts)
 
-type buildOpts struct{ jobs *jobs.Manager }
+type buildOpts struct {
+	jobs    *jobs.Manager
+	writeRe *regexp.Regexp
+}
 
 // withJobs turns on background commands: bash gains `background` and the job
 // tool is registered. Pass it only for an engine whose Jobs is the same manager,
 // or finished jobs would never reach the model.
 func withJobs(m *jobs.Manager) buildOpt { return func(o *buildOpts) { o.jobs = m } }
+
+// withWriteFilter restricts the mutation tools to paths matching re (nil = no
+// filter, the same as omitting the option).
+func withWriteFilter(re *regexp.Regexp) buildOpt { return func(o *buildOpts) { o.writeRe = re } }
 
 func collectBuildOpts(opts []buildOpt) buildOpts {
 	var o buildOpts

@@ -23,30 +23,26 @@ func explainSession(args []string, quiz bool) {
 	if id == "" {
 		sessions, err := session.List()
 		if err != nil || len(sessions) == 0 {
-			fmt.Fprintln(os.Stderr, "bee explain: no sessions found")
-			os.Exit(1)
+			exitf(1, "bee explain: no sessions found")
 		}
 		id = sessions[0].ID
 	}
 	msgs, err := session.Read(id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee explain: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee explain: %v", err)
 	}
 	cwd, _ := os.Getwd()
 	if quiz {
 		cards := learn.Cards(msgs, cwd, 5)
 		if len(cards) == 0 {
-			fmt.Fprintf(os.Stderr, "bee quiz: session %s has no recorded reasons\n", id)
-			os.Exit(1)
+			exitf(1, "bee quiz: session %s has no recorded reasons", id)
 		}
 		learn.Quiz(os.Stdin, os.Stdout, cards)
 		return
 	}
 	out := learn.Walkthrough(msgs, cwd)
 	if out == "" {
-		fmt.Fprintf(os.Stderr, "bee explain: session %s has nothing to explain\n", id)
-		os.Exit(1)
+		exitf(1, "bee explain: session %s has nothing to explain", id)
 	}
 	fmt.Printf("session %s\n\n%s\n", learn.Clean(id), out)
 }

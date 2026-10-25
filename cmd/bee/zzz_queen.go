@@ -31,7 +31,7 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 	cwd, _ := os.Getwd()
 	mainRoot, rootErr := zzz.RepoRoot(cwd)
 	if rootErr != nil {
-		fatalf("zzz: queen: not inside a git repo: %v", rootErr)
+		exitf(1, "zzz: queen: not inside a git repo: %v", rootErr)
 	}
 	baseBranch, _ := zzz.CurrentBranch(mainRoot)
 	baseSHA, _ := zzz.HeadSHA(mainRoot)
@@ -74,7 +74,7 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 		defer c.Flush()
 	}
 	if len(ready) == 0 {
-		fatalf("zzz: queen could not start any workers")
+		exitf(1, "zzz: queen could not start any workers")
 	}
 
 	model := queen.New(runs, cancelAll)

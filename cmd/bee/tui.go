@@ -3,10 +3,12 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,14 +27,13 @@ import (
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
-	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/skillexec"
 	"github.com/elhenro/bee/internal/tui"
 	"github.com/elhenro/bee/internal/types"
 )
 
-// runTUI wires the full engine the same way runHeadlessReal does, then
+// runTUI wires the full engine the same way runHeadless does, then
 // hands control to internal/tui. Returns once the program exits.
 func runTUI() { runTUIWithSession("", "") }
 
@@ -62,25 +63,20 @@ func stripAgentPreambleMessages(msgs []types.Message) []types.Message {
 	if len(msgs) == 0 || os.Getenv("BEE_AGENT_WORKTREE") == "1" {
 		return msgs
 	}
-	out := make([]types.Message, len(msgs))
-	copy(out, msgs)
-	for i, msg := range out {
-		if msg.Role != types.RoleUser {
+	out := slices.Clone(msgs)
+	for i := range out {
+		if out[i].Role != types.RoleUser {
 			continue
 		}
 		changed := false
-		blocks := make([]types.ContentBlock, len(msg.Content))
-		copy(blocks, msg.Content)
-		for j, block := range blocks {
-			if block.Type != types.BlockText {
+		blocks := slices.Clone(out[i].Content)
+		for j := range blocks {
+			if blocks[j].Type != types.BlockText {
 				continue
 			}
-			cleaned, ok := stripAgentPreambleText(block.Text)
-			if !ok {
-				continue
+			if cleaned, ok := stripAgentPreambleText(blocks[j].Text); ok {
+				blocks[j].Text, changed = cleaned, true
 			}
-			blocks[j].Text = cleaned
-			changed = true
 		}
 		if changed {
 			out[i].Content = blocks
@@ -90,20 +86,12 @@ func stripAgentPreambleMessages(msgs []types.Message) []types.Message {
 }
 
 func stripAgentPreambleText(s string) (string, bool) {
-	markers := []string{"\n\nTask:\n", "\r\n\r\nTask:\r\n"}
-	for _, marker := range markers {
-		idx := strings.Index(s, marker)
-		if idx < 0 {
-			continue
+	for _, marker := range []string{"\n\nTask:\n", "\r\n\r\nTask:\r\n"} {
+		prefix, rest, found := strings.Cut(s, marker)
+		if found && strings.Contains(prefix, "You are running unattended as one of many parallel") &&
+			strings.Contains(prefix, "DONE: <one-line summary>") {
+			return strings.TrimLeft(rest, " \t\r\n"), true
 		}
-		prefix := s[:idx]
-		if !strings.Contains(prefix, "You are running unattended as one of many parallel") {
-			continue
-		}
-		if !strings.Contains(prefix, "DONE: <one-line summary>") {
-			continue
-		}
-		return strings.TrimLeft(s[idx+len(marker):], " \t\r\n"), true
 	}
 	return s, false
 }
@@ -128,14 +116,9 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		}
 	}
 
-	cfg, err := config.Load()
+	cfg, err := loadConfig("", "", "")
 	if err != nil {
-		if os.Getenv("BEE_TEST_PROVIDER") == "stub" {
-			cfg = config.Defaults()
-		} else {
-			fmt.Fprintf(os.Stderr, "bee: config: %v\n", err)
-			os.Exit(1)
-		}
+		exitf(1, "bee: config: %v", err)
 	}
 	// global --caveman flag (stripped in main) lands here via env; pre-validated
 	// in stripCavemanFlag, so no re-parse. Overrides profile via ApplyProfile's
@@ -152,8 +135,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 
 	prov, err := buildProvider(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee: provider: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee: provider: %v", err)
 	}
 
 	cwd, _ := os.Getwd()
@@ -167,17 +149,20 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	// running turn. closed on exit so no process outlives bee.
 	jm := jobs.New()
 	defer jm.Close()
-	reg, err := buildToolsAsker(cwd, cfg, prov, storeDir, app, tuiAsker, withJobs(jm))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee: tools: %v\n", err)
-		os.Exit(1)
-	}
-
 	ensureFirstRun()
-	skillReg := skills.NewRegistry()
-	_ = skillReg.Load(skills.BaseDir())
-	// exec-kind skills (including waggles) become model-callable tools.
-	skillexec.RegisterExecSkills(reg, skillReg.List(), execSandbox(cfg, cwd)...)
+	skillReg := newSkillRegistry()
+	toolsFor := func(wcwd string, c config.Config, p llm.Provider, opts ...buildOpt) (*tools.Registry, error) {
+		r, err := buildToolsAsker(wcwd, c, p, storeDir, app, tuiAsker, opts...)
+		if err == nil {
+			// exec-kind skills (including waggles) become model-callable tools.
+			skillexec.RegisterExecSkills(r, skillReg.List(), execSandbox(c, wcwd)...)
+		}
+		return r, err
+	}
+	reg, err := toolsFor(cwd, cfg, prov, withJobs(jm))
+	if err != nil {
+		exitf(1, "bee: tools: %v", err)
+	}
 
 	// pre-warm the live model catalogue for the active provider so the
 	// context-fill indicator works for any model the API knows about,
@@ -191,14 +176,10 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		}()
 	}
 
-	sessID := resumeID
-	if sessID == "" {
-		sessID = uuid.NewString()
-	}
+	sessID := cmp.Or(resumeID, uuid.NewString())
 	roll, err := session.Open(sessID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee: session: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee: session: %v", err)
 	}
 	defer roll.Close()
 
@@ -206,8 +187,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	if resumeID != "" {
 		ms, rerr := session.ReadResume(resumeID)
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "bee: read session %s: %v\n", resumeID, rerr)
-			os.Exit(1)
+			exitf(1, "bee: read session %s: %v", resumeID, rerr)
 		}
 		prior = stripAgentPreambleMessages(ms)
 	}
@@ -268,11 +248,10 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		if err != nil {
 			return err
 		}
-		newReg, err := buildToolsAsker(cwd, e.Cfg, newProv, storeDir, app, tuiAsker, withJobs(jm))
+		newReg, err := toolsFor(cwd, e.Cfg, newProv, withJobs(jm))
 		if err != nil {
 			return err
 		}
-		skillexec.RegisterExecSkills(newReg, skillReg.List(), execSandbox(e.Cfg, cwd)...)
 		e.Provider = newProv
 		e.Memory = newKnowledgeAdapter(newProv, e.Cfg)
 		e.Tools = newReg
@@ -287,12 +266,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	// engine at its own git worktree so file tools target the worktree instead
 	// of the shared cwd. Same builder as Rebuild, just parameterized on path.
 	eng.ToolsForCwd = func(wcwd string) (*tools.Registry, error) {
-		r, err := buildToolsAsker(wcwd, eng.Cfg, eng.Provider, storeDir, app, tuiAsker)
-		if err != nil {
-			return nil, err
-		}
-		skillexec.RegisterExecSkills(r, skillReg.List(), execSandbox(eng.Cfg, wcwd)...)
-		return r, nil
+		return toolsFor(wcwd, eng.Cfg, eng.Provider)
 	}
 
 	// Startup intro animation is non-blocking: tui.RunWithCommandsAndKeyMap

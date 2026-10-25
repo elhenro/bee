@@ -14,13 +14,10 @@ import (
 )
 
 // runHive lists bees on stdout and exits 0.
-func runHive(args []string) {
-	_ = args
-
+func runHive() {
 	sessions, err := session.List()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee hive: list sessions: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee hive: list sessions: %v", err)
 	}
 
 	// detect which sessions have background logs

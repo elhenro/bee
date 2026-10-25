@@ -6,13 +6,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -21,10 +19,7 @@ import (
 	"github.com/elhenro/bee/internal/config"
 	hivepkg "github.com/elhenro/bee/internal/hive"
 	"github.com/elhenro/bee/internal/knowledge"
-	"github.com/elhenro/bee/internal/llm"
-	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
-	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/worktree"
 )
 
@@ -33,11 +28,7 @@ import (
 // stderr gets live state transitions.
 func runFan(args []string) {
 	fs := flag.NewFlagSet("fan", flag.ContinueOnError)
-	defaultMax := runtime.NumCPU()
-	if defaultMax > 8 {
-		defaultMax = 8
-	}
-	maxConc := fs.Int("max", defaultMax, "max parallel bees (default min(8, NumCPU))")
+	maxConc := fs.Int("max", min(runtime.NumCPU(), 8), "max parallel bees (default min(8, NumCPU))")
 	task := fs.String("task", "", "task description applied to each worker")
 	per := fs.String("per", "file", "workload mode: file|line|count")
 	count := fs.Int("count", 0, "number of workers when --per=count")
@@ -51,42 +42,31 @@ func runFan(args []string) {
 		os.Exit(2)
 	}
 	if strings.TrimSpace(*task) == "" {
-		fmt.Fprintln(os.Stderr, "bee fan: --task is required")
-		os.Exit(2)
+		exitf(2, "bee fan: --task is required")
 	}
 
 	workers, err := resolveWorkload(*per, *task, *count, fs.Args())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee fan: %v\n", err)
-		os.Exit(2)
+		exitf(2, "bee fan: %v", err)
 	}
 	if len(workers) == 0 {
-		fmt.Fprintln(os.Stderr, "bee fan: no work to do")
-		os.Exit(2)
+		exitf(2, "bee fan: no work to do")
 	}
 
-	cfg, err := config.LoadWith(config.Overrides{Provider: *providerName, Model: *model})
+	cfg, err := loadConfig(*model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
 	if err != nil {
-		if os.Getenv("BEE_TEST_PROVIDER") == "stub" {
-			cfg = config.Defaults()
-		} else {
-			fmt.Fprintf(os.Stderr, "bee fan: config: %v\n", err)
-			os.Exit(1)
-		}
+		exitf(1, "bee fan: config: %v", err)
 	}
-	applyOverrides(&cfg, *model, *providerName, resolveSafe(*sandboxScope, *safe))
 
 	prov, err := buildProvider(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee fan: provider: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee fan: provider: %v", err)
 	}
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
 	reg, err := buildTools(cwd, cfg, prov, storeDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee fan: tools: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee fan: tools: %v", err)
 	}
 
 	code := func() int {
@@ -117,23 +97,20 @@ func runFan(args []string) {
 			if *isolated {
 				wt, err := worktree.Create(cwd, fmt.Sprintf("fan-w%d", i))
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "bee fan: worker %s worktree: %v\n", wspec.name, err)
-					return 1
+					return failf(1, "bee fan: worker %s worktree: %v", wspec.name, err)
 				}
 				worktrees = append(worktrees, wt)
 				workerWT = wt
 				workerCwd = wt.Path
 				r2, err := buildTools(workerCwd, cfg, prov, storeDir)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "bee fan: worker %s tools: %v\n", wspec.name, err)
-					return 1
+					return failf(1, "bee fan: worker %s tools: %v", wspec.name, err)
 				}
 				workerReg = r2
 			}
-			eng, roll, err := newWorkerEngine(prov, workerReg, cfg, workerCwd)
+			eng, roll, err := newEngine(prov, workerReg, nil, cfg, workerCwd)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "bee fan: build worker %s: %v\n", wspec.name, err)
-				return 1
+				return failf(1, "bee fan: build worker %s: %v", wspec.name, err)
 			}
 			rolls = append(rolls, roll)
 			id := uuid.NewString()
@@ -153,30 +130,17 @@ func runFan(args []string) {
 		ctx, cancel := context.WithTimeout(sig, 20*time.Minute)
 		defer cancel()
 
-		// progress watcher: prints state transitions to stderr until results close.
-		resCh := pool.Run(ctx)
-		doneCh := make(chan struct{})
-		var collected []hivepkg.Result
-		var mu sync.Mutex
-		go func() {
-			defer close(doneCh)
-			for r := range resCh {
-				mu.Lock()
-				collected = append(collected, r)
-				mu.Unlock()
-				tag := "ok"
-				if r.Err != nil {
-					tag = "err"
-				}
-				fmt.Fprintf(os.Stderr, "[%s] %s done in %s\n",
-					tag, r.Name, r.Ended.Sub(r.Started).Round(time.Millisecond))
+		// progress: prints state transitions to stderr until results close.
+		var finalResults []hivepkg.Result
+		for r := range pool.Run(ctx) {
+			finalResults = append(finalResults, r)
+			tag := "ok"
+			if r.Err != nil {
+				tag = "err"
 			}
-		}()
-		<-doneCh
-
-		mu.Lock()
-		finalResults := collected
-		mu.Unlock()
+			fmt.Fprintf(os.Stderr, "[%s] %s done in %s\n",
+				tag, r.Name, r.Ended.Sub(r.Started).Round(time.Millisecond))
+		}
 
 		fmt.Fprint(os.Stdout, hivepkg.Summary(finalResults))
 		if merged := hivepkg.MergeText(finalResults); merged != "" {
@@ -279,27 +243,4 @@ func cliThrottle(cmd string, cfg config.Config) hivepkg.Throttle {
 			fmt.Fprintf(os.Stderr, "%s: load %.1f/core over %.1f, holding a worker\n", cmd, l, ratio)
 		},
 	}
-}
-
-// newWorkerEngine builds a fresh Engine with its own session rollout. Each
-// bee gets isolated state — that's the whole point of fan-out. Memory is
-// intentionally skipped here to keep the fan-out cheap; revisit if users
-// want shared learning across workers.
-func newWorkerEngine(prov llm.Provider, reg *tools.Registry, cfg config.Config, cwd string) (*loop.Engine, *session.Rollout, error) {
-	sessID := uuid.NewString()
-	roll, err := session.Open(sessID)
-	if err != nil {
-		return nil, nil, err
-	}
-	// suppress per-worker stdout streams; fan caller renders the merged
-	// transcript at the end.
-	eng := &loop.Engine{
-		Provider: prov,
-		Tools:    reg,
-		Sessions: roll,
-		Cfg:      cfg,
-		Cwd:      cwd,
-		Stdout:   io.Discard,
-	}
-	return eng, roll, nil
 }

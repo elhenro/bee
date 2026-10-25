@@ -60,8 +60,7 @@ func parseBgArgs(args []string) (string, bgOpts, error) {
 func runBg(args []string) {
 	msg, opts, err := parseBgArgs(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg: %v\n", err)
-		os.Exit(2)
+		exitf(2, "bee bg: %v", err)
 	}
 
 	if opts.List {
@@ -83,14 +82,12 @@ func runBg(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: bee bg [--skill <name>] [--logfile <path>] <message>")
 		fmt.Fprintln(os.Stderr, "       bee bg --list")
 		fmt.Fprintln(os.Stderr, "       bee bg --tail <session-id>")
-		fmt.Fprintln(os.Stderr, "       bee bg --kill <session-id>")
-		os.Exit(2)
+		exitf(2, "       bee bg --kill <session-id>")
 	}
 
 	self, err := os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg: resolve self: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg: resolve self: %v", err)
 	}
 
 	sessID := uuid.NewString()
@@ -99,16 +96,14 @@ func runBg(args []string) {
 	if logPath == "" {
 		p, err := bghive.EnsureLogDir(sessID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee bg: log dir: %v\n", err)
-			os.Exit(1)
+			exitf(1, "bee bg: log dir: %v", err)
 		}
 		logPath = p
 	}
 
 	logF, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg: open log: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg: open log: %v", err)
 	}
 	defer logF.Close()
 
@@ -127,8 +122,7 @@ func runBg(args []string) {
 	detach(cmd)
 
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg: start: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg: start: %v", err)
 	}
 	pid := cmd.Process.Pid
 
@@ -149,14 +143,12 @@ func runBg(args []string) {
 func listBg() {
 	sessions, err := session.List()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --list: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --list: %v", err)
 	}
 
 	logs, err := listBgLogs()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --list: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --list: %v", err)
 	}
 	if len(logs) == 0 {
 		fmt.Println("no background bees")
@@ -197,25 +189,21 @@ func listBg() {
 func tailBg(id string) {
 	logPath, err := bghive.LogPath(id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --tail: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --tail: %v", err)
 	}
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "bee bg --tail: no log for session %s\n", id)
-		os.Exit(1)
+		exitf(1, "bee bg --tail: no log for session %s", id)
 	}
 
 	f, err := os.Open(logPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --tail: open log: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --tail: open log: %v", err)
 	}
 	defer f.Close()
 
 	// seek to end and tail
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --tail: seek: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --tail: seek: %v", err)
 	}
 
 	buf := make([]byte, 4096)
@@ -229,8 +217,7 @@ func tailBg(id string) {
 				time.Sleep(500 * time.Millisecond)
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "bee bg --tail: read: %v\n", err)
-			os.Exit(1)
+			exitf(1, "bee bg --tail: read: %v", err)
 		}
 	}
 }

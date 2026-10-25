@@ -38,40 +38,12 @@ var (
 	commit  = "dev"
 )
 
-// reserved names cannot be used as skill names — they always dispatch
-// to the built-in subcommand. Lookup must check this before consulting
-// the skill registry.
-var reservedSubcommands = map[string]bool{
-	"run":            true,
-	"back":           true,
-	"fan":            true,
-	"swarm":          true,
-	"hyperplan":      true,
-	"hive":           true,
-	"explain":        true,
-	"quiz":           true,
-	"bg":             true,
-	"agents":         true,
-	"remote-control": true,
-	"zzz":            true,
-	"cron":           true,
-	"doctor":         true,
-	"version":        true,
-	"-v":             true,
-	"--version":      true,
-	"help":           true,
-	"-h":             true,
-	"--help":         true,
-	"-p":             true,
-	"--print":        true,
-}
-
 func main() {
 	stripVerboseFlag()
 	stripCavemanFlag()
 	stripEffortFlag()
 	if len(os.Args) < 2 {
-		repl()
+		runTUI()
 		return
 	}
 	switch os.Args[1] {
@@ -80,21 +52,21 @@ func main() {
 	case "back":
 		back(os.Args[2:])
 	case "fan":
-		fan(os.Args[2:])
+		runFan(os.Args[2:])
 	case "swarm":
-		swarm(os.Args[2:])
+		runSwarm(os.Args[2:])
 	case "hyperplan":
 		runHyperplan(os.Args[2:])
 	case "hive":
-		hive(os.Args[2:])
+		runHive()
 	case "explain":
 		runExplain(os.Args[2:])
 	case "quiz":
 		runQuiz(os.Args[2:])
 	case "bg":
-		bg(os.Args[2:])
+		runBg(os.Args[2:])
 	case "agents":
-		runAgents(os.Args[2:])
+		runAgents()
 	case "remote-control":
 		runRemoteControl(os.Args[2:])
 	case "zzz":
@@ -124,6 +96,16 @@ func main() {
 		}
 	}
 }
+
+// failf prints a line to stderr and returns code, for paths that unwind their
+// defers before the process exits.
+func failf(code int, format string, a ...any) int {
+	fmt.Fprintf(os.Stderr, format+"\n", a...)
+	return code
+}
+
+// exitf is failf followed by an immediate exit.
+func exitf(code int, format string, a ...any) { os.Exit(failf(code, format, a...)) }
 
 func usage() {
 	fmt.Print(`bee — pure-Go self-learning minimalist coding agent
@@ -165,10 +147,6 @@ global flags (any position):
 `)
 }
 
-func repl() {
-	runTUI()
-}
-
 // stripVerboseFlag pulls --verbose / -v out of os.Args (before any --) and
 // flips BEE_VERBOSE=1 so both the TUI and headless paths render full tool
 // output. Token isn't passed through to subcommands since flag.Parse would
@@ -193,15 +171,11 @@ func stripVerboseFlag() {
 	}
 }
 
-// stripCavemanFlag pulls --caveman <lvl> / --caveman=<lvl> (also -caveman
-// variants) out of os.Args at any position so it works as a global flag
-// (e.g. `bee --caveman full`, `bee --caveman full run msg`). The value is
-// validated up front and stashed in BEE_CAVEMAN; the TUI and headless paths
-// pick it up after config.Load. Invalid level exits 2.
-func stripCavemanFlag() {
+// stripValueFlag pulls --name <val> / --name=<val> (also single-dash) out of
+// os.Args at any position before a bare --, so it works as a global flag. The
+// last hit wins; os.Args is rewritten only on a hit. A missing value exits 2.
+func stripValueFlag(name, levels string) (val string, hit bool) {
 	out := os.Args[:1]
-	var val string
-	hit := false
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -210,81 +184,55 @@ func stripCavemanFlag() {
 			break
 		}
 		switch {
-		case a == "--caveman" || a == "-caveman":
+		case a == "--"+name || a == "-"+name:
 			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "bee: --caveman needs a level (off|lite|full|ultra)")
-				os.Exit(2)
+				exitf(2, "bee: --%s needs a level (%s)", name, levels)
 			}
-			val = args[i+1]
 			i++
-			hit = true
-		case strings.HasPrefix(a, "--caveman=") || strings.HasPrefix(a, "-caveman="):
-			val = a[strings.IndexByte(a, '=')+1:]
-			hit = true
+			val, hit = args[i], true
+		case strings.HasPrefix(a, "--"+name+"=") || strings.HasPrefix(a, "-"+name+"="):
+			val, hit = a[strings.IndexByte(a, '=')+1:], true
 		default:
 			out = append(out, a)
 		}
 	}
+	if hit {
+		os.Args = out
+	}
+	return val, hit
+}
+
+// stripCavemanFlag handles the global --caveman <lvl> flag (e.g. `bee --caveman
+// full run msg`). The value is validated up front and stashed in BEE_CAVEMAN;
+// the TUI and headless paths pick it up after config.Load. Invalid level exits 2.
+func stripCavemanFlag() {
+	val, hit := stripValueFlag("caveman", "off|lite|full|ultra")
 	if !hit {
 		return
 	}
 	lvl, err := caveman.ParseLevel(val)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee: %v\n", err)
-		os.Exit(2)
+		exitf(2, "bee: %v", err)
 	}
 	_ = os.Setenv("BEE_CAVEMAN", string(lvl))
-	os.Args = out
 }
 
-// stripEffortFlag pulls --effort <lvl> / --effort=<lvl> out of os.Args at
-// any position so it works as a global flag (e.g. `bee --effort high`,
-// `bee --effort high run msg`). Value validated up front and stashed in
-// BEE_EFFORT; both TUI and headless paths consume it after config.Load.
-// Invalid level exits 2. Subcommand-local --thinking still works via the
-// run flagset and takes precedence over BEE_EFFORT.
+// stripEffortFlag handles the global --effort <lvl> flag (e.g. `bee --effort
+// high run msg`). Value validated up front and stashed in BEE_EFFORT; both TUI
+// and headless paths consume it after config.Load. Invalid level exits 2.
+// Subcommand-local --thinking still works via the run flagset and takes
+// precedence over BEE_EFFORT.
 func stripEffortFlag() {
-	out := os.Args[:1]
-	var val string
-	hit := false
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			out = append(out, args[i:]...)
-			break
-		}
-		switch {
-		case a == "--effort" || a == "-effort":
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "bee: --effort needs a level (auto|off|low|medium|high|max)")
-				os.Exit(2)
-			}
-			val = args[i+1]
-			i++
-			hit = true
-		case strings.HasPrefix(a, "--effort=") || strings.HasPrefix(a, "-effort="):
-			val = a[strings.IndexByte(a, '=')+1:]
-			hit = true
-		default:
-			out = append(out, a)
-		}
-	}
+	val, hit := stripValueFlag("effort", "auto|off|low|medium|high|max")
 	if !hit {
 		return
 	}
 	canonical := llm.ParseThinking(val)
 	// ParseThinking returns Off for unknown — reject silent typos.
 	if canonical == llm.ThinkingOff && strings.ToLower(strings.TrimSpace(val)) != "off" {
-		fmt.Fprintf(os.Stderr, "bee: --effort: unknown level %q (want auto|off|low|medium|high|max)\n", val)
-		os.Exit(2)
+		exitf(2, "bee: --effort: unknown level %q (want auto|off|low|medium|high|max)", val)
 	}
 	_ = os.Setenv("BEE_EFFORT", string(canonical))
-	os.Args = out
-}
-
-func runHeadless(args []string) {
-	runHeadlessReal(args)
 }
 
 func back(args []string) {
@@ -296,42 +244,29 @@ func back(args []string) {
 	if id == "latest" || id == "l" {
 		sessions, err := session.List()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee back: list sessions: %v\n", err)
-			os.Exit(1)
+			exitf(1, "bee back: list sessions: %v", err)
 		}
 		if len(sessions) == 0 {
-			fmt.Fprintln(os.Stderr, "bee back: no sessions found")
-			os.Exit(1)
+			exitf(1, "bee back: no sessions found")
 		}
 		id = sessions[0].ID
 	}
 	if p, err := session.Path(id); err != nil {
-		fmt.Fprintf(os.Stderr, "bee back: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee back: %v", err)
 	} else if _, err := os.Stat(p); err != nil {
-		fmt.Fprintf(os.Stderr, "bee back: session %s not found\n", id)
-		os.Exit(1)
+		exitf(1, "bee back: session %s not found", id)
 	}
 	runTUIWithSession(id, "")
 }
 
-func fan(args []string)   { runFan(args) }
-func swarm(args []string) { runSwarm(args) }
-func hive(args []string)  { runHive(args) }
-func bg(args []string)    { runBg(args) }
-
 // dispatchSkill resolves name against ~/.bee/skills. Returns false if
 // the skill doesn't exist so main can fall through to "unknown command".
-// Reserved names short-circuit before we even read the registry.
 //
 // Surfacing: a prompt skill run from an interactive terminal opens the TUI
 // seeded with "/<name> <args>" so the user watches thoughts + tool cards live
 // and can steer. Piped/redirected stdio (or non-prompt kinds) stays headless
 // so `bee research foo > out.md` and scripts keep working.
 func dispatchSkill(name string, rest []string) bool {
-	if reservedSubcommands[name] {
-		return false
-	}
 	ensureFirstRun()
 	reg := skills.NewRegistry()
 	_ = reg.Load(skills.BaseDir())

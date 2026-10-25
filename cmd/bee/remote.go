@@ -14,13 +14,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/remote"
 	"github.com/elhenro/bee/internal/session"
-	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -39,16 +37,10 @@ func runRemoteControl(args []string) {
 		os.Exit(2)
 	}
 
-	cfg, err := config.LoadWith(config.Overrides{Provider: *providerName, Model: *model})
+	cfg, err := loadConfig(*model, *providerName, *sandboxScope)
 	if err != nil {
-		if os.Getenv("BEE_TEST_PROVIDER") != "" {
-			cfg = config.Defaults()
-		} else {
-			fmt.Fprintf(os.Stderr, "bee remote-control: config: %v\n", err)
-			os.Exit(1)
-		}
+		exitf(1, "bee remote-control: config: %v", err)
 	}
-	applyOverrides(&cfg, *model, *providerName, *sandboxScope)
 
 	// trust gate: anyone on the LAN who reaches the URL can drive the agent
 	// and run tools locally. Refuse full-access without explicit --yes.
@@ -56,15 +48,13 @@ func runRemoteControl(args []string) {
 	if scope == "danger-full-access" && !*yes {
 		fmt.Fprintln(os.Stderr, "bee remote-control: refusing to start with sandbox scope danger-full-access.")
 		fmt.Fprintln(os.Stderr, "anyone on your LAN who opens the URL can run tools on this machine with full access.")
-		fmt.Fprintln(os.Stderr, "to proceed: re-run with --yes, or pick a tighter scope with --sandbox workspace-write.")
-		os.Exit(2)
+		exitf(2, "to proceed: re-run with --yes, or pick a tighter scope with --sandbox workspace-write.")
 	}
 	fmt.Fprintf(os.Stdout, "remote-control: clients execute locally under sandbox scope %s\n", scope)
 
 	prov, err := buildProvider(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee remote-control: provider: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee remote-control: provider: %v", err)
 	}
 
 	cwd, _ := os.Getwd()
@@ -72,26 +62,20 @@ func runRemoteControl(args []string) {
 	app := buildHeadlessApprover(cfg, *yes)
 	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee remote-control: tools: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee remote-control: tools: %v", err)
 	}
 
 	ensureFirstRun()
-	skillReg := skills.NewRegistry()
-	_ = skillReg.Load(skills.BaseDir())
-
-	sessID := uuid.NewString()
-	roll, err := session.Open(sessID)
+	roll, err := session.Open(uuid.NewString())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee remote-control: session: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee remote-control: session: %v", err)
 	}
 	defer roll.Close()
 
 	eng := &loop.Engine{
 		Provider: prov,
 		Tools:    reg,
-		Skills:   skillReg,
+		Skills:   newSkillRegistry(),
 		Memory:   newKnowledgeAdapter(prov, cfg),
 		Sessions: roll,
 		Cfg:      cfg,
@@ -111,8 +95,7 @@ func runRemoteControl(args []string) {
 	srv := remote.New(adapter, remote.Options{Addr: fmt.Sprintf("%s:%d", bindHost, *port), Title: "bee", Log: os.Stdout})
 	ln, url, err := srv.Start()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee remote-control: start: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee remote-control: start: %v", err)
 	}
 
 	if *lan {

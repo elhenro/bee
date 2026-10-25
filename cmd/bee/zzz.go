@@ -1,6 +1,6 @@
 // Subcommand `bee zzz`: overnight autonomous-commit loop. gnhf port —
 // see internal/zzz for the inner loop. Builds an engine the same way
-// runHeadlessReal does, then hands control to zzz.Drive.
+// runHeadless does, then hands control to zzz.Drive.
 package main
 
 import (
@@ -15,19 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"golang.org/x/term"
 
 	"github.com/elhenro/bee/internal/approval"
-	"github.com/elhenro/bee/internal/bgreg"
-	"github.com/elhenro/bee/internal/caveman"
-	"github.com/elhenro/bee/internal/config"
-	"github.com/elhenro/bee/internal/cost"
-	"github.com/elhenro/bee/internal/knowledge"
-	"github.com/elhenro/bee/internal/llm"
-	"github.com/elhenro/bee/internal/loop"
-	"github.com/elhenro/bee/internal/session"
-	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/zzz"
 	zzztui "github.com/elhenro/bee/internal/zzz/tui"
 )
@@ -72,13 +62,13 @@ func runZzz(args []string) {
 
 	if *wantList {
 		if err := zzzList(); err != nil {
-			fatalf("zzz: list: %v", err)
+			exitf(1, "zzz: list: %v", err)
 		}
 		return
 	}
 	if *cleanupID != "" {
 		if err := zzzCleanup(*cleanupID); err != nil {
-			fatalf("zzz: cleanup: %v", err)
+			exitf(1, "zzz: cleanup: %v", err)
 		}
 		return
 	}
@@ -87,21 +77,22 @@ func runZzz(args []string) {
 		return
 	}
 
+	autoYes := *yes || *yolo
 	objective := strings.Join(fs.Args(), " ")
 	isResume := *resumeID != "" || (objective == "" && !hasStdinPipe())
 	if objective == "" && !isResume {
 		objective = readStdinOrEmpty()
 		if objective == "" {
-			fatalf("zzz: no objective given (positional arg, stdin pipe, or --resume)")
+			exitf(1, "zzz: no objective given (positional arg, stdin pipe, or --resume)")
 		}
 	}
 
 	// zzz runs unattended, so it confines to the workspace by default (--safe).
 	// An explicit --sandbox/--safe still wins; --sandbox danger-full-access opts
 	// back into unrestricted access.
-	cfg, prov, app, skillReg, err := buildZzzDeps(*model, *provider, resolveSafeDefault(*sandboxScope, *safe, "workspace-write"), *thinking, *effort, *cavemanLvl, *yes || *yolo)
+	cfg, prov, app, skillReg, err := buildZzzDeps(*model, *provider, resolveSafe(*sandboxScope, *safe, "workspace-write"), *thinking, *effort, *cavemanLvl, autoYes)
 	if err != nil {
-		fatalf("zzz: setup: %v", err)
+		exitf(1, "zzz: setup: %v", err)
 	}
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -134,7 +125,7 @@ func runZzz(args []string) {
 		zCfg.Verify = zzzGate(cfg)
 	}
 
-	if (*yes || *yolo) && !*wantWorktree && !isResume {
+	if autoYes && !*wantWorktree && !isResume {
 		fmt.Fprintln(os.Stderr, "[zzz] WARNING: --yes/--yolo without --worktree lets the agent run dangerous shell commands (rm -rf ., git reset --hard, …) directly on your working branch.")
 	}
 	if resolvedMaxTok == 0 {
@@ -143,10 +134,10 @@ func runZzz(args []string) {
 
 	if *agents > 1 {
 		if isResume {
-			fatalf("zzz: --agents and --resume can't be combined")
+			exitf(1, "zzz: --agents and --resume can't be combined")
 		}
-		if !(*yes || *yolo) {
-			fatalf("zzz: --agents needs --yes (headless workers can't answer approval prompts)")
+		if !autoYes {
+			exitf(1, "zzz: --agents needs --yes (headless workers can't answer approval prompts)")
 		}
 		runZzzQueen(ctx, cancelCtx, *agents, cfg, prov, app, skillReg, zCfg)
 		return
@@ -162,7 +153,7 @@ func runZzz(args []string) {
 		run, unlock, err = startRun(zCfg)
 	}
 	if err != nil {
-		fatalf("zzz: %v", err)
+		exitf(1, "zzz: %v", err)
 	}
 	defer unlock()
 
@@ -177,7 +168,7 @@ func runZzz(args []string) {
 			}
 		}
 		if strings.TrimSpace(zCfg.Objective) == "" {
-			fatalf("zzz: resume %s has no saved objective; re-run with the objective text", run.ID)
+			exitf(1, "zzz: resume %s has no saved objective; re-run with the objective text", run.ID)
 		}
 	}
 
@@ -191,7 +182,7 @@ func runZzz(args []string) {
 
 	eng, cleanup, err := buildZzzEngine(cfg, prov, app, skillReg, run.RepoRoot, engineOut)
 	if err != nil {
-		fatalf("zzz: engine: %v", err)
+		exitf(1, "zzz: engine: %v", err)
 	}
 	defer cleanup()
 	if c, ok := app.(*approval.Cache); ok {
@@ -201,9 +192,14 @@ func runZzz(args []string) {
 	runner := zzz.NewLoopRunner(eng)
 	if useTUI {
 		runZzzTUI(ctx, stopCh, runner, zCfg, run, tuiModel)
-		fmt.Fprintf(os.Stderr, "\n→ inspect: ~/.bee/zzz/runs/%s/  (notes.md, events.jsonl, meta.json)\n", run.ID)
-		return
+	} else if err := driveZzzPlain(ctx, stopCh, runner, zCfg, run); err != nil {
+		exitf(1, "zzz: drive: %v", err)
 	}
+	fmt.Fprintf(os.Stderr, "\n→ inspect: ~/.bee/zzz/runs/%s/  (notes.md, events.jsonl, meta.json)\n", run.ID)
+}
+
+// driveZzzPlain runs the loop with the single-line status renderer.
+func driveZzzPlain(ctx context.Context, stopCh chan struct{}, runner zzz.Runner, zCfg zzz.Config, run *zzz.Run) error {
 	status := zzz.NewStatus(os.Stderr)
 	var ui zzz.UI = status
 	// only attach a stdin reader when stdin is a tty: piped stdin already
@@ -214,10 +210,7 @@ func runZzz(args []string) {
 		ui = ps
 		fmt.Fprintln(os.Stderr, "[zzz] plain mode: type /stop, /abort, /note <text>, or free text to nudge.")
 	}
-	if err := zzz.Drive(ctx, stopCh, runner, zCfg, run, ui); err != nil {
-		fatalf("zzz: drive: %v", err)
-	}
-	fmt.Fprintf(os.Stderr, "\n→ inspect: ~/.bee/zzz/runs/%s/  (notes.md, events.jsonl, meta.json)\n", run.ID)
+	return zzz.Drive(ctx, stopCh, runner, zCfg, run, ui)
 }
 
 // plainSteerUI gives plain-mode (non-TUI) operators a steering surface by
@@ -236,9 +229,8 @@ func readStdinSteer(ctx context.Context, p *plainSteerUI) {
 		if line == "" {
 			continue
 		}
-		s := parseSteerLine(line)
 		select {
-		case p.steer <- s:
+		case p.steer <- parseSteerLine(line):
 		case <-ctx.Done():
 			return
 		}
@@ -249,19 +241,14 @@ func parseSteerLine(s string) zzz.Steer {
 	if !strings.HasPrefix(s, "/") {
 		return zzz.Steer{Kind: zzz.SteerNote, Text: s}
 	}
-	parts := strings.SplitN(s, " ", 2)
-	cmd := strings.ToLower(parts[0])
-	rest := ""
-	if len(parts) > 1 {
-		rest = strings.TrimSpace(parts[1])
-	}
-	switch cmd {
+	cmd, rest, _ := strings.Cut(s, " ")
+	switch strings.ToLower(cmd) {
 	case "/stop", "/quit":
 		return zzz.Steer{Kind: zzz.SteerStop}
 	case "/abort", "/kill":
 		return zzz.Steer{Kind: zzz.SteerAbort}
 	case "/note", "/say", "/nudge":
-		return zzz.Steer{Kind: zzz.SteerNote, Text: rest}
+		return zzz.Steer{Kind: zzz.SteerNote, Text: strings.TrimSpace(rest)}
 	}
 	return zzz.Steer{Kind: zzz.SteerNote, Text: s}
 }
@@ -295,187 +282,6 @@ func runZzzTUI(parentCtx context.Context, stopCh chan struct{}, runner zzz.Runne
 	if driveErr != nil {
 		fmt.Fprintf(os.Stderr, "zzz: drive: %v\n", driveErr)
 	}
-}
-
-// startRun creates a brand-new run: new id, branch (or worktree), persisted
-// meta + prompt. Validates the repo root and clean tree up front.
-//
-// The returned unlock holds the zzz lock of the tree the run drives. It is
-// taken before the first change so a second zzz cannot move the running
-// loop's branch or rewrite its meta.
-func startRun(cfg zzz.Config) (r *zzz.Run, unlock func(), err error) {
-	cwd, _ := os.Getwd()
-	root, err := zzz.RepoRoot(cwd)
-	if err != nil {
-		return nil, nil, fmt.Errorf("not inside a git repo: %w", err)
-	}
-	id := zzz.NewID()
-	// held lives apart from the named result: an error return nils unlock
-	// before this defer runs
-	held := func() {}
-	if !cfg.Worktree {
-		l, lerr := zzz.AcquireLock(root, id)
-		if lerr != nil {
-			return nil, nil, lerr
-		}
-		held = l
-	}
-	defer func() {
-		if err != nil {
-			held()
-		}
-	}()
-	clean, err := zzz.IsClean(root)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !clean {
-		return nil, nil, fmt.Errorf("working tree is dirty — commit, stash, or discard before starting")
-	}
-	r = &zzz.Run{
-		ID:        id,
-		Objective: cfg.Objective,
-		RepoRoot:  root,
-		StartedAt: time.Now().UTC(),
-		Status:    zzz.StatusRunning,
-		PID:       os.Getpid(),
-	}
-	switch {
-	case cfg.Worktree:
-		wt, werr := zzz.WorktreeDir(id)
-		if werr != nil {
-			return nil, nil, werr
-		}
-		branch := "zzz/" + id
-		if aerr := zzz.WorktreeAdd(root, wt, branch); aerr != nil {
-			return nil, nil, fmt.Errorf("worktree add: %w", aerr)
-		}
-		// the worktree path is new, so nobody can hold it yet
-		l, lerr := zzz.AcquireLock(wt, id)
-		if lerr != nil {
-			return nil, nil, lerr
-		}
-		held = l
-		r.Mode = zzz.ModeWorktree
-		r.Worktree = wt
-		r.Branch = branch
-		r.RepoRoot = wt
-	case cfg.CurrentBranch:
-		cur, cerr := zzz.CurrentBranch(root)
-		if cerr != nil {
-			return nil, nil, cerr
-		}
-		r.Mode = zzz.ModeCurrent
-		r.Branch = cur
-	default:
-		branch := "zzz/" + id
-		if berr := zzz.CreateBranchAndSwitch(root, branch); berr != nil {
-			return nil, nil, fmt.Errorf("branch: %w", berr)
-		}
-		r.Mode = zzz.ModeBranch
-		r.Branch = branch
-	}
-	if err = zzz.SavePrompt(id, cfg.Objective); err != nil {
-		return nil, nil, err
-	}
-	if err = zzz.SaveMeta(r); err != nil {
-		return nil, nil, err
-	}
-	return r, held, nil
-}
-
-// resumeRun loads existing run meta. id="" picks the most-recent run.
-// Validates the recorded RepoRoot still exists and is a git working tree —
-// without this, a resumed run can fail mid-iteration with cryptic git errors
-// when an earlier `--cleanup` removed the worktree.
-func resumeRun(id string) (r *zzz.Run, unlock func(), err error) {
-	if id == "" {
-		r, err = zzz.LatestRun()
-		if err != nil {
-			return nil, nil, err
-		}
-		if r == nil {
-			return nil, nil, fmt.Errorf("no prior runs to resume")
-		}
-	} else {
-		r, err = zzz.LoadMeta(id)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	if r.Status != zzz.StatusRunning && r.Status != zzz.StatusAborted {
-		return nil, nil, fmt.Errorf("run %s is %s; nothing to resume", r.ID, r.Status)
-	}
-	if _, serr := os.Stat(r.RepoRoot); serr != nil {
-		return nil, nil, fmt.Errorf("repo root %q missing — worktree may have been cleaned up", r.RepoRoot)
-	}
-	if _, gerr := zzz.RepoRoot(r.RepoRoot); gerr != nil {
-		return nil, nil, fmt.Errorf("%q is not a git working tree anymore: %w", r.RepoRoot, gerr)
-	}
-	// lock before anything below reads the branch or rewrites the meta: a
-	// second resume of a live run must change nothing.
-	held, lerr := zzz.AcquireLock(r.RepoRoot, r.ID)
-	if lerr != nil {
-		return nil, nil, lerr
-	}
-	defer func() {
-		if err != nil {
-			held()
-		}
-	}()
-	// current-branch runs commit to whatever branch is checked out; if the user
-	// switched branches between stop and resume, resuming here would land the
-	// run's commits on the wrong branch. refuse instead.
-	if r.Mode == zzz.ModeCurrent && r.Branch != "" {
-		cur, cerr := zzz.CurrentBranch(r.RepoRoot)
-		if cerr != nil {
-			return nil, nil, cerr
-		}
-		if cur != r.Branch {
-			return nil, nil, fmt.Errorf("run %s committed to %q but %q is checked out — `git switch %s` before resuming", r.ID, r.Branch, cur, r.Branch)
-		}
-	}
-	r.Status = zzz.StatusRunning
-	r.PID = os.Getpid() // refresh so gc sees the live driver, not the old one
-	if err = zzz.SaveMeta(r); err != nil {
-		return nil, nil, fmt.Errorf("persist resume status: %w", err)
-	}
-	return r, held, nil
-}
-
-func zzzList() error {
-	runs, err := zzz.ListRuns()
-	if err != nil {
-		return err
-	}
-	if len(runs) == 0 {
-		fmt.Println("no zzz runs.")
-		return nil
-	}
-	for _, r := range runs {
-		fmt.Println(r.Summary())
-	}
-	return nil
-}
-
-func zzzCleanup(id string) error {
-	r, err := zzz.LoadMeta(id)
-	if err != nil {
-		return err
-	}
-	if r.Mode != zzz.ModeWorktree || r.Worktree == "" {
-		return fmt.Errorf("run %s is not a worktree run", id)
-	}
-	cwd, _ := os.Getwd()
-	root, err := zzz.RepoRoot(cwd)
-	if err != nil {
-		return err
-	}
-	if err := zzz.WorktreeRemove(root, r.Worktree, true); err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "removed worktree %s\n", r.Worktree)
-	return nil
 }
 
 // installShutdownHandler unifies SIGINT and SIGTERM behavior:
@@ -515,188 +321,4 @@ func readStdinOrEmpty() string {
 		return ""
 	}
 	return strings.TrimSpace(string(b))
-}
-
-// buildZzzDeps mirrors the dependency wiring in runHeadlessReal up to the
-// point of building the engine. Returns the bits zzz needs so each new
-// engine can be constructed at run time (since Cwd differs in worktree mode).
-func buildZzzDeps(model, provider, sandboxScope, thinking, effort, cavemanLvl string, yes bool) (
-	config.Config, llm.Provider, approval.Approver, *skills.Registry, error,
-) {
-	cfg, err := config.LoadWith(config.Overrides{Provider: provider, Model: model})
-	if err != nil {
-		if os.Getenv("BEE_TEST_PROVIDER") != "" {
-			cfg = config.Defaults()
-		} else {
-			return cfg, nil, nil, nil, fmt.Errorf("config: %w", err)
-		}
-	}
-	applyOverrides(&cfg, model, provider, sandboxScope)
-	effortVal := effort
-	if effortVal == "" {
-		effortVal = os.Getenv("BEE_EFFORT")
-	}
-	if thinking == "" && effortVal != "" {
-		thinking = effortVal
-	}
-	if thinking != "" {
-		cfg.Thinking = string(llm.ParseThinking(thinking))
-	}
-	cArg := cavemanLvl
-	if cArg == "" {
-		cArg = os.Getenv("BEE_CAVEMAN")
-	}
-	if cArg != "" {
-		lvl, err := caveman.ParseLevel(cArg)
-		if err != nil {
-			return cfg, nil, nil, nil, err
-		}
-		cfg.Caveman = string(lvl)
-	}
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		return cfg, nil, nil, nil, fmt.Errorf("provider: %w", err)
-	}
-	app := buildZzzApprover(yes)
-	ensureFirstRun()
-	skillReg := skills.NewRegistry()
-	_ = skillReg.Load(skills.BaseDir())
-	return cfg, prov, app, skillReg, nil
-}
-
-// buildZzzApprover returns the approval policy for an unattended overnight run.
-// Unlike the interactive headless approver, it NEVER reads stdin — a prompt with
-// no one to answer would wedge the loop forever (and in TUI mode contends with
-// bubbletea for the tty). With --yes flagged-dangerous commands run; otherwise
-// they are denied so the model picks another approach instead of blocking.
-// Non-dangerous commands never reach the approver either way.
-func buildZzzApprover(autoYes bool) approval.Approver {
-	if autoYes {
-		return approval.Static{Verdict: approval.AllowOnce}
-	}
-	return approval.Static{Verdict: approval.Deny}
-}
-
-// resolveZzzBudgets turns the auto sentinels into concrete caps. Small/local
-// ("tiny") models get tighter defaults because they spin more; explicit flag
-// values (iter>0, tok>=0) always win. Returns (maxIterations, maxTokens) where
-// maxTokens 0 means unlimited.
-func resolveZzzBudgets(cfg config.Config, maxIter, maxTok int) (int, int) {
-	prof := cfg.Profile
-	if prof == "" || prof == "auto" {
-		prof = config.ResolveAutoProfileForProvider(cfg.DefaultProvider, cfg.DefaultModel)
-	}
-	tiny := prof == "tiny"
-	if maxIter <= 0 {
-		if tiny {
-			maxIter = 40
-		} else {
-			maxIter = loop.MaxIterations
-		}
-	}
-	if maxTok < 0 {
-		if tiny {
-			maxTok = 400000
-		} else {
-			maxTok = 0
-		}
-	}
-	return maxIter, maxTok
-}
-
-// buildZzzEngine assembles a *loop.Engine rooted at cwd (which may be a
-// worktree). out routes engine deltas — pass os.Stdout for plain runs or
-// the TUI's sink for live TUI mode. Returns a cleanup fn that closes the
-// session rollout.
-func buildZzzEngine(cfg config.Config, prov llm.Provider, app approval.Approver, skillReg *skills.Registry, cwd string, out io.Writer) (*loop.Engine, func(), error) {
-	storeDir, _ := knowledge.StoreDir()
-	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
-	if err != nil {
-		return nil, func() {}, fmt.Errorf("tools: %w", err)
-	}
-	sessID := uuid.NewString()
-	roll, err := session.Open(sessID)
-	if err != nil {
-		return nil, func() {}, fmt.Errorf("session: %w", err)
-	}
-	memStore := newKnowledgeAdapter(prov, cfg)
-	if out == nil {
-		out = os.Stdout
-	}
-	eng := &loop.Engine{
-		Provider: prov,
-		Tools:    reg,
-		Skills:   skillReg,
-		Waggle:   waggleManagerLearning(cfg, waggleProject(cwd)),
-		Memory:   memStore,
-		Sessions: roll,
-		Cfg:      cfg,
-		Cwd:      cwd,
-		Stdout:   out,
-		Costs:    cost.New(),
-	}
-	return eng, func() { roll.Close() }, nil
-}
-
-// waggleProject keys the waggle store by the repo, not by the run's worktree:
-// a worktree path is unique per run, so routes mined there would be orphaned
-// the moment the run ends.
-func waggleProject(cwd string) string {
-	if root, err := zzz.MainRepoRoot(cwd); err == nil {
-		return root
-	}
-	return cwd
-}
-
-// runGC prunes terminal zzz runs + done bg sessions per opts, prints what
-// was removed. With wantWorktrees, also calls `git worktree remove` for each
-// pruned worktree run (must be invoked from the main repo, not a worktree).
-// staleRunning>0 reaps "running" runs older than that threshold so crashed
-// processes that never wrote a terminal status don't pile up forever.
-func runGC(maxAge time.Duration, keep int, wantWorktrees bool, staleRunning time.Duration) {
-	opts := zzz.PruneOpts{
-		MaxAge:          maxAge,
-		KeepNewest:      keep,
-		StaleRunningAge: staleRunning,
-		IncludeWorktree: wantWorktrees,
-	}
-	if wantWorktrees {
-		cwd, _ := os.Getwd()
-		if root, err := zzz.RepoRoot(cwd); err == nil {
-			opts.MainRepoRoot = root
-		} else {
-			fmt.Fprintf(os.Stderr, "gc warn: --gc-worktrees needs to run inside a git repo (%v); skipping worktree removal.\n", err)
-			opts.IncludeWorktree = false
-		}
-	}
-	zRes := zzz.Prune(opts)
-	bRes := bgreg.Prune(bgreg.PruneOpts{MaxAge: maxAge, KeepNewest: keep})
-	fmt.Printf("zzz runs pruned: %d\n", len(zRes.RemovedRunIDs))
-	for _, id := range zRes.RemovedRunIDs {
-		fmt.Printf("  - %s\n", id)
-	}
-	if len(zRes.ReapedStaleRunIDs) > 0 {
-		fmt.Printf("zzz runs reaped (stale running): %d\n", len(zRes.ReapedStaleRunIDs))
-		for _, id := range zRes.ReapedStaleRunIDs {
-			fmt.Printf("  - %s\n", id)
-		}
-	}
-	if len(zRes.RemovedWorktreePaths) > 0 {
-		fmt.Printf("zzz worktrees removed: %d\n", len(zRes.RemovedWorktreePaths))
-		for _, p := range zRes.RemovedWorktreePaths {
-			fmt.Printf("  - %s\n", p)
-		}
-	}
-	fmt.Printf("bg sessions pruned: %d\n", len(bRes.RemovedIDs))
-	for _, id := range bRes.RemovedIDs {
-		fmt.Printf("  - %s\n", id)
-	}
-	for _, e := range append(zRes.Errors, bRes.Errors...) {
-		fmt.Fprintf(os.Stderr, "gc warn: %v\n", e)
-	}
-}
-
-func fatalf(format string, a ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", a...)
-	os.Exit(1)
 }

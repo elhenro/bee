@@ -51,8 +51,7 @@ func runExecWaggle(sk skills.Skill, rest []string) {
 	}
 	tool, err := skillexec.New(sk, execSandbox(cfg, cwd)...)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee %s: %v\n", sk.Name, err)
-		os.Exit(1)
+		exitf(1, "bee %s: %v", sk.Name, err)
 	}
 	// skillexec parses args POSIX-style; quote each word so it stays one
 	// positional parameter even with spaces.
@@ -62,8 +61,7 @@ func runExecWaggle(sk skills.Skill, rest []string) {
 	}
 	res, err := tool.Run(context.Background(), map[string]any{"args": strings.Join(quoted, " ")})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee %s: %v\n", sk.Name, err)
-		os.Exit(1)
+		exitf(1, "bee %s: %v", sk.Name, err)
 	}
 	fmt.Println(strings.TrimRight(res.Content, "\n"))
 	if res.IsError {

@@ -6,7 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/term"
@@ -100,23 +100,28 @@ func waggleLibraryEmpty(s *waggle.Store) bool {
 	return len(metas) == 0
 }
 
+// splitCSV splits a comma list, trimming blanks and dropping empty items.
+func splitCSV(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // filterTools narrows reg to the comma-separated list of tool names.
 // Unknown names are an error so typos fail loudly. Empty list returns reg
 // unchanged.
 func filterTools(reg *tools.Registry, csv string) (*tools.Registry, error) {
-	want := make(map[string]bool)
-	for _, name := range strings.Split(csv, ",") {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		want[name] = true
-	}
-	if len(want) == 0 {
+	names := splitCSV(csv)
+	if len(names) == 0 {
 		return reg, nil
 	}
+	slices.Sort(names)
 	out := tools.NewRegistry()
-	for name := range want {
+	for _, name := range slices.Compact(names) {
 		t, ok := reg.Get(name)
 		if !ok {
 			return nil, fmt.Errorf("--allowed-tools: unknown tool %q", name)
@@ -139,7 +144,7 @@ func buildToolsAsker(cwd string, cfg config.Config, prov llm.Provider, storeDir 
 	if err != nil {
 		return nil, err
 	}
-	if !isDisabledTool(cfg.DisabledTools, "ask_user") {
+	if !slices.Contains(cfg.DisabledTools, "ask_user") {
 		if err := r.Register(ask_user.New(herdr.WrapAsker(asker))); err != nil {
 			return nil, err
 		}
@@ -160,12 +165,6 @@ func newShellTool(app approval.Approver, cfg config.Config, jm *jobs.Manager) to
 	if sandbox.ApprovalMode(cfg.Sandbox.Approval) == sandbox.Untrusted {
 		pol := sandbox.Policy{AllowList: config.ActiveProfile(cfg).Safety.ExtraSafeCommands}
 		opts.Allowed = pol.IsAllowed
-	}
-	if jm == nil && !opts.UseUserRC && opts.Shell == "" && opts.RCFile == "" && opts.Allowed == nil {
-		if app == nil {
-			return shell.New()
-		}
-		return shell.NewWithApprover(app)
 	}
 	return shell.NewWithOptions(app, opts)
 }
@@ -210,28 +209,12 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	// scope gate: file tools confine to the workspace + block secret paths only
 	// under a confined sandbox scope (--safe, zzz, spawned agents). The default
 	// danger-full-access leaves them unrestricted ("do anything"). containRoot is
-	// the workspace root when confined, "" (no containment) otherwise.
+	// the workspace root when confined, "" (no containment) otherwise. A write
+	// filter (--write-path-re) is orthogonal and applies whenever set.
 	confined := sandbox.Scope(cfg.Sandbox.Scope).Confines()
 	containRoot := cwd
 	if !confined {
 		containRoot = ""
-	}
-
-	// Initialize web_fetch tool. Confined drives the SSRF guard: localhost/LAN
-	// reachable under danger-full-access, blocked under a confined scope.
-	wfCfg := web_fetch.DefaultConfig()
-	wfCfg.Confined = confined
-	webFetch, err := web_fetch.New(wfCfg)
-	if err != nil {
-		// Silently skip if disabled
-		webFetch = nil
-	}
-
-	// Initialize web_search tool
-	webSearch, err := web_search.New(web_search.DefaultConfig())
-	if err != nil {
-		// Silently skip if disabled
-		webSearch = nil
 	}
 
 	all := []tools.Tool{
@@ -240,30 +223,27 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 		grep.NewWithMax(containRoot, prof.GrepMaxMatches),
 		find.New(containRoot),
 		ls.New(containRoot),
-		write.New(containRoot),
-		edit_diff.New(containRoot),
-		hashline_edit.New(containRoot),
-		// godoc lets tiny models verify Go APIs before calling them, killing
-		// phantom-function hallucinations at source.
-		godoc.New(cwd),
+		write.NewWithFilter(containRoot, bo.writeRe),
+		edit_diff.NewWithFilter(containRoot, bo.writeRe),
+		hashline_edit.NewWithFilter(containRoot, bo.writeRe),
 		// escalate gives the model an explicit exit door — important for
 		// small models that wedge on uncertain tasks instead of asking.
 		escalate.New(),
 	}
-	if webFetch != nil {
-		all = append(all, webFetch)
-	}
-	if webSearch != nil {
-		all = append(all, webSearch)
+	// write-filtered runs have never carried godoc or the web tools
+	if bo.writeRe == nil {
+		// godoc lets tiny models verify Go APIs before calling them, killing
+		// phantom-function hallucinations at source.
+		all = append(all, godoc.New(cwd))
+		all = appendWebTools(all, confined)
 	}
 	// apply_patch dropped on tiny — small models mis-emit unified diffs.
 	if !prof.SkipApplyPatch {
-		all = append(all, apply_patch.New(containRoot))
+		all = append(all, apply_patch.NewWithFilter(containRoot, bo.writeRe))
 	}
 	if cfg.Memory.Enabled && storeDir != "" {
-		topK := cfg.Memory.TopK
 		all = append(all,
-			knowledge_search.New(prov, cfg.DefaultModel, storeDir, topK),
+			knowledge_search.New(prov, cfg.DefaultModel, storeDir, cfg.Memory.TopK),
 			knowledge_write.New(storeDir),
 		)
 	}
@@ -275,7 +255,7 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	all = why.WrapAll(all)
 	all = gateDirs(all, cwd, cfg, confined, app)
 	for _, t := range all {
-		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
+		if slices.Contains(cfg.DisabledTools, t.Spec().Name) {
 			continue
 		}
 		if err := r.Register(t); err != nil {
@@ -284,12 +264,27 @@ func buildToolsWithApprover(cwd string, cfg config.Config, prov llm.Provider, st
 	}
 	// tool_lookup registers last and reads back from r so it can answer
 	// queries about every other tool, including user tools.
-	if !isDisabledTool(cfg.DisabledTools, "tool_lookup") {
+	if !slices.Contains(cfg.DisabledTools, "tool_lookup") {
 		if err := r.Register(tool_lookup.New(r)); err != nil {
 			return nil, err
 		}
 	}
 	return r, nil
+}
+
+// appendWebTools registers web_fetch and web_search, silently skipping one
+// that is disabled. Confined drives web_fetch's SSRF guard: localhost/LAN
+// reachable under danger-full-access, blocked under a confined scope.
+func appendWebTools(all []tools.Tool, confined bool) []tools.Tool {
+	wfCfg := web_fetch.DefaultConfig()
+	wfCfg.Confined = confined
+	if t, err := web_fetch.New(wfCfg); err == nil {
+		all = append(all, t)
+	}
+	if t, err := web_search.New(web_search.DefaultConfig()); err == nil {
+		all = append(all, t)
+	}
+	return all
 }
 
 // appendCodegraphTool registers the codegraph wrapper iff the project
@@ -337,74 +332,4 @@ func appendBrowserTools(all []tools.Tool, cfg config.Config, confined bool) []to
 		VisionEndpoint: cfg.Browser.Vision.Endpoint,
 		Confined:       confined,
 	})...)
-}
-
-// isDisabledTool reports whether name appears in the disabled set.
-func isDisabledTool(disabled []string, name string) bool {
-	for _, d := range disabled {
-		if d == name {
-			return true
-		}
-	}
-	return false
-}
-
-// buildToolsFilteredWithApprover combines buildToolsFiltered with the shell
-// approval hook.
-func buildToolsFilteredWithApprover(cwd string, cfg config.Config, writeRe *regexp.Regexp, prov llm.Provider, storeDir string, app approval.Approver, opts ...buildOpt) (*tools.Registry, error) {
-	bo := collectBuildOpts(opts)
-	prof := config.ActiveProfile(cfg)
-	r := tools.NewRegistry()
-
-	// scope gate, identical to buildToolsWithApprover. writeRe (the
-	// --write-path-re regex filter) is orthogonal and still applies when set;
-	// only workspace containment + secret blocking follow the sandbox scope.
-	confined := sandbox.Scope(cfg.Sandbox.Scope).Confines()
-	containRoot := cwd
-	if !confined {
-		containRoot = ""
-	}
-
-	all := []tools.Tool{
-		newShellTool(app, cfg, bo.jobs),
-		read.NewWithLimits(prof.ReadDefaultLines, prof.ReadMaxLines, confined),
-		grep.NewWithMax(containRoot, prof.GrepMaxMatches),
-		find.New(containRoot),
-		ls.New(containRoot),
-		write.NewWithFilter(containRoot, writeRe),
-		edit_diff.NewWithFilter(containRoot, writeRe),
-		hashline_edit.NewWithFilter(containRoot, writeRe),
-		escalate.New(),
-	}
-	if !prof.SkipApplyPatch {
-		all = append(all, apply_patch.NewWithFilter(containRoot, writeRe))
-	}
-	if cfg.Memory.Enabled && storeDir != "" {
-		topK := cfg.Memory.TopK
-		all = append(all,
-			knowledge_search.New(prov, cfg.DefaultModel, storeDir, topK),
-			knowledge_write.New(storeDir),
-		)
-	}
-	all = appendCodegraphTool(all, cwd)
-	all = appendUserTools(all, cfg.UserTools, execSandbox(cfg, cwd)...)
-	all = appendBrowserTools(all, cfg, confined)
-	all = appendWaggleLookup(all, cfg, cwd)
-	all = appendJobTool(all, bo.jobs)
-	all = why.WrapAll(all)
-	all = gateDirs(all, cwd, cfg, confined, app)
-	for _, t := range all {
-		if isDisabledTool(cfg.DisabledTools, t.Spec().Name) {
-			continue
-		}
-		if err := r.Register(t); err != nil {
-			return nil, err
-		}
-	}
-	if !isDisabledTool(cfg.DisabledTools, "tool_lookup") {
-		if err := r.Register(tool_lookup.New(r)); err != nil {
-			return nil, err
-		}
-	}
-	return r, nil
 }

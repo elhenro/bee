@@ -16,16 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-
-	"github.com/elhenro/bee/internal/config"
 	hivepkg "github.com/elhenro/bee/internal/hive"
 	"github.com/elhenro/bee/internal/knowledge"
-	"github.com/elhenro/bee/internal/llm"
-	"github.com/elhenro/bee/internal/loop"
-	"github.com/elhenro/bee/internal/session"
-	"github.com/elhenro/bee/internal/skills"
-	"github.com/elhenro/bee/internal/tools"
 )
 
 // hyperplanOpts captures parsed flags. Number of critics defaults to 5 to
@@ -76,65 +68,55 @@ func parseHyperplanArgs(args []string) (string, hyperplanOpts, error) {
 func runHyperplan(args []string) {
 	plan, opts, err := parseHyperplanArgs(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee hyperplan: %v\n", err)
-		os.Exit(2)
+		exitf(2, "bee hyperplan: %v", err)
 	}
 
-	cfg, err := config.LoadWith(config.Overrides{Provider: opts.Provider, Model: opts.Model})
+	cfg, err := loadConfig(opts.Model, opts.Provider, "")
 	if err != nil {
-		if os.Getenv("BEE_TEST_PROVIDER") == "stub" {
-			cfg = config.Defaults()
-		} else {
-			fmt.Fprintf(os.Stderr, "bee hyperplan: config: %v\n", err)
-			os.Exit(1)
-		}
+		exitf(1, "bee hyperplan: config: %v", err)
 	}
-	applyOverrides(&cfg, opts.Model, opts.Provider, "")
 
 	prov, err := buildProvider(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee hyperplan: provider: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee hyperplan: provider: %v", err)
 	}
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
 	rawReg, err := buildTools(cwd, cfg, prov, storeDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee hyperplan: tools: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee hyperplan: tools: %v", err)
 	}
 
 	// critics are read-only — they reason about a plan, they don't touch disk.
 	criticAllowed := hivepkg.RoleCritic.AllowedTools()
 	criticReg, err := filterTools(rawReg, strings.Join(criticAllowed, ","))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee hyperplan: filter critic tools: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee hyperplan: filter critic tools: %v", err)
 	}
 
-	skillReg := skills.NewRegistry()
-	_ = skillReg.Load(skills.BaseDir())
+	skillReg := newSkillRegistry()
 
-	// build N critic engines + 1 synthesizer engine.
+	// build N critic engines + 1 synthesizer engine. critics are read-only and
+	// skip memory: they reason about the supplied plan, not the user's notes.
+	// the synthesizer gets the full registry so it can verify claims, though it
+	// usually doesn't need to.
 	critics := make([]hivepkg.Runner, 0, opts.N)
 	prompts := make([]string, 0, opts.N)
 	closers := make([]io.Closer, 0, opts.N+1)
 	for i := 0; i < opts.N; i++ {
-		eng, sess, err := newCriticEngine(prov, criticReg, skillReg, cfg, cwd)
+		eng, sess, err := newEngine(prov, criticReg, skillReg, cfg, cwd)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee hyperplan: critic %d session: %v\n", i, err)
-			os.Exit(1)
+			exitf(1, "bee hyperplan: critic %d session: %v", i, err)
 		}
 		critics = append(critics, eng)
 		closers = append(closers, sess)
 		prompts = append(prompts, criticPrompt(plan, i))
 	}
 
-	synth, synthSess, err := newSynthEngine(prov, rawReg, skillReg, cfg, cwd)
+	synth, synthSess, err := newEngine(prov, rawReg, skillReg, cfg, cwd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee hyperplan: synth session: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee hyperplan: synth session: %v", err)
 	}
 	closers = append(closers, synthSess)
 	defer func() {
@@ -246,45 +228,4 @@ func printCritiques(w io.Writer, critiques []criticResult) {
 		}
 		fmt.Fprintln(w, c.Text)
 	}
-}
-
-// newCriticEngine builds a read-only Engine with its own session rollout.
-// memory is intentionally skipped — critics reason about the supplied plan,
-// not the user's notes.
-func newCriticEngine(prov llm.Provider, reg *tools.Registry, skillReg *skills.Registry, cfg config.Config, cwd string) (*loop.Engine, *session.Rollout, error) {
-	sessID := uuid.NewString()
-	roll, err := session.Open(sessID)
-	if err != nil {
-		return nil, nil, err
-	}
-	eng := &loop.Engine{
-		Provider: prov,
-		Tools:    reg,
-		Skills:   skillReg,
-		Cfg:      cfg,
-		Cwd:      cwd,
-		Sessions: roll,
-		Stdout:   io.Discard,
-	}
-	return eng, roll, nil
-}
-
-// newSynthEngine builds the Queen synthesizer. Full tool registry so it can
-// optionally verify claims, but it usually doesn't need to.
-func newSynthEngine(prov llm.Provider, reg *tools.Registry, skillReg *skills.Registry, cfg config.Config, cwd string) (*loop.Engine, *session.Rollout, error) {
-	sessID := uuid.NewString()
-	roll, err := session.Open(sessID)
-	if err != nil {
-		return nil, nil, err
-	}
-	eng := &loop.Engine{
-		Provider: prov,
-		Tools:    reg,
-		Skills:   skillReg,
-		Cfg:      cfg,
-		Cwd:      cwd,
-		Sessions: roll,
-		Stdout:   io.Discard,
-	}
-	return eng, roll, nil
 }
