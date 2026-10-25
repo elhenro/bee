@@ -92,21 +92,13 @@ func (s *tuiSide) LoginStatus() []commands.ProviderAuth {
 // OpenLogin flips a sentinel that Model.Update consumes to display the
 // interactive login pane. Used by the no-arg /login slash command.
 func (s *tuiSide) OpenLogin() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	s.m.loginRequested = true
-	return nil
+	return s.arm(func(m *Model) { m.loginRequested = true })
 }
 
 // OpenTutorial flips a sentinel Model.Update consumes to replay the first-run
 // walkthrough. Used by the /tutorial slash command.
 func (s *tuiSide) OpenTutorial() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	s.m.tutorialRequested = true
-	return nil
+	return s.arm(func(m *Model) { m.tutorialRequested = true })
 }
 
 // Logout removes both the stored OAuth token AND any stored api key file

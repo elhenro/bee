@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/prompt"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/types"
@@ -21,6 +22,42 @@ import (
 // a clear "not implemented" error so the command framework stays usable.
 type tuiSide struct {
 	m *Model
+}
+
+var errNoTUI = errors.New("no tui")
+
+// arm flips a sentinel on the model that Model.Update consumes. Errors when
+// there is no tui so the slash command can fall back to text.
+func (s *tuiSide) arm(set func(*Model)) error {
+	if s.m == nil {
+		return errNoTUI
+	}
+	set(s.m)
+	return nil
+}
+
+// armPane is arm for a pane that headless runs never build.
+func (s *tuiSide) armPane(pane string, built func(*Model) bool, set func(*Model)) error {
+	if s.m == nil {
+		return errNoTUI
+	}
+	if !built(s.m) {
+		return errors.New("no " + pane + " (headless)")
+	}
+	set(s.m)
+	return nil
+}
+
+// rebuildEngine reruns the engine's rebuild hook, if any, so a changed
+// provider, tool set or model takes effect on the next turn.
+func rebuildEngine(e *loop.Engine, what string) error {
+	if e.Rebuild == nil {
+		return nil
+	}
+	if err := e.Rebuild(e); err != nil {
+		return fmt.Errorf("%s: rebuild: %w", what, err)
+	}
+	return nil
 }
 
 // Compact delegates to the engine-level compactor. Stats are discarded — the
@@ -49,11 +86,7 @@ func (s *tuiSide) SwitchModel(name string) error {
 		// rebuild memory adapter so its cached model id matches the new
 		// default; provider stays the same so no client swap needed, but
 		// going through Rebuild keeps both paths consistent.
-		if s.m.eng.Rebuild != nil {
-			if err := s.m.eng.Rebuild(s.m.eng); err != nil {
-				return fmt.Errorf("model: rebuild: %w", err)
-			}
-		}
+		return rebuildEngine(s.m.eng, "model")
 	}
 	return nil
 }
@@ -81,10 +114,8 @@ func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 		// re-resolve profile + caveman when auto is in play. Explicit user
 		// choices (tiny/normal/large or full/lite/ultra/off) are preserved.
 		s.m.eng.Cfg = reapplyAutoProfile(s.m.eng.Cfg)
-		if s.m.eng.Rebuild != nil {
-			if err := s.m.eng.Rebuild(s.m.eng); err != nil {
-				return fmt.Errorf("model: rebuild: %w", err)
-			}
+		if err := rebuildEngine(s.m.eng, "model"); err != nil {
+			return err
 		}
 	}
 	if model != "" {
@@ -108,14 +139,7 @@ func reapplyAutoProfile(c config.Config) config.Config {
 // provider+model picker. Returns an error in headless contexts (no picker
 // built) so the slash command can fall back to text.
 func (s *tuiSide) OpenPicker() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	if s.m.picker == nil {
-		return errors.New("no picker (headless)")
-	}
-	s.m.pickerRequested = true
-	return nil
+	return s.armPane("picker", func(m *Model) bool { return m.picker != nil }, func(m *Model) { m.pickerRequested = true })
 }
 
 // OpenHandoff arms the rescue flow: opens the same provider+model picker as
@@ -123,15 +147,10 @@ func (s *tuiSide) OpenPicker() error {
 // of a plain swap. Returns an error in headless contexts (no picker built) so
 // the slash command can fall back to text.
 func (s *tuiSide) OpenHandoff() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	if s.m.picker == nil {
-		return errors.New("no picker (headless)")
-	}
-	s.m.handoffRequested = true
-	s.m.handoffActive = true
-	return nil
+	return s.armPane("picker", func(m *Model) bool { return m.picker != nil }, func(m *Model) {
+		m.handoffRequested = true
+		m.handoffActive = true
+	})
 }
 
 // ListSessions enumerates rollouts on disk. Newest first by Created time
@@ -228,20 +247,12 @@ func messagesText(msgs []types.Message) string {
 
 // OpenResume asks the TUI to display the interactive resume picker.
 func (s *tuiSide) OpenResume() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	s.m.resumeRequested = true
-	return nil
+	return s.arm(func(m *Model) { m.resumeRequested = true })
 }
 
 // OpenRewind asks the TUI to display the interactive rewind picker.
 func (s *tuiSide) OpenRewind() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	s.m.rewindRequested = true
-	return nil
+	return s.arm(func(m *Model) { m.rewindRequested = true })
 }
 
 // SaveCheckpoint snapshots the work-tree now, keyed to the latest message so it
@@ -330,11 +341,7 @@ func (s *tuiSide) OpenCost() error {
 // OpenUsage flips a sentinel for the historical usage pane. Returns an error
 // when there is no live model (headless) so the caller falls back to text.
 func (s *tuiSide) OpenUsage() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	s.m.usageRequested = true
-	return nil
+	return s.arm(func(m *Model) { m.usageRequested = true })
 }
 
 // UsageText renders the usage overview as plain text (headless fallback).
