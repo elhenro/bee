@@ -187,6 +187,9 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	// is advisory, not enforced. nil set = no gate (legacy/test engines that
 	// bypass Run and call runOne directly).
 	if e.run != nil && e.run.allowedTools != nil && !e.run.allowedTools[u.Name] {
+		if len(e.run.allowedTools) == 0 {
+			return types.ToolResult{UseID: u.ID, Content: "tool use is disabled for this turn; answer the latest user message directly without tools", IsError: true}, nil
+		}
 		return types.ToolResult{UseID: u.ID, Content: unknownToolMsg(u.Name, e.allowedNames()), IsError: true}, nil
 	}
 	t, ok := e.Tools.Get(u.Name)
@@ -211,7 +214,7 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if u.Name == "bash" {
 		input = wrapShellInput(input, e.Cfg.Sandbox, e.Cwd)
 	}
-	out, err := t.Run(ctx, input)
+	out, err := t.Run(e.withToolTail(ctx, u.ID), input)
 	if err != nil {
 		return types.ToolResult{}, err
 	}

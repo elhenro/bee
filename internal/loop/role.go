@@ -10,8 +10,9 @@ import (
 // Role gates engine behavior per Run. one axis the user cycles with shift+tab;
 // each role bundles tool surface + reasoning budget + orchestration.
 //
-//	RoleWorker: full tool surface, always acts. Worker is the edit role —
-//	            invoke mutators, don't plan-and-stop. default.
+//	RoleWorker: full tool surface; acts unless the user explicitly requests
+//	            a no-tool answer. Worker is the edit role — invoke mutators,
+//	            don't plan-and-stop. default.
 //	RoleScout:  read-only research + web; proposes a plan, never mutates.
 //	RoleQueen:  spawns a hive (decompose → workers → critic → synthesize).
 //
@@ -127,11 +128,11 @@ func applySkillToolGrants(specs []llm.ToolSpec, reg *tools.Registry, grants []st
 //	         shares scout's web-tool rules so a future caller that does
 //	         land here doesn't ship a misleading header or silently drop
 //	         them.
-//	worker — always act (turn_run pins readOnly=false for worker). This
-//	         branch is a defensive no-op; if a future caller ever flips
-//	         readOnly=true for a worker turn, return "" rather than ship
-//	         a misleading "READ-ONLY TURN" header — workers are the edit
-//	         role and the model should not be told otherwise.
+//	worker — acts except on an explicit no-tool request. This branch is a
+//	         defensive no-op; if a future caller ever flips readOnly=true for
+//	         a worker turn, return "" rather than ship a misleading
+//	         "READ-ONLY TURN" header — workers are the edit role and the model
+//	         should not be told otherwise.
 func rolePromptPrefix(role Role, readOnly bool) string {
 	if !readOnly {
 		return ""

@@ -136,3 +136,80 @@ func TestEngineRun_TwoStrikeBrokenBySuccess(t *testing.T) {
 		t.Fatalf("two-strike should not fire when success breaks the streak; got %v", err)
 	}
 }
+
+func TestNoToolsRequested(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want bool
+	}{
+		{"stop. what is the issue ?", true},
+		{"STOP MAKING TOOL CALLS NOW AND ANSWER ME", true},
+		{"please stop and explain", true},
+		{"just answer my questions", true},
+		{"read stop.md and explain it", false},
+		{"what is the issue?", false},
+		{"stopwatch utility", false},
+	} {
+		if got := noToolsRequested(tc.text); got != tc.want {
+			t.Errorf("noToolsRequested(%q) = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+type stopRequestProvider struct {
+	*stubProvider
+	reqs []llm.Request
+}
+
+func (p *stopRequestProvider) Stream(ctx context.Context, req llm.Request) (<-chan llm.Event, error) {
+	p.reqs = append(p.reqs, req)
+	return p.stubProvider.Stream(ctx, req)
+}
+
+// Even if a local model emits a tool call after "stop", it must not execute.
+// The next request still has no tools so the model can answer directly.
+func TestEngineRun_StopRequestRejectsToolCallAndAnswers(t *testing.T) {
+	calls := 0
+	reg := tools.NewRegistry()
+	_ = reg.Register(&stubTool{
+		name: "bash",
+		desc: "shell",
+		fn: func(_ context.Context, _ map[string]any) (tools.Result, error) {
+			calls++
+			return tools.Result{Content: "must not run"}, nil
+		},
+	})
+	p := &stopRequestProvider{stubProvider: &stubProvider{scripts: [][]llm.Event{
+		{
+			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u-stop", Name: "bash", Input: map[string]any{"command": "boom"}}},
+			{Type: llm.EventDone, StopReason: "tool_use"},
+		},
+		{
+			{Type: llm.EventTextDelta, Delta: "direct answer"},
+			{Type: llm.EventDone, StopReason: "stop"},
+		},
+	}}}
+	eng, _ := newEngine(p, reg)
+
+	res, err := eng.Run(context.Background(), "stop. what is the issue ?")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("bash executed %d times after explicit stop", calls)
+	}
+	if res.FinalText != "direct answer" {
+		t.Fatalf("final text = %q", res.FinalText)
+	}
+	if len(p.reqs) != 2 {
+		t.Fatalf("provider requests = %d, want 2", len(p.reqs))
+	}
+	for i, req := range p.reqs {
+		if len(req.Tools) != 0 {
+			t.Errorf("request %d advertised %d tools after stop", i, len(req.Tools))
+		}
+		if !strings.Contains(req.System, "LATEST USER INSTRUCTION: NO TOOLS") {
+			t.Errorf("request %d missing no-tool instruction", i)
+		}
+	}
+}

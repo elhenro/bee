@@ -22,6 +22,9 @@ type Model struct {
 	Name          string
 	ContextLength int
 	Pricing       string
+	// SizeBytes is the weight footprint an on-host server reports for the
+	// model. 0 when unknown (hosted providers, servers without the endpoint).
+	SizeBytes int64
 	// InputModalities is the catalogue's declared input types ("text",
 	// "image", ...). nil when the provider doesn't say.
 	InputModalities []string
@@ -162,6 +165,7 @@ func loadCatalogue(ctx context.Context, name string, cfg config.ProviderConfig) 
 		return nil, err
 	}
 	enrichContextLengths(ctx, name, cfg, models)
+	enrichSizes(ctx, name, cfg, models)
 	return models, nil
 }
 

@@ -173,13 +173,14 @@ func TestListModels_OmlxStatusEnrichesContextLength(t *testing.T) {
 
 // omlx advertises the window as max_model_len on the stock /v1/models shape.
 // Verify parseModels picks it up so detection works without the secondary
-// /models/status probe (which is never even hit here).
+// /models/status probe (here it 404s, so only max_model_len can supply it).
 func TestListModels_OmlxMaxModelLen(t *testing.T) {
 	ClearModelCache()
 	ResetLiveContextLengths()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/models/status" {
-			t.Errorf("status probe should not fire when max_model_len present")
+			http.NotFound(w, r)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"data":[

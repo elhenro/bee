@@ -11,7 +11,7 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
-// SessionTree is the Ctrl+T modal — renders the parent-pointer message tree
+// SessionTree is the Alt+T modal — renders the parent-pointer message tree
 // for one session, highlighting the active branch. Supports cursor nav with
 // Up/Down, Enter to switch active leaf, F to fork, C to clone, Esc to close.
 type SessionTree struct {

@@ -98,6 +98,9 @@ func (m Model) Init() tea.Cmd {
 	if c := m.waitLiveMsg(); c != nil {
 		cmds = append(cmds, c)
 	}
+	if c := m.waitToolTail(); c != nil {
+		cmds = append(cmds, c)
+	}
 	if c := m.waitWarn(); c != nil {
 		cmds = append(cmds, c)
 	}

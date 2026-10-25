@@ -30,6 +30,9 @@ func (m Model) renderLive(maxRows int) string {
 	if m.compacting && m.queuedMidCompact != "" {
 		parts = append(parts, m.renderQueuedMidCompact())
 	}
+	if m.goalJudging {
+		parts = append(parts, m.renderGoalJudgingRow())
+	}
 	if m.state == StateError && m.lastErr != "" {
 		parts = append(parts, m.renderErrorBlock(m.lastErr))
 	}
@@ -111,7 +114,7 @@ func (m Model) renderStreamingParts(maxRows int) []string {
 		return append(parts, m.renderLegacyLoader(visible, maxRows))
 	}
 
-	pending := m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame)
+	pending := m.renderPending()
 	if text := m.stream.RenderStreaming(visible, m.loaderFrame); text != "" {
 		if clip := maxRows - m.busyRows() - thinkRows; maxRows > 0 && clip > 0 {
 			text = m.stream.ClipStreamingTail(text, clip)
@@ -127,6 +130,12 @@ func (m Model) renderStreamingParts(maxRows int) []string {
 	return append(parts, m.renderBusyRow())
 }
 
+// in-flight calls, the running one carrying its latest output rows
+func (m Model) renderPending() string {
+	m.stream.SetLiveTail(m.liveTail.UseID, m.liveTail.Text)
+	return m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame)
+}
+
 // rows the busy row and running calls claim under the streaming text; the
 // text clip and the flush budget both subtract it
 func (m Model) busyRows() int {
@@ -138,7 +147,7 @@ func (m Model) busyRows() int {
 		n++ // blank row above the spinner
 	}
 	if len(m.pendingTools) > 0 {
-		n += lipgloss.Height(m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame))
+		n += lipgloss.Height(m.renderPending())
 	}
 	return n
 }
@@ -160,7 +169,7 @@ func (m Model) renderBusyRow() string {
 // text with the animated caret and, for strip, the readout row below
 func (m Model) renderLegacyLoader(visible string, maxRows int) string {
 	if len(m.pendingTools) > 0 && visible == "" {
-		return m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame)
+		return m.renderPending()
 	}
 	// the strip takes a row below the text; reserve it from the clip
 	var strip string
@@ -191,6 +200,15 @@ func (m Model) renderCompactingRow() string {
 		label = "Writing handoff…"
 	}
 	row := m.stream.RenderSpinnerLabel(m.loaderFrame, label, 0, "")
+	if m.compact {
+		return row
+	}
+	return "\n" + row
+}
+
+// busy row while the fast model judges whether the goal is met
+func (m Model) renderGoalJudgingRow() string {
+	row := m.stream.RenderSpinnerLabel(m.loaderFrame, "Judging goal…", 0, "")
 	if m.compact {
 		return row
 	}

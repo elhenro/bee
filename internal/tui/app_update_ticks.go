@@ -10,8 +10,8 @@ import (
 
 func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	// Only animate while a turn or async compact is in flight. Letting the
-	// tick die when we leave streaming/compacting keeps idle terminals quiet.
-	if m.state != StateStreaming && !m.compacting {
+	// tick die when we leave streaming/compacting/judging keeps idle terminals quiet.
+	if m.state != StateStreaming && !m.compacting && !m.goalJudging {
 		return m, nil
 	}
 	// inactivity watchdog: a streaming turn that has shown activity and then

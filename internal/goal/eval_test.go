@@ -3,6 +3,7 @@ package goal
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/elhenro/bee/internal/llm"
@@ -201,5 +202,47 @@ func TestParseVerdict_JSONFallback(t *testing.T) {
 func TestParseVerdict_Unparseable(t *testing.T) {
 	if _, err := parseVerdict("The user wants to check if the condition is met: Condition"); err == nil {
 		t.Error("expected error on reply with neither verdict line nor json")
+	}
+}
+
+// namedProvider records the judge request and reports a chosen provider name.
+type namedProvider struct {
+	name string
+	got  *llm.Request
+}
+
+func (n namedProvider) Name() string { return n.name }
+
+func (n namedProvider) Stream(_ context.Context, req llm.Request) (<-chan llm.Event, error) {
+	*n.got = req
+	ch := make(chan llm.Event, 2)
+	ch <- llm.Event{Type: llm.EventTextDelta, Delta: "VERDICT: MET — ok"}
+	ch <- llm.Event{Type: llm.EventDone}
+	close(ch)
+	return ch, nil
+}
+
+// the judge answers in one line, so a hybrid reasoning model must not think
+// first: it would burn the token budget (and local seconds) before VERDICT.
+func TestEvaluateSuppressesJudgeThinking(t *testing.T) {
+	cases := []struct {
+		name, provider, model string
+		wantToken, wantKwargs bool
+	}{
+		{"local hybrid", "omlx", "Qwen3.8-27B-oQ4e", true, true},
+		{"hosted hybrid", "openrouter", "qwen/qwen3-235b-a22b", true, false},
+		{"other model", "omlx", "llama-3.3-70b", false, false},
+	}
+	for _, c := range cases {
+		var req llm.Request
+		if _, err := Evaluate(context.Background(), namedProvider{c.provider, &req}, c.model, "tests pass", sampleMsgs()); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if got := strings.HasSuffix(req.System, "/no_think"); got != c.wantToken {
+			t.Errorf("%s: /no_think in system = %v, want %v", c.name, got, c.wantToken)
+		}
+		if got := req.ChatTemplateKwargs["enable_thinking"] == false; got != c.wantKwargs {
+			t.Errorf("%s: enable_thinking=false kwarg = %v, want %v", c.name, got, c.wantKwargs)
+		}
 	}
 }

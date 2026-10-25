@@ -232,3 +232,16 @@ func TestPicker_ModelSelResetsWhenSwitchingProvider(t *testing.T) {
 		t.Fatalf("selected %q (modelSel=%d), want first model b0", got, p.modelSel)
 	}
 }
+
+func TestModelEntries_SizeInDesc(t *testing.T) {
+	got := modelEntries([]llm.Model{
+		{ID: "a", ContextLength: 262144, SizeBytes: 16106127360},
+		{ID: "b", ContextLength: 4096},
+	})
+	if want := "a · ctx 262144 · 15.0 GB"; got[0].desc != want {
+		t.Errorf("desc = %q, want %q", got[0].desc, want)
+	}
+	if want := "b · ctx 4096"; got[1].desc != want {
+		t.Errorf("desc = %q, want %q", got[1].desc, want)
+	}
+}

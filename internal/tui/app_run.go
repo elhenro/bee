@@ -117,6 +117,7 @@ func (m Model) seedFromEngine(eng *loop.Engine) Model {
 	// hand the engine's channels to the model so deltas land in the bubbletea
 	// Update loop instead of corrupting the alt-screen.
 	m.streamCh, m.thinkCh, m.progressCh, m.liveMsgCh, m.warnCh = eng.StreamCh, eng.ThinkCh, eng.ProgressCh, eng.LiveMsgCh, eng.WarnCh
+	m.toolTailCh = eng.ToolTailCh
 	m.costs = eng.Costs
 	wc := c.Watchdog
 	if os.Getenv("BEE_WATCHDOG_OFF") != "" {

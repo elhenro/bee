@@ -19,6 +19,7 @@ import (
 type runPlan struct {
 	role       Role
 	readOnly   bool
+	noTools    bool
 	specs      []llm.ToolSpec
 	sys        string
 	sysDynamic string
@@ -37,8 +38,9 @@ func (e *Engine) planRun(ctx context.Context, userText string) runPlan {
 		recs = r
 	}
 
-	// resolve role + per-turn posture. worker mode always acts — no side-LLM
-	// classifier call. The classifier existed to stop small local models from
+	// resolve role + per-turn posture. worker mode acts unless the user
+	// explicitly requests a no-tool answer — no side-LLM classifier call.
+	// The classifier existed to stop small local models from
 	// reflex-shelling on a greeting, but on hosted providers it produced false
 	// "plan" verdicts for clear edit requests (worker diagnosed, then stopped
 	// without acting, forcing the user to send a follow-up). Local models still
@@ -46,7 +48,7 @@ func (e *Engine) planRun(ctx context.Context, userText string) runPlan {
 	// cleanly. scout is always read-only; queen never reaches here (the TUI
 	// routes queen turns through the hive).
 	role := ParseRole(e.Cfg.Role)
-	pl := runPlan{role: role, readOnly: role == RoleScout, userText: userText}
+	pl := runPlan{role: role, readOnly: role == RoleScout, noTools: noToolsRequested(userText), userText: userText}
 	pl.specs = e.advertisedSpecs(pl)
 
 	// walk-up AGENTS.md/CLAUDE.md plus ~/.bee global; best-effort.
@@ -60,14 +62,22 @@ func (e *Engine) planRun(ctx context.Context, userText string) runPlan {
 	// reuse cached system prompt when the inputs fingerprint matches. saves
 	// the Assemble + budget-trim work on every Run when nothing changed.
 	cacheKey := sysPromptCacheKey(e.Cfg, e.Cwd, role, pl.readOnly, pl.specs, skillManifest, recs, ctxFiles)
+	if pl.noTools {
+		cacheKey = "" // rare explicit-stop turns must never reuse an acting prompt
+	}
 	if e.sysPromptCache.key == cacheKey && cacheKey != "" {
 		pl.sys, pl.sysDynamic = e.sysPromptCache.value, e.sysPromptCache.dynamic
 		return pl
 	}
 	pl.sys, pl.sysDynamic = prompt.AssembleWithDynamic(e.Cfg, e.Cwd, pl.specs, skillManifest, recs, ctxFiles)
 	// rolePromptPrefix prepends, so the dynamic memory tail stays the suffix.
-	if prefix := rolePromptPrefix(role, pl.readOnly); prefix != "" {
+	if prefix := rolePromptPrefix(role, pl.readOnly); prefix != "" && !pl.noTools {
 		pl.sys = prefix + "\n" + pl.sys
+	}
+	if pl.noTools {
+		pl.sys = "## LATEST USER INSTRUCTION: NO TOOLS\n" +
+			"Stop all tool use. Answer the latest user message directly from the existing conversation. " +
+			"Do not continue the previous task, and do not emit tool calls even if earlier messages requested them.\n\n" + pl.sys
 	}
 	if cacheKey != "" {
 		e.sysPromptCache.key, e.sysPromptCache.value, e.sysPromptCache.dynamic = cacheKey, pl.sys, pl.sysDynamic
@@ -75,11 +85,22 @@ func (e *Engine) planRun(ctx context.Context, userText string) runPlan {
 	return pl
 }
 
+// noToolsRequested recognizes an explicit request to stop working and answer.
+// Keep this narrow: ordinary questions often need tools to answer correctly.
+func noToolsRequested(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	if t == "stop" || strings.HasPrefix(t, "stop ") || strings.HasPrefix(t, "stop.") ||
+		strings.HasPrefix(t, "stop,") || strings.HasPrefix(t, "stop!") || strings.HasPrefix(t, "please stop") {
+		return true
+	}
+	return containsAny(t, "stop making tool calls", "stop using tools", "do not use tools", "don't use tools", "just answer")
+}
+
 // advertisedSpecs is the tool surface offered this Run, and the only one the
 // executor accepts.
 func (e *Engine) advertisedSpecs(pl runPlan) []llm.ToolSpec {
 	specs := []llm.ToolSpec{}
-	if e.Tools != nil {
+	if e.Tools != nil && !pl.noTools {
 		specs = e.Tools.Specs()
 	}
 	// drop user-disabled tools before any other filter
@@ -89,7 +110,9 @@ func (e *Engine) advertisedSpecs(pl runPlan) []llm.ToolSpec {
 	specs = filterToolSpecsForRole(specs, pl.role, pl.readOnly)
 	// re-add any plan-only tool a prompt skill granted for this turn (e.g.
 	// /plan granting ask_user so it can prompt the user from edit/auto mode).
-	specs = applySkillToolGrants(specs, e.Tools, e.OnceAllowTools)
+	if !pl.noTools {
+		specs = applySkillToolGrants(specs, e.Tools, e.OnceAllowTools)
+	}
 	e.OnceAllowTools = nil
 	// record the advertised surface so the executor can reject any tool the
 	// model calls that wasn't offered this turn — read-only enforcement must

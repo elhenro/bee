@@ -68,15 +68,17 @@ func TestGoalStopsOnIdenticalReplies(t *testing.T) {
 			t.Fatalf("goal stopped early at turn %d", i+1)
 		}
 		m.goalGen = 1
+		m.state = StateIdle // the continuation turn finished
 	}
 	out, _ := m.onGoalEvalDone(notMet)
 	got := out.(Model)
 	if got.goal.Active {
 		t.Fatal("goal still active after identical-reply streak")
 	}
-	last := got.messages[len(got.messages)-1].Content[0].Text
-	if !strings.HasPrefix(last, goal.StoppedPrefix) || !strings.Contains(last, "identical replies") {
-		t.Fatalf("stop message = %q", last)
+	last := got.messages[len(got.messages)-1]
+	text := strings.Trim(last.Content[0].Text, "()")
+	if !last.Ephemeral || !strings.HasPrefix(text, goal.StoppedPrefix) || !strings.Contains(text, "identical replies") {
+		t.Fatalf("stop message = %+v", last)
 	}
 }
 

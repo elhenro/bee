@@ -64,6 +64,9 @@ func modelEntries(models []llm.Model) []modelItem {
 		if m.ContextLength > 0 {
 			desc = fmt.Sprintf("%s · ctx %d", m.ID, m.ContextLength)
 		}
+		if m.SizeBytes > 0 {
+			desc += fmt.Sprintf(" · %.1f GB", float64(m.SizeBytes)/(1<<30))
+		}
 		if m.Pricing != "" {
 			desc += " · " + m.Pricing
 		}

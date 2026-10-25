@@ -15,6 +15,7 @@ type KeyMap struct {
 	HistorySearch  key.Binding
 	CavemanCycle   key.Binding
 	RoleCycle      key.Binding
+	EffortCycle    key.Binding
 	YoloToggle     key.Binding
 	ApproveAllow   key.Binding
 	ApproveSession key.Binding
@@ -46,13 +47,14 @@ func DefaultKeyMap() KeyMap {
 		Cancel:        bind("esc", "cancel turn", "esc"),
 		ProviderPick:  bind("ctrl+p", "model picker", "ctrl+p"),
 		HiveOpen:      bind("ctrl+h", "hive view", "ctrl+h"),
-		SessionTree:   bind("ctrl+t", "session tree", "ctrl+t"),
+		SessionTree:   bind("alt+t", "session tree", "alt+t"),
 		CostOpen:      bind("ctrl+y", "cost monitor", "ctrl+y"),
 		SlashPalette:  bind("ctrl+k", "command palette", "ctrl+k"),
 		HistorySearch: bind("ctrl+r", "search history (fzf)", "ctrl+r"),
 		// ctrl+/ comes through as ctrl+_ on many terminals
 		CavemanCycle:   bind("ctrl+/", "cycle caveman", "ctrl+/", "ctrl+_"),
 		RoleCycle:      bind("shift+tab", "cycle role (worker/scout/queen)", "shift+tab"),
+		EffortCycle:    bind("ctrl+t", "cycle reasoning effort", "ctrl+t"),
 		YoloToggle:     bind("alt+y", "toggle yolo (auto-approve)", "alt+y"),
 		ApproveAllow:   bind("a/y", "allow once", "a", "y", "enter"),
 		ApproveSession: bind("s", "allow this session", "s"),

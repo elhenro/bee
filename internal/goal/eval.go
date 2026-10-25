@@ -63,17 +63,20 @@ func Evaluate(ctx context.Context, p llm.Provider, model, condition string, rece
 	}
 	transcript := buildTranscript(recent)
 	user := "CONDITION:\n" + condition + "\n\nCONVERSATION (most recent last):\n" + transcript
+	system, kwargs := judgeThinking(p, model, evalSystem)
 	req := llm.Request{
 		Model:  model,
-		System: evalSystem,
+		System: system,
 		Messages: []types.Message{
 			{Role: types.RoleUser, Content: []types.ContentBlock{
 				{Type: types.BlockText, Text: user},
 			}},
 		},
-		MaxTokens:   evalMaxTokens,
-		Temperature: 0,
-		Stream:      true,
+		MaxTokens:          evalMaxTokens,
+		Temperature:        0,
+		Stream:             true,
+		Thinking:           llm.ThinkingOff,
+		ChatTemplateKwargs: kwargs,
 	}
 	ch, err := p.Stream(ctx, req)
 	if err != nil {

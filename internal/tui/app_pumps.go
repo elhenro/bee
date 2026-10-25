@@ -27,6 +27,10 @@ type thinkDeltaMsg struct{ Delta string }
 // sees mid-stream, but the ↓ figure should still move.
 type progressMsg struct{ N int }
 
+// toolTailMsg carries the newest output tail of a running tool from
+// Engine.ToolTailCh.
+type toolTailMsg struct{ Tail loop.ToolTail }
+
 // liveMsgMsg carries a freshly-persisted message from the engine into the
 // TUI so the scrollback updates the moment the loop appends an assistant
 // or tool message — instead of waiting for the whole Run to complete.
@@ -230,6 +234,16 @@ func (m Model) waitThink() tea.Cmd {
 // waitLiveMsg blocks on the next mid-Run message from the engine.
 func (m Model) waitLiveMsg() tea.Cmd {
 	return pump(m.liveMsgCh, func(msg types.Message) tea.Msg { return liveMsgMsg{Msg: msg} })
+}
+
+// waitToolTail blocks on the next running-tool tail; only the newest of a
+// queued burst matters.
+func (m Model) waitToolTail() tea.Cmd {
+	ch := m.toolTailCh
+	return pump(ch, func(t loop.ToolTail) tea.Msg {
+		burst := drainChan(t, ch)
+		return toolTailMsg{Tail: burst[len(burst)-1]}
+	})
 }
 
 // waitWarn blocks on the next transient notice from Engine.WarnCh.

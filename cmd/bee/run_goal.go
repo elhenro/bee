@@ -13,10 +13,6 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 )
 
-// goalEvalTimeout caps each side-call so a stuck fast model can't wedge the
-// headless loop.
-const goalEvalTimeout = 30 * time.Second
-
 // maxConsecutiveWedges bounds recovery from wedged turns: after this many turns
 // in a row bail with no progress, the loop gives up rather than burning the
 // whole turn cap on a hopeless spiral. Reset by any turn that finishes cleanly.
@@ -108,7 +104,7 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 			fmt.Fprintln(os.Stderr, goal.StoppedPrefix+reason+")")
 			break
 		}
-		evalCtx, cancel := context.WithTimeout(ctx, goalEvalTimeout)
+		evalCtx, cancel := context.WithTimeout(ctx, goal.EvalTimeout)
 		v, _ := goal.Evaluate(evalCtx, eng.Provider, config.FastModelOf(cfg), cond, res.Messages)
 		cancel()
 		if v.Met {

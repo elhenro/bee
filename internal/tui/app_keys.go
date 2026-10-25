@@ -25,8 +25,8 @@ func (m *Model) resetCycle() {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// classic readline chords must reach the textinput when the buffer has
 	// content. Pane/quit shortcuts that overlap with editing chords
-	// (ctrl+w word-back, ctrl+k kill-to-end, ctrl+h backspace, ctrl+t
-	// transpose) only fire on an empty buffer. ctrl+d is handled globally
+	// (ctrl+w word-back, ctrl+k kill-to-end, ctrl+h backspace) only fire on
+	// an empty buffer. ctrl+d is handled globally
 	// in Update (double-press to quit) so it never reaches handleKey.
 	inputEmpty := m.input.Value() == ""
 	keyStr := msg.String()
@@ -61,7 +61,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return openHiveMsg{} }
 	}
 	editingChord := keyStr == "ctrl+w" || keyStr == "ctrl+k" ||
-		keyStr == "ctrl+h" || keyStr == "ctrl+t"
+		keyStr == "ctrl+h"
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
 		if m.state == StateStreaming {
@@ -81,12 +81,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.toggleLastToolOutput()
 	case key.Matches(msg, m.keys.Submit):
-		// state-dependent: idle = submit, streaming = steer. Slash commands
-		// always route to handleSubmit so AllowDuringRun ones (/settings,
-		// /effort, /model, …) work mid-stream instead of being captured as
-		// steer text.
+		// state-dependent: idle = submit, streaming = interrupt + follow-up.
+		// Slash commands always route to handleSubmit so AllowDuringRun ones
+		// (/settings, /effort, /model, …) work mid-stream instead of being
+		// captured as follow-up text.
 		if m.state == StateStreaming && !strings.HasPrefix(strings.TrimSpace(m.input.Value()), "/") {
-			return m.handleSteer()
+			return m.handleInterrupt()
 		}
 		return m.handleSubmit()
 	case key.Matches(msg, m.keys.ProviderPick):
@@ -129,6 +129,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(glowTickCmd(), warningFadeCmd())
 		}
 		return m, nil
+	case key.Matches(msg, m.keys.EffortCycle):
+		// works mid-stream and with text in the buffer, like the role cycle;
+		// the toast covers "auto", which has no status badge
+		if err := m.side().SetThinking(cycleEffort(m.thinking)); err != nil {
+			return m.fail(err.Error())
+		}
+		m.effortPane.SetCurrent(m.thinking)
+		m = m.withWarn("effort: " + m.thinking)
+		return m, warningFadeCmd()
 	case key.Matches(msg, m.keys.YoloToggle):
 		m.yolo = !m.yolo
 		m.mirrorToEngine()

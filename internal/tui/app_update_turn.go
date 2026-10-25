@@ -167,6 +167,14 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 	costCmd := m.maybeStartCostFlash()
 	// a steer the loop never got to read becomes a follow-up of its own
 	m.queue = append(m.queue, drainSteer(m.eng)...)
+	// cancellation must not strand queued user messages: after the old run has
+	// returned, start the newest instruction just like after a clean finish.
+	if errors.Is(msg.err, context.Canceled) && len(m.queue) > 0 && m.eng != nil {
+		nxt := m.queue[0]
+		m.queue = m.queue[1:]
+		nm, runCmd := m.submit(nxt)
+		return nm, tea.Batch(flushCmd, costCmd, runCmd)
+	}
 	if msg.err != nil {
 		return m, tea.Batch(flushCmd, costCmd, errResumeCmd)
 	}

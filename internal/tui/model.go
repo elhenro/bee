@@ -158,7 +158,7 @@ type Model struct {
 	palette       PaletteModel
 	quitRequested bool
 
-	// session tree modal — toggled by Ctrl+T or /tree.
+	// session tree modal — toggled by Alt+T or /tree.
 	tree          *SessionTree
 	treeRequested bool
 
@@ -266,6 +266,11 @@ type Model struct {
 	// liveMsgCh receives each persisted assistant/tool message from the
 	// engine's LiveMsgCh so cards render mid-Run instead of only on done.
 	liveMsgCh chan types.Message
+
+	// toolTailCh receives the output tail of a running tool via
+	// Engine.ToolTailCh; liveTail is the latest one, shown under its pending row.
+	toolTailCh chan loop.ToolTail
+	liveTail   loop.ToolTail
 
 	// warnCh receives transient operational notices from Engine.WarnCh —
 	// stream retries, watchdog hiccups, etc. The latest one shows as a dim
@@ -538,4 +543,7 @@ type Model struct {
 	// goalGen bumps on each scheduled eval so a stale async verdict (from a
 	// cleared/replaced goal) is ignored when it lands.
 	goalGen int
+	// goalJudging is true while the fast model rules on the last turn; the
+	// live region shows a busy row so the gap before the next turn isn't blank.
+	goalJudging bool
 }

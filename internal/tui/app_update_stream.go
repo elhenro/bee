@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -49,6 +50,15 @@ func (m Model) onStreamDelta(msg streamDeltaMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(flushCmd, m.waitStream())
 }
 
+// onToolTail keeps the newest output tail of a running call; a late one for a
+// call that already finished is dropped.
+func (m Model) onToolTail(msg toolTailMsg) (tea.Model, tea.Cmd) {
+	if slices.ContainsFunc(m.pendingTools, func(u types.ToolUse) bool { return u.ID == msg.Tail.UseID }) {
+		m.liveTail = msg.Tail
+	}
+	return m, m.waitToolTail()
+}
+
 func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	// engine persisted a new assistant/tool message mid-Run; print it to
 	// native scrollback right away so the user sees tool cards as they
@@ -65,6 +75,7 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	// track in-flight tools for the live-region swarm: an assistant turn
 	// carrying tool_use blocks is about to dispatch; the following tool
 	// message means that batch finished, so clear.
+	m.liveTail = loop.ToolTail{}
 	switch msg.Msg.Role {
 	case types.RoleAssistant:
 		m.pendingTools = pendingToolUses(msg.Msg)

@@ -8,8 +8,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/elhenro/bee/internal/tools"
 )
 
 func TestHappyPath(t *testing.T) {
@@ -249,5 +252,27 @@ func TestMissingRCFileSoftFails(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "ok") {
 		t.Fatalf("missing output: %q", res.Content)
+	}
+}
+
+func TestLiveSinkSeesOutputWhileRunning(t *testing.T) {
+	var mu sync.Mutex
+	var tails []string
+	ctx := tools.WithLiveSink(context.Background(), func(s string) {
+		mu.Lock()
+		tails = append(tails, s)
+		mu.Unlock()
+	})
+	res, err := New().Run(ctx, map[string]any{"command": "echo one; echo two; sleep 0.4; echo three"})
+	if err != nil || res.IsError {
+		t.Fatalf("run: %v %q", err, res.Content)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(tails) == 0 || !strings.Contains(tails[0], "one") {
+		t.Fatalf("sink missed early output: %q", tails)
+	}
+	if !strings.Contains(res.Content, "three") {
+		t.Fatalf("result lost output: %q", res.Content)
 	}
 }

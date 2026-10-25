@@ -93,7 +93,7 @@ func (e *Engine) settleTurn(msg types.Message, text string, uses []types.ToolUse
 	// say-only stop guard: first turn, no tool call, task-looking
 	// request — push once instead of ending the Run with nothing done.
 	// first bounds it to one nudge per Run by construction.
-	if first && !pl.readOnly && !detectDoneSignal(text) {
+	if first && !pl.readOnly && !pl.noTools && !detectDoneSignal(text) {
 		return sayOnlyStopNudge(e, msg, pl.userText), nil
 	}
 	return nil, nil

@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os/exec"
 	"slices"
 	"strings"
@@ -159,8 +160,15 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	cmd := exec.CommandContext(runCtx, shellBin, "-c", finalCmd)
 	cmd.Dir = cwd
 	buf := tools.NewCapBuffer(captureHead, captureTail)
-	cmd.Stdout = buf
-	cmd.Stderr = buf
+	var out io.Writer = buf
+	if sink := tools.LiveSink(ctx); sink != nil {
+		tail := tools.NewTailWriter(sink)
+		defer tail.Close()
+		out = io.MultiWriter(buf, tail)
+	}
+	// one writer for both streams keeps stdout/stderr interleaved on one pipe
+	cmd.Stdout = out
+	cmd.Stderr = out
 	// own process group so timeout/cancel kills backgrounded children too,
 	// not just the bash leader. WaitDelay caps how long we wait for pipes a
 	// surviving child still holds.

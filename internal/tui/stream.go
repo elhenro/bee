@@ -82,6 +82,8 @@ type StreamRenderer struct {
 	cont bool
 	// pulse phase of in-flight call bullets
 	pendingFrame int
+	// output rows of the call that is running, hung under its pending row
+	tailID, tailText string
 	// compactingVariant selects one of the three /compact swarm animations.
 	// Picked at frame 0 of each compacting run, sticks for the duration.
 	compactingVariant int

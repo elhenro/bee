@@ -88,24 +88,18 @@ func userEcho(text, tag string) types.Message {
 	}
 }
 
-// handleSteer pushes the current input into the engine's SteerCh so the
-// running Run loop picks it up between iterations. Drops with a note if
-// the channel is full or the engine isn't wired for steering.
-func (m Model) handleSteer() (tea.Model, tea.Cmd) {
+// handleInterrupt interrupts the current turn and queues the new message as the
+// next turn. A soft steer lets the model continue its old task after an explicit
+// new instruction; starting a fresh turn makes the latest message take priority.
+func (m Model) handleInterrupt() (tea.Model, tea.Cmd) {
 	text := strings.TrimSpace(m.input.Value())
 	if text == "" {
 		return m, nil
 	}
 	m.input.Reset()
-	if m.eng == nil || m.eng.SteerCh == nil {
-		m.messages = append(m.messages, ephemeral("(steer dropped: no channel)"))
-		return m, m.flush()
-	}
-	select {
-	case m.eng.SteerCh <- text:
-		m.messages = append(m.messages, userEcho(text, "steer, sent at next step"))
-	default:
-		m.messages = append(m.messages, ephemeral("(steer dropped: queue full)"))
-	}
+	m.queue = append(m.queue, text)
+	m.messages = append(m.messages, userEcho(text, "interrupting"))
+	m.cancelTurn()
+	m.interrupted = true
 	return m, m.flush()
 }

@@ -154,6 +154,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		// so tool_use / tool_result cards render mid-Run instead of only at
 		// turnDoneMsg. Buffered to avoid stalling the loop during tool bursts.
 		LiveMsgCh:       make(chan types.Message, 32),
+		ToolTailCh:      make(chan loop.ToolTail, 16),
 		WarnCh:          make(chan string, 8),
 		Costs:           cost.New(),
 		InitialMessages: prior,

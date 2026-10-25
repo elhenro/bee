@@ -12,9 +12,6 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
-// goalEvalTimeout caps the side-call so a stuck provider can't wedge the loop.
-const goalEvalTimeout = 30 * time.Second
-
 // goalEvalDoneMsg carries a fast-model completion verdict back into Update.
 // gen is the goalGen captured when the eval was scheduled; a mismatch (goal
 // cleared or replaced meanwhile) means the verdict is stale and ignored.
@@ -65,6 +62,7 @@ func (m Model) handleGoal(args []string) (tea.Model, tea.Cmd) {
 		}
 		m.goal.Clear()
 		m.goalGen++
+		m.goalJudging = false
 		return m.goalText("goal cleared")
 	}
 	// set: store state, then submit the condition as the first turn. a second
@@ -76,7 +74,16 @@ func (m Model) handleGoal(args []string) (tea.Model, tea.Cmd) {
 	cond := strings.Join(args, " ")
 	m.goal.Set(cond, currentCumTokens(m), time.Now())
 	m.goalGen++
-	return m.submit(cond)
+	m.goalJudging = false
+	m.messages = append(m.messages, ephemeral("(◎ goal set · judged after every turn · /goal clear stops it)"))
+	return m.submitWithDisplay(cond, "/goal "+cond)
+}
+
+// goalNotice prints a one-line, scrollback-only goal outcome. ephemeral keeps
+// it out of the history the model sees on the next turn.
+func (m Model) goalNotice(text string) (Model, tea.Cmd) {
+	m.messages = append(m.messages, ephemeral("("+text+")"))
+	return m, m.flush()
 }
 
 // goalText appends an assistant message and flushes, mirroring runSlash text
@@ -97,7 +104,7 @@ func (m Model) goalEvalCmd(gen int) tea.Cmd {
 	cond := m.goal.Condition
 	copyMsgs := append([]types.Message(nil), m.messages...)
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), goalEvalTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), goal.EvalTimeout)
 		defer cancel()
 		v, err := goal.Evaluate(ctx, prov, fastModel, cond, copyMsgs)
 		return goalEvalDoneMsg{gen: gen, v: v, err: err}
@@ -114,11 +121,13 @@ func (m Model) maybeStartGoalEval() (Model, tea.Cmd) {
 	if exceeded, reason := m.goal.CapsExceeded(currentCumTokens(m)); exceeded {
 		m.goal.Clear()
 		m.goalGen++
-		m.messages = append(m.messages, assistantText(goal.StoppedPrefix+reason+")"))
-		return m, m.flush()
+		return m.goalNotice(goal.StoppedPrefix + reason + ")")
 	}
 	m.goalGen++
-	return m, m.goalEvalCmd(m.goalGen)
+	cmd := m.goalEvalCmd(m.goalGen)
+	// the turn's loader tick is still armed and keeps the busy row moving
+	m.goalJudging = cmd != nil
+	return m, cmd
 }
 
 // onGoalEvalDone consumes a completion verdict. Stale or inactive => ignore.
@@ -127,30 +136,33 @@ func (m Model) onGoalEvalDone(msg goalEvalDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.gen != m.goalGen || !m.goal.Active {
 		return m, nil
 	}
+	m.goalJudging = false
+	// the user started a turn while the judge ran: continuing now would orphan
+	// its cancel func. their turn ends cleanly into a fresh eval instead.
+	if m.state == StateStreaming {
+		return m, nil
+	}
 	m.goal.LastReason = msg.v.Reason
 	if msg.err != nil {
 		// stop on error to avoid a runaway loop against a flaky side model.
 		m.goal.Clear()
 		m.goalGen++
-		return m, m.scroll.print(dimItalic.Render("goal: eval error (" + msg.err.Error() + "), stopped"))
+		return m.goalNotice("goal: eval error (" + msg.err.Error() + "), stopped")
 	}
 	if msg.v.Met {
 		m.goal.Clear()
 		m.goalGen++
-		m.messages = append(m.messages, assistantText(goal.AchievedPrefix+msg.v.Reason))
-		return m, m.flush()
+		return m.goalNotice(goal.AchievedPrefix + msg.v.Reason)
 	}
 	if m.goal.Replies.Observe(lastAssistantText(m.messages)) {
 		reason := goal.StalledReason(m.goal.Replies.Count())
 		m.goal.Clear()
 		m.goalGen++
-		m.messages = append(m.messages, assistantText(goal.StoppedPrefix+reason+")"))
-		return m, m.flush()
+		return m.goalNotice(goal.StoppedPrefix + reason + ")")
 	}
-	cond := m.goal.Condition
-	flushed := m.scroll.print(dimItalic.Render("goal not met (" + msg.v.Reason + ") — continuing"))
-	nm, subCmd := m.submit(goal.Continuation(cond, msg.v.Reason))
-	return nm, tea.Batch(flushed, subCmd)
+	// a paren Display renders as a quiet notice, not a user bubble
+	note := "(goal not met: " + strings.Join(strings.Fields(msg.v.Reason), " ") + " · continuing)"
+	return m.submitWithDisplay(goal.Continuation(m.goal.Condition, msg.v.Reason), note)
 }
 
 // goalStatusLine returns the compact one-line status-bar indicator, or "".

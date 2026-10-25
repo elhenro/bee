@@ -67,6 +67,8 @@ func (m Model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onProgress(msg)
 	case liveMsgMsg:
 		return m.onLiveMsg(msg)
+	case toolTailMsg:
+		return m.onToolTail(msg)
 	case warningMsg:
 		return m.onWarning(msg)
 	case warningFadeMsg:

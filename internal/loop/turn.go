@@ -81,6 +81,10 @@ type Engine struct {
 	// sent (the caller's UI already shows an optimistic copy). Sends are
 	// non-blocking — a stalled consumer doesn't stall the loop.
 	LiveMsgCh chan types.Message
+	// ToolTailCh, when non-nil, receives the last few output rows of a running
+	// tool (shell) so a UI can show progress before the result lands. Sends are
+	// non-blocking — a slow consumer drops updates.
+	ToolTailCh chan ToolTail
 	// WarnCh, when non-nil, receives transient operational notices: stream
 	// retries, watchdog stalls, etc. The TUI fades them as a small chrome
 	// line so the user knows something happened without the turn aborting.
