@@ -18,17 +18,15 @@ import (
 // inlineExecResult is the outcome of an inline ! or !! shell call.
 type inlineExecResult struct {
 	Output  string
-	Silent  bool // resolved at dispatch time (default XOR doubleBang)
 	IsError bool // shell exit≠0, timeout, or tool error
-	Err     error
 }
 
 // runInlineShell runs cmd through the bash tool registry entry and returns
 // the result. registry must contain a tool named "bash".
-func runInlineShell(ctx context.Context, registry *tools.Registry, cmd string, silent bool) inlineExecResult {
+func runInlineShell(ctx context.Context, registry *tools.Registry, cmd string) inlineExecResult {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
-		return inlineExecResult{Silent: silent}
+		return inlineExecResult{}
 	}
 	var sh tools.Tool
 	ok := false
@@ -36,16 +34,16 @@ func runInlineShell(ctx context.Context, registry *tools.Registry, cmd string, s
 		sh, ok = registry.Get("bash")
 	}
 	if !ok {
-		return inlineExecResult{Output: "no bash tool registered", Silent: silent, IsError: true}
+		return inlineExecResult{Output: "no bash tool registered", IsError: true}
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	res, err := sh.Run(ctx, map[string]any{"command": cmd})
 	if err != nil {
-		return inlineExecResult{Output: err.Error(), Silent: silent, IsError: true, Err: err}
+		return inlineExecResult{Output: err.Error(), IsError: true}
 	}
-	return inlineExecResult{Output: res.Content, Silent: silent, IsError: res.IsError}
+	return inlineExecResult{Output: res.Content, IsError: res.IsError}
 }
 
 // parseInlinePrefix returns (cmd, bangCount, isInline). bangCount is 1 for
@@ -80,7 +78,7 @@ type inlineShellDoneMsg struct {
 func (m Model) inlineShellCmd(cmd string, silent bool) tea.Cmd {
 	ctx, reg := m.ctx, m.eng.Tools
 	return func() tea.Msg {
-		res := runInlineShell(ctx, reg, cmd, silent)
+		res := runInlineShell(ctx, reg, cmd)
 		return inlineShellDoneMsg{payload: formatInlineShell(cmd, res.Output, res.IsError), silent: silent}
 	}
 }

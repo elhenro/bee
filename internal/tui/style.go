@@ -35,12 +35,6 @@ var (
 	// pop out of scrollback without a heavy slab.
 	bgUserHl = lipgloss.AdaptiveColor{Light: "#F6ECD0", Dark: "#2B261A"}
 
-	// failed-command badge bg: pale rose over cream, deep wine over charcoal.
-	bgErrorHl = lipgloss.AdaptiveColor{Light: "#FFD7DC", Dark: "#4A1F2A"}
-
-	// refusal/denial badge bg: reads "blocked, not broken".
-	bgWarnHl = lipgloss.AdaptiveColor{Light: "#FFEAB8", Dark: "#4A3A14"}
-
 	// + / - rows in edit previews: low-saturation tints so a many-row hunk
 	// reads as a quiet block, not a scream.
 	bgDiffAddHl = lipgloss.AdaptiveColor{Light: "#DDF3DF", Dark: "#1B3324"}
@@ -86,13 +80,7 @@ var colorHoney = accentHoney
 
 // Styles bundles every reusable lipgloss style.
 type Styles struct {
-	TopBar     lipgloss.Style // dim chrome: the bee glyph carries the accent
-	BottomBar  lipgloss.Style
-	Scope      lipgloss.Style
-	RoleYou    lipgloss.Style
 	RoleBee    lipgloss.Style
-	RoleTool   lipgloss.Style
-	ToolCard   lipgloss.Style
 	ToolName   lipgloss.Style // bold body: the verb of a tool call
 	ToolArgs   lipgloss.Style // subtle: what the call acts on
 	ToolPrev   lipgloss.Style // subtle: result preview rows
@@ -109,14 +97,11 @@ type Styles struct {
 	Button     lipgloss.Style
 	ButtonHot  lipgloss.Style
 	Error      lipgloss.Style
-	ErrorCmd   lipgloss.Style // failed-bash command on a red wash
 	Warn       lipgloss.Style // refused/denied text (blocked, not broken)
-	WarnCmd    lipgloss.Style // refused command on a yellow wash
 	WarnBadge  lipgloss.Style // pill badge for the escalate card title
 	WarnRail   lipgloss.Style // amber rail beside escalate body lines
 	Dim        lipgloss.Style
 	Body       lipgloss.Style // base prose
-	UserBubble lipgloss.Style // warm panel behind your turns
 	UserRail   lipgloss.Style // honey bar beside your turns
 	UserBody   lipgloss.Style // your turn's text on the panel
 
@@ -126,24 +111,15 @@ type Styles struct {
 	Mark     lipgloss.Style // honey assistant marker
 	ToolOK   lipgloss.Style // finished-call bullet
 	ToolFail lipgloss.Style // failed-call bullet
-	Select   lipgloss.Style // selected picker row
 }
 
 // DefaultStyles returns the honey-minimal palette.
 func DefaultStyles() Styles {
 	return Styles{
-		// chrome stays quiet; accent only where something is live
-		TopBar:    lipgloss.NewStyle().Foreground(fgSquid),
-		BottomBar: lipgloss.NewStyle().Foreground(fgOyster),
-		Scope:     lipgloss.NewStyle().Foreground(fgSquid).Italic(true),
-
-		RoleYou:  lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
-		RoleBee:  lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
-		RoleTool: lipgloss.NewStyle().Foreground(fgSquid),
+		RoleBee: lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
 
 		// tool activity is neutral so it reads as a quiet lane next to the
 		// answer: bold verb, subtle object, faint connector.
-		ToolCard: lipgloss.NewStyle(),
 		ToolName: lipgloss.NewStyle().Foreground(fgAsh).Bold(true),
 		ToolArgs: lipgloss.NewStyle().Foreground(fgSquid),
 		ToolPrev: lipgloss.NewStyle().Foreground(fgSquid),
@@ -165,18 +141,15 @@ func DefaultStyles() Styles {
 		ButtonHot:  lipgloss.NewStyle().Foreground(fgButter).Background(accentHoney).Bold(true).Padding(0, 2),
 
 		Error:     lipgloss.NewStyle().Foreground(semError),
-		ErrorCmd:  lipgloss.NewStyle().Foreground(fgAsh).Background(bgErrorHl),
 		Warn:      lipgloss.NewStyle().Foreground(semWarning),
-		WarnCmd:   lipgloss.NewStyle().Foreground(fgAsh).Background(bgWarnHl),
 		WarnBadge: lipgloss.NewStyle().Foreground(fgButter).Background(accentHoney).Bold(true).Padding(0, 1),
 		WarnRail:  lipgloss.NewStyle().Foreground(semWarning),
 		Dim:       lipgloss.NewStyle().Foreground(fgOyster),
 		Body:      lipgloss.NewStyle().Foreground(fgAsh),
 
 		// your turns: honey bar on a warm panel, body-colored text.
-		UserBubble: lipgloss.NewStyle().Background(userPanel()),
-		UserRail:   lipgloss.NewStyle().Foreground(accentHoney).Background(userPanel()),
-		UserBody:   lipgloss.NewStyle().Foreground(fgButter).Background(userPanel()),
+		UserRail: lipgloss.NewStyle().Foreground(accentHoney).Background(userPanel()),
+		UserBody: lipgloss.NewStyle().Foreground(fgButter).Background(userPanel()),
 
 		Rule:     lipgloss.NewStyle().Foreground(bgCharcoal),
 		Key:      lipgloss.NewStyle().Foreground(fgSmoke),
@@ -184,7 +157,6 @@ func DefaultStyles() Styles {
 		Mark:     lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
 		ToolOK:   lipgloss.NewStyle().Foreground(semSuccess),
 		ToolFail: lipgloss.NewStyle().Foreground(semError),
-		Select:   lipgloss.NewStyle().Foreground(accentHoney).Bold(true),
 	}
 }
 

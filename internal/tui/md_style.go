@@ -6,20 +6,20 @@ import (
 
 // hex values per terminal background, mirroring the lipgloss palette
 type mdTheme struct {
-	body, bright, subtle, faint, honey, code, link, rule string
-	kw, typ, fn, str, num, comment, op                   string
-	tag, del, ins                                        string // markup tags, removed and added lines
+	body, bright, subtle, honey, code, link, rule string
+	kw, typ, fn, str, num, comment, op            string
+	tag, del, ins                                 string // markup tags, removed and added lines
 }
 
 var mdDark = mdTheme{
-	body: "#E0DCDE", bright: "#FFFAF1", subtle: "#8B8997", faint: "#5F5E6A",
+	body: "#E0DCDE", bright: "#FFFAF1", subtle: "#8B8997",
 	honey: "#FFB000", code: "#7FD1C2", link: "#7AB7FF", rule: "#3A3943",
 	kw: "#C69CF5", typ: "#E6C07B", fn: "#7FB4F0", str: "#A6D189", num: "#F2A67C",
 	comment: "#6F6E7C", op: "#9A98A6", tag: "#E6838F", del: "#EE6A82", ins: "#6FD6A0",
 }
 
 var mdLight = mdTheme{
-	body: "#222127", bright: "#17161B", subtle: "#65636F", faint: "#8B8996",
+	body: "#222127", bright: "#17161B", subtle: "#65636F",
 	honey: "#A56F00", code: "#0E7A6C", link: "#0B63C5", rule: "#D2CEC6",
 	kw: "#7A3FB8", typ: "#8A5A00", fn: "#1B5FB8", str: "#33761F", num: "#B5541F",
 	comment: "#8B8996", op: "#65636F", tag: "#B02A45", del: "#C0203F", ins: "#0A7A4F",

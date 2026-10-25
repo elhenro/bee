@@ -71,7 +71,7 @@ func TestRunInlineShell_CallsShellTool(t *testing.T) {
 	if err := reg.Register(fs); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	res := runInlineShell(context.Background(), reg, "echo hi", false)
+	res := runInlineShell(context.Background(), reg, "echo hi")
 	if res.Output != "hello" {
 		t.Errorf("got %q", res.Output)
 	}
@@ -82,7 +82,7 @@ func TestRunInlineShell_CallsShellTool(t *testing.T) {
 
 func TestRunInlineShell_MissingShell(t *testing.T) {
 	reg := tools.NewRegistry()
-	res := runInlineShell(context.Background(), reg, "x", false)
+	res := runInlineShell(context.Background(), reg, "x")
 	if res.Output != "no bash tool registered" {
 		t.Errorf("got %q", res.Output)
 	}
@@ -90,7 +90,7 @@ func TestRunInlineShell_MissingShell(t *testing.T) {
 
 func TestRunInlineShell_EmptyCmd(t *testing.T) {
 	reg := tools.NewRegistry()
-	res := runInlineShell(context.Background(), reg, "  ", false)
+	res := runInlineShell(context.Background(), reg, "  ")
 	if res.Output != "" {
 		t.Errorf("expected empty output, got %q", res.Output)
 	}
@@ -101,7 +101,7 @@ func TestRunInlineShell_SurfacesIsError(t *testing.T) {
 	if err := reg.Register(&fakeShell{out: "exit 1", isErr: true}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	res := runInlineShell(context.Background(), reg, "false", false)
+	res := runInlineShell(context.Background(), reg, "false")
 	if !res.IsError {
 		t.Fatalf("expected IsError=true")
 	}
