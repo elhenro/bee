@@ -6,10 +6,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -51,7 +53,6 @@ func runFan(args []string) {
 	}
 
 	cfg := mustConfig("bee fan", *model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
-
 	prov := mustProvider("bee fan", cfg)
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
@@ -71,27 +72,25 @@ func runFan(args []string) {
 			fmt.Fprintf(os.Stderr, "fan: pheromone card at %s\n", path)
 		}
 		rolls := make([]*session.Rollout, 0, len(workers))
-		worktrees := make([]*worktree.Worktree, 0, len(workers))
 		wtByWorker := map[string]*worktree.Worktree{}
 		kept := map[*worktree.Worktree]bool{}
 		defer func() {
 			for _, r := range rolls {
 				_ = r.Close()
 			}
-			cleanupWorktrees("fan", worktrees, kept)
+			cleanupWorktrees("fan", slices.Collect(maps.Values(wtByWorker)), kept)
 		}()
 
 		for i, wspec := range workers {
+			id := uuid.NewString()
 			workerCwd := cwd
 			workerReg := reg
-			var workerWT *worktree.Worktree
 			if *isolated {
 				wt, err := worktree.Create(cwd, fmt.Sprintf("fan-w%d", i))
 				if err != nil {
 					return failf(1, "bee fan: worker %s worktree: %v", wspec.name, err)
 				}
-				worktrees = append(worktrees, wt)
-				workerWT = wt
+				wtByWorker[id] = wt
 				workerCwd = wt.Path
 				r2, err := buildTools(workerCwd, cfg, prov, storeDir)
 				if err != nil {
@@ -104,10 +103,6 @@ func runFan(args []string) {
 				return failf(1, "bee fan: build worker %s: %v", wspec.name, err)
 			}
 			rolls = append(rolls, roll)
-			id := uuid.NewString()
-			if workerWT != nil {
-				wtByWorker[id] = workerWT
-			}
 			pool.Submit(&hivepkg.Worker{
 				ID:     id,
 				Name:   wspec.name,

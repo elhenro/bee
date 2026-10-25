@@ -4,10 +4,12 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 
 	"github.com/elhenro/bee/internal/auth"
 	"github.com/elhenro/bee/internal/beehome"
@@ -73,26 +75,25 @@ func checkKnowledgeStore() check {
 }
 
 func checkSandboxHelper() check {
+	var bin, remedy string
 	switch runtime.GOOS {
 	case "darwin":
-		if p, err := exec.LookPath("sandbox-exec"); err == nil {
-			return check{"sandbox helper", "ok", p, ""}
-		}
-		return check{"sandbox helper", "warn", "sandbox-exec missing", "install Xcode CLT or accept degraded sandbox"}
+		bin, remedy = "sandbox-exec", "install Xcode CLT or accept degraded sandbox"
 	case "linux":
-		if p, err := exec.LookPath("bwrap"); err == nil {
-			return check{"sandbox helper", "ok", p, ""}
-		}
-		return check{"sandbox helper", "warn", "bwrap missing", "apt install bubblewrap (or equivalent)"}
+		bin, remedy = "bwrap", "apt install bubblewrap (or equivalent)"
 	case "windows":
 		return check{"sandbox helper", "info", "windows uses WSL2 stub", ""}
 	default:
 		return check{"sandbox helper", "info", runtime.GOOS + " unsupported", ""}
 	}
+	if p, err := exec.LookPath(bin); err == nil {
+		return check{"sandbox helper", "ok", p, ""}
+	}
+	return check{"sandbox helper", "warn", bin + " missing", remedy}
 }
 
-// checkConfigLoaded mirrors checkConfig but also returns the cfg it loaded
-// so downstream checks (ollama) don't need a second Load() call.
+// checkConfigLoaded reports the loaded config and per-provider credentials,
+// and returns the cfg so downstream checks (ollama) don't need a second Load().
 func checkConfigLoaded() ([]check, config.Config) {
 	out := []check{}
 	cfg, err := config.Load()
@@ -104,16 +105,19 @@ func checkConfigLoaded() ([]check, config.Config) {
 	} else {
 		out = append(out, check{"config", "ok", config.ConfigPath(), ""})
 	}
-	out = append(out, check{"profile", "info", cfg.Profile, ""})
-	out = append(out, check{"caveman", "info", cfg.Caveman, ""})
-	out = append(out, check{"default provider", "info", cfg.DefaultProvider, ""})
-	out = append(out, check{"default model", "info", cfg.DefaultModel, ""})
+	out = append(out,
+		check{"profile", "info", cfg.Profile, ""},
+		check{"caveman", "info", cfg.Caveman, ""},
+		check{"default provider", "info", cfg.DefaultProvider, ""},
+		check{"default model", "info", cfg.DefaultModel, ""},
+	)
 
 	// per-provider creds: scan all configured, not just the default. Local
 	// providers with no EnvKey are always "ok".
 	// Resolve the auth dir once; probe failures are best-effort (warn, don't crash).
 	authDir, authErr := auth.DefaultDir()
-	for name, p := range cfg.Providers {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Providers)) {
+		p := cfg.Providers[name]
 		label := "provider:" + name
 		if p.EnvKey == "" {
 			out = append(out, check{label, "ok", "no key required", ""})

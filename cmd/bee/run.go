@@ -201,7 +201,7 @@ func headlessRun(args []string) int {
 	// background jobs outlive the turn that started them: keep going until they
 	// have all reported back and the model has had its say on each
 	if err == nil && eng.Jobs != nil {
-		_, err = awaitJobs(parent, eng, cfg, res, *jsonOut)
+		err = awaitJobs(parent, eng, res, *jsonOut)
 	}
 
 	if err != nil {

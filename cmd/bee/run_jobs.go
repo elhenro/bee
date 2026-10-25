@@ -6,7 +6,6 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/jobs"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/tools"
@@ -60,14 +59,14 @@ func headlessJobs(bgLoop bool, skill, msg string) *jobs.Manager {
 // awaitJobs keeps a headless run alive while background jobs run: each finished
 // batch becomes another turn, so the model can act on it. Returns when nothing
 // runs and nothing waits, on error, or when ctx is cancelled (Ctrl-C), which
-// then kills the jobs on the way out.
-func awaitJobs(ctx context.Context, eng *loop.Engine, cfg config.Config, res loop.RunResult, jsonOut bool) (loop.RunResult, error) {
+// then kills the jobs on the way out. res is the run that started the jobs.
+func awaitJobs(ctx context.Context, eng *loop.Engine, res loop.RunResult, jsonOut bool) error {
 	for eng.Jobs.Active() {
 		if eng.Jobs.Pending() == 0 {
 			select {
 			case <-eng.Jobs.Wake():
 			case <-ctx.Done():
-				return res, ctx.Err()
+				return ctx.Err()
 			}
 			continue
 		}
@@ -80,13 +79,13 @@ func awaitJobs(ctx context.Context, eng *loop.Engine, cfg config.Config, res loo
 			fmt.Fprintln(os.Stdout)
 		}
 		eng.InitialMessages = loop.StripDanglingToolUse(res.Messages)
-		runCtx, cancel := turnContext(ctx, cfg.Watchdog)
-		next, err := eng.Run(runCtx, text)
+		runCtx, cancel := turnContext(ctx, eng.Cfg.Watchdog)
+		var err error
+		res, err = eng.Run(runCtx, text)
 		cancel()
-		res = next
 		if err != nil {
-			return res, err
+			return err
 		}
 	}
-	return res, nil
+	return nil
 }

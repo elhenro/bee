@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -37,10 +38,8 @@ func PersistAllowlistEntry(key string) error {
 	}
 	sb, _ := root["sandbox"].(map[string]any)
 	existing, _ := sb["command_allowlist"].([]any)
-	for _, e := range existing {
-		if s, ok := e.(string); ok && s == key {
-			return nil // already present
-		}
+	if hasString(existing, key) {
+		return nil // already present
 	}
 
 	if out, ok := insertAllowlistEntry(string(data), key); ok && allowlistContains(out, key) {
@@ -119,12 +118,11 @@ func allowlistContains(text, key string) bool {
 	}
 	sb, _ := root["sandbox"].(map[string]any)
 	list, _ := sb["command_allowlist"].([]any)
-	for _, e := range list {
-		if s, ok := e.(string); ok && s == key {
-			return true
-		}
-	}
-	return false
+	return hasString(list, key)
+}
+
+func hasString(list []any, key string) bool {
+	return slices.ContainsFunc(list, func(e any) bool { s, ok := e.(string); return ok && s == key })
 }
 
 func quoteTOML(s string) string {

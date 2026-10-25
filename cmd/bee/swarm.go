@@ -47,7 +47,6 @@ func runSwarm(args []string) {
 	}
 
 	cfg := mustConfig("bee swarm", "", "", "")
-
 	prov := mustProvider("bee swarm", cfg)
 
 	cwd, _ := os.Getwd()

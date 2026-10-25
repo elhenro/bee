@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -43,6 +44,24 @@ func TestCheckSandboxHelper_runs(t *testing.T) {
 	}
 	if c.Status == "" {
 		t.Error("empty status")
+	}
+}
+
+// provider rows come from a map; they must print in a stable order.
+func TestCheckConfigLoaded_ProvidersSorted(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	checks, _ := checkConfigLoaded()
+	var names []string
+	for _, c := range checks {
+		if strings.HasPrefix(c.Name, "provider:") {
+			names = append(names, c.Name)
+		}
+	}
+	if len(names) < 2 {
+		t.Fatalf("want several provider rows, got %v", names)
+	}
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("provider rows not sorted: %v", names)
 	}
 }
 

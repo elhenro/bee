@@ -72,7 +72,6 @@ func runHyperplan(args []string) {
 	}
 
 	cfg := mustConfig("bee hyperplan", opts.Model, opts.Provider, "")
-
 	prov := mustProvider("bee hyperplan", cfg)
 
 	cwd, _ := os.Getwd()
