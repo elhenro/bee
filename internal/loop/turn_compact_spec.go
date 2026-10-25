@@ -58,7 +58,7 @@ func (e *Engine) autoCompactStep(ctx context.Context, msgs []types.Message, sys 
 }
 
 // compactInline summarizes msgs on the spot and returns the shorter history
-// with its notice. A failure keeps msgs.
+// with its notice. a failure keeps msgs.
 func (e *Engine) compactInline(ctx context.Context, msgs []types.Message) []types.Message {
 	compacted, stats, err := e.compact(ctx, msgs)
 	if err != nil {

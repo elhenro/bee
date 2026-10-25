@@ -166,7 +166,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	return res, &MaxIterationsError{Limit: maxIter}
 }
 
-// runTools dispatches a turn's tool calls and persists the tool message. A
+// runTools dispatches a turn's tool calls and persists the tool message. a
 // non-nil error ends the Run: cancellation, a repeat bail or an escalate, each
 // raised only after the results are on the transcript.
 func (e *Engine) runTools(ctx context.Context, res *RunResult, parentID string, uses []types.ToolUse, iter, maxIter, tokenBudget int, readOnly bool) error {

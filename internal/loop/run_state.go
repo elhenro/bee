@@ -168,7 +168,7 @@ const (
 // warnedThinkingIgnored, jsonModeNoticeShown, sysPromptCache, profileScaledFor)
 // stay on Engine and are NOT touched here.
 //
-// Session-level memoization that lives on runState (visionCache, visionWarned)
+// session-level memoization that lives on runState (visionCache, visionWarned)
 // is borrowed from the previous runState, by reference where possible and by
 // value where not, so the new runState starts with the prior session's state
 // preserved.

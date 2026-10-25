@@ -87,7 +87,7 @@ func (t *repeatTracker) Observe(u types.ToolUse, isErr bool) Observation {
 }
 
 // ObserveWithResult is Observe with the raw tool-result content. The content
-// fuels the identical-output streak (hashed internally). Empty content skips
+// fuels the identical-output streak (hashed internally). empty content skips
 // output tracking.
 func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultContent string) Observation {
 	sig := signatureFor(u)

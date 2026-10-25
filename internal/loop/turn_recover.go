@@ -8,7 +8,7 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
-// settleTurn decides how a Run goes on after an assistant turn. It returns a
+// settleTurn decides how a Run goes on after an assistant turn. it returns a
 // nudge to append before the next request, an error that ends the Run, or
 // neither: with tool calls the Run dispatches them, without it is finished.
 func (e *Engine) settleTurn(msg types.Message, text string, uses []types.ToolUse, pl runPlan, first bool) (*types.Message, error) {

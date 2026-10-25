@@ -40,7 +40,7 @@ func toolResultBlocks(rs []types.ToolResult) []types.ContentBlock {
 }
 
 // trySend delivers v without blocking: a slow consumer drops it rather than
-// stalling the loop. A nil channel drops everything.
+// stalling the loop. a nil channel drops everything.
 func trySend[T any](ch chan<- T, v T) {
 	select {
 	case ch <- v:

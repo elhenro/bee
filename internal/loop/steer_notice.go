@@ -8,7 +8,7 @@ import (
 )
 
 // drainSteer folds a pending mid-turn steer into the transcript as a user turn
-// before the next LLM round. Non-blocking so quiet iterations don't stall.
+// before the next LLM round. non-blocking so quiet iterations don't stall.
 func (e *Engine) drainSteer(ctx context.Context, res *RunResult) {
 	select {
 	case steer := <-e.SteerCh:

@@ -10,7 +10,7 @@ import (
 )
 
 // estimateMessagesTokens is the single seam for "how big is this context?":
-// the char/4 heuristic summed over msgs. Provider-agnostic, so compaction and
+// the char/4 heuristic summed over msgs. provider-agnostic, so compaction and
 // budget checks share one accounting.
 func estimateMessagesTokens(msgs []types.Message) int {
 	total := 0

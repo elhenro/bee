@@ -224,7 +224,7 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 }
 
 // shapeOutput is what every tool output goes through before it reaches the
-// model: scrub obvious secrets, then cap the size. Redaction runs on confined
+// model: scrub obvious secrets, then cap the size. redaction runs on confined
 // scopes only: under danger-full-access the operator opted out of restriction
 // layers, and redaction silently corrupts legitimate credential reads.
 func (e *Engine) shapeOutput(tool, content string) (string, bool) {

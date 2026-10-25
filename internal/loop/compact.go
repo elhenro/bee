@@ -92,7 +92,7 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	return out, stats, nil
 }
 
-// streamText runs req on p and returns the concatenated text deltas. A stream
+// streamText runs req on p and returns the concatenated text deltas. a stream
 // error ends the pass with the text so far; the channel is drained either way
 // so the provider goroutine exits cleanly.
 func streamText(ctx context.Context, p llm.Provider, req llm.Request) (string, error) {
