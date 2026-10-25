@@ -31,10 +31,7 @@ func isRooted(p string) bool {
 }
 
 // ExpandHome expands a leading ~ or ~/ against $HOME. Other paths pass through.
-func ExpandHome(p string) string { return expandHome(p) }
-
-// expandHome expands a leading ~ or ~/ against $HOME. Other paths pass through.
-func expandHome(p string) string {
+func ExpandHome(p string) string {
 	if p == "~" {
 		if home, err := os.UserHomeDir(); err == nil {
 			return home
@@ -85,16 +82,11 @@ func resolveStrict(path string) (string, bool) {
 	return filepath.Clean(path), ok
 }
 
-// pathIsInside checks whether absPath is inside rootPath, handling both
+// pathIsPrefix checks whether absPath is inside rootPath, handling both
 // forward- and backslash separators (important on Windows where
 // filepath.Rel may return a path with / separators, and may omit the
 // separator between ".." and the trailing component, e.g. "..tmp").
-func pathIsInside(absPath, rootPath string) bool {
-	return pathIsPrefix(absPath, rootPath)
-}
-
-// pathIsPrefix checks whether rootPath is a prefix of absPath using
-// filepath.Clean to handle Windows path quirks (e.g. leading / on
+// It uses filepath.Clean to handle Windows path quirks (e.g. leading / on
 // Windows resolves to cwd-relative, so we must compare against the
 // cleaned absolute paths).
 func pathIsPrefix(absPath, rootPath string) bool {
@@ -125,7 +117,7 @@ func pathIsPrefix(absPath, rootPath string) bool {
 // Returns the resolved absolute path, its path relative to root, the resolved
 // root, and ok=false when path escapes the root.
 func ResolveInRoot(root, path string) (abs, rel, rootAbs string, ok bool) {
-	path = expandHome(path)
+	path = ExpandHome(path)
 	abs = path
 	// isRooted catches volume-less rooted inputs ("/tmp", "\tmp"). On Windows
 	// filepath.IsAbs is false for these (no drive letter), so without this they
@@ -147,7 +139,7 @@ func ResolveInRoot(root, path string) (abs, rel, rootAbs string, ok bool) {
 	if !resolvable {
 		return abs, "", rootAbs, false
 	}
-	if !pathIsInside(rAbs, rRoot) {
+	if !pathIsPrefix(rAbs, rRoot) {
 		return abs, "", rootAbs, false
 	}
 	rel, err = filepath.Rel(rRoot, rAbs)
@@ -168,7 +160,7 @@ func ResolveMaybe(root, path string) (abs, rel, rootAbs string, ok bool) {
 	if root != "" {
 		return ResolveInRoot(root, path)
 	}
-	abs = expandHome(path)
+	abs = ExpandHome(path)
 	if a, err := filepath.Abs(abs); err == nil {
 		abs = a
 	}
