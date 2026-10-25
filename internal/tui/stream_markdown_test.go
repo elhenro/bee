@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRewriteShellSessionFences(t *testing.T) {
@@ -67,5 +68,30 @@ func TestRewriteShellSessionFencesPreservesTrailingNewline(t *testing.T) {
 	got := rewriteShellSessionFences(in)
 	if !strings.HasSuffix(got, "\n") {
 		t.Fatalf("trailing newline lost: %q", got)
+	}
+}
+
+func TestTrimTrailingVisibleSpaces(t *testing.T) {
+	cases := map[string]string{
+		"":                                    "",
+		"abc":                                 "abc",
+		"   ":                                 "",
+		"\x1b[31mabc\x1b[0m \x1b[0m  \x1b[0m": "\x1b[31mabc",
+		"\x1b[0m  ":                           "",
+		// escapes other than CSI count as visible text
+		"a\x1b]0;t\x07 ": "a\x1b]0;t\x07 ",
+		"a\x1b":          "a\x1b",
+	}
+	for in, want := range cases {
+		done := make(chan string, 1)
+		go func() { done <- trimTrailingVisibleSpaces(in) }()
+		select {
+		case got := <-done:
+			if got != want {
+				t.Errorf("trimTrailingVisibleSpaces(%q) = %q, want %q", in, got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("trimTrailingVisibleSpaces(%q) did not return", in)
+		}
 	}
 }
