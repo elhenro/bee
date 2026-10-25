@@ -40,9 +40,6 @@ const (
 	IntroStyleOrbit                       // three particles orbit a center at different radii
 )
 
-// IntroStyleDefault is the value used when BEE_BANNER is unset.
-const IntroStyleDefault = IntroStyleBloom
-
 // concreteIntroStyles is the pool used by random — uniform weight so launches
 // rotate evenly across all variants.
 var concreteIntroStyles = []IntroStyle{

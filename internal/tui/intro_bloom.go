@@ -9,21 +9,7 @@ import "math"
 func bloomFrames(cw, h, count int) []IntroFrame {
 	out := make([]IntroFrame, 0, count)
 	cx, cy := cw/2, h/2
-	// hex perimeter radius. Braille pixels are roughly square visually
-	// (0.5 char × 0.5 char), so an equilateral hex needs rx ≈ ry * 1.15.
-	// Cap rx so on wide terminals the hex stays hex-shaped instead of
-	// stretching into a flat horizontal slab.
-	ry := float64(h)/2 - 1
-	if ry < 3 {
-		ry = 3
-	}
-	rx := ry * 1.6
-	if maxRX := float64(cw)/2 - 2; rx > maxRX {
-		rx = maxRX
-	}
-	if rx < 6 {
-		rx = 6
-	}
+	rx, ry := hexRadii(cw, h)
 	// 30 deterministic particles: targets on hex perimeter, origins offscreen
 	const n = 30
 	type pt struct{ x, y float64 }
@@ -43,19 +29,6 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 			float64(cx) + float64(cw)*0.9*math.Cos(oa),
 			float64(cy) + float64(h)*1.5*math.Sin(oa),
 		}
-	}
-	// pre-rendered bee silhouette (4×4)
-	beeIdle := []byte{
-		0, 1, 1, 0,
-		1, 1, 1, 1,
-		1, 1, 1, 1,
-		0, 1, 1, 0,
-	}
-	beeFlap := []byte{
-		1, 0, 0, 1,
-		1, 1, 1, 1,
-		1, 1, 1, 1,
-		1, 0, 0, 1,
 	}
 	gather := count * 38 / 100
 	settle := count * 18 / 100
@@ -77,9 +50,7 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 				tg := targets[j]
 				x := int(math.Round(o.x + (tg.x-o.x)*tt))
 				y := int(math.Round(o.y + (tg.y-o.y)*tt))
-				if x >= 0 && x < cw && y >= 0 && y < h {
-					c.SetPixel(x, y, true)
-				}
+				c.SetPixel(x, y, true)
 			}
 		case i < gather+settle:
 			drawHexPerimeter(c, cx, cy, rx, ry)
@@ -94,13 +65,13 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 				}
 			}
 			if t > 0.6 {
-				c.DrawSprite(beeIdle, 4, 4, cx-2, cy-2)
+				c.DrawSprite(brailleBeeIdle, 4, 4, cx-2, cy-2)
 			}
 		case i < gather+settle+pulse:
 			drawHexPerimeter(c, cx, cy, rx, ry)
 			// wing flap on alternate frames
 			if (i/2)%2 == 0 {
-				c.DrawSprite(beeFlap, 4, 4, cx-2, cy-2)
+				c.DrawSprite(brailleBeeFlap, 4, 4, cx-2, cy-2)
 				for dx := -2; dx <= -1; dx++ {
 					c.SetPixel(cx+dx, cy, true)
 				}
@@ -108,7 +79,7 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 					c.SetPixel(cx+dx, cy, true)
 				}
 			} else {
-				c.DrawSprite(beeIdle, 4, 4, cx-2, cy-2)
+				c.DrawSprite(brailleBeeIdle, 4, 4, cx-2, cy-2)
 			}
 			// expanding dashed ring — depth via two rings out of phase.
 			// Ellipse keeps the same x:y ratio as the hex itself so it
@@ -125,9 +96,7 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 					ang := float64(a) / 36 * 2 * math.Pi
 					x := cx + int(math.Round(rpx*math.Cos(ang)))
 					y := cy + int(math.Round(rpy*math.Sin(ang)))
-					if x >= 0 && x < cw && y >= 0 && y < h {
-						c.SetPixel(x, y, true)
-					}
+					c.SetPixel(x, y, true)
 				}
 			}
 		default:
@@ -143,11 +112,9 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 				tg := targets[j]
 				x := int(math.Round(tg.x + (o.x-tg.x)*t))
 				y := int(math.Round(tg.y + (o.y-tg.y)*t))
-				if x >= 0 && x < cw && y >= 0 && y < h {
-					c.SetPixel(x, y, true)
-				}
+				c.SetPixel(x, y, true)
 			}
-			c.DrawSprite(beeIdle, 4, 4, cx-2, cy-2)
+			c.DrawSprite(brailleBeeIdle, 4, 4, cx-2, cy-2)
 		}
 		sub := ""
 		switch {
@@ -161,6 +128,16 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 		out = append(out, IntroFrame{Text: c.ToBraille(), Subtitle: sub})
 	}
 	return out
+}
+
+// hexRadii sizes the hex perimeter. Braille pixels are roughly square visually
+// (0.5 char × 0.5 char), so an equilateral hex needs rx ≈ ry * 1.15. rx is
+// capped so on wide terminals the hex stays hex-shaped instead of stretching
+// into a flat horizontal slab.
+func hexRadii(cw, h int) (rx, ry float64) {
+	ry = max(float64(h)/2-1, 3)
+	rx = max(min(ry*1.6, float64(cw)/2-2), 6)
+	return rx, ry
 }
 
 // drawHexPerimeter draws a flat-top-ish hexagon outline by lerping six
@@ -220,27 +197,15 @@ func constellFrames(cw, h, count int) []IntroFrame {
 				c.SetPixel(s.x, s.y, true)
 				// halo on bright phase
 				if phase < 2 {
-					if s.x+1 < cw {
-						c.SetPixel(s.x+1, s.y, true)
-					}
-					if s.y+1 < h {
-						c.SetPixel(s.x, s.y+1, true)
-					}
+					c.SetPixel(s.x+1, s.y, true)
+					c.SetPixel(s.x, s.y+1, true)
 				}
 			}
 		}
 		// midpoint reveal: hex constellation lines for a few frames
 		if i >= mid-band && i <= mid+band {
-			cx, cy := cw/2, h/2
-			ry := float64(h)/2 - 1
-			if ry < 3 {
-				ry = 3
-			}
-			rx := ry * 1.6
-			if maxRX := float64(cw)/2 - 2; rx > maxRX {
-				rx = maxRX
-			}
-			drawHexPerimeter(c, cx, cy, rx, ry)
+			rx, ry := hexRadii(cw, h)
+			drawHexPerimeter(c, cw/2, h/2, rx, ry)
 		}
 		sub := ""
 		switch {

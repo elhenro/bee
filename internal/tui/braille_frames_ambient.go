@@ -9,9 +9,7 @@ import "math"
 // renderBrailleWave — two layered sine waves at different phases. The
 // faster one carries the rhythm; the slower one gives depth.
 func renderBrailleWave(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	for x := 0; x < w; x++ {
 		// primary wave — full amplitude, slow phase.
 		p1 := float64(x)*0.55 - float64(frame)*0.42
@@ -32,16 +30,11 @@ func renderBrailleWave(frame, cells int) string {
 // renderBrailleComet — a bright head with a decaying tail looping across
 // the canvas. Tail length scales with canvas width.
 func renderBrailleComet(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cycle := w + 8
 	head := frame % cycle
 	y := braillePxH / 2
-	tail := w / 3
-	if tail < 6 {
-		tail = 6
-	}
+	tail := max(w/3, 6)
 	for i := 0; i < tail; i++ {
 		x := head - i
 		if x < 0 || x >= w {
@@ -62,26 +55,17 @@ func renderBrailleComet(frame, cells int) string {
 		}
 	}
 	// secondary off-row sparks thicken the head only.
-	if head >= 0 && head < w {
-		c.SetPixel(head, y-1, true)
-	}
-	if head-2 >= 0 && head-2 < w {
-		c.SetPixel(head-2, y+1, true)
-	}
+	c.SetPixel(head, y-1, true)
+	c.SetPixel(head-2, y+1, true)
 	return c.ToBraille()
 }
 
 // renderBrailleHex — six vertices on a wide ellipse, rotating. Reads as a
 // stylized hex outline orbiting the prompt.
 func renderBrailleHex(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cx, cy := w/2, braillePxH/2
-	r := float64(w/2 - 1)
-	if r < 6 {
-		r = 6
-	}
+	r := max(float64(w/2-1), 6)
 	rh := 1.5
 	for i := 0; i < 6; i++ {
 		theta := (float64(i)/6 + float64(frame)/72.0) * 2 * math.Pi
@@ -95,9 +79,7 @@ func renderBrailleHex(frame, cells int) string {
 // renderBrailleRipple — two concentric ellipses expanding outward from
 // center, phase-offset so a new ripple starts before the old one fades.
 func renderBrailleRipple(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cx, cy := w/2, braillePxH/2
 	maxR := float64(w / 2)
 	for k := 0; k < 2; k++ {
@@ -120,9 +102,7 @@ func renderBrailleRipple(frame, cells int) string {
 // renderBrailleRain — falling drops on every-other column. Each column
 // has its own offset so the rain doesn't sync. Density scales with width.
 func renderBrailleRain(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	// every 3rd column gets a drop — sparse feels rain-like.
 	for x := 1; x < w; x += 3 {
 		// coprime offset per column so drops never align.
@@ -130,9 +110,7 @@ func renderBrailleRain(frame, cells int) string {
 		head := (frame + off) % (braillePxH + 2)
 		if head < braillePxH {
 			c.SetPixel(x, head, true)
-			if head-1 >= 0 {
-				c.SetPixel(x, head-1, true)
-			}
+			c.SetPixel(x, head-1, true)
 		}
 	}
 	return c.ToBraille()
@@ -143,18 +121,11 @@ func renderBrailleRain(frame, cells int) string {
 // look anemic on wide terminals.
 func renderBrailleOrbit(frame, cells int) string {
 	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cx, cy := w/2, braillePxH/2
-	r := float64(w/2 - 2)
-	if r < 6 {
-		r = 6
-	}
+	r := max(float64(w/2-2), 6)
 	rh := 1.5
-	n := 3 + cells/8
-	if n > 8 {
-		n = 8
-	}
+	n := min(3+cells/8, 8)
 	t := float64(frame) * 0.22
 	for i := 0; i < n; i++ {
 		a := t + float64(i)*(2*math.Pi/float64(n))
@@ -175,15 +146,10 @@ func renderBrailleOrbit(frame, cells int) string {
 // renderBrailleBreath — single horizontal bar expanding/contracting from
 // center on a slow cosine. Reads as breathing. Scales to canvas width.
 func renderBrailleBreath(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cx := w / 2
 	t := float64(frame) * 0.18
-	maxW := w - 4
-	if maxW < 2 {
-		maxW = 2
-	}
+	maxW := max(w-4, 2)
 	bar := int(math.Round((1-math.Cos(t))/2*float64(maxW))) + 2
 	y := braillePxH / 2
 	for x := cx - bar/2; x <= cx+bar/2; x++ {
@@ -202,8 +168,7 @@ func renderBrailleBreath(frame, cells int) string {
 // rightward. Reads as drifting stars for the cosmic/long-wait phase.
 func renderBrailleStarfield(frame, cells int) string {
 	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	// scatter ~cells/2 stars; LCG-style hash for stable positions per index.
 	n := cells / 2
 	for i := 0; i < n; i++ {

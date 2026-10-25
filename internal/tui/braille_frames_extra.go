@@ -11,9 +11,7 @@ import "math"
 // one in front (lower y) renders solid, the back strand thins out where
 // they cross.
 func renderBrailleDNA(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	for x := 0; x < w; x++ {
 		p := float64(x)*0.42 - float64(frame)*0.35
 		a := (math.Sin(p) + 1) * 0.5
@@ -34,9 +32,7 @@ func renderBrailleDNA(frame, cells int) string {
 // variance. distinct from rain: longer trails, never-aligned cadence, more
 // columns active. reads as data cascading.
 func renderBrailleMatrix(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	period := braillePxH + 4
 	for x := 0; x < w; x += 2 {
 		// per-column speed scalar 1..3, coprime offset so cols never sync.
@@ -46,9 +42,7 @@ func renderBrailleMatrix(frame, cells int) string {
 		trail := 3
 		for k := 0; k < trail; k++ {
 			y := head - k
-			if y >= 0 && y < braillePxH {
-				c.SetPixel(x, y, true)
-			}
+			c.SetPixel(x, y, true)
 		}
 	}
 	return c.ToBraille()
@@ -58,9 +52,7 @@ func renderBrailleMatrix(frame, cells int) string {
 // fires a sharp QRS spike that travels across the canvas. cycle ~60 frames
 // — slow, organic rhythm.
 func renderBrailleHeartbeat(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	baseY := braillePxH / 2
 	period := 60
 	spike := frame % period
@@ -78,9 +70,7 @@ func renderBrailleHeartbeat(frame, cells int) string {
 		for _, s := range shape {
 			x := headX + s.dx
 			y := baseY + s.dy
-			if x >= 0 && x < w && y >= 0 && y < braillePxH {
-				c.SetPixel(x, y, true)
-			}
+			c.SetPixel(x, y, true)
 		}
 	}
 	return c.ToBraille()
@@ -90,9 +80,7 @@ func renderBrailleHeartbeat(frame, cells int) string {
 // re-strikes from a new column. zig-zag path computed from hash of strike
 // id so each bolt looks fresh.
 func renderBrailleLightning(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	period := 24
 	t := frame % period
 	strikeID := frame / period
@@ -113,12 +101,7 @@ func renderBrailleLightning(frame, cells int) string {
 		// zig-zag step; pseudo-random direction per (strike, row).
 		dx := ((strikeID*31+y*17)%5 - 2)
 		x += dx
-		if x < 0 {
-			x = 0
-		}
-		if x >= w {
-			x = w - 1
-		}
+		x = min(max(x, 0), w-1)
 	}
 	return c.ToBraille()
 }
@@ -126,13 +109,8 @@ func renderBrailleLightning(frame, cells int) string {
 // renderBrailleSnake — segments following a head along a sine path. body
 // length scales with width; tail fades to sparse pixels. eternal chase.
 func renderBrailleSnake(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
-	bodyLen := w / 2
-	if bodyLen < 8 {
-		bodyLen = 8
-	}
+	c, w := newLoaderCanvas(cells)
+	bodyLen := max(w/2, 8)
 	for i := 0; i < bodyLen; i++ {
 		t := float64(frame-i) * 0.18
 		x := int(math.Round((math.Sin(t)+1)*0.5*float64(w-1))) - 0
@@ -154,9 +132,7 @@ func renderBrailleSnake(frame, cells int) string {
 // expands radially, then sparks "fall" downward as they fade. multiple
 // bursts overlap so canvas always has something happening.
 func renderBrailleFireworks(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	bursts := 3
 	period := 30
 	for b := 0; b < bursts; b++ {
@@ -179,9 +155,7 @@ func renderBrailleFireworks(frame, cells int) string {
 			if phase > 0.7 && i%2 == 0 {
 				continue
 			}
-			if x >= 0 && x < w && y >= 0 && y < braillePxH {
-				c.SetPixel(x, y, true)
-			}
+			c.SetPixel(x, y, true)
 		}
 	}
 	return c.ToBraille()
