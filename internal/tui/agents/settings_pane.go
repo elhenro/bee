@@ -31,10 +31,17 @@ var settingsRowsAgents = []settingsRow{
 	{key: "agents_show_merged", label: "show merged section", desc: "list agents whose branches are already merged"},
 }
 
+// settingsHayAgents is the fuzzy haystack per row ("label  description"),
+// parallel to settingsRowsAgents.
+var settingsHayAgents []string
+
 func init() {
 	sort.Slice(settingsRowsAgents, func(i, j int) bool {
 		return settingsRowsAgents[i].label < settingsRowsAgents[j].label
 	})
+	for _, r := range settingsRowsAgents {
+		settingsHayAgents = append(settingsHayAgents, r.label+"  "+r.desc)
+	}
 }
 
 // settingsPane is a modal overlay for toggling overview Prefs. The pane holds
@@ -82,23 +89,8 @@ func (p *settingsPane) close() {
 }
 
 func (p *settingsPane) recomputeMatches() {
-	needle := strings.TrimSpace(p.filter.Value())
-	if needle == "" {
-		p.matches = make([]fuzzy.Match, len(settingsRowsAgents))
-		for i, r := range settingsRowsAgents {
-			p.matches[i] = fuzzy.Match{Index: i, Str: r.label}
-		}
-	} else {
-		hay := make([]string, len(settingsRowsAgents))
-		for i, r := range settingsRowsAgents {
-			hay[i] = r.label + "  " + r.desc
-		}
-		p.matches = fuzzy.Find(needle, hay)
-	}
-	if p.cursor >= len(p.matches) {
-		p.cursor = 0
-	}
-	if p.cursor < 0 {
+	p.matches = tui.FilterRows(p.filter.Value(), settingsHayAgents)
+	if p.cursor >= len(p.matches) || p.cursor < 0 {
 		p.cursor = 0
 	}
 }
@@ -156,74 +148,24 @@ func (p *settingsPane) toggleCurrent() tea.Cmd {
 		return nil
 	}
 	row := settingsRowsAgents[idx]
-	cur := p.read(row.key)
-	newVal := !cur
-	p.write(row.key, newVal)
+	f := p.prefs.boolPref(row.key)
+	*f = !*f
+	newVal := *f
 	return func() tea.Msg { return agentsSettingsToggleMsg{key: row.key, value: newVal} }
-}
-
-func (p *settingsPane) read(key string) bool {
-	switch key {
-	case "agents_show_peek":
-		return p.prefs.ShowPeek
-	case "agents_show_badges":
-		return p.prefs.ShowBadges
-	case "agents_show_chip":
-		return p.prefs.ShowChip
-	case "agents_show_subheader":
-		return p.prefs.ShowSubheader
-	case "agents_show_hint":
-		return p.prefs.ShowHint
-	case "agents_show_merged":
-		return p.prefs.ShowMerged
-	}
-	return false
-}
-
-func (p *settingsPane) write(key string, v bool) {
-	switch key {
-	case "agents_show_peek":
-		p.prefs.ShowPeek = v
-	case "agents_show_badges":
-		p.prefs.ShowBadges = v
-	case "agents_show_chip":
-		p.prefs.ShowChip = v
-	case "agents_show_subheader":
-		p.prefs.ShowSubheader = v
-	case "agents_show_hint":
-		p.prefs.ShowHint = v
-	case "agents_show_merged":
-		p.prefs.ShowMerged = v
-	}
 }
 
 // applyPrefToggle mirrors a key/value into a Prefs in place. Used by the
 // parent model on agentsSettingsToggleMsg so the renderer reflects the flip
 // immediately even though Persist runs async via tui.PersistSetting.
 func applyPrefToggle(p *Prefs, key string, v bool) {
-	switch key {
-	case "agents_show_peek":
-		p.ShowPeek = v
-	case "agents_show_badges":
-		p.ShowBadges = v
-	case "agents_show_chip":
-		p.ShowChip = v
-	case "agents_show_subheader":
-		p.ShowSubheader = v
-	case "agents_show_hint":
-		p.ShowHint = v
-	case "agents_show_merged":
-		p.ShowMerged = v
+	if f := p.boolPref(key); f != nil {
+		*f = v
 	}
 }
 
-// persistToggle writes one row to ~/.bee/config.toml.
-func persistToggle(key string, value bool) error {
-	return tui.PersistSetting("", key, value)
-}
-
-// persistString writes a string-valued pref (default model / provider).
-func persistString(key, value string) error {
+// persist writes one key (toggle, default model / provider) to
+// ~/.bee/config.toml.
+func persist(key string, value any) error {
 	return tui.PersistSetting("", key, value)
 }
 
@@ -255,13 +197,13 @@ func (p *settingsPane) view(width, height int) string {
 			nameStyle = lipgloss.NewStyle().Foreground(honey).Bold(true)
 		}
 		toggle := "[ ]"
-		if p.read(r.key) {
+		if *p.prefs.boolPref(r.key) {
 			toggle = goodStyle.Render("[x]")
 		}
 		b.WriteString(marker)
 		b.WriteString(toggle)
 		b.WriteString("  ")
-		b.WriteString(renderHighlightedLabel(r.label, m.MatchedIndexes, nameStyle, hl, 22))
+		b.WriteString(tui.HighlightLabel(r.label, m.MatchedIndexes, nameStyle, hl, 22))
 		b.WriteString("  ")
 		b.WriteString(dimStyle.Render(r.desc))
 		b.WriteString("\n")
@@ -271,28 +213,6 @@ func (p *settingsPane) view(width, height int) string {
 	b.WriteString(dimStyle.Render("type filter · ↑/↓ pick · enter/space toggle · esc close · saved to ~/.bee/config.toml"))
 
 	return overlayBox(b.String(), width, height)
-}
-
-func renderHighlightedLabel(label string, matched []int, base, hl lipgloss.Style, pad int) string {
-	hits := map[int]struct{}{}
-	for _, idx := range matched {
-		if idx >= 0 && idx < len(label) {
-			hits[idx] = struct{}{}
-		}
-	}
-	var b strings.Builder
-	for i, r := range label {
-		ch := string(r)
-		if _, ok := hits[i]; ok {
-			b.WriteString(hl.Render(ch))
-		} else {
-			b.WriteString(base.Render(ch))
-		}
-	}
-	if extra := pad - lipgloss.Width(label); extra > 0 {
-		b.WriteString(strings.Repeat(" ", extra))
-	}
-	return b.String()
 }
 
 func overlayBox(body string, width, height int) string {

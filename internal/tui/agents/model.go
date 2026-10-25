@@ -222,7 +222,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentsSettingsToggleMsg:
 		applyPrefToggle(&m.prefs, msg.key, msg.value)
-		if err := persistToggle(msg.key, msg.value); err != nil {
+		if err := persist(msg.key, msg.value); err != nil {
 			m.flash("persist failed: " + err.Error())
 		}
 		return m, nil

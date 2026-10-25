@@ -129,7 +129,7 @@ func (m model) runSlash(text string) (model, tea.Cmd) {
 		}
 		m.pendingProvider = parts[1]
 		m.prefs.DefaultProvider = parts[1]
-		if err := persistString("agents_default_provider", parts[1]); err != nil {
+		if err := persist("agents_default_provider", parts[1]); err != nil {
 			m.flash("set live; persist failed: " + err.Error())
 		} else {
 			m.flash("next spawn → " + m.pendingProvider + " (saved as default)")
@@ -169,7 +169,7 @@ func (s agentsModelSide) SwitchModel(name string) error {
 	}
 	s.m.pendingModel = name
 	s.m.prefs.DefaultModel = name
-	if err := persistString("agents_default_model", name); err != nil {
+	if err := persist("agents_default_model", name); err != nil {
 		return err
 	}
 	s.m.flash("next spawn → " + s.m.pendingModel + " (saved as default)")
@@ -189,11 +189,11 @@ func (s agentsModelSide) SwitchProviderModel(provider, modelName string) error {
 		s.m.pendingModel = modelName
 		s.m.prefs.DefaultModel = modelName
 	}
-	if err := persistString("agents_default_provider", provider); err != nil {
+	if err := persist("agents_default_provider", provider); err != nil {
 		return err
 	}
 	if modelName != "" {
-		if err := persistString("agents_default_model", modelName); err != nil {
+		if err := persist("agents_default_model", modelName); err != nil {
 			return err
 		}
 	}
