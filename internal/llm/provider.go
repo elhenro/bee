@@ -94,6 +94,18 @@ func ThinkingBudget(t Thinking) int {
 	return 0
 }
 
+// reasoningEffort is the wire effort for a level: empty when off, and "high"
+// for max, which no effort-style wire has a tier for.
+func reasoningEffort(t Thinking) string {
+	switch t {
+	case "", ThinkingOff:
+		return ""
+	case ThinkingMax:
+		return string(ThinkingHigh)
+	}
+	return string(t)
+}
+
 // ParseThinking accepts "auto"/"off"/"low"/"medium"/"high"/"max" (case
 // insensitive) and returns the canonical Thinking value. Unknown strings
 // return ThinkingOff.

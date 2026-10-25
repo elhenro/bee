@@ -1,18 +1,24 @@
 package llm
 
 import (
-	"bufio"
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm/wire"
-	"github.com/elhenro/bee/internal/types"
-	"github.com/google/uuid"
 )
+
+// responsesUsage maps the wire usage block to the internal Usage.
+func responsesUsage(u *wire.ResponsesUsage) *Usage {
+	if u == nil {
+		return nil
+	}
+	return &Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
+}
 
 // nonStreamLoop reads a single JSON body and emits the equivalent events.
 func (p *ChatGPTProvider) nonStreamLoop(resp *http.Response, out chan<- Event) {
@@ -33,215 +39,131 @@ func (p *ChatGPTProvider) nonStreamLoop(resp *http.Response, out chan<- Event) {
 				}
 			}
 		case "function_call":
-			input := decodeToolArgs(item.Arguments)
-			id := item.CallID
-			if id == "" {
-				id = "call_" + uuid.NewString()
-			}
-			out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-				ID: id, Name: item.Name, Input: input,
-			}}
+			out <- newToolUse(item.CallID, item.Name, decodeToolArgs(item.Arguments))
 		}
 	}
-	done := Event{Type: EventDone, StopReason: body.Status}
-	if body.Usage != nil {
-		done.Usage = &Usage{InputTokens: body.Usage.InputTokens, OutputTokens: body.Usage.OutputTokens}
-	}
-	out <- done
+	out <- Event{Type: EventDone, StopReason: body.Status, Usage: responsesUsage(body.Usage)}
 }
 
-// streamLoop parses the Responses SSE stream. Tool-call arguments arrive as
-// incremental deltas; accumulate per-call and emit one EventToolUse on done.
+// respCall is one function call being assembled from stream events.
+type respCall struct {
+	callID, name string
+	args         strings.Builder
+}
+
+// fill takes the call id and name from item, keeping what is already set.
+func (c *respCall) fill(item *wire.ResponsesOutputItem) {
+	c.callID = cmp.Or(c.callID, item.CallID)
+	c.name = cmp.Or(c.name, item.Name)
+}
+
+// setArgs replaces the accumulated arguments with the authoritative final form.
+func (c *respCall) setArgs(args string) {
+	if args != "" {
+		c.args.Reset()
+		c.args.WriteString(args)
+	}
+}
+
+// respStream accumulates a Responses SSE stream. Tool-call arguments arrive as
+// deltas keyed by item id (also call id for function_call items); each call
+// goes out as one tool_use once the stream ends.
+type respStream struct {
+	name  string
+	calls map[string]*respCall
+	order []string
+	usage *wire.ResponsesUsage
+	stop  string
+}
+
+// slot returns the pending call for id, creating it when create is set.
+func (s *respStream) slot(id string, create bool) *respCall {
+	c, ok := s.calls[id]
+	if !ok && create {
+		c = &respCall{}
+		s.calls[id] = c
+		s.order = append(s.order, id)
+	}
+	return c
+}
+
+func (s *respStream) handle(ctx context.Context, out chan<- Event, payload []byte) error {
+	ev, err := wire.ParseResponsesEvent(payload)
+	if err != nil || ev == nil {
+		return err
+	}
+	item := ev.Item
+	isCall := item != nil && item.Type == "function_call"
+	switch ev.Type {
+	case "response.output_text.delta":
+		if ev.Delta != "" {
+			return send(ctx, out, Event{Type: EventTextDelta, Delta: ev.Delta})
+		}
+	case "response.output_item.added":
+		if !isCall {
+			break
+		}
+		if id := cmp.Or(item.ID, item.CallID); id != "" {
+			s.slot(id, true).fill(item)
+		}
+	case "response.function_call_arguments.delta":
+		if ev.ItemID != "" {
+			s.slot(ev.ItemID, true).args.WriteString(ev.Delta)
+		}
+	case "response.function_call_arguments.done":
+		if c := s.slot(ev.ItemID, false); c != nil {
+			c.setArgs(ev.Arguments)
+		}
+	case "response.output_item.done":
+		if !isCall {
+			break
+		}
+		if c := s.slot(cmp.Or(item.ID, item.CallID), false); c != nil {
+			c.fill(item)
+			c.setArgs(item.Arguments)
+		}
+	case "response.completed", "response.incomplete":
+		if r := ev.Response; r != nil {
+			if r.Usage != nil {
+				s.usage = r.Usage
+			}
+			s.stop = cmp.Or(r.Status, s.stop)
+			if ev.Type == "response.incomplete" {
+				s.stop = "incomplete"
+				if d := r.IncompleteDetails; d != nil && d.Reason == "max_output_tokens" {
+					s.stop = "length"
+				}
+			}
+		}
+	case "error":
+		// top-level error event: code/message sit on the event itself
+		return fmt.Errorf("provider %s: %s", s.name, cmp.Or(ev.Message, ev.Code, "responses stream error"))
+	case "response.failed", "response.error":
+		msg := "responses stream failed"
+		if r := ev.Response; r != nil && r.Error != nil {
+			msg = cmp.Or(r.Error.Message, r.Error.Code)
+		}
+		return errors.New(msg)
+	}
+	return nil
+}
+
+// streamLoop parses the Responses SSE stream.
 func (p *ChatGPTProvider) streamLoop(ctx context.Context, resp *http.Response, out chan<- Event) {
 	defer resp.Body.Close()
 	defer close(out)
 
-	// per-item state keyed by item_id (also call_id for function_call items)
-	type pending struct {
-		callID string
-		name   string
-		args   strings.Builder
-	}
-	calls := map[string]*pending{}
-	var order []string
-	var usage *wire.ResponsesUsage
-	stopReason := ""
-
-	bumpActivity, stalled, cancelWatchdog := streamWatchdog(ctx, resp.Body)
-	defer cancelWatchdog()
-
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), sseMaxLine)
-
-	for scanner.Scan() {
-		bumpActivity()
-		select {
-		case <-ctx.Done():
-			out <- Event{Type: EventError, Err: ctx.Err()}
-			return
-		case <-stalled:
-			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, effectiveStallTimeout())}
-			return
-		default:
-		}
-
-		line := scanner.Bytes()
-		if len(line) == 0 || line[0] == ':' {
-			continue
-		}
-		// Responses API emits both `event:` and `data:` lines. We only need
-		// the data payload.
-		if !bytes.HasPrefix(line, []byte("data:")) {
-			continue
-		}
-		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
-		ev, err := wire.ParseResponsesEvent(payload)
-		if err != nil {
-			out <- Event{Type: EventError, Err: err}
-			return
-		}
-		if ev == nil {
-			continue
-		}
-
-		switch ev.Type {
-		case "response.output_text.delta":
-			if ev.Delta != "" {
-				out <- Event{Type: EventTextDelta, Delta: ev.Delta}
-			}
-		case "response.output_item.added":
-			if ev.Item != nil && ev.Item.Type == "function_call" {
-				id := ev.Item.ID
-				if id == "" {
-					id = ev.Item.CallID
-				}
-				if id == "" {
-					continue
-				}
-				if _, ok := calls[id]; !ok {
-					calls[id] = &pending{callID: ev.Item.CallID, name: ev.Item.Name}
-					order = append(order, id)
-				}
-				if calls[id].callID == "" {
-					calls[id].callID = ev.Item.CallID
-				}
-				if calls[id].name == "" {
-					calls[id].name = ev.Item.Name
-				}
-			}
-		case "response.function_call_arguments.delta":
-			id := ev.ItemID
-			if id == "" {
-				continue
-			}
-			c, ok := calls[id]
-			if !ok {
-				c = &pending{}
-				calls[id] = c
-				order = append(order, id)
-			}
-			c.args.WriteString(ev.Delta)
-		case "response.function_call_arguments.done":
-			id := ev.ItemID
-			c, ok := calls[id]
-			if !ok {
-				continue
-			}
-			if ev.Arguments != "" {
-				// authoritative final form; replace accumulator
-				c.args.Reset()
-				c.args.WriteString(ev.Arguments)
-			}
-		case "response.output_item.done":
-			if ev.Item != nil && ev.Item.Type == "function_call" {
-				id := ev.Item.ID
-				if id == "" {
-					id = ev.Item.CallID
-				}
-				if c, ok := calls[id]; ok {
-					if c.callID == "" {
-						c.callID = ev.Item.CallID
-					}
-					if c.name == "" {
-						c.name = ev.Item.Name
-					}
-					if ev.Item.Arguments != "" {
-						c.args.Reset()
-						c.args.WriteString(ev.Item.Arguments)
-					}
-				}
-			}
-		case "response.completed", "response.incomplete":
-			if ev.Response != nil {
-				if ev.Response.Usage != nil {
-					usage = ev.Response.Usage
-				}
-				if ev.Response.Status != "" {
-					stopReason = ev.Response.Status
-				}
-				if ev.Type == "response.incomplete" {
-					stopReason = "incomplete"
-					if d := ev.Response.IncompleteDetails; d != nil && d.Reason == "max_output_tokens" {
-						stopReason = "length"
-					}
-				}
-			}
-		case "error":
-			// top-level error event: code/message sit on the event itself
-			msg := ev.Message
-			if msg == "" {
-				msg = ev.Code
-			}
-			if msg == "" {
-				msg = "responses stream error"
-			}
-			out <- Event{Type: EventError, Err: fmt.Errorf("provider %s: %s", p.cfg.Name, msg)}
-			return
-		case "response.failed", "response.error":
-			msg := "responses stream failed"
-			if ev.Response != nil && ev.Response.Error != nil {
-				msg = ev.Response.Error.Message
-				if msg == "" {
-					msg = ev.Response.Error.Code
-				}
-			}
-			out <- Event{Type: EventError, Err: fmt.Errorf("%s", msg)}
-			return
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		// the watchdog closes the body, which surfaces here as a read error;
-		// report the stall instead of the cryptic close
-		select {
-		case <-stalled:
-			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, effectiveStallTimeout())})
-			return
-		default:
-		}
-		if ctx.Err() != nil {
-			out <- Event{Type: EventError, Err: ctx.Err()}
-			return
-		}
-		out <- Event{Type: EventError, Err: sseScanError(err)}
+	s := &respStream{name: p.cfg.Name, calls: map[string]*respCall{}}
+	if !readSSE(ctx, resp, p.cfg.Name, effectiveStallTimeout(), out, func(payload []byte, _ func()) error {
+		return s.handle(ctx, out, payload)
+	}) {
 		return
 	}
-
-	for _, id := range order {
-		c := calls[id]
-		input := decodeToolArgs(c.args.String())
-		callID := c.callID
-		if callID == "" {
-			callID = "call_" + uuid.NewString()
+	for _, id := range s.order {
+		c := s.calls[id]
+		if !emit(ctx, out, newToolUse(c.callID, c.name, decodeToolArgs(c.args.String()))) {
+			return
 		}
-		out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-			ID: callID, Name: c.name, Input: input,
-		}}
 	}
-
-	final := Event{Type: EventDone, StopReason: stopReason}
-	if usage != nil {
-		final.Usage = &Usage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens}
-	}
-	out <- final
+	emit(ctx, out, Event{Type: EventDone, StopReason: s.stop, Usage: responsesUsage(s.usage)})
 }

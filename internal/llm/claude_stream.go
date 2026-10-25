@@ -1,200 +1,145 @@
 package llm
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm/wire"
-	"github.com/elhenro/bee/internal/types"
-	"github.com/google/uuid"
 )
 
-// streamLoop parses the Messages SSE stream. Tool-call inputs arrive as
-// incremental JSON deltas keyed by block index; we accumulate them and emit
-// one EventToolUse per tool_use block at content_block_stop time.
-func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, out chan<- Event, tools []wire.ToolAdvert) {
-	defer resp.Body.Close()
-	defer close(out)
-	_ = tools // reserved for future tool-name validation
+// claudeCall is one tool_use block being assembled from stream events.
+type claudeCall struct {
+	id, name string
+	args     strings.Builder
+}
 
-	type pending struct {
-		id   string
-		name string
-		args strings.Builder
-	}
-	// Block index -> pending tool_use. Anthropic numbers blocks sequentially
-	// within a single message_stop.
-	calls := map[int]*pending{}
-	var order []int
+// claudeStream accumulates a Messages SSE stream. Tool-call inputs arrive as
+// incremental JSON deltas keyed by block index (blocks are numbered
+// sequentially within a message); each call goes out as one tool_use once the
+// stream ends.
+type claudeStream struct {
+	calls map[int]*claudeCall
+	order []int
 	// thinking blocks seen this message and their signatures by block index.
 	// Only a lone signed block round-trips: the loop folds all reasoning into
 	// one block, which several signatures cannot authenticate.
-	thinkBlocks := 0
-	thinkSigs := map[int]string{}
-	var usage *wire.AnthropicUsage
-	stopReason := ""
+	thinkBlocks int
+	thinkSigs   map[int]string
+	usage       *wire.AnthropicUsage
+	stop        string
+}
 
-	bumpActivity, stalled, cancelWatchdog := streamWatchdog(ctx, resp.Body)
-	defer cancelWatchdog()
-
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), sseMaxLine)
-
-	for scanner.Scan() {
-		bumpActivity()
-		select {
-		case <-ctx.Done():
-			emit(ctx, out, Event{Type: EventError, Err: ctx.Err()})
-			return
-		case <-stalled:
-			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, effectiveStallTimeout())})
-			return
-		default:
-		}
-
-		line := scanner.Bytes()
-		if len(line) == 0 || line[0] == ':' {
-			continue
-		}
-		if !bytes.HasPrefix(line, []byte("data:")) {
-			continue
-		}
-		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
-		ev, err := wire.ParseAnthropicEvent(payload)
-		if err != nil {
-			emit(ctx, out, Event{Type: EventError, Err: err})
-			return
-		}
-		if ev == nil {
-			continue
-		}
-
-		switch ev.Type {
-		case "message_start":
-			if ev.Message != nil && ev.Message.Usage != nil {
-				usage = ev.Message.Usage
-			}
-		case "content_block_start":
-			if ev.ContentBlock == nil {
-				continue
-			}
-			if t := ev.ContentBlock.Type; t == "thinking" || t == "redacted_thinking" {
-				thinkBlocks++
-			}
-			if ev.ContentBlock.Type == "tool_use" {
-				calls[ev.Index] = &pending{
-					id:   ev.ContentBlock.ID,
-					name: ev.ContentBlock.Name,
-				}
-				order = append(order, ev.Index)
-			}
-		case "content_block_delta":
-			if ev.Delta == nil {
-				continue
-			}
-			switch ev.Delta.Type {
-			case "text_delta":
-				if ev.Delta.Text != "" && !emit(ctx, out, Event{Type: EventTextDelta, Delta: ev.Delta.Text}) {
-					return
-				}
-			case "input_json_delta":
-				if c, ok := calls[ev.Index]; ok {
-					c.args.WriteString(ev.Delta.PartialJSON)
-				}
-			case "thinking_delta":
-				if ev.Delta.Thinking != "" && !emit(ctx, out, Event{Type: EventThinkingDelta, Delta: ev.Delta.Thinking}) {
-					return
-				}
-			case "signature_delta":
-				// thinking blocks are signed so they can round-trip next turn
-				thinkSigs[ev.Index] += ev.Delta.Signature
-			}
-		case "message_delta":
-			if ev.Delta != nil && ev.Delta.StopReason != "" {
-				stopReason = ev.Delta.StopReason
-			}
-			if ev.Usage != nil {
-				// usage on message_delta is the final tally; merge over the
-				// message_start snapshot.
-				if usage == nil {
-					usage = ev.Usage
-				} else {
-					usage.OutputTokens = ev.Usage.OutputTokens
-					if ev.Usage.InputTokens > 0 {
-						usage.InputTokens = ev.Usage.InputTokens
-					}
-				}
-			}
-		case "error":
-			err := fmt.Errorf("anthropic stream error: %s", string(payload))
-			// overload and internal errors arrive in-band after a 200; carry the
-			// stream-scan marker so the loop treats them as a retryable hiccup
-			if ev.Error.Transient() {
-				err = sseScanError(err)
-			}
-			emit(ctx, out, Event{Type: EventError, Err: err})
-			return
-		}
+func (s *claudeStream) handle(ctx context.Context, out chan<- Event, payload []byte) error {
+	ev, err := wire.ParseAnthropicEvent(payload)
+	if err != nil || ev == nil {
+		return err
 	}
+	switch ev.Type {
+	case "message_start":
+		if ev.Message != nil && ev.Message.Usage != nil {
+			s.usage = ev.Message.Usage
+		}
+	case "content_block_start":
+		switch b := ev.ContentBlock; {
+		case b == nil:
+		case b.Type == "thinking" || b.Type == "redacted_thinking":
+			s.thinkBlocks++
+		case b.Type == "tool_use":
+			s.calls[ev.Index] = &claudeCall{id: b.ID, name: b.Name}
+			s.order = append(s.order, ev.Index)
+		}
+	case "content_block_delta":
+		d := ev.Delta
+		if d == nil {
+			return nil
+		}
+		switch d.Type {
+		case "text_delta":
+			if d.Text != "" {
+				return send(ctx, out, Event{Type: EventTextDelta, Delta: d.Text})
+			}
+		case "input_json_delta":
+			if c, ok := s.calls[ev.Index]; ok {
+				c.args.WriteString(d.PartialJSON)
+			}
+		case "thinking_delta":
+			if d.Thinking != "" {
+				return send(ctx, out, Event{Type: EventThinkingDelta, Delta: d.Thinking})
+			}
+		case "signature_delta":
+			// thinking blocks are signed so they can round-trip next turn
+			s.thinkSigs[ev.Index] += d.Signature
+		}
+	case "message_delta":
+		if ev.Delta != nil && ev.Delta.StopReason != "" {
+			s.stop = ev.Delta.StopReason
+		}
+		if u := ev.Usage; u != nil {
+			// usage on message_delta is the final tally; merge over the
+			// message_start snapshot.
+			if s.usage == nil {
+				s.usage = u
+			} else {
+				s.usage.OutputTokens = u.OutputTokens
+				if u.InputTokens > 0 {
+					s.usage.InputTokens = u.InputTokens
+				}
+			}
+		}
+	case "error":
+		err := fmt.Errorf("anthropic stream error: %s", payload)
+		// overload and internal errors arrive in-band after a 200; carry the
+		// stream-scan marker so the loop treats them as a retryable hiccup
+		if ev.Error.Transient() {
+			err = sseScanError(err)
+		}
+		return err
+	}
+	return nil
+}
 
-	if err := scanner.Err(); err != nil {
-		// the watchdog closes the body, which surfaces here as a read error;
-		// report the stall instead of the cryptic close
-		select {
-		case <-stalled:
-			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("provider %s stream stalled: no data for %s (try a different model)", p.cfg.Name, effectiveStallTimeout())})
-			return
-		default:
-		}
-		if ctx.Err() != nil {
-			emit(ctx, out, Event{Type: EventError, Err: ctx.Err()})
-			return
-		}
-		emit(ctx, out, Event{Type: EventError, Err: sseScanError(err)})
+// anthropicUsage maps the wire usage block to the internal Usage. Anthropic
+// reports input_tokens as the NON-cached portion only; the cached prefix lands
+// in cache_read/cache_creation. Fold them into InputTokens so it reflects the
+// true prompt size — matching the openai-compat convention (CachedTokens ⊆
+// InputTokens). Without this, once prompt caching kicks in input_tokens
+// collapses to the new-turn delta and the auto-compact budget check stops
+// firing, letting context grow until it overflows the window. CachedTokens
+// carries the cheap cache-read portion so cost/budget code can discount it.
+func anthropicUsage(u *wire.AnthropicUsage) *Usage {
+	if u == nil {
+		return nil
+	}
+	return &Usage{
+		InputTokens:  u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
+		OutputTokens: u.OutputTokens,
+		CachedTokens: u.CacheReadInputTokens,
+	}
+}
+
+// streamLoop parses the Messages SSE stream.
+func (p *ClaudeProvider) streamLoop(ctx context.Context, resp *http.Response, out chan<- Event) {
+	defer resp.Body.Close()
+	defer close(out)
+
+	s := &claudeStream{calls: map[int]*claudeCall{}, thinkSigs: map[int]string{}}
+	if !readSSE(ctx, resp, p.cfg.Name, effectiveStallTimeout(), out, func(payload []byte, _ func()) error {
+		return s.handle(ctx, out, payload)
+	}) {
 		return
 	}
 
-	if thinkBlocks == 1 && len(thinkSigs) == 1 {
-		for _, sig := range thinkSigs {
-			if !emit(ctx, out, Event{Type: EventThinkingDelta, Signature: sig}) {
-				return
-			}
+	var evs []Event
+	if s.thinkBlocks == 1 && len(s.thinkSigs) == 1 {
+		for _, sig := range s.thinkSigs {
+			evs = append(evs, Event{Type: EventThinkingDelta, Signature: sig})
 		}
 	}
-
-	for _, idx := range order {
-		c := calls[idx]
-		input := decodeToolArgs(c.args.String())
-		id := c.id
-		if id == "" {
-			id = "call_" + uuid.NewString()
-		}
-		if !emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-			ID: id, Name: c.name, Input: input,
-		}}) {
-			return
-		}
+	for _, idx := range s.order {
+		c := s.calls[idx]
+		evs = append(evs, newToolUse(c.id, c.name, decodeToolArgs(c.args.String())))
 	}
-
-	final := Event{Type: EventDone, StopReason: stopReason}
-	if usage != nil {
-		// Anthropic reports input_tokens as the NON-cached portion only; the
-		// cached prefix lands in cache_read/cache_creation. Fold them into
-		// InputTokens so it reflects the true prompt size — matching the
-		// openai-compat convention (CachedTokens ⊆ InputTokens). Without this,
-		// once prompt caching kicks in input_tokens collapses to the new-turn
-		// delta and the auto-compact budget check stops firing, letting context
-		// grow until it overflows the window. CachedTokens carries the cheap
-		// cache-read portion so cost/budget code can discount it.
-		final.Usage = &Usage{
-			InputTokens:  usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens,
-			OutputTokens: usage.OutputTokens,
-			CachedTokens: usage.CacheReadInputTokens,
-		}
-	}
-	emit(ctx, out, final)
+	emitAll(ctx, out, append(evs, Event{Type: EventDone, StopReason: s.stop, Usage: anthropicUsage(s.usage)})...)
 }

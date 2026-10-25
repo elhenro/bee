@@ -70,6 +70,17 @@ func newStreamingClient() *http.Client {
 	}
 }
 
+// setJSONHeaders sets the content negotiation of a JSON POST that answers with
+// an SSE stream or a single JSON body.
+func setJSONHeaders(r *http.Request, streaming bool) {
+	r.Header.Set("Content-Type", "application/json")
+	if streaming {
+		r.Header.Set("Accept", "text/event-stream")
+	} else {
+		r.Header.Set("Accept", "application/json")
+	}
+}
+
 // streamWatchdog runs an inactivity timer alongside an SSE scan loop.
 //
 // Returns:

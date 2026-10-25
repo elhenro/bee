@@ -1,24 +1,6 @@
 package llm
 
-import (
-	"bufio"
-	"context"
-	"errors"
-	"fmt"
-)
-
-// sseMaxLine caps one SSE line. A tool call carrying a whole file can ride in a
-// single chunk, so this sits well above typical lines.
-const sseMaxLine = 4 * 1024 * 1024
-
-// sseScanError wraps a scanner failure. An oversized line fails the same way on
-// every replay, so it must not carry the "sse scan" marker the loop retries on.
-func sseScanError(err error) error {
-	if errors.Is(err, bufio.ErrTooLong) {
-		return fmt.Errorf("sse line over %d bytes: %w", sseMaxLine, err)
-	}
-	return fmt.Errorf("sse scan: %w", err)
-}
+import "context"
 
 // relayInner forwards an inner stream to out for the wrappers that buffer text
 // and tool calls themselves: text deltas go to onText, native tool calls to

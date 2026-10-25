@@ -1,12 +1,11 @@
 package llm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -94,16 +93,6 @@ func NewOpenAICompat(cfg OpenAICompatConfig) *OpenAICompatProvider {
 	return &OpenAICompatProvider{cfg: cfg, client: client}
 }
 
-// retry policy for the pre-stream request: network errors and 408/429/5xx
-// trigger an exp-backoff retry. Once the stream starts emitting deltas we
-// no longer retry. replaying would duplicate tokens.
-const (
-	maxRetryAttempts     = 3
-	maxRetryAttemptsRate = 5
-	retryBaseDelay       = 800 * time.Millisecond
-	retryMinDelay        = 200 * time.Millisecond
-)
-
 // num_ctx auto-allocation bounds for ollama-shaped servers.
 const (
 	// ollamaDefaultNumCtx is ollama's built-in default. Below this there is
@@ -136,43 +125,6 @@ func (p *OpenAICompatProvider) resolveNumCtx(model string) int {
 		return maxLocalNumCtx
 	}
 	return probed
-}
-
-// retryRand drives the backoff jitter. seeded once per process. jitter does
-// not need cryptographic randomness, only crowd-spreading.
-var retryRand = rand.New(rand.NewSource(time.Now().UnixNano()))
-var retryRandMu sync.Mutex
-
-// retryableStatus reports whether a server response code is worth retrying.
-// 408 request timeout, 429 too many requests, 5xx server errors, 529 overloaded. matches
-// the set used by major chat-completions SDKs.
-func retryableStatus(code int) bool {
-	switch code {
-	case 408, 429, 500, 502, 503, 504, 529:
-		return true
-	}
-	return false
-}
-
-// rateLimitedStatus marks codes that warrant extra retries since the server
-// is asking us to slow down rather than reporting a hard failure.
-func rateLimitedStatus(code int) bool {
-	return code == 429 || code == 503 || code == 529
-}
-
-// retryBackoff computes the delay for the given attempt with ±25% jitter,
-// floored at retryMinDelay so jitter cannot push below the safe minimum.
-func retryBackoff(attempt int) time.Duration {
-	base := retryBaseDelay << (attempt - 1)
-	retryRandMu.Lock()
-	// jitter in [-0.25, +0.25]
-	jitter := (retryRand.Float64()*0.5 - 0.25)
-	retryRandMu.Unlock()
-	d := time.Duration(float64(base) * (1 + jitter))
-	if d < retryMinDelay {
-		d = retryMinDelay
-	}
-	return d
 }
 
 // isNoToolSupportError detects the Ollama/llama.cpp 400 returned for models
@@ -218,100 +170,43 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 	if _, banned := p.noRespFormat.Load(req.Model); banned {
 		wireReq.ResponseFormat = nil
 	}
-	body, err := json.Marshal(wireReq)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/chat/completions"
 
-	var (
-		resp        *http.Response
-		lastErr     error
-		lastWasRate bool
-	)
-	// loop bound is the larger cap; rate-limited statuses get the extra attempts
-	// while other retryable errors still bail at maxRetryAttempts.
-	for attempt := 0; attempt < maxRetryAttemptsRate; attempt++ {
-		// after the non-rate cap, only continue if the previous failure was a
-		// rate-limited status (429, 503 or 529).
-		if attempt >= maxRetryAttempts && !lastWasRate {
+	var resp *http.Response
+	for resp == nil {
+		body, err := json.Marshal(wireReq)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request: %w", err)
+		}
+		r, err := postJSON(ctx, p.client, p.cfg.Name, url, body, func(r *http.Request) { p.applyHeaders(r, req.Stream) })
+		if err != nil {
+			return nil, err
+		}
+		if r.StatusCode < 400 {
+			resp = r
 			break
 		}
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(retryBackoff(attempt)):
-			}
+		raw, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+		_ = r.Body.Close()
+		switch {
+		// some local servers reject tool advertisements for non-tool-tuned
+		// models with 400 "does not support tools". strip tools, remember
+		// the model, retry once.
+		case len(wireReq.Tools) > 0 && isNoToolSupportError(r.StatusCode, raw):
+			p.noTools.Store(req.Model, struct{}{})
+			wireReq.Tools = nil
+		// pre-grammar servers reject response_format. drop the constraint,
+		// remember the model, retry — jsonmode degrades to prompt-instructed
+		// JSON instead of failing the turn. warn once: the noRespFormat store
+		// guarantees this branch runs at most once per model, so the stderr
+		// line can't repeat.
+		case wireReq.ResponseFormat != nil && isNoResponseFormatError(r.StatusCode, raw):
+			fmt.Fprintf(os.Stderr, "bee: %s rejected response_format for %s; json tool mode continues without grammar enforcement\n", p.cfg.Name, req.Model)
+			p.noRespFormat.Store(req.Model, struct{}{})
+			wireReq.ResponseFormat = nil
+		default:
+			return nil, fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, raw)
 		}
-
-		httpReq, rerr := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-		if rerr != nil {
-			return nil, fmt.Errorf("build request: %w", rerr)
-		}
-		p.applyHeaders(httpReq, req.Stream)
-
-		r, derr := p.client.Do(httpReq)
-		if derr != nil {
-			// don't retry context cancellation
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			lastErr = fmt.Errorf("post: %w", derr)
-			lastWasRate = false
-			continue
-		}
-
-		if r.StatusCode >= 400 {
-			raw, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
-			_ = r.Body.Close()
-			// some local servers reject tool advertisements for non-tool-tuned
-			// models with 400 "does not support tools". strip tools, remember
-			// the model, rebuild body, retry once.
-			if len(wireReq.Tools) > 0 && isNoToolSupportError(r.StatusCode, raw) {
-				p.noTools.Store(req.Model, struct{}{})
-				wireReq.Tools = nil
-				nb, merr := json.Marshal(wireReq)
-				if merr != nil {
-					return nil, fmt.Errorf("marshal request: %w", merr)
-				}
-				body = nb
-				lastErr = fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, string(raw))
-				lastWasRate = false
-				continue
-			}
-			// pre-grammar servers reject response_format. drop the constraint,
-			// remember the model, rebuild, retry — jsonmode degrades to
-			// prompt-instructed JSON instead of failing the turn. warn once:
-			// the noRespFormat store guarantees this branch runs at most once
-			// per model, so the stderr line can't repeat.
-			if wireReq.ResponseFormat != nil && isNoResponseFormatError(r.StatusCode, raw) {
-				fmt.Fprintf(os.Stderr, "bee: %s rejected response_format for %s; json tool mode continues without grammar enforcement\n", p.cfg.Name, req.Model)
-				p.noRespFormat.Store(req.Model, struct{}{})
-				wireReq.ResponseFormat = nil
-				nb, merr := json.Marshal(wireReq)
-				if merr != nil {
-					return nil, fmt.Errorf("marshal request: %w", merr)
-				}
-				body = nb
-				lastErr = fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, string(raw))
-				lastWasRate = false
-				continue
-			}
-			if retryableStatus(r.StatusCode) {
-				lastErr = fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, string(raw))
-				lastWasRate = rateLimitedStatus(r.StatusCode)
-				continue
-			}
-			return nil, fmt.Errorf("provider %s status %d: %s", p.cfg.Name, r.StatusCode, string(raw))
-		}
-
-		resp = r
-		break
-	}
-	if resp == nil {
-		return nil, fmt.Errorf("provider %s exhausted retries: %w", p.cfg.Name, lastErr)
 	}
 
 	out := make(chan Event, 16)
@@ -324,13 +219,7 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 }
 
 func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
-	tools := make([]wire.ToolAdvert, 0, len(req.Tools))
-	for _, t := range req.Tools {
-		tools = append(tools, wire.ToolAdvert{
-			Name: t.Name, Description: t.Description, Schema: t.Schema,
-		})
-	}
-	wr := wire.BuildRequest(req.Model, req.System, req.Messages, tools, req.MaxTokens, req.Temperature, req.TopP, req.Stop, req.Stream)
+	wr := wire.BuildRequest(req.Model, req.System, req.Messages, toolAdverts(req.Tools), req.MaxTokens, req.Temperature, req.TopP, req.Stop, req.Stream)
 	// opt in to provider-reported cost when the service supports it. gated so
 	// strict endpoints never see the extra field.
 	if p.cfg.ReportsCost {
@@ -346,25 +235,16 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 	// reasoning model (qwen3-coder, plain instruct) would otherwise receive an
 	// ignored effort param just because the user left effort at medium. Qwen3
 	// hybrids are excluded too: they take the /think token, not this wire field.
-	// "max" isn't an OpenAI tier — clamp to "high" on the wire.
-	if req.Thinking != "" && req.Thinking != ThinkingOff && SupportsThinking(req.Model) {
-		eff := string(req.Thinking)
-		if req.Thinking == ThinkingMax {
-			eff = string(ThinkingHigh)
-		}
-		wr.ReasoningEffort = eff
+	if SupportsThinking(req.Model) {
+		wr.ReasoningEffort = reasoningEffort(req.Thinking)
 	}
 	// keep local models warm between turns. gated so hosted/strict endpoints
 	// never see the Ollama-specific field.
-	if p.cfg.KeepAlive != "" {
-		wr.KeepAlive = p.cfg.KeepAlive
-	}
+	wr.KeepAlive = p.cfg.KeepAlive
 	// allocate the real context window on ollama-shaped servers. otherwise it
 	// runs at the 4096 default and truncates the prompt head the loop budgeted
 	// for. gated like keep_alive so hosted/strict endpoints never see the field.
-	if n := p.resolveNumCtx(req.Model); n > 0 {
-		wr.NumCtx = n
-	}
+	wr.NumCtx = p.resolveNumCtx(req.Model)
 	// prompt-cache breakpoint on the static system prefix. gated to routers that
 	// honor cache_control (OpenRouter); the static/dynamic split keeps the prefix
 	// cached even when memory changes (see Request.SystemDynamic).
@@ -389,12 +269,8 @@ func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {
 	}
 	if len(p.cfg.ChatTemplateKwargs) > 0 || len(req.ChatTemplateKwargs) > 0 {
 		merged := make(map[string]any, len(p.cfg.ChatTemplateKwargs)+len(req.ChatTemplateKwargs))
-		for k, v := range p.cfg.ChatTemplateKwargs {
-			merged[k] = v
-		}
-		for k, v := range req.ChatTemplateKwargs {
-			merged[k] = v
-		}
+		maps.Copy(merged, p.cfg.ChatTemplateKwargs)
+		maps.Copy(merged, req.ChatTemplateKwargs)
 		wr.ChatTemplateKwargs = merged
 	}
 	return wr
