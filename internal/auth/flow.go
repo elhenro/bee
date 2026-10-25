@@ -26,22 +26,6 @@ type Token struct {
 	AccountID string `json:"account_id,omitempty"`
 }
 
-// expirySkew is the safety margin subtracted from token lifetime before
-// declaring it expired. Avoids the in-flight expiry race where a token is
-// valid at send time but rejected by the time the request lands.
-const expirySkew = 5 * time.Minute
-
-// Expired returns true if the token has passed its expiration time (with a
-// 5min safety skew). Tokens with ExpiresIn <= 0 are treated as non-expiring
-// (provider didn't tell us).
-func (t *Token) Expired() bool {
-	if t == nil || t.ExpiresIn <= 0 {
-		return false
-	}
-	deadline := t.IssuedAt.Add(time.Duration(t.ExpiresIn)*time.Second - expirySkew)
-	return time.Now().After(deadline)
-}
-
 // httpClient is overridable for tests.
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
@@ -72,10 +56,6 @@ func postForm(ctx context.Context, tokenURL string, form url.Values) (*Token, er
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	return doTokenRequest(req)
-}
-
-func doTokenRequest(req *http.Request) (*Token, error) {
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err

@@ -2,6 +2,7 @@ package safety
 
 import (
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -142,10 +143,14 @@ var unsafeFlags = map[string][]string{
 	"git":  {"--output", "--ext-diff", "--exec-path"},
 }
 
-// gitBranchReadFlags is the closed set of `git branch` flags that only list.
-var gitBranchReadFlags = map[string]bool{
-	"-a": true, "-r": true, "-v": true, "-vv": true, "--all": true, "--remotes": true,
-	"--verbose": true, "--list": true, "-l": true, "--show-current": true,
+// gitReadFlags is, per `git` subcommand that can also write, the closed set of
+// flags that only list.
+var gitReadFlags = map[string]map[string]bool{
+	"branch": {
+		"-a": true, "-r": true, "-v": true, "-vv": true, "--all": true, "--remotes": true,
+		"--verbose": true, "--list": true, "-l": true, "--show-current": true,
+	},
+	"remote": {"-v": true, "--verbose": true},
 }
 
 // UnsafeInvocation reports whether argv uses a flag or form that makes an
@@ -163,16 +168,9 @@ func UnsafeInvocation(argv []string) bool {
 		return true
 	}
 	if name == "git" && len(args) > 0 {
-		switch args[0] {
-		case "branch":
+		if allowed, ok := gitReadFlags[args[0]]; ok {
 			for _, a := range args[1:] {
-				if !gitBranchReadFlags[a] {
-					return true
-				}
-			}
-		case "remote":
-			for _, a := range args[1:] {
-				if a != "-v" && a != "--verbose" {
+				if !allowed[a] {
 					return true
 				}
 			}
@@ -247,14 +245,7 @@ func goArgsSafe(args []string) bool {
 			continue
 		}
 		name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		ok := false
-		for _, f := range allowed {
-			if f == name {
-				ok = true
-				break
-			}
-		}
-		if !ok {
+		if !slices.Contains(allowed, name) {
 			return false
 		}
 	}

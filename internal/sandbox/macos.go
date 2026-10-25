@@ -114,13 +114,8 @@ func macosProfile(p Policy) (string, error) {
 		b.WriteString(seatbeltLoopback)
 		b.WriteString(seatbeltDevNodes)
 		b.WriteString(seatbeltWriteOpenHead)
-		for _, path := range cwdAliases(cwd) {
-			b.WriteString("\n    ")
-			b.WriteString(fmt.Sprintf("(subpath %q)", path))
-		}
-		for _, d := range devCacheDirs() {
-			b.WriteString("\n    ")
-			b.WriteString(fmt.Sprintf("(subpath %q)", d))
+		for _, path := range append(cwdAliases(cwd), devCacheDirs()...) {
+			fmt.Fprintf(&b, "\n    (subpath %q)", path)
 		}
 		b.WriteString(seatbeltWriteOpenTail)
 		// deny after allow: the last matching rule wins in seatbelt.
@@ -128,7 +123,7 @@ func macosProfile(p Policy) (string, error) {
 		if len(g.ReadOnly) > 0 || len(g.ModuleRegex) > 0 {
 			b.WriteString("(deny file-write*")
 			for _, path := range g.ReadOnly {
-				b.WriteString(fmt.Sprintf("\n    (subpath %q)", path))
+				fmt.Fprintf(&b, "\n    (subpath %q)", path)
 			}
 			for _, re := range g.ModuleRegex {
 				b.WriteString("\n    (regex #\"" + re + "\")") // raw literal: no escape processing
@@ -137,7 +132,7 @@ func macosProfile(p Policy) (string, error) {
 		}
 		// unlink also covers rename-away of the `.git` entry itself.
 		for _, path := range g.Pinned {
-			b.WriteString(fmt.Sprintf("(deny file-write-unlink (literal %q))\n", path))
+			fmt.Fprintf(&b, "(deny file-write-unlink (literal %q))\n", path)
 		}
 		return b.String(), nil
 	default:

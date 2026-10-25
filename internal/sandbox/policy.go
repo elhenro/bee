@@ -123,15 +123,13 @@ var defaultSafe = []string{
 	"go mod verify",
 }
 
-// IsKnownSafe reports whether every command in cmd matches a built-in safe
-// prefix. cmd is tokenized first: a compound line is safe only when each
-// simple command is, and redirections, substitutions and flags that turn a
-// read-only tool into a writer (find -exec, git branch -D, ...) are refused.
-func IsKnownSafe(cmd string) bool { return Policy{}.IsAllowed(cmd) }
-
-// IsAllowed extends IsKnownSafe with the policy's per-invocation AllowList.
-// The list is matched per simple command, never against the raw line, so
-// "ls; rm x" cannot ride on an "ls" entry.
+// IsAllowed reports whether every command in cmd matches a built-in safe
+// prefix or the policy's per-invocation AllowList. cmd is tokenized first: a
+// compound line is safe only when each simple command is, and redirections,
+// substitutions and flags that turn a read-only tool into a writer (find
+// -exec, git branch -D, ...) are refused. The list is matched per simple
+// command, never against the raw line, so "ls; rm x" cannot ride on an "ls"
+// entry.
 func (p Policy) IsAllowed(cmd string) bool {
 	segs, ok := safety.PlainSegments(cmd)
 	if !ok {

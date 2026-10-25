@@ -108,13 +108,3 @@ func DetectDangerous(cmd string) (key, desc string, matched bool) {
 	}
 	return "", "", false
 }
-
-// DangerousKeys returns every registered pattern key. Used by config
-// validation to verify allowlist entries reference real patterns.
-func DangerousKeys() []string {
-	out := make([]string, len(dangerousPatterns))
-	for i, p := range dangerousPatterns {
-		out[i] = p.Key
-	}
-	return out
-}

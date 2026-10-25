@@ -128,3 +128,13 @@ func TestTokenize_UnterminatedQuoteMentionsPosition(t *testing.T) {
 		t.Fatalf("error = %v; want unterminated double quote", err)
 	}
 }
+
+func TestTokenize_EscapedMultibyteKeepsBytes(t *testing.T) {
+	got, err := Tokenize(`a\é b`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got[0].Value != "aé" || got[0].Segments[0].Text != "aé" {
+		t.Fatalf("value %q, segment %q; want aé for both", got[0].Value, got[0].Segments[0].Text)
+	}
+}

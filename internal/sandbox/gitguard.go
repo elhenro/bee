@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -49,7 +50,7 @@ func gitProtected(cwd string) gitGuard {
 		g.ReadOnly = append(g.ReadOnly, moduleGuards(filepath.Join(dot, "modules"))...)
 		if !strings.ContainsAny(dot, `"\`) {
 			g.ModuleRegex = append(g.ModuleRegex,
-				"^"+regexQuote(filepath.Join(dot, "modules"))+"/.+/(hooks|config|config\\.lock|commondir)(/.*)?$")
+				"^"+regexp.QuoteMeta(filepath.Join(dot, "modules"))+"/.+/(hooks|config|config\\.lock|commondir)(/.*)?$")
 		}
 	}
 	return g
@@ -79,15 +80,4 @@ func moduleGuards(modules string) []string {
 		return nil
 	})
 	return out
-}
-
-func regexQuote(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if strings.ContainsRune(`\.+*?()|[]{}^$`, r) {
-			b.WriteByte('\\')
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
 }
