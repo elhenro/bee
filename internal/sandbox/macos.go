@@ -38,9 +38,9 @@ const seatbeltLoopback = `(allow network-bind (local ip "localhost:*"))
 (allow network-outbound (remote ip "localhost:*"))
 `
 
-// seatbeltReadOnly denies file writes and external network but still allows
-// loopback + dev/stdio nodes so subprocesses (notably git) can run.
-const seatbeltReadOnly = `(version 1)
+// seatbeltBase is the preamble every profile starts from: exec and read
+// everywhere, no writes or network until a profile opts in.
+const seatbeltBase = `(version 1)
 (deny default)
 (allow process-exec)
 (allow process-fork)
@@ -48,7 +48,11 @@ const seatbeltReadOnly = `(version 1)
 (allow file-read*)
 (allow sysctl-read)
 (allow mach-lookup)
-(deny network*)
+`
+
+// seatbeltReadOnly denies file writes and external network but still allows
+// loopback + dev/stdio nodes so subprocesses (notably git) can run.
+const seatbeltReadOnly = seatbeltBase + `(deny network*)
 (deny file-write*)
 ` + seatbeltLoopback + seatbeltDevNodes
 
@@ -58,15 +62,7 @@ const seatbeltReadOnly = `(version 1)
 // caches under $HOME (go-build, go mod cache, npm, cargo, pip, etc.) must be
 // writable or `go build` inside the wrapped shell tool fails with
 // "open …/Library/Caches/go-build/…" because seatbelt blocks the write.
-const seatbeltWriteCommon = `(version 1)
-(deny default)
-(allow process-exec)
-(allow process-fork)
-(allow signal (target self))
-(allow file-read*)
-(allow sysctl-read)
-(allow mach-lookup)
-(deny file-write*)
+const seatbeltWriteCommon = seatbeltBase + `(deny file-write*)
 `
 
 // seatbeltWriteOpenHead/Tail wrap the dynamic (subpath ...) write rules.

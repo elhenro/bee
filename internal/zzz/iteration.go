@@ -30,7 +30,6 @@ Objective:
 // priorTokens is the on-disk total before this engine instance booted; used
 // to keep run.Tokens consistent across resume.
 func runOneIteration(ctx context.Context, eng Runner, cfg Config, run *Run, iter int, ui UI, notes []string, priorTokens TokenStat) (IterationResult, error) {
-	start := time.Now()
 	r := IterationResult{Iter: iter}
 	fail := func(status string, err error) (IterationResult, error) {
 		r.Status, r.Err = status, err
@@ -50,7 +49,6 @@ func runOneIteration(ctx context.Context, eng Runner, cfg Config, run *Run, iter
 
 	ui.SetPhase("engine.run")
 	res, runErr := runEngineWithRetry(ctx, eng, prompt, orDefault(cfg.HardErrorRetries, defaultHardErrorRetries))
-	r.Duration = time.Since(start)
 	r.Subject = strings.TrimSpace(res.FinalText)
 
 	afterTotal := eng.CostTotal()

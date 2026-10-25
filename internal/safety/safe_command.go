@@ -178,7 +178,7 @@ func UnsafeInvocation(argv []string) bool {
 	}
 	for _, bad := range unsafeFlags[name] {
 		for _, a := range args {
-			if matchesUnsafeFlag(name, bad, a) {
+			if matchesUnsafeFlag(bad, a) {
 				return true
 			}
 		}
@@ -190,7 +190,7 @@ func UnsafeInvocation(argv []string) bool {
 // It is deliberately wider than equality: long options may be abbreviated
 // (--out for --output) and short ones clustered or glued to a value
 // (-ao, -ofile). A false positive only costs an approval prompt.
-func matchesUnsafeFlag(cmd, bad, arg string) bool {
+func matchesUnsafeFlag(bad, arg string) bool {
 	if arg == bad {
 		return true
 	}

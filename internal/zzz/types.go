@@ -90,7 +90,6 @@ type IterationResult struct {
 	Tokens    TokenStat
 	DiffStat  string
 	Err       error
-	Duration  time.Duration
 }
 
 // Event is one row in events.jsonl.
