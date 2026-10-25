@@ -14,14 +14,17 @@ const (
 )
 
 // addDisplayArgs offers the model the optional display-only args: a
-// `description` label on tools whose raw args read poorly as a card title
-// (skipped on tiny: small models spend tokens on it and the schema budget is
-// tight) and a `why` on the file mutators. Registry specs are shared, so a
-// schema is copied, never edited in place.
+// `description` label on tools whose raw args read poorly as a card title and
+// a `why` on the file mutators. Skipped on tiny: small models spend tokens on
+// them and the schema budget is tight. Registry specs are shared, so a schema
+// is copied, never edited in place.
 func addDisplayArgs(specs []llm.ToolSpec, cfg config.Config) []llm.ToolSpec {
+	if cfg.Profile == "tiny" {
+		return specs
+	}
 	out := make([]llm.ToolSpec, len(specs))
 	for i, s := range specs {
-		if cfg.Profile != "tiny" && types.LabelsCalls(s.Name) {
+		if types.LabelsCalls(s.Name) {
 			s = withArg(s, types.CallLabelKey, callLabelDesc)
 		}
 		if types.TakesWhy(s.Name) {

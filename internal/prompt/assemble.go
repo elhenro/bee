@@ -73,7 +73,7 @@ func AssembleWithDynamic(
 
 	rules := caveman.Rules(level)
 	identity := identityBlock(cwd, level)
-	discipline := join(tinyDiscipline(cfg.Profile), efficiencyRules(cfg.Profile), learnRules(cfg.Memory.Enabled))
+	discipline := join(tinyDiscipline(cfg.Profile), efficiencyRules(cfg.Profile), learnRules(cfg.Profile, cfg.Memory.Enabled))
 	toolMan := toolsManifest(regToolSpecs, prof.ToolDescChars)
 
 	// knowledge + skills + context are the trimmable sections; render then enforce budget.

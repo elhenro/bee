@@ -91,12 +91,11 @@ func (e *Engine) advertisedSpecs(pl runPlan) []llm.ToolSpec {
 		extras = append(extras, u.Name)
 	}
 	specs = filterToolSpecsForProfile(specs, e.Cfg.Profile, extras...)
-	// display args go in before the strip so tiny drops their descriptions too.
-	specs = addDisplayArgs(specs, e.Cfg)
 	// strip per-parameter descriptions on tiny: saves ~600 toks for 4k models.
 	// no-op when the profile uses tool_format=xml (schema is nilled by the
 	// textmode wrapper before it reaches the wire).
 	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg)
+	specs = addDisplayArgs(specs, e.Cfg)
 	// then narrow by role/posture: a read-only turn drops mutators entirely.
 	specs = filterToolSpecsForRole(specs, pl.role, pl.readOnly)
 	// re-add any plan-only tool a prompt skill granted for this turn (e.g.

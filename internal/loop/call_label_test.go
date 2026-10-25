@@ -104,19 +104,25 @@ func TestRunOne_ToolNeverSeesCallLabel(t *testing.T) {
 	}
 }
 
-func TestAddDisplayArgs_OffersWhyOnMutatorsEvenOnTiny(t *testing.T) {
+func TestAddDisplayArgs_OffersWhyOnMutators(t *testing.T) {
 	specs := []llm.ToolSpec{{Name: "edit", Schema: labelSpecs()[0].Schema}, {Name: "read", Schema: labelSpecs()[1].Schema}}
-	for _, profile := range []string{"normal", "tiny"} {
-		out := addDisplayArgs(specs, config.Config{Profile: profile})
-		if _, ok := out[0].Schema["properties"].(map[string]any)[types.WhyKey]; !ok {
-			t.Fatalf("%s: edit should offer a why", profile)
-		}
-		if _, ok := out[1].Schema["properties"].(map[string]any)[types.WhyKey]; ok {
-			t.Fatalf("%s: read has nothing to justify", profile)
-		}
+	out := addDisplayArgs(specs, config.Config{Profile: "normal"})
+	if _, ok := out[0].Schema["properties"].(map[string]any)[types.WhyKey]; !ok {
+		t.Fatal("edit should offer a why")
+	}
+	if _, ok := out[1].Schema["properties"].(map[string]any)[types.WhyKey]; ok {
+		t.Fatal("read has nothing to justify")
 	}
 	if _, ok := specs[0].Schema["properties"].(map[string]any)[types.WhyKey]; ok {
 		t.Fatal("registry spec was edited in place")
+	}
+}
+
+func TestAddDisplayArgs_SkippedOnTinyForWhyToo(t *testing.T) {
+	specs := []llm.ToolSpec{{Name: "edit", Schema: labelSpecs()[0].Schema}}
+	out := addDisplayArgs(specs, config.Config{Profile: "tiny"})
+	if _, ok := out[0].Schema["properties"].(map[string]any)[types.WhyKey]; ok {
+		t.Fatal("tiny should not pay for a why")
 	}
 }
 
@@ -127,34 +133,4 @@ func TestSignatureFor_IgnoresWhy(t *testing.T) {
 	if signatureFor(a) != signatureFor(b) {
 		t.Fatal("why changed the call signature, repeat detection would miss the loop")
 	}
-}
-
-// tiny budgets every token: the why arg is offered but carries no description
-func TestAdvertisedSpecs_TinyOffersWhyWithoutDescription(t *testing.T) {
-	reg := tools.NewRegistry()
-	_ = reg.Register(schemaTool{llm.ToolSpec{Name: "edit", Description: "x", Schema: labelSpecs()[0].Schema}})
-	eng, _ := newEngine(&stubProvider{}, reg)
-	eng.Cfg.Profile = "tiny"
-	eng.run = &runState{}
-	for _, s := range eng.advertisedSpecs(runPlan{}) {
-		if s.Name != "edit" {
-			continue
-		}
-		why, ok := s.Schema["properties"].(map[string]any)[types.WhyKey].(map[string]any)
-		if !ok {
-			t.Fatal("tiny should still offer why")
-		}
-		if _, has := why["description"]; has {
-			t.Fatalf("tiny kept the why description: %v", why)
-		}
-		return
-	}
-	t.Fatal("edit not advertised")
-}
-
-type schemaTool struct{ spec llm.ToolSpec }
-
-func (s schemaTool) Spec() llm.ToolSpec { return s.spec }
-func (s schemaTool) Run(context.Context, map[string]any) (tools.Result, error) {
-	return tools.Result{Content: "ok"}, nil
 }
