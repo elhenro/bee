@@ -19,7 +19,6 @@ const (
 // returns "" when the item has nothing to show (its toggle is off, or it
 // carries no data); empty items drop out silently without leaving a gap.
 type statusItem struct {
-	id     string
 	align  statusAlign
 	draw   func(m Model) string
 	narrow func(m Model) string // shorter form tried before the row truncates; nil = none
@@ -30,21 +29,21 @@ type statusItem struct {
 // it selectable via tui.status_line. Later cards layer on top of it (machine
 // mode, narrow-terminal fitting, alias resolution) without changing callers.
 var statusRegistry = map[string]statusItem{
-	"context":       {id: "context", align: alignLeft, draw: func(m Model) string { return m.renderContextHex() }},
-	"model":         {id: "model", align: alignLeft, draw: drawStatusModel, narrow: drawStatusModelShort},
-	"role":          {id: "role", align: alignLeft, draw: drawStatusRole},
-	"effort":        {id: "effort", align: alignLeft, draw: drawStatusEffort},
-	"yolo":          {id: "yolo", align: alignLeft, draw: func(m Model) string { return m.renderYoloBadge() }},
-	"goal":          {id: "goal", align: alignLeft, draw: drawStatusGoal},
-	"jobs":          {id: "jobs", align: alignLeft, draw: drawStatusJobs},
-	"session_title": {id: "session_title", align: alignLeft, draw: drawStatusSessionTitle},
-	"cwd":           {id: "cwd", align: alignRight, draw: drawStatusCwd},
-	"git_branch":    {id: "git_branch", align: alignRight, draw: drawStatusGitBranch},
-	"cost":          {id: "cost", align: alignRight, draw: drawStatusCost},
-	"total_tokens":  {id: "total_tokens", align: alignRight, draw: drawStatusTotalTokens},
-	"turn_timer":    {id: "turn_timer", align: alignRight, draw: func(m Model) string { return m.renderTurnTimer() }},
-	"expand":        {id: "expand", align: alignRight, draw: drawStatusExpand},
-	"hints":         {id: "hints", align: alignRight, draw: drawStatusHints},
+	"context":       {align: alignLeft, draw: Model.renderContextHex},
+	"model":         {align: alignLeft, draw: drawStatusModel, narrow: drawStatusModelShort},
+	"role":          {align: alignLeft, draw: drawStatusRole},
+	"effort":        {align: alignLeft, draw: drawStatusEffort},
+	"yolo":          {align: alignLeft, draw: Model.renderYoloBadge},
+	"goal":          {align: alignLeft, draw: drawStatusGoal},
+	"jobs":          {align: alignLeft, draw: drawStatusJobs},
+	"session_title": {align: alignLeft, draw: drawStatusSessionTitle},
+	"cwd":           {align: alignRight, draw: drawStatusCwd},
+	"git_branch":    {align: alignRight, draw: drawStatusGitBranch},
+	"cost":          {align: alignRight, draw: drawStatusCost},
+	"total_tokens":  {align: alignRight, draw: drawStatusTotalTokens},
+	"turn_timer":    {align: alignRight, draw: Model.renderTurnTimer},
+	"expand":        {align: alignRight, draw: drawStatusExpand},
+	"hints":         {align: alignRight, draw: drawStatusHints},
 }
 
 // default footer: what you're talking to on the left, where and how much on
@@ -115,13 +114,9 @@ func (m Model) renderStatusLine() string {
 	if m.statusLine == nil && m.statusLineAllOff() {
 		return ""
 	}
-	ids := resolveStatusLine(m.statusLine)
-	if len(ids) == 0 {
-		return ""
-	}
 	var parts []statusPart
 	rightOpen := false
-	for _, id := range ids {
+	for _, id := range resolveStatusLine(m.statusLine) {
 		it := statusRegistry[id]
 		if it.align == alignRight {
 			rightOpen = true

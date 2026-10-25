@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -30,11 +31,7 @@ func liveBudget(termH int, parts ...string) int {
 	// between mid and the rest. Final "\n" between blocks costs 1 row each.
 	separators := nonEmpty // mid + nonEmpty parts → nonEmpty separators
 	// reserve 1 row for the cursor / inline-render safety margin.
-	budget := termH - chrome - separators - 1
-	if budget < 1 {
-		return 1
-	}
-	return budget
+	return max(termH-chrome-separators-1, 1)
 }
 
 // contextPct returns the fraction of the active model's context window used
@@ -100,23 +97,18 @@ func (m Model) renderContextHex() string {
 	}
 	fg, bold := contextTier(pct, known)
 	style := lipgloss.NewStyle().Foreground(fg).Bold(bold)
-	var out string
+	var chips []string
 	if m.showBee {
-		out = style.Render(glyphBee)
+		chips = append(chips, style.Render(glyphBee))
 	}
 	if m.showContextPct {
 		label := "?"
 		if known {
 			label = fmt.Sprintf("%d%%", min(999, int(pct*100+0.5)))
 		}
-		chip := style.Render(label)
-		if out != "" {
-			out += " " + chip
-		} else {
-			out = chip
-		}
+		chips = append(chips, style.Render(label))
 	}
-	return out
+	return strings.Join(chips, " ")
 }
 
 // the bottom hairline as a gauge: `━` fills from the left in the chip's
@@ -143,20 +135,16 @@ func (m Model) renderContextBar() string {
 // tokensHuman formats a token count compactly: 1234 → "1.2k", 1_500_000 → "1.5M".
 // Sub-1000 stays bare. One decimal point until 100, none above.
 func tokensHuman(n int) string {
+	div, unit := 1000.0, "k"
 	switch {
 	case n < 1000:
-		return fmt.Sprintf("%d", n)
-	case n < 1_000_000:
-		v := float64(n) / 1000
-		if v < 10 {
-			return fmt.Sprintf("%.1fk", v)
-		}
-		return fmt.Sprintf("%dk", int(v+0.5))
-	default:
-		v := float64(n) / 1_000_000
-		if v < 10 {
-			return fmt.Sprintf("%.1fM", v)
-		}
-		return fmt.Sprintf("%dM", int(v+0.5))
+		return strconv.Itoa(n)
+	case n >= 1_000_000:
+		div, unit = 1_000_000, "M"
 	}
+	v := float64(n) / div
+	if v < 10 {
+		return fmt.Sprintf("%.1f%s", v, unit)
+	}
+	return fmt.Sprintf("%d%s", int(v+0.5), unit)
 }

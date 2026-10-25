@@ -19,11 +19,7 @@ const (
 // hairline length: full row minus a gutter each side, matching user panels
 // and diffs
 func (m Model) ruleWidth() int {
-	w := m.width - 2
-	if w < 1 {
-		w = 1
-	}
-	return w
+	return max(m.width-2, 1)
 }
 
 func (m Model) renderRule() string {
@@ -37,7 +33,11 @@ func (m Model) renderBottomBar() string {
 	if m.quitArmed {
 		above.WriteString(" " + m.styles.Mark.Render("press ctrl+d again to quit") + "\n")
 	}
-	if n := len(m.pendingImages) + btoi(len(m.pendingImage) > 0); n > 0 {
+	n := len(m.pendingImages)
+	if len(m.pendingImage) > 0 {
+		n++
+	}
+	if n > 0 {
 		above.WriteString(" " + m.styles.Dim.Render(fmt.Sprintf("%d image(s) staged, submit to attach", n)) + "\n")
 	}
 	if m.palette.Active {
@@ -137,11 +137,4 @@ func (m Model) hints(pairs [][2]string) string {
 func (m Model) pickerOpen() bool {
 	return m.palette.Active || m.atpicker.Active || m.history.Active ||
 		(m.picker != nil && m.picker.Active())
-}
-
-func btoi(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }

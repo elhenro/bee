@@ -166,10 +166,7 @@ func (r *StreamRenderer) ClipStreamingTail(rendered string, maxRows int) string 
 	}
 	// reserve 1 row for the `… +N above` header so the indicator never
 	// pushes the tail off the bottom.
-	keep := maxRows - 1
-	if keep < 1 {
-		keep = 1
-	}
+	keep := max(maxRows-1, 1)
 	hidden := len(lines) - keep
 	kept := lines[len(lines)-keep:]
 	header := r.styles.Dim.Render(fmt.Sprintf("… +%d lines above", hidden))

@@ -13,7 +13,7 @@ import (
 
 // renderWindowTabs shows the time-window selector with the active one boxed.
 func renderWindowTabs(active int) string {
-	on := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
+	on := StyleActive
 	off := lipgloss.NewStyle().Foreground(fgOyster)
 	parts := make([]string, 0, len(winLabels))
 	for i, lbl := range winLabels {
@@ -28,10 +28,9 @@ func renderWindowTabs(active int) string {
 
 // renderUsageHeadline draws the summary line: total tokens, cost, calls, window.
 func renderUsageHeadline(s cost.Summary, label string) string {
-	tok := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).
-		Render(humanTokens(s.Input+s.Output) + " tokens")
+	tok := StyleActive.Render(humanTokens(s.Input+s.Output) + " tokens")
 	rest := lipgloss.NewStyle().Foreground(fgSmoke).
-		Render(fmt.Sprintf("  ·  %s  ·  %d calls", fmtUSD(s.USD), s.Calls))
+		Render(fmt.Sprintf("  ·  %s  ·  %d calls", formatUSD(s.USD), s.Calls))
 	win := lipgloss.NewStyle().Foreground(fgOyster).Render("  (" + label + ")")
 	return tok + rest + win
 }
@@ -65,8 +64,7 @@ func renderProviderBars(w cost.UsageWindow, inner int) string {
 	txt := lipgloss.NewStyle().Foreground(fgAsh)
 
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render("by provider"))
-	b.WriteString("\n")
+	b.WriteString(sectionHead("by provider"))
 	for _, k := range keys {
 		s := w.ByProvider[k]
 		tk := tokensOf(s)
@@ -74,13 +72,12 @@ func renderProviderBars(w cost.UsageWindow, inner int) string {
 		if total > 0 {
 			frac = float64(tk) / float64(total)
 		}
-		line := txt.Render(fmt.Sprintf("  %-*s ", nameW, truncateRune(k, nameW)))
+		line := txt.Render(fmt.Sprintf("  %-*s ", nameW, truncateRunes(k, nameW)))
 		if showBar {
 			line += usageBar(frac, barW)
 		}
 		line += txt.Render(fmt.Sprintf(" %7s  %8s  %3.0f%%", humanTokens(tk), usageCost(k, s.USD), frac*100))
-		b.WriteString(line)
-		b.WriteString("\n")
+		b.WriteString(line + "\n")
 	}
 	return b.String()
 }
@@ -100,18 +97,16 @@ func renderModelRows(m map[string]cost.Summary, inner int) string {
 	txt := lipgloss.NewStyle().Foreground(fgAsh)
 
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render("by model"))
-	b.WriteString("\n")
+	b.WriteString(sectionHead("by model"))
 	for _, k := range keys {
 		s := m[k]
 		c := "—"
 		if s.USD > 0 {
-			c = fmtUSD(s.USD)
+			c = formatUSD(s.USD)
 		}
 		row := fmt.Sprintf("  %-*s  %8s  in %7s  out %7s",
-			nameW, truncateRune(k, nameW), c, humanTokens(s.Input), humanTokens(s.Output))
-		b.WriteString(txt.Render(row))
-		b.WriteString("\n")
+			nameW, truncateRunes(k, nameW), c, humanTokens(s.Input), humanTokens(s.Output))
+		b.WriteString(txt.Render(row) + "\n")
 	}
 	return b.String()
 }
@@ -121,15 +116,12 @@ func renderModelRows(m map[string]cost.Summary, inner int) string {
 func renderUsageFallback(t *cost.Tracker, inner int) string {
 	var b strings.Builder
 	if li, lo := cost.LifetimeTotals(); li+lo > 0 {
-		head := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).
-			Render(humanTokens(int(li+lo)) + " tokens")
+		head := StyleActive.Render(humanTokens(int(li+lo)) + " tokens")
 		sub := lipgloss.NewStyle().Foreground(fgSmoke).
 			Render(fmt.Sprintf("  ·  in %s  out %s  (lifetime)", humanTokens(int(li)), humanTokens(int(lo))))
-		b.WriteString(head + sub)
-		b.WriteString("\n")
+		b.WriteString(head + sub + "\n")
 	}
-	b.WriteString(StyleLabel.Render("  no per-call history yet — recording starts now"))
-	b.WriteString("\n")
+	b.WriteString(StyleLabel.Render("  no per-call history yet — recording starts now") + "\n")
 	if t != nil && t.Total().Calls > 0 {
 		b.WriteString("\n")
 		b.WriteString(renderModelRows(t.ByModel(), inner))
@@ -139,13 +131,8 @@ func renderUsageFallback(t *cost.Tracker, inner int) string {
 
 // usageBar renders a width-w horizontal bar filled to frac.
 func usageBar(frac float64, w int) string {
-	if w < 1 {
-		w = 1
-	}
-	f := int(frac*float64(w) + 0.5)
-	if f > w {
-		f = w
-	}
+	w = max(w, 1)
+	f := min(int(frac*float64(w)+0.5), w)
 	if frac > 0 && f == 0 {
 		f = 1
 	}
@@ -163,7 +150,7 @@ func usageCost(provider string, usd float64) string {
 	if usd <= 0 {
 		return "—"
 	}
-	return fmtUSD(usd)
+	return formatUSD(usd)
 }
 
 func tokensOf(s cost.Summary) int { return s.Input + s.Output }

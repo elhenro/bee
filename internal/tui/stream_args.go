@@ -3,12 +3,15 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
 // summarizeArgs renders the tool input map as a single-line, truncated
@@ -30,23 +33,14 @@ func summarizeArgs(in map[string]any, budget int) string {
 // row is stable across renders. Strings with spaces are quoted; everything
 // else goes through json so booleans, numbers and nested values stay legible.
 func formatKV(in map[string]any) string {
-	keys := make([]string, 0, len(in))
-	for k := range in {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		var v string
-		switch x := in[k].(type) {
-		case string:
-			v = x
-			if strings.ContainsAny(v, " \t") {
-				v = strconv.Quote(v)
-			}
-		default:
-			b, err := json.Marshal(x)
-			if err != nil {
+	var parts []string
+	for _, k := range slices.Sorted(maps.Keys(in)) {
+		v, isStr := in[k].(string)
+		switch {
+		case isStr && strings.ContainsAny(v, " \t"):
+			v = strconv.Quote(v)
+		case !isStr:
+			if b, err := json.Marshal(in[k]); err != nil {
 				v = "?"
 			} else {
 				v = string(b)
@@ -62,16 +56,12 @@ func formatKV(in map[string]any) string {
 // summary path so grep-style `{glob, path}` calls don't blow tool-card width
 // with /Users/<name>/projects/<repo>/... repeated on every render.
 func shortenPathishValues(in map[string]any) map[string]any {
-	pathish := map[string]bool{"path": true, "file_path": true}
 	out := make(map[string]any, len(in))
 	for k, v := range in {
-		if pathish[k] {
-			if s, ok := v.(string); ok {
-				out[k] = shortenPath(s)
-				continue
-			}
-		}
 		out[k] = v
+		if s, ok := v.(string); ok && (k == "path" || k == "file_path") {
+			out[k] = shortenPath(s)
+		}
 	}
 	return out
 }
@@ -85,38 +75,32 @@ func summarizeSingleKey(in map[string]any) (string, bool) {
 	if len(in) != 1 {
 		return "", false
 	}
-	primary := map[string]bool{
-		"path": true, "pattern": true, "cmd": true, "command": true,
-		"name": true, "query": true, "file_path": true, "regex": true,
-	}
-	pathish := map[string]bool{"path": true, "file_path": true}
-	// pathBearing keys hold free-form text that may *embed* absolute paths
-	// (e.g. `cmd: cd /Users/.../bee && go test`). Inline-shorten those so
-	// the tool card doesn't waste 30 chars on the home prefix every render.
-	pathBearing := map[string]bool{"cmd": true, "command": true}
 	for k, v := range in {
-		if !primary[k] {
+		if !primaryArgKeys[k] {
 			return "", false
 		}
-		switch x := v.(type) {
-		case string:
-			val := x
-			switch {
-			case pathish[k]:
-				val = shortenPath(val)
-			case pathBearing[k]:
-				val = shortenPathsInline(val)
-			}
-			return val, true
-		default:
-			b, err := json.Marshal(x)
-			if err != nil {
-				return "", false
-			}
-			return string(b), true
+		s, isStr := v.(string)
+		if !isStr {
+			b, err := json.Marshal(v)
+			return string(b), err == nil
 		}
+		switch k {
+		case "path", "file_path":
+			return shortenPath(s), true
+		case "cmd", "command":
+			// free-form text that may *embed* absolute paths (e.g. `cmd: cd
+			// /Users/.../bee && go test`): inline-shorten so the tool card
+			// doesn't waste 30 chars on the home prefix every render
+			return shortenPathsInline(s), true
+		}
+		return s, true
 	}
 	return "", false
+}
+
+var primaryArgKeys = map[string]bool{
+	"path": true, "pattern": true, "cmd": true, "command": true,
+	"name": true, "query": true, "file_path": true, "regex": true,
 }
 
 // pathRoots caches cwd + home once so summarizeArgs stays allocation-light
@@ -150,13 +134,30 @@ func shortenPathsInline(s string) string {
 	pathRootsOnce.Do(initPathRoots)
 	if cachedCwd != "" {
 		s = strings.ReplaceAll(s, cachedCwd+string(filepath.Separator), "")
-		s = strings.ReplaceAll(s, cachedCwd, ".")
+		s = replaceRoot(s, cachedCwd, ".")
 	}
 	if cachedHome != "" {
 		s = strings.ReplaceAll(s, cachedHome+string(filepath.Separator), "~"+string(filepath.Separator))
-		s = strings.ReplaceAll(s, cachedHome, "~")
+		s = replaceRoot(s, cachedHome, "~")
 	}
 	return s
+}
+
+// replaceRoot swaps root for repl where it ends a path element, so a sibling
+// such as root-new keeps its name.
+func replaceRoot(s, root, repl string) string {
+	parts := strings.Split(s, root)
+	out := parts[0]
+	for _, p := range parts[1:] {
+		r, _ := utf8.DecodeRuneInString(p)
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			out += root
+		} else {
+			out += repl
+		}
+		out += p
+	}
+	return out
 }
 
 // humanBytes formats n as a short decimal-prefixed size ("812 B", "2.4 KB",

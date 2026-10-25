@@ -41,15 +41,14 @@ func (r *StreamRenderer) RenderMessage(m types.Message) string {
 
 	switch m.Role {
 	case types.RoleUser:
+		r.afterTool = false
 		if note, ok := userNoticeText(m); ok {
-			r.afterTool = false
 			return r.frame(r.renderNotice(note), false, false)
 		}
 		body := m.Display
 		if body == "" {
 			body = joinText(m)
 		}
-		r.afterTool = false
 		return r.frame(r.renderUser(body), true, false)
 	case types.RoleAssistant:
 		if note, ok := noticeText(m); ok {

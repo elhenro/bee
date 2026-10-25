@@ -18,10 +18,7 @@ var spinnerVerbs = [...]string{
 const interruptHint = "esc to interrupt"
 
 func (r *StreamRenderer) spinnerVerb() string {
-	seed := r.loaderStats.Seed
-	if seed < 0 {
-		seed = -seed
-	}
+	seed := max(r.loaderStats.Seed, -r.loaderStats.Seed)
 	return spinnerVerbs[seed%int64(len(spinnerVerbs))]
 }
 
@@ -46,9 +43,7 @@ type spinnerChip struct {
 // RenderSpinner with a custom label and hint (compaction, handoff). figures
 // that don't fit are dropped whole, never cut mid-item
 func (r *StreamRenderer) RenderSpinnerLabel(frame int, label string, elapsed time.Duration, hint string) string {
-	if frame < 0 {
-		frame = -frame
-	}
+	frame = max(frame, -frame)
 	glyph := glyphBee
 	if r.showLoader {
 		// two bees, phase-offset. dance form tracks stream health: round

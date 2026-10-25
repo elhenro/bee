@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
@@ -203,12 +204,9 @@ func (r *StreamRenderer) SetCompact(v bool) {
 func (r *StreamRenderer) argsBudget(toolName string) int {
 	// gutter + bullet + space + two-space gap + right margin
 	const overhead = 6
-	b := r.width - overhead - len(toolTitle(toolName))
-	if b < argsSummaryCompact {
-		b = argsSummaryCompact
-	}
-	if r.verbose && b < argsSummaryVerbose {
-		b = argsSummaryVerbose
+	b := max(r.width-overhead-len(toolTitle(toolName)), argsSummaryCompact)
+	if r.verbose {
+		b = max(b, argsSummaryVerbose)
 	}
 	return b
 }
@@ -225,8 +223,8 @@ func (r *StreamRenderer) RenderMessageDetail(m types.Message, full bool) string 
 }
 
 // NewStreamRenderer builds a renderer. width is the wrap target; pass 0 for
-// glamour's default (80). Loader style is taken from BEE_LOADER (swarm /
-// comb / dance / drip); unset / "random" → random pick at construction.
+// glamour's default (80). Loader style is taken from BEE_LOADER (see
+// ParseLoaderStyle); unset → the busy-row spinner, "random" → random pick.
 func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 	if width <= 0 {
 		width = 80
@@ -243,6 +241,6 @@ func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 		showThoughts: true,
 		highlight:    true,
 		showLoader:   true,
-		loaderStyle:  ParseLoaderStyle(envLoaderStyle()),
+		loaderStyle:  ParseLoaderStyle(os.Getenv("BEE_LOADER")),
 	}
 }

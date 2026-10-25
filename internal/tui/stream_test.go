@@ -504,6 +504,31 @@ func TestShortenPath(t *testing.T) {
 	}
 }
 
+func TestShortenPathsInline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses POSIX paths")
+	}
+	pathRootsOnce.Do(func() {})
+	cachedCwd = "/Users/x/projects/bee"
+	cachedHome = "/Users/x"
+	defer func() { cachedCwd = ""; cachedHome = "" }()
+	cases := []struct{ in, want string }{
+		{"cd /Users/x/projects/bee && go test", "cd . && go test"},
+		{"cat /Users/x/projects/bee/main.go", "cat main.go"},
+		{"ls /Users/x/.config", "ls ~/.config"},
+		{"wrote /Users/x/projects/bee", "wrote ."},
+		// a sibling that merely starts with the root keeps its name
+		{"cd /Users/x/projects/bee-new", "cd ~/projects/bee-new"},
+		{"cd /Users/xavier/work", "cd /Users/xavier/work"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := shortenPathsInline(c.in); got != c.want {
+			t.Errorf("shortenPathsInline(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestRenderStreaming_EmptyShowsPlaceholder(t *testing.T) {
 	// empty partial → loader animation row. swarm phase-0 emits braille
 	// glyphs; no leading ⬢ since the animation alone signals activity.

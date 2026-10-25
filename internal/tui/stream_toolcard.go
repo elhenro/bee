@@ -2,10 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/elhenro/bee/internal/tools/read"
@@ -139,7 +137,7 @@ func (r *StreamRenderer) pairedToolResult(res types.ToolResult) string {
 	if diff != "" {
 		out += diff + "\n"
 	}
-	if body := r.resultBody(use, true, res, v); body != "" {
+	if body := r.resultBody(use, res, v); body != "" {
 		out += body + "\n"
 	}
 	return out
@@ -147,9 +145,8 @@ func (r *StreamRenderer) pairedToolResult(res types.ToolResult) string {
 
 // just the result rows
 func (r *StreamRenderer) renderToolResult(res types.ToolResult) string {
-	use, ok := r.toolUses[res.UseID]
-	v := r.viewResult(use, res)
-	body := r.resultBody(use, ok, res, v)
+	use := r.toolUses[res.UseID]
+	body := r.resultBody(use, res, r.viewResult(use, res))
 	if body == "" {
 		return ""
 	}
@@ -214,11 +211,8 @@ func (r *StreamRenderer) previewRows(name string, isErr bool) int {
 
 // rows hanging off a call; edit successes return "" (the diff says it all,
 // the text is model-only bookkeeping)
-func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.ToolResult, v resultView) string {
-	if haveUse && !res.IsError && isEditTool(use.Name) {
-		return ""
-	}
-	if len(v.lines) == 0 {
+func (r *StreamRenderer) resultBody(use types.ToolUse, res types.ToolResult, v resultView) string {
+	if len(v.lines) == 0 || !res.IsError && isEditTool(use.Name) {
 		return ""
 	}
 	style := r.styles.ToolPrev
@@ -229,30 +223,20 @@ func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.T
 		style = r.styles.Error
 	}
 	n := r.previewRows(use.Name, res.IsError)
-	if n == 0 && haveUse && use.Name == "read" && len(v.lines) == 1 && strings.HasPrefix(v.lines[0], read.NotePrefix) {
+	if n == 0 && use.Name == "read" && len(v.lines) == 1 && strings.HasPrefix(v.lines[0], read.NotePrefix) {
 		n = 1 // an attached picture names itself, a line count would not
 	}
-	w := r.textWidth(resultIndent)
-
 	var rows []string
-	switch {
-	case n == 0:
+	if n == 0 {
 		rows = []string{style.Render(readSummary(len(v.lines), v.total))}
-	default:
+	} else {
 		shown := v.lines
-		if n > 0 && len(shown) > n {
-			shown = shown[:n]
+		if n > 0 {
+			shown = shown[:min(n, len(shown))]
 		}
-		hl := r.readHighlighter(use, haveUse, res)
+		styleRow, w := r.rowStyler(use, res, style), r.textWidth(resultIndent)
 		for _, ln := range shown {
-			ln = shortenPathsInline(ln)
-			row := style.Render(ln)
-			switch {
-			case hl != nil:
-				row = hl(ln)
-			case haveUse && use.Name == "search" && !res.IsError:
-				row = r.searchRow(ln)
-			}
+			row := styleRow(shortenPathsInline(ln))
 			if r.verbose {
 				rows = append(rows, strings.Split(wrapText(row, w), "\n")...)
 			} else {
@@ -261,56 +245,8 @@ func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.T
 		}
 		if hidden := len(v.lines) - len(shown); hidden > 0 {
 			r.clipped = true
-			more := fmt.Sprintf("%s +%d lines", glyphMore, hidden)
-			if v.total >= 1000 {
-				more += " " + glyphSep + " " + humanBytes(v.total)
-			}
-			rows = append(rows, r.styles.Dim.Render(more))
+			rows = append(rows, r.styles.Dim.Render(withSize(fmt.Sprintf("%s +%d lines", glyphMore, hidden), v.total)))
 		}
 	}
 	return hang(strings.Join(rows, "\n"), r.connector(), strings.Repeat(" ", resultIndent))
-}
-
-var searchHit = regexp.MustCompile(`^(\S+?:\d+:)(.*)$`)
-
-// `path:line:` stays subtle, the matched text steps up to the secondary tone
-func (r *StreamRenderer) searchRow(ln string) string {
-	m := searchHit.FindStringSubmatch(ln)
-	if m == nil {
-		return r.styles.ToolPrev.Render(ln)
-	}
-	return r.styles.ToolPrev.Render(m[1]) + lipgloss.NewStyle().Foreground(fgSmoke).Render(m[2])
-}
-
-// the one-row digest a file read collapses to
-func readSummary(lines, bytes int) string {
-	s := fmt.Sprintf("%d lines", lines)
-	if lines == 1 {
-		s = "1 line"
-	}
-	if bytes >= 1000 {
-		s += " " + glyphSep + " " + humanBytes(bytes)
-	}
-	return s
-}
-
-// per-row highlighter for verbose reads (nil otherwise), lexer from the path
-func (r *StreamRenderer) readHighlighter(use types.ToolUse, haveUse bool, res types.ToolResult) func(string) string {
-	if !r.verbose || !r.highlight || res.IsError || !haveUse || use.Name != "read" {
-		return nil
-	}
-	path, _ := use.Input["path"].(string)
-	if path == "" {
-		return nil
-	}
-	return func(s string) string { return r.hl(s, path) }
-}
-
-// file-mutation tools whose call card carries a diff
-func isEditTool(name string) bool {
-	switch name {
-	case "edit", "hashline_edit", "apply_patch", "write":
-		return true
-	}
-	return false
 }

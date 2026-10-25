@@ -10,18 +10,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Hex glyphs (PLAN §8b.1) and honey palette.
+// Hex glyphs (PLAN §8b.1).
 const (
-	HexFilled      = "⬢"
-	HexHollow      = "⬢"
-	ColorHoneyGold = "#F2B233"
-	ColorAmber     = "#E08A1E"
-	ColorDim       = "#5F5F5F"
-	ColorAccent    = "#FFE066"
-	ColorDanger    = "#D9534F"
-	ColorAddFg     = "#7FBF6B"
-	ColorDelFg     = "#D9534F"
-	ColorMuted     = "#888888"
+	HexFilled = "⬢"
+	HexHollow = "⬢"
 )
 
 // Pre-built styles. Public so 3A may compose without redefining.
@@ -54,24 +46,20 @@ func HexRow(states []BeeState, names []string, width int) string {
 	return out
 }
 
-type cellLook struct {
-	glyph string
-	style lipgloss.Style
-}
-
-var cellLooks = map[BeeState]cellLook{
-	Active: {HexFilled, StyleActive}, Awaiting: {HexFilled, StyleAwaiting},
-	Idle: {HexHollow, StyleIdle}, Done: {HexHollow, StyleDone},
-	Failed: {HexFilled, StyleFailed},
-}
-
 func renderCell(st BeeState, name string) string {
-	look := cellLooks[st]
-	if look.glyph == "" {
-		look = cellLooks[Active]
+	style, glyph := StyleActive, HexFilled
+	switch st {
+	case Awaiting:
+		style = StyleAwaiting
+	case Idle:
+		style, glyph = StyleIdle, HexHollow
+	case Done:
+		style, glyph = StyleDone, HexHollow
+	case Failed:
+		style = StyleFailed
 	}
-	if name == "" {
-		return look.style.Render(look.glyph)
+	if name != "" {
+		glyph += " " + name
 	}
-	return look.style.Render(look.glyph + " " + name)
+	return style.Render(glyph)
 }

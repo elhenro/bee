@@ -164,12 +164,11 @@ const gitBranchTTL = 5 * time.Second
 func gitBranch(cwd string) string {
 	now := time.Now()
 	gitBranchMu.Lock()
-	if e, ok := gitBranchCache[cwd]; ok && now.Sub(e.at) < gitBranchTTL {
-		br := e.branch
-		gitBranchMu.Unlock()
-		return br
-	}
+	e, ok := gitBranchCache[cwd]
 	gitBranchMu.Unlock()
+	if ok && now.Sub(e.at) < gitBranchTTL {
+		return e.branch
+	}
 	br := gitBranchUncached(cwd)
 	gitBranchMu.Lock()
 	gitBranchCache[cwd] = gitBranchEntry{branch: br, at: now}
@@ -197,15 +196,14 @@ func gitBranchUncached(cwd string) string {
 				if err != nil {
 					return ""
 				}
-				line := strings.TrimSpace(string(b))
-				if !strings.HasPrefix(line, "gitdir: ") {
+				gd, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir: ")
+				if !ok {
 					return ""
 				}
-				gd := strings.TrimPrefix(line, "gitdir: ")
-				if !filepath.IsAbs(gd) {
-					gd = filepath.Join(dir, gd)
-				}
 				gitDir = gd
+				if !filepath.IsAbs(gd) {
+					gitDir = filepath.Join(dir, gd)
+				}
 			}
 			head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
 			if err != nil {
@@ -215,10 +213,7 @@ func gitBranchUncached(cwd string) string {
 			if rest, ok := strings.CutPrefix(s, "ref: refs/heads/"); ok {
 				return rest
 			}
-			if len(s) >= 7 {
-				return s[:7]
-			}
-			return s
+			return s[:min(len(s), 7)]
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {

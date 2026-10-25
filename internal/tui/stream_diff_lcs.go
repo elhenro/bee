@@ -1,6 +1,9 @@
 package tui
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // editOp is one step in a line-level diff: kind ∈ {'=','+','-','~'} where
 // '~' marks a synthetic gap line ("⋯ +K unchanged") emitted by the
@@ -27,47 +30,24 @@ func lineDiff(a, b []string) []editOp {
 	if n == 0 && m == 0 {
 		return nil
 	}
-	if n*m > diffMaxCells {
-		out := make([]editOp, 0, n+m)
-		for _, l := range a {
-			out = append(out, editOp{kind: '-', text: l})
-		}
-		for _, l := range b {
-			out = append(out, editOp{kind: '+', text: l})
-		}
-		return out
-	}
-	dp := make([][]int, n+1)
-	for i := range dp {
-		dp[i] = make([]int, m+1)
-	}
-	for i := n - 1; i >= 0; i-- {
-		for j := m - 1; j >= 0; j-- {
-			if a[i] == b[j] {
-				dp[i][j] = dp[i+1][j+1] + 1
-				continue
-			}
-			if dp[i+1][j] >= dp[i][j+1] {
-				dp[i][j] = dp[i+1][j]
-			} else {
-				dp[i][j] = dp[i][j+1]
-			}
-		}
-	}
 	out := make([]editOp, 0, n+m)
 	i, j := 0, 0
-	for i < n && j < m {
-		switch {
-		case a[i] == b[j]:
-			out = append(out, editOp{kind: '=', text: a[i]})
-			i++
-			j++
-		case dp[i+1][j] >= dp[i][j+1]:
-			out = append(out, editOp{kind: '-', text: a[i]})
-			i++
-		default:
-			out = append(out, editOp{kind: '+', text: b[j]})
-			j++
+	// past the cap only the tail loops below run: all dels, then all adds
+	if n*m <= diffMaxCells {
+		dp := lcsTable(a, b)
+		for i < n && j < m {
+			switch {
+			case a[i] == b[j]:
+				out = append(out, editOp{kind: '=', text: a[i]})
+				i++
+				j++
+			case dp[i+1][j] >= dp[i][j+1]:
+				out = append(out, editOp{kind: '-', text: a[i]})
+				i++
+			default:
+				out = append(out, editOp{kind: '+', text: b[j]})
+				j++
+			}
 		}
 	}
 	for ; i < n; i++ {
@@ -77,6 +57,24 @@ func lineDiff(a, b []string) []editOp {
 		out = append(out, editOp{kind: '+', text: b[j]})
 	}
 	return out
+}
+
+// lcsTable[i][j] is the longest common subsequence length of a[i:] and b[j:]
+func lcsTable(a, b []string) [][]int {
+	dp := make([][]int, len(a)+1)
+	for i := range dp {
+		dp[i] = make([]int, len(b)+1)
+	}
+	for i := len(a) - 1; i >= 0; i-- {
+		for j := len(b) - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				dp[i][j] = dp[i+1][j+1] + 1
+			} else {
+				dp[i][j] = max(dp[i+1][j], dp[i][j+1])
+			}
+		}
+	}
+	return dp
 }
 
 // numberOps stamps ops with line numbers counted up from start, the file line
@@ -117,53 +115,36 @@ func countDiffOps(ops []editOp) (adds, dels int) {
 // marker. Mirrors `git diff -U<ctx>` behaviour but cheaper since we just
 // rewrite the op stream.
 func collapseToHunks(ops []editOp, ctx int) []editOp {
-	if len(ops) == 0 {
-		return ops
-	}
-	type span struct{ lo, hi int }
-	var changes []span
-	i := 0
-	for i < len(ops) {
-		if ops[i].kind == '=' {
-			i++
-			continue
-		}
-		j := i
-		for j < len(ops) && ops[j].kind != '=' {
-			j++
-		}
-		changes = append(changes, span{i, j})
-		i = j
-	}
-	if len(changes) == 0 {
+	if !slices.ContainsFunc(ops, func(o editOp) bool { return o.kind != '=' }) {
 		return nil
 	}
-	out := make([]editOp, 0, len(ops))
-	prevEnd := 0
-	for idx, c := range changes {
-		gap := ops[prevEnd:c.lo]
-		switch {
-		case idx == 0 && len(gap) > ctx:
-			hidden := len(gap) - ctx
-			out = append(out, editOp{kind: '~', text: fmt.Sprintf("+%d unchanged above", hidden)})
-			gap = gap[len(gap)-ctx:]
-		case idx > 0 && len(gap) > 2*ctx:
-			hidden := len(gap) - 2*ctx
-			out = append(out, gap[:ctx]...)
-			out = append(out, editOp{kind: '~', text: fmt.Sprintf("+%d unchanged", hidden)})
-			gap = gap[len(gap)-ctx:]
-		}
-		out = append(out, gap...)
-		out = append(out, ops[c.lo:c.hi]...)
-		prevEnd = c.hi
+	gap := func(hidden int, where string) editOp {
+		return editOp{kind: '~', text: fmt.Sprintf("+%d unchanged%s", hidden, where)}
 	}
-	tail := ops[prevEnd:]
-	if len(tail) > ctx {
-		hidden := len(tail) - ctx
-		out = append(out, tail[:ctx]...)
-		out = append(out, editOp{kind: '~', text: fmt.Sprintf("+%d unchanged below", hidden)})
-	} else {
-		out = append(out, tail...)
+	var out []editOp
+	for i := 0; i < len(ops); {
+		j := i
+		for j < len(ops) && (ops[j].kind == '=') == (ops[i].kind == '=') {
+			j++
+		}
+		run := ops[i:j]
+		switch {
+		case ops[i].kind != '=':
+			out = append(out, run...)
+		case i == 0 && len(run) > ctx: // context above the first change
+			out = append(out, gap(len(run)-ctx, " above"))
+			out = append(out, run[len(run)-ctx:]...)
+		case j == len(ops) && len(run) > ctx: // context below the last one
+			out = append(out, run[:ctx]...)
+			out = append(out, gap(len(run)-ctx, " below"))
+		case i > 0 && j < len(ops) && len(run) > 2*ctx: // between two changes
+			out = append(out, run[:ctx]...)
+			out = append(out, gap(len(run)-2*ctx, ""))
+			out = append(out, run[len(run)-ctx:]...)
+		default:
+			out = append(out, run...)
+		}
+		i = j
 	}
 	return out
 }

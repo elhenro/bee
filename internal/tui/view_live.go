@@ -52,12 +52,8 @@ func (m Model) loaderStatsNow() LoaderStats {
 		in = m.costs.LastInput()
 		// queen/hive runs on sub-engines, so no deltas bump turnOutChars;
 		// fall back to the tracker's output so the figure isn't stuck at 0
-		if d := m.costs.Total().Output - m.turnStartOutput; d > outTok {
-			outTok = d
-		}
-		if d := m.costs.Total().Output - m.turnStartOutput; d > outChars {
-			outChars = d
-		}
+		d := m.costs.Total().Output - m.turnStartOutput
+		outTok, outChars = max(outTok, d), max(outChars, d)
 	}
 	return LoaderStats{
 		InTokens:  in,
@@ -115,10 +111,7 @@ func (m Model) renderStreamingParts(maxRows int) []string {
 		return append(parts, m.renderLegacyLoader(visible, maxRows))
 	}
 
-	pending := ""
-	if len(m.pendingTools) > 0 {
-		pending = m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame)
-	}
+	pending := m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame)
 	if text := m.stream.RenderStreaming(visible, m.loaderFrame); text != "" {
 		if clip := maxRows - m.busyRows() - thinkRows; maxRows > 0 && clip > 0 {
 			text = m.stream.ClipStreamingTail(text, clip)

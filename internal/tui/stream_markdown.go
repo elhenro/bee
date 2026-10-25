@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -60,55 +61,31 @@ func trimBlankLines(s string) string {
 // emphasis. Catches prose that benefits from glamour; lets bare chat replies
 // through untouched so a "yo." doesn't get framed in document margins.
 func needsMarkdown(s string) bool {
-	if strings.Contains(s, "```") || strings.Contains(s, "`") {
-		return true
-	}
-	if strings.Contains(s, "**") || strings.Contains(s, "__") {
-		return true
-	}
-	// inline link: [text](url) — cheap substring check covers the
-	// well-formed case; false positives on prose are harmless.
-	if strings.Contains(s, "](") {
-		return true
+	// "](" is an inline link: a cheap substring check covers the well-formed
+	// case; false positives on prose are harmless.
+	for _, marker := range []string{"`", "**", "__", "]("} {
+		if strings.Contains(s, marker) {
+			return true
+		}
 	}
 	for _, ln := range strings.Split(s, "\n") {
 		t := strings.TrimLeft(ln, " \t")
 		if t == "" {
 			continue
 		}
-		switch t[0] {
-		case '#', '>', '-', '*', '|':
+		if strings.IndexByte("#>-*|", t[0]) >= 0 || numberedItem.MatchString(t) {
 			return true
 		}
-		// numbered list: `1. `, `12. ` — digits then `. ` or `) `.
-		if t[0] >= '0' && t[0] <= '9' {
-			i := 0
-			for i < len(t) && t[i] >= '0' && t[i] <= '9' {
-				i++
-			}
-			if i < len(t)-1 && (t[i] == '.' || t[i] == ')') && t[i+1] == ' ' {
-				return true
-			}
-		}
-		// horizontal rule: --- *** ___
-		if len(t) >= 3 {
-			c := t[0]
-			if c == '-' || c == '*' || c == '_' {
-				all := true
-				for j := 0; j < len(t); j++ {
-					if t[j] != c && t[j] != ' ' {
-						all = false
-						break
-					}
-				}
-				if all {
-					return true
-				}
-			}
+		// horizontal rule of underscores; --- and *** matched above
+		if t[0] == '_' && len(t) >= 3 && strings.Trim(t, "_ ") == "" {
+			return true
 		}
 	}
 	return false
 }
+
+// numbered list item: `1. `, `12) `
+var numberedItem = regexp.MustCompile(`^[0-9]+[.)] `)
 
 // rewriteShellSessionFences swaps ```bash/```sh/```shell fence tags to
 // ```console when the block's first non-empty line starts with a `$ ` or
@@ -159,32 +136,40 @@ func rewriteShellSessionFences(s string) string {
 // look like junk in our compact layout.
 func dedent(s string) string {
 	lines := strings.Split(s, "\n")
-	// dedent leading spaces uses *visible* leading width; ANSI escapes
-	// inserted by glamour at the start of a line (e.g. color reset) must
-	// not count toward the indent. ansi.Strip via the surrounding pipeline
-	// is too aggressive — we still want the escapes preserved. So we strip
-	// in a working copy just for the measurement.
-	min := -1
+	// measure the indent on *visible* text: ANSI escapes glamour inserts at
+	// the start of a line (e.g. color reset) must not count toward it, yet
+	// stay in the output, so strip in a working copy just for the measurement
+	indent := -1
 	for _, l := range lines {
 		visible := ansi.Strip(l)
 		if strings.TrimSpace(visible) == "" {
 			continue
 		}
 		n := len(visible) - len(strings.TrimLeft(visible, " "))
-		if min < 0 || n < min {
-			min = n
+		if indent < 0 || n < indent {
+			indent = n
 		}
 	}
-	if min < 0 {
-		min = 0
-	}
 	for i, l := range lines {
-		if min > 0 {
-			l = stripLeadingSpacesPreservingANSI(l, min)
+		if indent > 0 {
+			l = stripLeadingSpacesPreservingANSI(l, indent)
 		}
 		lines[i] = trimTrailingVisibleSpaces(l)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// csiSeqEnd is the end of the CSI escape sequence starting at s[i] (up to its
+// terminator byte in 0x40-0x7e), or i when none starts there.
+func csiSeqEnd(s string, i int) int {
+	if s[i] != 0x1b || i+1 >= len(s) || s[i+1] != '[' {
+		return i
+	}
+	j := i + 2
+	for j < len(s) && (s[j] < 0x40 || s[j] > 0x7e) {
+		j++
+	}
+	return min(j+1, len(s))
 }
 
 // trimTrailingVisibleSpaces drops trailing whitespace from l even when the
@@ -192,66 +177,25 @@ func dedent(s string) string {
 // every line to the wrap width and emits `\x1b[38;5;252m \x1b[0m` per space,
 // so plain TrimRight sees `m` at the end and does nothing.
 //
-// Algorithm: split l into [span | visible] runs by scanning ANSI escapes.
-// Drop trailing runs whose visible content is empty or whitespace-only,
-// keeping the preceding ANSI escapes that bracket non-whitespace content.
+// Splits l into escape sequences and the visible runs between them, and cuts
+// after the last run holding a non-blank byte; that run is kept whole.
 func trimTrailingVisibleSpaces(l string) string {
-	if l == "" {
-		return l
-	}
-	// find offsets of each ANSI escape and the visible bytes between them.
-	type seg struct {
-		isAnsi bool
-		s, e   int // [s, e)
-	}
-	segs := make([]seg, 0, 16)
-	i := 0
-	for i < len(l) {
-		if l[i] == 0x1b && i+1 < len(l) && l[i+1] == '[' {
-			j := i + 2
-			for j < len(l) && (l[j] < 0x40 || l[j] > 0x7e) {
-				j++
-			}
-			if j < len(l) {
-				j++
-			}
-			segs = append(segs, seg{isAnsi: true, s: i, e: j})
+	keep := 0
+	for i := 0; i < len(l); {
+		if j := csiSeqEnd(l, i); j > i {
 			i = j
 			continue
 		}
-		// visible run until next ESC
-		j := i
-		for j < len(l) && l[j] != 0x1b {
+		j := i + 1
+		for j < len(l) && csiSeqEnd(l, j) == j {
 			j++
 		}
-		segs = append(segs, seg{isAnsi: false, s: i, e: j})
+		if strings.Trim(l[i:j], " \t") != "" {
+			keep = j
+		}
 		i = j
 	}
-	// walk from the end dropping visible runs that are blank-only; ansi
-	// runs between blanks are dropped too. Stop once we hit a non-blank
-	// visible run.
-	cut := len(l)
-	for k := len(segs) - 1; k >= 0; k-- {
-		sg := segs[k]
-		if sg.isAnsi {
-			cut = sg.s
-			continue
-		}
-		blank := true
-		for p := sg.s; p < sg.e; p++ {
-			if l[p] != ' ' && l[p] != '\t' {
-				blank = false
-				break
-			}
-		}
-		if blank {
-			cut = sg.s
-			continue
-		}
-		// keep this visible run intact
-		break
-	}
-	return l[:cut]
+	return l[:keep]
 }
 
 // stripLeadingSpacesPreservingANSI removes up to n visible leading spaces
@@ -259,34 +203,21 @@ func trimTrailingVisibleSpaces(l string) string {
 // reset before the document margin, so a naive l[n:] would slice mid-escape
 // and corrupt the rest of the line.
 func stripLeadingSpacesPreservingANSI(l string, n int) string {
-	if n <= 0 || l == "" {
-		return l
-	}
 	var b strings.Builder
 	b.Grow(len(l))
 	removed := 0
-	i := 0
-	for i < len(l) {
-		if l[i] == 0x1b && i+1 < len(l) && l[i+1] == '[' {
-			// copy through to terminator byte (alpha in 0x40-0x7e)
-			j := i + 2
-			for j < len(l) && (l[j] < 0x40 || l[j] > 0x7e) {
-				j++
-			}
-			if j < len(l) {
-				j++
-			}
+	for i := 0; i < len(l); {
+		if j := csiSeqEnd(l, i); j > i {
 			b.WriteString(l[i:j])
 			i = j
 			continue
 		}
-		if l[i] == ' ' && removed < n {
-			removed++
-			i++
-			continue
+		if l[i] != ' ' || removed >= n {
+			b.WriteString(l[i:])
+			break
 		}
-		b.WriteString(l[i:])
-		break
+		removed++
+		i++
 	}
 	return b.String()
 }

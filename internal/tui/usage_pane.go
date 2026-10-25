@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -92,44 +90,25 @@ func (u *UsagePane) View(width, height int) string {
 	if u == nil || !u.open {
 		return ""
 	}
-	title := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).Render("⬢ Usage overview")
+	head := StyleActive.Render("⬢ Usage overview") + "\n" + renderWindowTabs(u.window) + "\n\n"
 	inner := width - 6
 
-	var b strings.Builder
-	b.WriteString(title)
-	b.WriteString("\n")
-	b.WriteString(renderWindowTabs(u.window))
-	b.WriteString("\n\n")
-
 	if !u.loaded || u.win[winAll].Total.Calls == 0 {
-		b.WriteString(renderUsageFallback(u.tracker, inner))
-		b.WriteString("\n")
-		b.WriteString(StyleLabel.Render("esc close"))
-		return boxModal(b.String(), width)
+		return boxModal(head+renderUsageFallback(u.tracker, inner)+"\n"+StyleLabel.Render("esc close"), width)
 	}
 
 	w := u.win[u.window]
 	if w.Total.Calls == 0 {
-		b.WriteString(StyleLabel.Render("  (no usage in this window)"))
-		b.WriteString("\n\n")
-		b.WriteString(usageFooter())
-		return boxModal(b.String(), width)
+		return boxModal(head+StyleLabel.Render("  (no usage in this window)")+"\n\n"+usageFooter(), width)
 	}
 
-	b.WriteString(renderUsageHeadline(w.Total, winLabels[u.window]))
-	b.WriteString("\n")
+	body := renderUsageHeadline(w.Total, winLabels[u.window]) + "\n"
 	if inner >= 16 {
-		b.WriteString(renderUsageChart(w.Series, inner))
-		b.WriteString("\n")
+		body += renderUsageChart(w.Series, inner) + "\n"
 	}
-	b.WriteString("\n")
-	b.WriteString(renderProviderBars(w, inner))
-	b.WriteString("\n")
-	b.WriteString(renderModelRows(w.ByModel, inner))
+	body += "\n" + renderProviderBars(w, inner) + "\n" + renderModelRows(w.ByModel, inner)
 	if w.Estimated {
-		b.WriteString(lipgloss.NewStyle().Foreground(fgOyster).Italic(true).Render("  cost estimated from price table"))
-		b.WriteString("\n")
+		body += lipgloss.NewStyle().Foreground(fgOyster).Italic(true).Render("  cost estimated from price table") + "\n"
 	}
-	b.WriteString(usageFooter())
-	return boxModal(b.String(), width)
+	return boxModal(head+body+usageFooter(), width)
 }

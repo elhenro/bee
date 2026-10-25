@@ -30,12 +30,9 @@ const maxOuterPadLR = 8
 // Finalized messages flushed via tea.Println are NOT padded (this only
 // affects the View() return).
 func (m Model) padFrameLR(s string) string {
-	pad := m.outerPadLR
+	pad := min(m.outerPadLR, maxOuterPadLR)
 	if pad <= 0 || m.width <= 0 {
 		return s
-	}
-	if pad > maxOuterPadLR {
-		pad = maxOuterPadLR
 	}
 	inner := m.width - 2*pad
 	if inner < 1 {
@@ -43,18 +40,15 @@ func (m Model) padFrameLR(s string) string {
 		// whole row. Render as-is to keep at least one cell of content.
 		return s
 	}
-	left := strings.Repeat(" ", pad)
-	right := strings.Repeat(" ", pad)
+	margin := strings.Repeat(" ", pad)
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
 		// ANSI-aware trim. lipgloss.Width counts runes + escape codes
 		// correctly; we just chop visible runes off the right tail.
-		w := lipgloss.Width(line)
-		if w > inner {
-			lines[i] = left + truncateVisible(line, inner) + right
-		} else {
-			lines[i] = left + line + right
+		if lipgloss.Width(line) > inner {
+			line = truncateVisible(line, inner)
 		}
+		lines[i] = margin + line + margin
 	}
 	return strings.Join(lines, "\n")
 }

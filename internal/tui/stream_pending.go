@@ -14,9 +14,6 @@ const maxPendingRows = 8
 // in-flight calls: the `● Verb  args` a finished card opens with, bullet
 // pulsing honey. frame drives the pulse between deltas
 func (r *StreamRenderer) RenderPendingTools(uses []types.ToolUse, frame int) string {
-	if len(uses) == 0 {
-		return ""
-	}
 	r.pendingFrame = frame
 	lines := make([]string, 0, len(uses))
 	for _, u := range uses {

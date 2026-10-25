@@ -50,26 +50,15 @@ func (m Model) renderTurnTimer() string {
 // longer durations switch to compact M m S s / H h M m forms. Designed to
 // stay ≤7 chars so the top-bar slot doesn't push other chips around.
 func formatElapsed(d time.Duration) string {
-	if d <= 0 {
+	switch {
+	case d <= 0:
 		return "0.0s"
-	}
-	if d < time.Second {
+	case d < 10*time.Second:
 		return fmt.Sprintf("%.1fs", d.Seconds())
+	case d < time.Hour:
+		return formatClock(d)
 	}
-	if d < 10*time.Second {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		mins := int(d / time.Minute)
-		secs := int((d % time.Minute) / time.Second)
-		return fmt.Sprintf("%dm %02ds", mins, secs)
-	}
-	hrs := int(d / time.Hour)
-	mins := int((d % time.Hour) / time.Minute)
-	return fmt.Sprintf("%dh %02dm", hrs, mins)
+	return fmt.Sprintf("%dh %02dm", int(d/time.Hour), int((d%time.Hour)/time.Minute))
 }
 
 // formatElapsed without decimals, so a ticking row doesn't strobe

@@ -9,13 +9,8 @@ func windowRange(n, sel, maxRows int) rowRange {
 	if n <= maxRows {
 		return rowRange{0, n}
 	}
-	start := max(sel-maxRows/2, 0)
-	end := start + maxRows
-	if end > n {
-		end = n
-		start = end - maxRows
-	}
-	return rowRange{start, end}
+	start := min(max(sel-maxRows/2, 0), n-maxRows)
+	return rowRange{start, start + maxRows}
 }
 
 // paneRows is the row budget for a list inside a pane that spends chrome rows
