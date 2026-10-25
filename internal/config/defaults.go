@@ -212,8 +212,8 @@ func Defaults() Config {
 				ShowRecap: boolPtr(false),
 				// destructive-op approval keys bypass the session AllowSession
 				// cache — small models that hallucinate intents can't reuse one
-				// "yes" for the rest of the run. mirrors safety.DefaultsForProfile("tiny");
-				// kept inline so users can see what they're getting.
+				// "yes" for the rest of the run. kept inline so users can see what
+				// they're getting.
 				Safety: ProfileSafety{
 					RequireApprovalKeys: []string{
 						"rm-recursive",

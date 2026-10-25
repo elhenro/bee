@@ -64,7 +64,7 @@ type Profile struct {
 	// sandbox + approval config. Tiny profile defaults to requiring the user
 	// to re-confirm destructive ops even after AllowSession was granted, so
 	// a hallucinating small model can't piggyback on one "yes" to run more
-	// destructive commands later. See safety.DefaultsForProfile.
+	// destructive commands later.
 	Safety ProfileSafety `toml:"safety"`
 }
 
