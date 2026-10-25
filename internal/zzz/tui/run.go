@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"sync"
@@ -19,9 +20,7 @@ func (m *Model) Run() error {
 
 // Quit signals shutdown so any goroutines that still call Model.send()
 // no-op cleanly instead of panicking on a closed channel.
-func (m *Model) Quit() {
-	m.closeOne.Do(func() { close(m.closed) })
-}
+func (m *Model) Quit() { m.box.Close() }
 
 // EngineWriter returns a writer suitable for loop.Engine.Stdout. Engine
 // deltas land in the log panel as dim body text. Lines are emitted as they
@@ -48,7 +47,7 @@ func (e *engineSink) Write(p []byte) (int, error) {
 	defer e.mu.Unlock()
 	e.buf = append(e.buf, p...)
 	for {
-		i := indexByte(e.buf, '\n')
+		i := bytes.IndexByte(e.buf, '\n')
 		if i < 0 {
 			break
 		}
@@ -57,16 +56,7 @@ func (e *engineSink) Write(p []byte) (int, error) {
 		if line == "" {
 			continue
 		}
-		e.m.send(logMsg{level: "info", text: line})
+		e.m.box.Send(logMsg{level: "info", text: line})
 	}
 	return len(p), nil
-}
-
-func indexByte(b []byte, c byte) int {
-	for i, x := range b {
-		if x == c {
-			return i
-		}
-	}
-	return -1
 }

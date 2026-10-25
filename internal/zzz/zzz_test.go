@@ -2,7 +2,6 @@ package zzz
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -92,7 +91,7 @@ func TestCommitResetCycle(t *testing.T) {
 	if err := os.WriteFile(path, []byte("changed"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ResetHard(repo, ""); err != nil {
+	if err := ResetHard(repo); err != nil {
 		t.Fatalf("ResetHard: %v", err)
 	}
 	clean, _ = IsClean(repo)
@@ -126,9 +125,6 @@ func TestCreateBranchAndCurrent(t *testing.T) {
 	cur, err := CurrentBranch(repo)
 	if err != nil || cur != "zzz/test-1" {
 		t.Fatalf("want zzz/test-1, got %q (err=%v)", cur, err)
-	}
-	if !HasBranch(repo, "zzz/test-1") {
-		t.Fatal("HasBranch should report true for created branch")
 	}
 }
 
@@ -283,12 +279,4 @@ func TestNewIDFormat(t *testing.T) {
 	if !strings.Contains(id, "-") {
 		t.Errorf("NewID should contain '-': %q", id)
 	}
-}
-
-func TestStatusDisableSilent(t *testing.T) {
-	s := NewStatus(io.Discard)
-	s.Disable()
-	s.SetIter(3, 10)
-	s.SetTokens(TokenStat{Input: 100, Output: 50})
-	s.Println("hi") // should not panic
 }

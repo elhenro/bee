@@ -75,12 +75,6 @@ func CreateBranchAndSwitch(dir, name string) error {
 	return err
 }
 
-// HasBranch returns true when `name` exists locally.
-func HasBranch(dir, name string) bool {
-	_, err := gitRun(dir, "rev-parse", "--verify", "refs/heads/"+name)
-	return err == nil
-}
-
 // AddAll stages everything.
 func AddAll(dir string) error {
 	_, err := gitRun(dir, "add", "-A")
@@ -91,7 +85,7 @@ func AddAll(dir string) error {
 // command is invoked with overrides that disable any configured signing —
 // the run does NOT touch the user's git config. Returns the new short sha.
 func Commit(dir, msg string, sign, noVerify bool) (string, error) {
-	args := []string{}
+	var args []string
 	if !sign {
 		args = append(args, "-c", "commit.gpgsign=false", "-c", "gpg.format=")
 	}
@@ -105,33 +99,18 @@ func Commit(dir, msg string, sign, noVerify bool) (string, error) {
 	return HeadSHA(dir)
 }
 
-// CommitAll stages every tracked + untracked change and commits in a single
-// git invocation. The atomicity is git's own (index set then commit). Returns
-// the new short sha.
+// CommitAll stages every tracked + untracked change and commits. The
+// atomicity is the VCS's own (index set then commit). Returns the new short sha.
 func CommitAll(dir, msg string, sign, noVerify bool) (string, error) {
-	if _, err := gitRun(dir, "add", "-A"); err != nil {
+	if err := AddAll(dir); err != nil {
 		return "", err
 	}
-	args := []string{}
-	if !sign {
-		args = append(args, "-c", "commit.gpgsign=false", "-c", "gpg.format=")
-	}
-	args = append(args, "commit", "-m", msg)
-	if noVerify {
-		args = append(args, "--no-verify")
-	}
-	if _, err := gitRun(dir, args...); err != nil {
-		return "", err
-	}
-	return HeadSHA(dir)
+	return Commit(dir, msg, sign, noVerify)
 }
 
-// ResetHard discards uncommitted changes back to ref (defaults to HEAD).
-func ResetHard(dir, ref string) error {
-	if ref == "" {
-		ref = "HEAD"
-	}
-	_, err := gitRun(dir, "reset", "--hard", ref)
+// ResetHard discards uncommitted changes back to HEAD.
+func ResetHard(dir string) error {
+	_, err := gitRun(dir, "reset", "--hard", "HEAD")
 	return err
 }
 
@@ -265,11 +244,8 @@ func CreateBranchAt(dir, name, start string) error {
 
 // DiffStat returns the one-line `--shortstat` summary for HEAD~1..HEAD.
 // Returns empty string when the commit didn't actually change anything.
-func DiffStat(dir, ref string) (string, error) {
-	if ref == "" {
-		ref = "HEAD~1..HEAD"
-	}
-	return gitRun(dir, "diff", "--shortstat", ref)
+func DiffStat(dir string) (string, error) {
+	return gitRun(dir, "diff", "--shortstat", "HEAD~1..HEAD")
 }
 
 // CommitMessageFrom builds a conventional commit subject + body. Subject is

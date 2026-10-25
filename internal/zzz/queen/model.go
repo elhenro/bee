@@ -2,12 +2,10 @@ package queen
 
 import (
 	"context"
-	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/elhenro/bee/internal/zzz"
+	"github.com/elhenro/bee/internal/zzz/uikit"
 )
 
 // Model is the bubbletea supervisor ("queen") that watches N headless worker
@@ -29,9 +27,7 @@ type Model struct {
 	cancelAll context.CancelFunc
 	stopArmed bool
 
-	msgs     chan tea.Msg
-	closed   chan struct{}
-	closeOne sync.Once
+	box *uikit.Mailbox
 }
 
 // New builds a supervisor for the given runs. cancelAll must cancel the ctx
@@ -40,8 +36,7 @@ func New(runs []*zzz.Run, cancelAll context.CancelFunc) *Model {
 	m := &Model{
 		start:     time.Now(),
 		cancelAll: cancelAll,
-		msgs:      make(chan tea.Msg, 256),
-		closed:    make(chan struct{}),
+		box:       uikit.NewMailbox(256),
 	}
 	for i, r := range runs {
 		m.workers = append(m.workers, &workerState{
@@ -57,24 +52,10 @@ func New(runs []*zzz.Run, cancelAll context.CancelFunc) *Model {
 func (m *Model) Worker(i int) *WorkerUI { return m.uis[i] }
 
 // Done is called by the orchestrator after a worker's Drive returns.
-func (m *Model) Done(i int, r *zzz.Run, err error) { m.send(wDoneMsg{idx: i, run: r, err: err}) }
+func (m *Model) Done(i int, r *zzz.Run, err error) { m.box.Send(wDoneMsg{idx: i, run: r, err: err}) }
 
 // Quit silences late sends from worker goroutines during teardown.
-func (m *Model) Quit() { m.closeOne.Do(func() { close(m.closed) }) }
-
-func (m *Model) send(msg tea.Msg) {
-	select {
-	case <-m.closed:
-		return
-	default:
-	}
-	select {
-	case m.msgs <- msg:
-	case <-m.closed:
-	default:
-		// drop on saturation; per-run events.jsonl is canonical
-	}
-}
+func (m *Model) Quit() { m.box.Close() }
 
 // allDone reports whether every worker has reported a terminal status.
 func (m *Model) allDone() bool { return m.nDone >= len(m.workers) }
@@ -87,11 +68,11 @@ type WorkerUI struct {
 	steer chan zzz.Steer
 }
 
-func (w *WorkerUI) SetIter(n, max int)        { w.m.send(wIterMsg{w.idx, n, max}) }
-func (w *WorkerUI) SetPhase(p string)         { w.m.send(wPhaseMsg{w.idx, p}) }
-func (w *WorkerUI) SetTokens(t zzz.TokenStat) { w.m.send(wTokensMsg{w.idx, t}) }
-func (w *WorkerUI) IncCommits()               { w.m.send(wCommitMsg{w.idx}) }
-func (w *WorkerUI) Println(s string)          { w.m.send(wLogMsg{w.idx, s, levelFor(s)}) }
+func (w *WorkerUI) SetIter(n, max int)        { w.m.box.Send(wIterMsg{w.idx, n, max}) }
+func (w *WorkerUI) SetPhase(p string)         { w.m.box.Send(wPhaseMsg{w.idx, p}) }
+func (w *WorkerUI) SetTokens(t zzz.TokenStat) { w.m.box.Send(wTokensMsg{w.idx, t}) }
+func (w *WorkerUI) IncCommits()               { w.m.box.Send(wCommitMsg{w.idx}) }
+func (w *WorkerUI) Println(s string)          { w.m.box.Send(wLogMsg{w.idx, s, uikit.LevelFor(s)}) }
 func (w *WorkerUI) RenderSummary(r *zzz.Run)  {}
 func (w *WorkerUI) Steer() <-chan zzz.Steer   { return w.steer }
 

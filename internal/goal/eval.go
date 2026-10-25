@@ -239,7 +239,8 @@ func verdictFromLine(raw string) (Verdict, bool) {
 	reason := func(after int) string {
 		r := strings.TrimSpace(rest[after:])
 		r = strings.TrimLeft(r, "—-: ")
-		return strings.TrimSpace(firstLineOf(r))
+		line, _, _ := strings.Cut(r, "\n")
+		return strings.TrimSpace(line)
 	}
 	switch {
 	case strings.HasPrefix(restLow, "unmet"):
@@ -248,13 +249,6 @@ func verdictFromLine(raw string) (Verdict, bool) {
 		return Verdict{Met: true, Reason: reason(len("met"))}, true
 	}
 	return Verdict{}, false
-}
-
-func firstLineOf(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
 }
 
 // firstJSONObject returns the substring from the first '{' to its matching '}'.

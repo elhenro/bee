@@ -16,19 +16,6 @@ import (
 	"github.com/elhenro/bee/internal/pidlock"
 )
 
-// lockDir returns ~/.bee/zzz/locks, creating it.
-func lockDir() (string, error) {
-	home, err := HomeDir()
-	if err != nil {
-		return "", err
-	}
-	d := filepath.Join(home, "locks")
-	if err := os.MkdirAll(d, 0o755); err != nil {
-		return "", err
-	}
-	return d, nil
-}
-
 // lockKey hashes the working-tree path so two runs targeting the same tree
 // collide on one lock file regardless of how the path was spelled. Symlinks
 // are resolved so a symlinked checkout and its target share a key.
@@ -63,7 +50,7 @@ func LockEnv(workdir string) string { return LockHeldEnv + "=" + lockKey(workdir
 // process whose parent already holds this tree's lock (see LockEnv) gets a
 // no-op release instead of a failure.
 func AcquireLock(workdir, runID string) (func(), error) {
-	dir, err := lockDir()
+	dir, err := zzzDir("locks")
 	if err != nil {
 		return nil, err
 	}

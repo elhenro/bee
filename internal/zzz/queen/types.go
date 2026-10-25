@@ -48,19 +48,6 @@ type (
 	tickMsg time.Time
 )
 
-// levelFor classifies a Println line for coloring — mirrors the single-run
-// TUI's heuristic.
-func levelFor(s string) string {
-	low := strings.ToLower(s)
-	switch {
-	case strings.Contains(low, "fail"), strings.Contains(low, "error"):
-		return "err"
-	case strings.Contains(low, "blocked"), strings.Contains(low, "denied"):
-		return "warn"
-	}
-	return "info"
-}
-
 func truncate(s string, n int) string {
 	s = strings.TrimSpace(s)
 	if len([]rune(s)) <= n {

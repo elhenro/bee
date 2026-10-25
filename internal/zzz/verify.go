@@ -14,20 +14,6 @@ const (
 	defaultVerifyTimeout = 600 * time.Second
 )
 
-func cfgMaxHops(c Config) int {
-	if c.MaxHops > 0 {
-		return c.MaxHops
-	}
-	return defaultMaxHops
-}
-
-func cfgVerifyTimeout(c Config) time.Duration {
-	if c.VerifyTimeout > 0 {
-		return c.VerifyTimeout
-	}
-	return defaultVerifyTimeout
-}
-
 // gateTree runs the verify gate on the iteration's uncommitted change and
 // reports whether to commit. A red gate keeps the change for the next
 // iteration to fix (IterRepair, one hop) until the hop budget is spent, then
@@ -38,7 +24,7 @@ func gateTree(ctx context.Context, cfg Config, run *Run, r *IterationResult, ui 
 	}
 	ui.SetPhase("verify")
 	res, err := gate.Run(ctx, run.RepoRoot, cfg.Verify, gate.Opts{
-		Timeout: cfgVerifyTimeout(cfg),
+		Timeout: orDefault(cfg.VerifyTimeout, defaultVerifyTimeout),
 		Scope:   sandbox.Scope(cfg.SandboxScope),
 	})
 	if err != nil {
@@ -54,7 +40,8 @@ func gateTree(ctx context.Context, cfg Config, run *Run, r *IterationResult, ui 
 		return true
 	}
 	run.Hops++
-	if run.Hops > cfgMaxHops(cfg) {
+	maxHops := orDefault(cfg.MaxHops, defaultMaxHops)
+	if run.Hops > maxHops {
 		ui.SetPhase("verify-dropped")
 		r.Status = IterReset
 		r.Err = fmt.Errorf("verify red %d times, change dropped", run.Hops)
@@ -65,7 +52,7 @@ func gateTree(ctx context.Context, cfg Config, run *Run, r *IterationResult, ui 
 	}
 	ui.SetPhase("verify-red")
 	r.Status = IterRepair
-	subject := fmt.Sprintf("verify failed (hop %d/%d), change kept uncommitted: fix it before anything else", run.Hops, cfgMaxHops(cfg))
+	subject := fmt.Sprintf("verify failed (hop %d/%d), change kept uncommitted: fix it before anything else", run.Hops, maxHops)
 	_ = AppendNote(run.ID, r.Iter, subject, res.Summary())
 	return false
 }

@@ -18,9 +18,6 @@ func TestBeeFrameCycle(t *testing.T) {
 			t.Fatalf("frame %d returned empty rows: %q %q %q", i, top, mid, bot)
 		}
 	}
-	if BeeWidth() <= 0 {
-		t.Fatal("BeeWidth should be positive")
-	}
 }
 
 func TestPhaseGlyphs(t *testing.T) {
@@ -124,7 +121,7 @@ func TestModelViewRendersBee(t *testing.T) {
 	// drain channel so live state syncs into the model fields
 	for i := 0; i < 3; i++ {
 		select {
-		case msg := <-m.msgs:
+		case msg := <-m.box.C:
 			u, _ := m.Update(msg)
 			m = u.(*Model)
 		default:

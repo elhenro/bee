@@ -43,20 +43,6 @@ func markOutcome(eng Runner, ok bool) {
 	}
 }
 
-// preamble is prepended to every iteration prompt. The engine runs without a
-// human at the keyboard so it must be told to make ONE small change and stop,
-// never ask questions, never bail half-way.
-const preamble = `You are running unattended inside an overnight loop.
-Rules for this iteration:
-- Make ONE small, focused change toward the objective.
-- Do NOT ask the user any questions. There is no one to answer.
-- If you cannot proceed, say exactly "BLOCKED: <reason>" and stop.
-- If the objective is already complete, say exactly "DONE: <reason>" and stop.
-- Otherwise: do the work, then briefly describe what you changed.
-
-Objective:
-`
-
 const (
 	defaultMaxConsecutiveFails = 3
 	defaultHardErrorRetries    = 3
@@ -70,32 +56,30 @@ const (
 	maxRetryBackoff = 60 * time.Second
 )
 
-func cfgMaxConsecutiveFails(c Config) int {
-	if c.MaxConsecutiveFails > 0 {
-		return c.MaxConsecutiveFails
+// orDefault returns v when positive, else def.
+func orDefault[T ~int | ~int64](v, def T) T {
+	if v > 0 {
+		return v
 	}
-	return defaultMaxConsecutiveFails
+	return def
 }
 
-func cfgHardErrorRetries(c Config) int {
-	if c.HardErrorRetries > 0 {
-		return c.HardErrorRetries
-	}
-	return defaultHardErrorRetries
-}
-
-func cfgNotesTailIters(c Config) int {
-	if c.NotesTailIters == 0 {
-		return defaultNotesTailIters
-	}
-	return c.NotesTailIters
-}
-
-func cfgMaxConsecutiveNoops(c Config) int {
-	if c.MaxConsecutiveNoops > 0 {
-		return c.MaxConsecutiveNoops
-	}
-	return defaultMaxConsecutiveNoops
+// driver holds the state one Drive call carries across iterations.
+type driver struct {
+	stopCh <-chan struct{}
+	eng    Runner
+	cfg    Config
+	run    *Run
+	ui     UI
+	steer  <-chan Steer
+	notes  []string // operator nudges for the next prompt
+	// priorTokens captures totals already on disk before this engine instance
+	// started recording. eng.Costs is fresh per invocation, so resume needs
+	// this baseline to keep accumulated tokens correct.
+	priorTokens TokenStat
+	fails       int
+	noops       int
+	replies     goal.ReplyStreak
 }
 
 // Drive is the main overnight loop. Returns nil on a clean exit (objective
@@ -128,385 +112,152 @@ func Drive(ctx context.Context, stopCh <-chan struct{}, eng Runner, cfg Config, 
 		return err
 	}
 
-	var steer <-chan Steer
+	d := &driver{stopCh: stopCh, eng: eng, cfg: cfg, run: run, ui: ui, priorTokens: run.Tokens}
 	if s, ok := ui.(Steerable); ok {
-		steer = s.Steer()
+		d.steer = s.Steer()
 	}
-	var pendingNotes []string
-	consecutiveFails := 0
-	consecutiveNoops := 0
-	var replies goal.ReplyStreak
-	maxFails := cfgMaxConsecutiveFails(cfg)
-	maxNoops := cfgMaxConsecutiveNoops(cfg)
-	// priorTokens captures totals already on disk before this engine instance
-	// started recording. eng.Costs is fresh per invocation, so resume needs
-	// this baseline to keep accumulated tokens correct.
-	priorTokens := run.Tokens
-	for run.IterCount < cfg.MaxIterations {
-		if ctx.Err() != nil {
-			run.Status = StatusAborted
-			run.StopCause = "context canceled"
-			break
-		}
-		// drain pending steering nudges before this iteration
-		stopRequested := false
-		drained := true
-		for drained {
-			select {
-			case s, ok := <-steer:
-				if !ok {
-					steer = nil
-					drained = false
-					continue
-				}
-				switch s.Kind {
-				case SteerNote:
-					t := strings.TrimSpace(s.Text)
-					if t != "" {
-						pendingNotes = append(pendingNotes, t)
-						ui.Println("[zzz] noted: " + truncate(t, 80))
-					}
-				case SteerStop:
-					stopRequested = true
-				case SteerAbort:
-					run.Status = StatusAborted
-					run.StopCause = "operator abort"
-					ui.Println("[zzz] abort honored.")
-					goto finish
-				}
-			default:
-				drained = false
-			}
-		}
-		select {
-		case <-stopCh:
-			run.Status = StatusAborted
-			run.StopCause = "graceful stop requested"
-			ui.Println("[zzz] graceful stop honored.")
-			goto finish
-		default:
-		}
-		if stopRequested {
-			run.Status = StatusAborted
-			run.StopCause = "operator stop"
-			ui.Println("[zzz] operator stop honored.")
-			goto finish
-		}
-
-		run.IterCount++
-		iter := run.IterCount
-		ui.SetIter(iter, cfg.MaxIterations)
-		ui.SetPhase("prompting")
-
-		res, err := runOneIteration(ctx, eng, cfg, run, iter, ui, pendingNotes, priorTokens)
-		pendingNotes = nil
-		if appErr := AppendEvent(run.ID, eventFromResult(iter, res)); appErr != nil {
-			ui.Println("[zzz] events.jsonl write failed: " + appErr.Error())
-		}
-
-		// DONE wins regardless of iter shape — an agent that says "objective
-		// already complete" without touching files must not be force-looped.
-		// a red tree is not done: the repair iteration runs first. a change the
-		// gate dropped or a failed iteration is not done either: nothing landed.
-		if res.Sentinel == sentinel.KindDone && res.Status != IterRepair &&
-			res.Status != IterReset && res.Status != IterFailed {
-			markIter(eng, res)
-			if res.Status == IterCommitted {
-				run.Commits = append(run.Commits, res.CommitSHA)
-				_ = AppendNote(run.ID, iter, res.Subject, res.DiffStat)
-				_ = SaveMeta(run)
-				if cfg.Push {
-					pushAfterCommit(run, res, ui, iter)
-				}
-			}
-			run.Status = StatusCompleted
-			run.StopCause = "agent emitted DONE"
-			goto finish
-		}
-
-		switch res.Status {
-		case IterCommitted:
-			markIter(eng, res)
-			consecutiveFails = 0
-			consecutiveNoops = 0
-			run.Commits = append(run.Commits, res.CommitSHA)
-			_ = AppendNote(run.ID, iter, res.Subject, res.DiffStat)
-			// persist SHA before any network attempt so push failures can't
-			// hide a committed iteration from meta.json.
-			_ = SaveMeta(run)
-			if cfg.Push {
-				pushAfterCommit(run, res, ui, iter)
-			}
-		case IterNoop:
-			// noop is not a failure — agent may have surveyed without writing
-			// this turn. reset the fail streak so plan-then-act sequences aren't
-			// killed, but leave a note (so the next prompt shows the survey
-			// already happened) and track the streak so a model that only ever
-			// surveys can't spin to MaxIterations committing nothing.
-			// a clean tree does not prove the shell calls were read-only, so
-			// markIter drops the span rather than verifying it.
-			markIter(eng, res)
-			consecutiveFails = 0
-			consecutiveNoops++
-			_ = AppendNote(run.ID, iter, "noop — no file changes this iteration", res.Subject)
-			if consecutiveNoops >= maxNoops {
-				run.Status = StatusFailed
-				run.StopCause = fmt.Sprintf("%d consecutive no-op iterations (model made no changes)", consecutiveNoops)
-				goto finish
-			}
-		case IterRepair:
-			// bounded by the hop budget, not the fail streak
-			consecutiveNoops = 0
-		case IterReset, IterFailed:
-			markIter(eng, res)
-			consecutiveFails++
-			if consecutiveFails >= maxFails {
-				run.Status = StatusFailed
-				run.StopCause = fmt.Sprintf("%d consecutive failures", consecutiveFails)
-				goto finish
-			}
-		}
-		if replies.Observe(res.Subject) {
-			run.Status = StatusFailed
-			run.StopCause = goal.StalledReason(replies.Count())
-			goto finish
-		}
-		if err != nil && errors.Is(err, context.Canceled) {
-			run.Status = StatusAborted
-			run.StopCause = "context canceled mid-iter"
-			goto finish
-		}
-
-		if cfg.StopWhen != "" && strings.Contains(res.Subject, cfg.StopWhen) {
-			run.Status = StatusCompleted
-			run.StopCause = "stop-when matched"
-			goto finish
-		}
-		if cfg.MaxTokens > 0 && run.Tokens.Input+run.Tokens.Output >= cfg.MaxTokens {
-			run.Status = StatusCompleted
-			run.StopCause = "max-tokens cap reached"
-			goto finish
-		}
-		_ = SaveMeta(run)
-	}
-
-	if run.IterCount >= cfg.MaxIterations {
-		run.Status = StatusCompleted
-		run.StopCause = "max-iterations reached"
-	}
-
-finish:
+	run.Status, run.StopCause = d.loop(ctx)
 	run.EndedAt = time.Now().UTC()
 	_ = SaveMeta(run)
 	ui.RenderSummary(run)
 	return nil
 }
 
-// runOneIteration performs the inner clean-build-run-classify-commit cycle
-// for one iteration. Hard errors are retried with exponential backoff.
-// priorTokens is the on-disk total before this engine instance booted; used
-// to keep run.Tokens consistent across resume.
-func runOneIteration(ctx context.Context, eng Runner, cfg Config, run *Run, iter int, ui UI, notes []string, priorTokens TokenStat) (IterationResult, error) {
-	start := time.Now()
-	r := IterationResult{Iter: iter}
-
-	prompt, err := buildPrompt(run.ID, cfg.Objective, iter, notes, cfgNotesTailIters(cfg))
-	if err != nil {
-		r.Status = IterFailed
-		r.Err = err
-		return r, err
-	}
-
-	beforeTotal := eng.CostTotal()
-
-	ui.SetPhase("engine.run")
-	res, runErr := runEngineWithRetry(ctx, eng, prompt, cfgHardErrorRetries(cfg))
-	r.Duration = time.Since(start)
-	r.Subject = strings.TrimSpace(res.FinalText)
-
-	afterTotal := eng.CostTotal()
-	r.Tokens = TokenStat{
-		Input:  afterTotal.Input - beforeTotal.Input,
-		Output: afterTotal.Output - beforeTotal.Output,
-		USD:    afterTotal.USD - beforeTotal.USD,
-	}
-	run.Tokens.Input = priorTokens.Input + afterTotal.Input
-	run.Tokens.Output = priorTokens.Output + afterTotal.Output
-	run.Tokens.USD = priorTokens.USD + afterTotal.USD
-	ui.SetTokens(run.Tokens)
-
-	if runErr != nil {
-		r.Status = IterFailed
-		r.Err = runErr
-		ui.SetPhase("hard-error")
-		rollbackTree(run.RepoRoot)
-		return r, runErr
-	}
-
-	// classified once so the rollback below and Drive's DONE check agree: a
-	// reply holding both markers is DONE, never reset as blocked then completed.
-	r.Sentinel = sentinel.Classify(r.Subject)
-	if r.Sentinel == sentinel.KindBlocked {
-		r.Status = IterFailed
-		ui.SetPhase("agent-blocked")
-		// stash partial work before reset so operator can inspect what the
-		// blocked iter produced. best-effort — patch failure must not mask
-		// the BLOCKED signal.
-		if perr := SaveBlockedPatch(run.ID, iter, run.RepoRoot); perr != nil {
-			ui.Println("[zzz] blocked-patch save failed: " + perr.Error())
-		}
-		rollbackTree(run.RepoRoot)
-		return r, nil
-	}
-
-	clean, err := IsClean(run.RepoRoot)
-	if err != nil {
-		r.Status = IterFailed
-		r.Err = err
-		return r, err
-	}
-	if clean {
-		r.Status = IterNoop
-		run.Hops = 0 // a reverted change takes its red verifies with it
-		ui.SetPhase("noop")
-		return r, nil
-	}
-	if !gateTree(ctx, cfg, run, &r, ui) {
-		return r, r.Err
-	}
-
-	ui.SetPhase("commit")
-	msg := CommitMessageFrom(r.Subject, iter, r.Tokens.Input, r.Tokens.Output)
-	// single git invocation: stage + commit. Atomicity comes from git itself
-	// once the index is set; preserves reset-on-failure on any error (a
-	// pre-commit hook that touched staged content would otherwise bleed
-	// into the next iter's diff).
-	sha, err := CommitAll(run.RepoRoot, msg, cfg.Sign, cfg.NoVerify)
-	if err != nil {
-		r.Status = IterReset
-		r.Err = err
-		ui.SetPhase("commit-fail")
-		rollbackTree(run.RepoRoot)
-		return r, err
-	}
-	r.CommitSHA = sha
-	r.Status = IterCommitted
-	r.DiffStat, _ = DiffStat(run.RepoRoot, "")
-	ui.IncCommits()
-	return r, nil
-}
-
-// rollbackTree wipes both tracked and untracked changes. Best-effort; failures
-// surface on the next iter's preflight.
-func rollbackTree(dir string) {
-	_ = ResetHard(dir, "")
-	_ = CleanFD(dir)
-}
-
-// pushAfterCommit pushes the run's branch, recording per-iter outcome on the
-// run so meta.json reflects what's actually on the remote.
-func pushAfterCommit(run *Run, res IterationResult, ui UI, iter int) {
-	if perr := Push(run.RepoRoot, run.Branch); perr != nil {
-		ui.Println("[zzz] push failed: " + perr.Error())
-		run.PushFailedIters = append(run.PushFailedIters, iter)
-		return
-	}
-	run.PushedCommits = append(run.PushedCommits, res.CommitSHA)
-}
-
-// runEngineWithRetry calls eng.Run with bounded exponential backoff on hard
-// errors (network blips, transient provider 5xx). Agent-level "blocked"
-// responses are NOT retried here — they're classified upstream.
-func runEngineWithRetry(ctx context.Context, eng Runner, prompt string, retries int) (loop.RunResult, error) {
-	if retries < 1 {
-		retries = 1
-	}
-	var lastErr error
-	delay := time.Second
-	for attempt := 0; attempt < retries; attempt++ {
+// loop runs iterations until one ends the run, returning the final status and
+// its cause.
+func (d *driver) loop(ctx context.Context) (status, cause string) {
+	for d.run.IterCount < d.cfg.MaxIterations {
 		if ctx.Err() != nil {
-			return loop.RunResult{}, ctx.Err()
+			return StatusAborted, "context canceled"
 		}
-		res, err := eng.Run(ctx, prompt)
-		if err == nil {
-			return res, nil
+		if cause := d.halt(); cause != "" {
+			return StatusAborted, cause
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return res, err
+
+		d.run.IterCount++
+		iter := d.run.IterCount
+		d.ui.SetIter(iter, d.cfg.MaxIterations)
+		d.ui.SetPhase("prompting")
+
+		res, err := runOneIteration(ctx, d.eng, d.cfg, d.run, iter, d.ui, d.notes, d.priorTokens)
+		d.notes = nil
+		if appErr := AppendEvent(d.run.ID, eventFromResult(iter, res)); appErr != nil {
+			d.ui.Println("[zzz] events.jsonl write failed: " + appErr.Error())
 		}
-		lastErr = err
+		if status, cause := d.settle(res, err); status != "" {
+			return status, cause
+		}
+		_ = SaveMeta(d.run)
+	}
+	return StatusCompleted, "max-iterations reached"
+}
+
+// halt drains queued operator input and reports why the loop must stop before
+// the next iteration, or "" to go on. Notes are kept for the next prompt.
+func (d *driver) halt() string {
+	stop := false
+	for drained := false; !drained; {
 		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return loop.RunResult{}, ctx.Err()
-		}
-		delay *= 2
-		if delay > maxRetryBackoff {
-			delay = maxRetryBackoff
-		}
-	}
-	return loop.RunResult{}, lastErr
-}
-
-// buildPrompt assembles preamble + tail of notes.md + operator nudges +
-// objective. tailIters<0 echoes the full notes file (legacy behavior);
-// tailIters>0 keeps only the last N "## iter X" sections so prompt size
-// stays bounded across long runs.
-func buildPrompt(runID, objective string, iter int, operatorNotes []string, tailIters int) (string, error) {
-	notes, err := ReadNotes(runID)
-	if err != nil {
-		return "", err
-	}
-	if tailIters > 0 {
-		notes = TailNoteSections(notes, tailIters)
-	}
-	var b strings.Builder
-	b.WriteString(preamble)
-	b.WriteString(objective)
-	b.WriteString("\n\n")
-	fmt.Fprintf(&b, "This is iteration %d.\n", iter)
-	if len(operatorNotes) > 0 {
-		b.WriteString("\nOperator nudges for THIS iteration (live input):\n")
-		for _, n := range operatorNotes {
-			b.WriteString("- ")
-			b.WriteString(n)
-			b.WriteString("\n")
+		case s, ok := <-d.steer:
+			if !ok {
+				d.steer = nil
+				drained = true
+				continue
+			}
+			switch s.Kind {
+			case SteerNote:
+				if t := strings.TrimSpace(s.Text); t != "" {
+					d.notes = append(d.notes, t)
+					d.ui.Println("[zzz] noted: " + truncate(t, 80))
+				}
+			case SteerStop:
+				stop = true
+			case SteerAbort:
+				d.ui.Println("[zzz] abort honored.")
+				return "operator abort"
+			}
+		default:
+			drained = true
 		}
 	}
-	if strings.TrimSpace(notes) != "" {
-		b.WriteString("\nPrior iterations (notes.md):\n")
-		b.WriteString(notes)
+	select {
+	case <-d.stopCh:
+		d.ui.Println("[zzz] graceful stop honored.")
+		return "graceful stop requested"
+	default:
 	}
-	return b.String(), nil
+	if stop {
+		d.ui.Println("[zzz] operator stop honored.")
+		return "operator stop"
+	}
+	return ""
 }
 
-// truncate trims s to at most n runes, appending "…" if it had to cut.
-func truncate(s string, n int) string {
-	if len([]rune(s)) <= n {
-		return s
+// settle books one finished iteration and returns the run's final status and
+// cause when it ends here, or "" to go on.
+func (d *driver) settle(res IterationResult, err error) (status, cause string) {
+	markIter(d.eng, res)
+	// DONE wins regardless of iter shape — an agent that says "objective
+	// already complete" without touching files must not be force-looped.
+	// a red tree is not done: the repair iteration runs first. a change the
+	// gate dropped or a failed iteration is not done either: nothing landed.
+	if res.Sentinel == sentinel.KindDone && (res.Status == IterCommitted || res.Status == IterNoop) {
+		if res.Status == IterCommitted {
+			d.recordCommit(res)
+		}
+		return StatusCompleted, "agent emitted DONE"
 	}
-	r := []rune(s)
-	return string(r[:n]) + "…"
+
+	switch res.Status {
+	case IterCommitted:
+		d.fails, d.noops = 0, 0
+		d.recordCommit(res)
+	case IterNoop:
+		// noop is not a failure — agent may have surveyed without writing
+		// this turn. reset the fail streak so plan-then-act sequences aren't
+		// killed, but leave a note (so the next prompt shows the survey
+		// already happened) and track the streak so a model that only ever
+		// surveys can't spin to MaxIterations committing nothing.
+		// a clean tree does not prove the shell calls were read-only, so
+		// markIter drops the span rather than verifying it.
+		d.fails = 0
+		d.noops++
+		_ = AppendNote(d.run.ID, res.Iter, "noop — no file changes this iteration", res.Subject)
+		if d.noops >= orDefault(d.cfg.MaxConsecutiveNoops, defaultMaxConsecutiveNoops) {
+			return StatusFailed, fmt.Sprintf("%d consecutive no-op iterations (model made no changes)", d.noops)
+		}
+	case IterRepair:
+		// bounded by the hop budget, not the fail streak
+		d.noops = 0
+	case IterReset, IterFailed:
+		d.fails++
+		if d.fails >= orDefault(d.cfg.MaxConsecutiveFails, defaultMaxConsecutiveFails) {
+			return StatusFailed, fmt.Sprintf("%d consecutive failures", d.fails)
+		}
+	}
+	if d.replies.Observe(res.Subject) {
+		return StatusFailed, goal.StalledReason(d.replies.Count())
+	}
+	if errors.Is(err, context.Canceled) {
+		return StatusAborted, "context canceled mid-iter"
+	}
+	if d.cfg.StopWhen != "" && strings.Contains(res.Subject, d.cfg.StopWhen) {
+		return StatusCompleted, "stop-when matched"
+	}
+	if d.cfg.MaxTokens > 0 && d.run.Tokens.Input+d.run.Tokens.Output >= d.cfg.MaxTokens {
+		return StatusCompleted, "max-tokens cap reached"
+	}
+	return "", ""
 }
 
-// preflightClean refuses to start on a dirty tree. Mid-run dirtiness is
-// always a bug (we reset after every failure) so it isn't tolerated either.
-func preflightClean(dir string) error {
-	clean, err := IsClean(dir)
-	if err != nil {
-		return fmt.Errorf("preflight: %w", err)
+// recordCommit books a committed iteration on the run and pushes it.
+func (d *driver) recordCommit(res IterationResult) {
+	d.run.Commits = append(d.run.Commits, res.CommitSHA)
+	_ = AppendNote(d.run.ID, res.Iter, res.Subject, res.DiffStat)
+	// persist SHA before any network attempt so push failures can't
+	// hide a committed iteration from meta.json.
+	_ = SaveMeta(d.run)
+	if d.cfg.Push {
+		pushAfterCommit(d.run, res, d.ui)
 	}
-	if !clean {
-		return errors.New("preflight: working tree is dirty — commit, stash, or discard before continuing bee zzz")
-	}
-	return nil
-}
-
-// eventFromResult flattens an IterationResult into a row for events.jsonl.
-func eventFromResult(iter int, r IterationResult) Event {
-	ev := Event{Iter: iter, Phase: r.Status, Tokens: r.Tokens, Commit: r.CommitSHA, DiffStat: r.DiffStat}
-	if r.Err != nil {
-		ev.Err = r.Err.Error()
-	}
-	return ev
 }

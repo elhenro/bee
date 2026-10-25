@@ -133,8 +133,8 @@ func TestCreateBranchAt(t *testing.T) {
 	if err := CreateBranchAt(repo, "zzz/queen-test", tip); err != nil {
 		t.Fatal(err)
 	}
-	if !HasBranch(repo, "zzz/queen-test") {
-		t.Fatal("review branch not created")
+	if _, err := gitRun(repo, "rev-parse", "--verify", "refs/heads/zzz/queen-test"); err != nil {
+		t.Fatalf("review branch not created: %v", err)
 	}
 	// idempotent: -f allows re-point
 	if err := CreateBranchAt(repo, "zzz/queen-test", tip); err != nil {

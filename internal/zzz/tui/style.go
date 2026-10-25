@@ -15,8 +15,6 @@ var (
 	fgAsh    = lipgloss.AdaptiveColor{Light: "#201F26", Dark: "#DFDBDD"}
 	fgButter = lipgloss.AdaptiveColor{Light: "#201F26", Dark: "#FFFAF1"}
 
-	bgCharcoal = lipgloss.AdaptiveColor{Light: "#D2CEC6", Dark: "#3A3943"}
-
 	accentHoney = lipgloss.AdaptiveColor{Light: "#A56F00", Dark: "#FFB000"}
 	accentBee   = lipgloss.AdaptiveColor{Light: "#8A5A00", Dark: "#FFC857"}
 	accentYou   = lipgloss.AdaptiveColor{Light: "#0064B5", Dark: "#00A4FF"}
@@ -38,8 +36,6 @@ var (
 	stySuccess = lipgloss.NewStyle().Foreground(semSuccess)
 	styWarning = lipgloss.NewStyle().Foreground(semWarning)
 	styError   = lipgloss.NewStyle().Foreground(semError).Bold(true)
-	styBorder  = lipgloss.NewStyle().Foreground(bgCharcoal)
-	styItalic  = lipgloss.NewStyle().Foreground(fgOyster).Italic(true)
 )
 
 // phaseGlyph maps iteration status to a bee/flower icon in the timeline.

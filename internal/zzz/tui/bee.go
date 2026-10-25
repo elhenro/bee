@@ -1,7 +1,5 @@
 package tui
 
-import "strings"
-
 // Sleeping-bee ASCII art. Three rows of fixed visual width so render layout
 // doesn't bounce as frames cycle. Each frame is a [3]string. The left half
 // holds drifting Z's, the right side holds a stable bee silhouette with a
@@ -60,18 +58,4 @@ var beeFrames = []beeFrame{
 func BeeFrame(tick int) (top, mid, bot string) {
 	f := beeFrames[((tick%len(beeFrames))+len(beeFrames))%len(beeFrames)]
 	return f[0], f[1], f[2]
-}
-
-// BeeWidth returns the rendered width of a frame line (all frames padded to
-// match). Caller uses it to right-align trailing content.
-func BeeWidth() int {
-	w := 0
-	for _, f := range beeFrames {
-		for _, line := range f {
-			if n := len([]rune(strings.TrimRight(line, " "))); n > w {
-				w = n
-			}
-		}
-	}
-	return w
 }
