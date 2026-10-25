@@ -135,28 +135,28 @@ func looksLikeAttemptedToolCall(text string, specs []llm.ToolSpec) bool {
 		return false
 	}
 	low := strings.ToLower(stripFencedRegions(text))
-	hasTypeKey := strings.Contains(low, `"type"`) || strings.Contains(low, `"name"`)
+	_, ok := mentionedSpec(low, specs, containsAny(low, `"type"`, `"name"`))
+	return ok
+}
+
+// mentionedSpec returns the first spec that lowercased text refers to as an
+// XML-ish opening tag, a quoted JSON value (quoted: only when it sits in a
+// type/name field) or a markdown summary slip: `(toolname)` paren mention.
+// Qwen3-A3B drift — model writes a prose recap (`(edit) path - did X`,
+// `(read)\n path/to/file`) instead of emitting the envelope.
+func mentionedSpec(low string, specs []llm.ToolSpec, quoted bool) (llm.ToolSpec, bool) {
 	for _, s := range specs {
 		name := strings.ToLower(s.Name)
 		if name == "" {
 			continue
 		}
-		if mentionsTool(low, name, hasTypeKey) {
-			return true
+		if strings.Contains(low, "<"+name) ||
+			quoted && strings.Contains(low, `"`+name+`"`) ||
+			strings.Contains(low, "("+name+")") {
+			return s, true
 		}
 	}
-	return false
-}
-
-// mentionsTool reports whether lowercased text refers to a tool as an
-// XML-ish opening tag, a quoted JSON value (quoted: only when it sits in a
-// type/name field) or a markdown summary slip: `(toolname)` paren mention.
-// Qwen3-A3B drift — model writes a prose recap (`(edit) path - did X`,
-// `(read)\n path/to/file`) instead of emitting the envelope.
-func mentionsTool(low, name string, quoted bool) bool {
-	return strings.Contains(low, "<"+name) ||
-		quoted && strings.Contains(low, `"`+name+`"`) ||
-		strings.Contains(low, "("+name+")")
+	return llm.ToolSpec{}, false
 }
 
 // stripFencedRegions removes ```...``` blocks from s. Unbalanced opening

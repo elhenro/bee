@@ -101,19 +101,12 @@ func summarizeMiddle(ctx context.Context, p llm.Provider, model string, middle [
 	if len(middle) == 0 {
 		return "", nil
 	}
-	var b strings.Builder
-	b.WriteString("Summarize what this coding agent attempted and learned, tersely. Keep file paths, key decisions, errors, and TODOs. Drop chatter.\n\n")
-	for _, m := range middle {
-		txt := flattenForSummary(m)
-		if txt == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
-	}
 	sum, err := streamText(ctx, p, llm.Request{
-		Model:    model,
-		System:   handoffSystem,
-		Messages: []types.Message{plainMessage(types.RoleUser, b.String())},
+		Model:  model,
+		System: handoffSystem,
+		Messages: []types.Message{plainMessage(types.RoleUser,
+			"Summarize what this coding agent attempted and learned, tersely. Keep file paths, key decisions, errors, and TODOs. Drop chatter.\n\n"+
+				renderForSummary(middle))},
 	})
 	if err != nil {
 		return "", err

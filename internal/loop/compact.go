@@ -68,13 +68,7 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 
 	var b strings.Builder
 	b.WriteString("Summarize this coding-agent conversation tersely. Keep file paths, key decisions, errors, and TODOs. Drop chatter. Caveman compress.\n\n")
-	for _, m := range older {
-		txt := flattenForSummary(m)
-		if txt == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
-	}
+	b.WriteString(renderForSummary(older))
 	sum, err := streamText(ctx, p, llm.Request{
 		Model:    model,
 		System:   "You compress conversation history losslessly for the parts that matter.",
@@ -188,6 +182,17 @@ func flattenForSummary(m types.Message) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// renderForSummary lists msgs as "[role] text" lines for the summarizer.
+func renderForSummary(msgs []types.Message) string {
+	var b strings.Builder
+	for _, m := range msgs {
+		if txt := flattenForSummary(m); txt != "" {
+			fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
+		}
+	}
+	return b.String()
 }
 
 // toolInputBrief renders a tool-call input map as compact JSON, empty on error.

@@ -191,15 +191,8 @@ func buildFormatNudge(text string, specs []llm.ToolSpec, iter int) string {
 // returns the matching spec. Falls back to the first spec when nothing
 // matches so the nudge always has a concrete example to show.
 func guessAttemptedSpec(text string, specs []llm.ToolSpec) llm.ToolSpec {
-	low := strings.ToLower(text)
-	for _, s := range specs {
-		name := strings.ToLower(s.Name)
-		if name == "" {
-			continue
-		}
-		if mentionsTool(low, name, true) {
-			return s
-		}
+	if s, ok := mentionedSpec(strings.ToLower(text), specs, true); ok {
+		return s
 	}
 	if len(specs) > 0 {
 		return specs[0]
