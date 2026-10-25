@@ -12,73 +12,60 @@ import (
 // tool-result block when iter/token/stall thresholds cross. Each warning
 // fires at most once per Run (dedup via Engine flags).
 func injectIterAndTokenWarnings(e *Engine, blocks []types.ContentBlock, currentIter, maxIter, tokenBudget int, readOnly bool) []types.ContentBlock {
+	r := e.run
 	// context-window warning: if usage crosses threshold, prepend a one-shot
 	// notice so the model summarizes/drops noise on the following turn.
-	if !e.run.warnedContext {
-		limit := contextBudget(e.Cfg)
-		if w := prompt.FormatContextWarning(e.run.lastInputTokens, limit); w != "" {
+	if !r.warnedContext {
+		if w := prompt.FormatContextWarning(r.lastInputTokens, contextBudget(e.Cfg)); w != "" {
 			blocks = prependWarningToToolResult(blocks, w)
-			e.run.warnedContext = true
+			r.warnedContext = true
 		}
 	}
-	// iteration warnings; each fires at most once per Run. Skipped entirely
-	// when the cap is lifted (maxIter <= 0) — there's no ceiling to warn about;
-	// the token-budget and stall guards below carry the load instead.
+	// warn prefixes the message once the condition holds; flag dedupes it per Run.
+	warn := func(flag *bool, due bool, format string, args ...any) {
+		if *flag || !due {
+			return
+		}
+		blocks = prependWarningToToolResult(blocks, fmt.Sprintf(format, args...))
+		*flag = true
+	}
+	// iteration warnings. Skipped entirely when the cap is lifted (maxIter <= 0)
+	// — there's no ceiling to warn about; the token-budget and stall guards
+	// below carry the load instead.
 	if maxIter > 0 {
-		if !e.run.warnedIterHalf && currentIter*2 >= maxIter {
-			w := fmt.Sprintf("[iter %d/%d] half the budget spent. summarize progress; commit edits or stop if stuck.\n\n", currentIter, maxIter)
-			blocks = prependWarningToToolResult(blocks, w)
-			e.run.warnedIterHalf = true
-		}
-		if !e.run.warnedIterEighty && currentIter*5 >= maxIter*4 {
-			w := fmt.Sprintf("[iter %d/%d] near iter cap. finish current edit or stop and ask user.\n\n", currentIter, maxIter)
-			blocks = prependWarningToToolResult(blocks, w)
-			e.run.warnedIterEighty = true
-		}
+		warn(&r.warnedIterHalf, currentIter*2 >= maxIter,
+			"[iter %d/%d] half the budget spent. summarize progress; commit edits or stop if stuck.\n\n", currentIter, maxIter)
+		warn(&r.warnedIterEighty, currentIter*5 >= maxIter*4,
+			"[iter %d/%d] near iter cap. finish current edit or stop and ask user.\n\n", currentIter, maxIter)
 	}
 	// token-budget warnings mirror the iter-cap warnings so the model hears
 	// about cost pressure separately from iter pressure.
 	if tokenBudget > 0 {
-		spent := e.run.cumInputTokens + e.run.cumOutputTokens
-		if !e.run.warnedTokenHalf && spent*2 >= tokenBudget {
-			w := fmt.Sprintf("[tokens %d/%d] half the token budget spent. summarize and commit edits.\n\n", spent, tokenBudget)
-			blocks = prependWarningToToolResult(blocks, w)
-			e.run.warnedTokenHalf = true
-		}
-		if !e.run.warnedTokenEighty && spent*5 >= tokenBudget*4 {
-			w := fmt.Sprintf("[tokens %d/%d] near token cap. finish current edit or stop.\n\n", spent, tokenBudget)
-			blocks = prependWarningToToolResult(blocks, w)
-			e.run.warnedTokenEighty = true
-		}
+		spent := r.cumInputTokens + r.cumOutputTokens
+		warn(&r.warnedTokenHalf, spent*2 >= tokenBudget,
+			"[tokens %d/%d] half the token budget spent. summarize and commit edits.\n\n", spent, tokenBudget)
+		warn(&r.warnedTokenEighty, spent*5 >= tokenBudget*4,
+			"[tokens %d/%d] near token cap. finish current edit or stop.\n\n", spent, tokenBudget)
 	}
 	// stall warning is opt-in: profile must set a positive threshold. skipped on
 	// read-only turns — mutators are filtered out there, so the read-only streak
 	// is expected, not a stall. nudging "commit edits" would contradict the
 	// read-only prompt that forbids edits.
 	if t := config.ActiveProfile(e.Cfg).NoMutationStallThreshold; t > 0 && !readOnly {
-		if !e.run.warnedStall && e.run.noMutationStreak >= t {
-			w := fmt.Sprintf("[stall] %d read-only iters; commit edits when ready.\n\n", e.run.noMutationStreak)
-			blocks = prependWarningToToolResult(blocks, w)
-			e.run.warnedStall = true
-		}
+		warn(&r.warnedStall, r.noMutationStreak >= t,
+			"[stall] %d read-only iters; commit edits when ready.\n\n", r.noMutationStreak)
 		// escalation tier: streak hit 2x threshold AND first nudge already
 		// fired. previous session evidence (5e20f3f8): two soft nudges
 		// fired, model ignored both, kept reading. Hard stop at 3x threshold
 		// arrives too late — burns more tokens. At 2x emit an actionable
 		// pointer to the escalate tool so the model exits cleanly.
-		if e.run.warnedStall && !e.run.warnedStallEscalate && e.run.noMutationStreak >= 2*t {
-			w := fmt.Sprintf("[stall %d iters] previous nudge ignored. if stuck, call `escalate` with a reason — clean exit beats another read.\n\n", e.run.noMutationStreak)
-			blocks = prependWarningToToolResult(blocks, w)
-			e.run.warnedStallEscalate = true
-		}
+		warn(&r.warnedStallEscalate, r.warnedStall && r.noMutationStreak >= 2*t,
+			"[stall %d iters] previous nudge ignored. if stuck, call `escalate` with a reason — clean exit beats another read.\n\n", r.noMutationStreak)
 	}
 	// cross-turn reasoning loop: the model rehashed near-identical reasoning for
 	// reasoningDupBailAt turns running. independent of mutation state — fires
 	// even while it makes token tool calls each turn. one-shot per crossing.
-	if !e.run.warnedReasoningDup && e.run.reasoningDupStreak >= reasoningDupBailAt {
-		w := fmt.Sprintf("[loop] your last %d turns repeated near-identical reasoning without progress. stop re-deriving the same analysis — take a concrete action, or call `escalate` with a reason to exit cleanly.\n\n", e.run.reasoningDupStreak+1)
-		blocks = prependWarningToToolResult(blocks, w)
-		e.run.warnedReasoningDup = true
-	}
+	warn(&r.warnedReasoningDup, r.reasoningDupStreak >= reasoningDupBailAt,
+		"[loop] your last %d turns repeated near-identical reasoning without progress. stop re-deriving the same analysis — take a concrete action, or call `escalate` with a reason to exit cleanly.\n\n", r.reasoningDupStreak+1)
 	return blocks
 }

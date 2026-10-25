@@ -76,12 +76,9 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 		fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
 	}
 	sum, err := streamText(ctx, p, llm.Request{
-		Model:  model,
-		System: "You compress conversation history losslessly for the parts that matter.",
-		Messages: []types.Message{{
-			Role:    types.RoleUser,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: b.String()}},
-		}},
+		Model:    model,
+		System:   "You compress conversation history losslessly for the parts that matter.",
+		Messages: []types.Message{plainMessage(types.RoleUser, b.String())},
 	})
 	if err != nil {
 		return keep(err)
@@ -94,11 +91,7 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	if strings.TrimSpace(sum) == "" {
 		return keep(errors.New("compact: empty summary"))
 	}
-	summaryMsg := types.Message{
-		Role:    types.RoleUser,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: "[compacted history]\n" + sum}},
-	}
-	out := append([]types.Message{summaryMsg}, preserved...)
+	out := append([]types.Message{plainMessage(types.RoleUser, "[compacted history]\n"+sum)}, preserved...)
 	stats.AfterMsgs = len(out)
 	stats.AfterTokens = estimateMessagesTokens(out)
 	stats.Duration = time.Since(start)
@@ -249,9 +242,5 @@ func compactWorthwhile(msgs []types.Message, budget int) bool {
 		return false
 	}
 	older := msgs[:len(msgs)-PreserveTail]
-	floor := budget / 10
-	if floor < 2000 {
-		floor = 2000
-	}
-	return estimateMessagesTokens(older) >= floor
+	return estimateMessagesTokens(older) >= max(budget/10, 2000)
 }

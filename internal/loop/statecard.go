@@ -141,21 +141,13 @@ func (c *stateCard) render() string {
 // tool_result is never sent without the assistant tool_use it answers — wire
 // formats reject orphan results.
 func (c *stateCard) view(msgs []types.Message) []types.Message {
-	start := len(msgs) - stateCardKeepMsgs
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(msgs)-stateCardKeepMsgs, 0)
 	for start > 0 && msgs[start].Role == types.RoleTool {
 		start--
 	}
-	card := types.Message{
-		Role:    types.RoleUser,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: c.render()}},
-	}
 	out := make([]types.Message, 0, len(msgs)-start+1)
-	out = append(out, card)
-	out = append(out, msgs[start:]...)
-	return out
+	out = append(out, plainMessage(types.RoleUser, c.render()))
+	return append(out, msgs[start:]...)
 }
 
 // repArg picks the most informative single argument for the action line.

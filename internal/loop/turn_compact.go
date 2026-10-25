@@ -148,14 +148,7 @@ func scaledCompactThreshold(base float64, budget int) float64 {
 	if budget <= 0 || base <= 0 || base < compactDefaultThreshold {
 		return base
 	}
-	derived := 1.0 - 8000.0/float64(budget)
-	if derived < 0.5 {
-		derived = 0.5
-	}
-	if derived > base {
-		return derived
-	}
-	return base
+	return max(base, 1.0-8000.0/float64(budget), 0.5)
 }
 
 // compactDefaultThreshold mirrors config defaults; values below it are treated

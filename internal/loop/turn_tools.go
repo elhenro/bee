@@ -263,11 +263,5 @@ func unknownToolMsg(bad string, available []string) string {
 // looksLikeMarkupLeak flags tool names that smuggle in chat-template tokens
 // or arg syntax. used only for picking the hint above.
 func looksLikeMarkupLeak(s string) bool {
-	if strings.ContainsAny(s, "<>\"'\n ") {
-		return true
-	}
-	if strings.Contains(s, "｜") {
-		return true
-	}
-	return false
+	return strings.ContainsAny(s, "<>\"'\n ｜")
 }

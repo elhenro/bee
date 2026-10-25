@@ -61,13 +61,9 @@ func GenerateRecap(ctx context.Context, p llm.Provider, model string, msgs []typ
 		text = text[len(text)-recapMaxInput:]
 	}
 	req := llm.Request{
-		Model:  model,
-		System: recapSystem,
-		Messages: []types.Message{
-			{Role: types.RoleUser, Content: []types.ContentBlock{
-				{Type: types.BlockText, Text: text},
-			}},
-		},
+		Model:       model,
+		System:      recapSystem,
+		Messages:    []types.Message{plainMessage(types.RoleUser, text)},
 		MaxTokens:   120,
 		Temperature: 0,
 		Stream:      true,

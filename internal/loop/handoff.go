@@ -121,12 +121,9 @@ func summarizeMiddle(ctx context.Context, p llm.Provider, model string, middle [
 		fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
 	}
 	sum, err := streamText(ctx, p, llm.Request{
-		Model:  model,
-		System: handoffSystem,
-		Messages: []types.Message{{
-			Role:    types.RoleUser,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: b.String()}},
-		}},
+		Model:    model,
+		System:   handoffSystem,
+		Messages: []types.Message{plainMessage(types.RoleUser, b.String())},
 	})
 	if err != nil {
 		return "", err

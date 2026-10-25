@@ -168,10 +168,10 @@ const (
 // warnedThinkingIgnored, jsonModeNoticeShown, sysPromptCache, profileScaledFor)
 // stay on Engine and are NOT touched here.
 //
-// Session-level memoization that lives on runState (visionCache, visionWarned,
-// lastReasoningSig) is borrowed from the previous runState by reference where
-// possible and by value where not, so the new runState starts with the prior
-// session's state preserved.
+// Session-level memoization that lives on runState (visionCache, visionWarned)
+// is borrowed from the previous runState, by reference where possible and by
+// value where not, so the new runState starts with the prior session's state
+// preserved.
 func (e *Engine) freshRunState() *runState {
 	rs := &runState{
 		allowedTools:       make(map[string]bool),
@@ -187,8 +187,6 @@ func (e *Engine) freshRunState() *runState {
 	} else {
 		rs.visionCache = map[string]string{}
 	}
-	// lastReasoningSig is also session-level — turn_run.go copies it forward
-	// from the prior runState after freshRunState returns.
 	return rs
 }
 

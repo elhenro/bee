@@ -30,17 +30,14 @@ func classifyToolError(err error) string {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return toolErrTimeout
-	case errors.Is(err, os.ErrNotExist) || os.IsNotExist(err):
+	case errors.Is(err, os.ErrNotExist):
 		return toolErrNotFound
-	case errors.Is(err, os.ErrPermission) || os.IsPermission(err):
+	case errors.Is(err, os.ErrPermission):
 		return toolErrPermissionDenied
 	}
 	var je *json.SyntaxError
-	if errors.As(err, &je) {
-		return toolErrParseError
-	}
 	var jt *json.UnmarshalTypeError
-	if errors.As(err, &jt) {
+	if errors.As(err, &je) || errors.As(err, &jt) {
 		return toolErrParseError
 	}
 	msg := strings.ToLower(err.Error())

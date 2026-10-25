@@ -64,38 +64,36 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 			}
 		}
 
-		// 2-in-a-row soft signal: inject a strong corrective nudge but keep
-		// looping. dedupes per Run so a wedged provider isn't spam-nudged.
-		if obs.IsTwoStrike && e.nudgeOnce(nudgeTwoStrike) {
-			class := parseClassFromResult(r.Content)
-			w := fmt.Sprintf("[two-strike] %s called twice with identical args, both failed (class=%s). "+
+		// nudge prefixes the result once per Run (key dedupes) and tells --json
+		// consumers; a wedged provider isn't spam-nudged.
+		nudge := func(key, event, format string, args ...any) {
+			if e.nudgeOnce(key) {
+				blocks = prependWarningToToolResult(blocks, fmt.Sprintf(format, args...))
+				emitRepeatEvent(e, u, event, obs)
+			}
+		}
+		// 2-in-a-row soft signal: inject a strong corrective nudge but keep looping.
+		if obs.IsTwoStrike {
+			nudge(nudgeTwoStrike, "two_strike_nudge", "[two-strike] %s called twice with identical args, both failed (class=%s). "+
 				"read the error above carefully — change args or pick a different tool. if blocked, call escalate.\n\n",
-				u.Name, class)
-			blocks = prependWarningToToolResult(blocks, w)
-			emitRepeatEvent(e, u, "two_strike_nudge", obs)
+				u.Name, parseClassFromResult(r.Content))
 		}
 		// only nudge when the repeated call is currently failing. an identical
 		// call that succeeds is legit re-verification (e.g. re-running tests
 		// after an edit) — nudging "try a different approach" there is wrong
 		// advice and pushes small models to escalate over normal work.
-		if obs.RepeatCount >= repeatNudgeAt && r.IsError && e.nudgeOnce(nudgeRepeat) {
-			w := fmt.Sprintf("[repeat] same call to %s failed %dx — try a different approach, ask the user, or call escalate.\n\n",
+		if obs.RepeatCount >= repeatNudgeAt && r.IsError {
+			nudge(nudgeRepeat, "repeat", "[repeat] same call to %s failed %dx — try a different approach, ask the user, or call escalate.\n\n",
 				u.Name, obs.RepeatCount)
-			blocks = prependWarningToToolResult(blocks, w)
-			emitRepeatEvent(e, u, "repeat", obs)
 		}
-		if obs.ConsecutiveSameToolFailures >= perToolFailNudgeAt && e.nudgeOnce(nudgePerToolFail) {
-			w := fmt.Sprintf("[tool-fail] %s failed %dx in a row — different tool? different args? ask the user.\n\n",
+		if obs.ConsecutiveSameToolFailures >= perToolFailNudgeAt {
+			nudge(nudgePerToolFail, "per_tool_fail", "[tool-fail] %s failed %dx in a row — different tool? different args? ask the user.\n\n",
 				u.Name, obs.ConsecutiveSameToolFailures)
-			blocks = prependWarningToToolResult(blocks, w)
-			emitRepeatEvent(e, u, "per_tool_fail", obs)
 		}
 		// same test failure back again: rerunning is not debugging.
-		if n := e.run.repeats.observeTestFail(u, r.Content); n >= testFailNudgeAt && e.nudgeOnce(nudgeTestFail) {
-			w := fmt.Sprintf("[repeat] the same test failure came back %dx. stop rerunning: read the failing assertion "+
+		if n := e.run.repeats.observeTestFail(u, r.Content); n >= testFailNudgeAt {
+			nudge(nudgeTestFail, "test_fail_loop", "[repeat] the same test failure came back %dx. stop rerunning: read the failing assertion "+
 				"and the code it exercises, then change something. no throwaway debug files; if blocked, call escalate.\n\n", n)
-			blocks = prependWarningToToolResult(blocks, w)
-			emitRepeatEvent(e, u, "test_fail_loop", obs)
 		}
 		// identical-output loop on read-only tools: the same read with the
 		// same bytes back teaches the model nothing — observed burning 2M+
@@ -107,11 +105,9 @@ func observeRepeats(e *Engine, uses []types.ToolUse, results []types.ToolResult,
 				emitRepeatEvent(e, u, "hard_bail_same_result", obs)
 				return blocks, &TwoStrikeError{Use: u, Class: "identical-read-loop"}
 			}
-			if obs.SameResultCount >= sameResultNudgeAt && e.nudgeOnce(nudgeSameResult) {
-				w := fmt.Sprintf("[repeat] %s returned IDENTICAL output %dx — you already have this information. "+
+			if obs.SameResultCount >= sameResultNudgeAt {
+				nudge(nudgeSameResult, "same_result", "[repeat] %s returned IDENTICAL output %dx — you already have this information. "+
 					"act on it: make your edit, or finish.\n\n", u.Name, obs.SameResultCount)
-				blocks = prependWarningToToolResult(blocks, w)
-				emitRepeatEvent(e, u, "same_result", obs)
 			}
 		}
 	}

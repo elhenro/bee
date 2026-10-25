@@ -207,5 +207,5 @@ type RunResult struct {
 // or MaxIterations is hit. The user message is appended to the session.
 // Thin wrapper around RunWithContent for the text-only call path.
 func (e *Engine) Run(ctx context.Context, userMsg string) (RunResult, error) {
-	return e.RunWithContent(ctx, []types.ContentBlock{{Type: types.BlockText, Text: userMsg}})
+	return e.RunWithContent(ctx, []types.ContentBlock{textBlock(userMsg)})
 }
