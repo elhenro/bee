@@ -70,8 +70,8 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// upcoming request has headroom. uses lastInputTokens from the prior
 	// run when available; otherwise falls back to estimator over sys+history.
 	if e.compactionEnabled() {
-		budget := contextBudget(e.Cfg)
-		if ShouldAutoCompactWithUsage(pl.sys, res.Messages, e.run.lastInputTokens, budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)) && compactWorthwhile(res.Messages, budget) {
+		budget, threshold := e.compactLimits()
+		if ShouldAutoCompactWithUsage(pl.sys, res.Messages, e.run.lastInputTokens, budget, threshold) && compactWorthwhile(res.Messages, budget) {
 			res.Messages = e.compactInline(ctx, res.Messages)
 		}
 	}

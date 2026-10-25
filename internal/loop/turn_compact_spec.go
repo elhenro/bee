@@ -41,8 +41,7 @@ func (e *Engine) autoCompactStep(ctx context.Context, msgs []types.Message, sys 
 	if !e.compactionEnabled() {
 		return msgs
 	}
-	budget := contextBudget(e.Cfg)
-	threshold := scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)
+	budget, threshold := e.compactLimits()
 	pressure := compactPressure(sys, msgs, e.run.lastInputTokens, budget, threshold)
 	if pressure <= specStartRatio || !compactWorthwhile(msgs, budget) {
 		return msgs

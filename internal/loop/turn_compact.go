@@ -94,8 +94,7 @@ func (e *Engine) PrepareResume(ctx context.Context) (CompactStats, bool, error) 
 	if !e.compactionEnabled() || len(e.InitialMessages) == 0 {
 		return CompactStats{}, false, nil
 	}
-	budget := contextBudget(e.Cfg)
-	threshold := scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)
+	budget, threshold := e.compactLimits()
 	// system prompt isn't assembled yet; estimate over history alone.
 	if !ShouldAutoCompact("", e.InitialMessages, budget, threshold) {
 		return CompactStats{}, false, nil
@@ -129,6 +128,12 @@ func contextBudget(cfg config.Config) int {
 		return 32768
 	}
 	return 0
+}
+
+// compactLimits is the active model's window and the (widened) trigger ratio.
+func (e *Engine) compactLimits() (budget int, threshold float64) {
+	budget = contextBudget(e.Cfg)
+	return budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)
 }
 
 // scaledCompactThreshold widens the default compaction threshold for large
