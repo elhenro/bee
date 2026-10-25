@@ -144,7 +144,7 @@ func (a *AgentView) Render(width, height int) string {
 				fmt.Sprintf("%-40s", truncateRunes(r.Task, 40)),
 				stateLabel(r.State),
 				humanAgeShort(r.UpdatedAt),
-				shortName(r.SessionID),
+				r.SessionID[:min(len(r.SessionID), 8)],
 			))
 		}
 	}

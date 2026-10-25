@@ -16,6 +16,12 @@ import (
 	"github.com/muesli/termenv"
 )
 
+// StyleActive marks what is live or selected: honey, bold.
+var (
+	StyleActive = lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
+	StyleLabel  = lipgloss.NewStyle().Foreground(fgSquid)
+)
+
 // Layered neutrals, mirrored for light mode so the same role (faint /
 // subtle / body / bright) stays consistent across themes.
 //

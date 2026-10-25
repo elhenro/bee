@@ -133,11 +133,8 @@ func (m Model) openPane() (string, bool) {
 			return p.View(m.width, m.height), true
 		}
 	}
-	switch {
-	case m.agentView != nil && m.agentView.IsOpen():
+	if m.agentView != nil && m.agentView.IsOpen() {
 		return m.agentView.Render(m.width, m.height), true
-	case m.hive != nil && m.hive.Expanded():
-		return m.hive.RenderFull(m.width, m.height), true
 	}
 	return "", false
 }

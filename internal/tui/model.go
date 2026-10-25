@@ -205,13 +205,8 @@ type Model struct {
 	effortPane      *EffortPane
 	effortRequested bool
 
-	// hive pane — opened by Left arrow on an empty input. Right arrow
-	// returns to the chat view. Mirrors Ctrl+H toggle path.
-	hive *Hive
-
-	// agentView is the bgreg-backed pane that supersedes hive.RenderFull.
-	// Left arrow opens it; tick-driven 1s refresh keeps live bg bees up to
-	// date. Hive stays for the bottom-bar hex strip widget.
+	// agentView is the bgreg-backed pane. Left arrow opens it; tick-driven
+	// 1s refresh keeps live bg bees up to date.
 	agentView *AgentView
 
 	// settings pane — opened by /settings. Toggles verbose tool output and

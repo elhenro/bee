@@ -109,7 +109,6 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 		effortPane:      NewEffortPane(),
 		settingsPane:    NewSettingsPane(),
 		toolsPane:       NewToolsPane(),
-		hive:            NewHive(),
 		agentView:       NewAgentView(),
 		showThoughts:    true,
 		highlight:       true,

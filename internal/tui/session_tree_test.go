@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -44,7 +45,7 @@ func TestSessionTree_Toggle(t *testing.T) {
 func TestSessionTree_EmptyShowsStub(t *testing.T) {
 	tree := NewSessionTree()
 	tree.Update(ToggleSessionTreeMsg{})
-	out := strip(tree.View(60, 20))
+	out := ansi.Strip(tree.View(60, 20))
 	if !strings.Contains(out, "Session tree") {
 		t.Fatalf("missing title, got %q", out)
 	}
@@ -63,7 +64,7 @@ func TestSessionTree_RendersBranches(t *testing.T) {
 	tree := NewSessionTree()
 	tree.LoadMessages(msgs, "c")
 	tree.Update(ToggleSessionTreeMsg{})
-	out := strip(tree.View(80, 24))
+	out := ansi.Strip(tree.View(80, 24))
 	if !strings.Contains(out, "first ask") {
 		t.Fatalf("missing root preview: %q", out)
 	}
@@ -213,7 +214,7 @@ func TestSessionTree_CursorRendered(t *testing.T) {
 	tree := NewSessionTree()
 	tree.LoadMessages(sampleTreeMsgs(), "c")
 	tree.Update(ToggleSessionTreeMsg{})
-	out := strip(tree.View(80, 24))
+	out := ansi.Strip(tree.View(80, 24))
 	if !strings.Contains(out, glyphSel) {
 		t.Fatalf("expected cursor glyph %s, got %q", glyphSel, out)
 	}
