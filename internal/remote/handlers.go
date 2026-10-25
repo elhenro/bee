@@ -3,6 +3,8 @@ package remote
 import (
 	"encoding/json"
 	"fmt"
+	"html"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,7 +16,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	title := htmlEscape(s.opts.Title)
+	title := html.EscapeString(s.opts.Title)
 	fmt.Fprintf(w, indexHTML, title, title)
 }
 
@@ -145,4 +147,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// writeSSE emits one event in `event: <type>\ndata: <json>\n\n` form.
+func writeSSE(w io.Writer, typ string, data interface{}) {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		payload = []byte("null")
+	}
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", typ, payload)
 }

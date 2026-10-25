@@ -13,6 +13,7 @@ package herdr
 import (
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -150,22 +151,12 @@ func (r *Reporter) Begin(s Session) func() {
 	if r == nil {
 		return func() {}
 	}
-	r.mu.Lock()
-	r.active++
-	if s.ID != "" {
-		r.sess = s
-	}
-	r.mu.Unlock()
-	r.kick()
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			r.mu.Lock()
-			r.active--
-			r.mu.Unlock()
-			r.kick()
-		})
-	}
+	return r.open(func() {
+		r.active++
+		if s.ID != "" {
+			r.sess = s
+		}
+	}, func() { r.active-- })
 }
 
 // Block marks the agent as waiting on the user (approval, question) until the
@@ -174,22 +165,28 @@ func (r *Reporter) Block(msg string) func() {
 	if r == nil {
 		return func() {}
 	}
+	var id int
+	return r.open(func() {
+		r.nextID++
+		id = r.nextID
+		r.blocks = append(r.blocks, blocker{id: id, msg: msg})
+	}, func() {
+		r.blocks = slices.DeleteFunc(r.blocks, func(b blocker) bool { return b.id == id })
+	})
+}
+
+// open runs add under the lock and returns a once-only func that runs undo
+// the same way; both nudge the sender.
+func (r *Reporter) open(add, undo func()) func() {
 	r.mu.Lock()
-	r.nextID++
-	id := r.nextID
-	r.blocks = append(r.blocks, blocker{id: id, msg: msg})
+	add()
 	r.mu.Unlock()
 	r.kick()
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			r.mu.Lock()
-			for i, b := range r.blocks {
-				if b.id == id {
-					r.blocks = append(r.blocks[:i], r.blocks[i+1:]...)
-					break
-				}
-			}
+			undo()
 			r.mu.Unlock()
 			r.kick()
 		})

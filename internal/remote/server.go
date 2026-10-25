@@ -86,18 +86,6 @@ func genToken() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// Token returns the per-instance bearer token embedded in the URL path.
-func (s *Server) Token() string { return s.token }
-
-// History returns a copy of the current transcript.
-func (s *Server) History() []Msg {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]Msg, len(s.history))
-	copy(out, s.history)
-	return out
-}
-
 // Handler returns the http mux. All routes are scoped under /<token>/ so only
 // clients that received the printed URL can reach the agent endpoints.
 func (s *Server) Handler() http.Handler {
