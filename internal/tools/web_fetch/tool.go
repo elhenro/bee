@@ -2,14 +2,11 @@ package web_fetch
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"unicode/utf8"
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
-	"github.com/pelletier/go-toml/v2"
 )
 
 // Config holds web_fetch configuration
@@ -47,11 +44,6 @@ type Tool struct {
 func New(cfg Config) (tools.Tool, error) {
 	if !cfg.Enabled {
 		return nil, fmt.Errorf("web_fetch tool is disabled")
-	}
-
-	// Load API key from environment if available
-	if os.Getenv("BRAVE_API_KEY") != "" {
-		// Could integrate Brave API here in the future
 	}
 
 	return &Tool{config: cfg}, nil
@@ -128,54 +120,4 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		Content: output,
 		IsError: false,
 	}, nil
-}
-
-// SaveConfigToToml saves configuration to a TOML file
-func (t *Tool) SaveConfigToToml(path string) error {
-	data, err := toml.Marshal(t.config)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, data, 0644)
-}
-
-// MarshalJSON implements json.Marshaler for Config
-func (c Config) MarshalJSON() ([]byte, error) {
-	type Alias Config
-	return json.Marshal(&struct {
-		Enabled bool     `json:"enabled"`
-		Allow   []string `json:"allow_domains"`
-		Block   []string `json:"block_domains"`
-		MaxLen  int      `json:"max_content_len"`
-	}{
-		Enabled: c.Enabled,
-		Allow:   c.AllowDomains,
-		Block:   c.BlockDomains,
-		MaxLen:  c.MaxContentLen,
-	})
-}
-
-// UnmarshalJSON implements json.Unmarshaler for Config
-func (c *Config) UnmarshalJSON(data []byte) error {
-	type Alias Config
-	aux := &struct {
-		Enabled bool     `json:"enabled"`
-		Allow   []string `json:"allow_domains"`
-		Block   []string `json:"block_domains"`
-		MaxLen  int      `json:"max_content_len"`
-	}{
-		Enabled: true, // default
-	}
-
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-
-	c.Enabled = aux.Enabled
-	c.AllowDomains = aux.Allow
-	c.BlockDomains = aux.Block
-	c.MaxContentLen = aux.MaxLen
-
-	return nil
 }
