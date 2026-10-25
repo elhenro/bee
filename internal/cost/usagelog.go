@@ -23,23 +23,7 @@ type UsageRecord struct {
 
 var usageMu sync.Mutex
 
-// usagePath resolves the append-only usage log. BEE_USAGE_LOG pins it directly
-// (used by tests); otherwise it lands inside BEE_HOME or ~/.bee. Empty when no
-// home can be determined so callers degrade to a no-op.
-func usagePath() string {
-	if p := os.Getenv("BEE_USAGE_LOG"); p != "" {
-		return p
-	}
-	home := os.Getenv("BEE_HOME")
-	if home == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		home = filepath.Join(h, ".bee")
-	}
-	return filepath.Join(home, "usage.jsonl")
-}
+func usagePath() string { return statePath("BEE_USAGE_LOG", "usage.jsonl") }
 
 // AppendUsage appends one usage line. Unlike the lifetime counter this log is
 // append-only — a single O_APPEND write of a short line is atomic on local

@@ -5,7 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"github.com/elhenro/bee/internal/atomicfile"
+	"github.com/elhenro/bee/internal/beehome"
+	"github.com/elhenro/bee/internal/flock"
 )
 
 // lifetimeFile is the JSON shape persisted to disk. int64 so a busy user
@@ -22,22 +27,15 @@ var (
 	lifePath   string
 )
 
-// lifetimePath resolves the totals file location. BEE_LIFETIME_TOKENS pins it
-// directly (used by tests); otherwise lands inside BEE_HOME or ~/.bee. Empty
-// when no home directory can be determined so callers degrade to a no-op.
-func lifetimePath() string {
-	if p := os.Getenv("BEE_LIFETIME_TOKENS"); p != "" {
+// statePath resolves a state file: env pins it directly (used by tests),
+// otherwise it lands inside the bee home. Empty when no home directory can be
+// determined so callers degrade to a no-op.
+func statePath(env, name string) string {
+	if p := os.Getenv(env); p != "" {
 		return p
 	}
-	home := os.Getenv("BEE_HOME")
-	if home == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		home = filepath.Join(h, ".bee")
-	}
-	return filepath.Join(home, "lifetime_tokens.json")
+	p, _ := beehome.Join(name)
+	return p
 }
 
 // ResetLifetimeForTest clears the cached load so the next call re-reads from
@@ -50,21 +48,29 @@ func ResetLifetimeForTest() {
 	lifeMu.Unlock()
 }
 
+// readLifetime loads the persisted totals; a missing or corrupt file is zero.
+func readLifetime(path string) (f lifetimeFile) {
+	if b, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(b, &f)
+	}
+	return f
+}
+
+func (f *lifetimeFile) add(in, out int) {
+	f.Input += int64(max(in, 0))
+	f.Output += int64(max(out, 0))
+}
+
 // ensureLifetimeLoaded is a lazy one-shot load. Caller holds lifeMu.
 func ensureLifetimeLoaded() {
 	if lifeLoaded {
 		return
 	}
 	lifeLoaded = true
-	lifePath = lifetimePath()
-	if lifePath == "" {
-		return
+	lifePath = statePath("BEE_LIFETIME_TOKENS", "lifetime_tokens.json")
+	if lifePath != "" {
+		lifeData = readLifetime(lifePath)
 	}
-	b, err := os.ReadFile(lifePath)
-	if err != nil {
-		return
-	}
-	_ = json.Unmarshal(b, &lifeData)
 }
 
 // LifetimeTotals returns persisted input/output token totals across every
@@ -88,12 +94,7 @@ func AddLifetime(in, out int) {
 	ensureLifetimeLoaded()
 	if lifePath == "" {
 		// no persistence target; keep the in-memory tally for the banner.
-		if in > 0 {
-			lifeData.Input += int64(in)
-		}
-		if out > 0 {
-			lifeData.Output += int64(out)
-		}
+		lifeData.add(in, out)
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(lifePath), 0o755); err != nil {
@@ -103,30 +104,14 @@ func AddLifetime(in, out int) {
 	// (fan, swarm, parallel headless runs) each re-read the file before
 	// adding their delta, so nobody's counts get silently dropped by a
 	// last-writer-wins overwrite.
-	unlock := lockLifetimeFile(lifePath)
-	defer unlock()
-	var cur lifetimeFile
-	if b, err := os.ReadFile(lifePath); err == nil {
-		_ = json.Unmarshal(b, &cur)
-	}
-	if in > 0 {
-		cur.Input += int64(in)
-	}
-	if out > 0 {
-		cur.Output += int64(out)
-	}
-	lifeData = cur
-	b, err := json.Marshal(cur)
+	defer flock.Lock(lifePath)()
+	lifeData = readLifetime(lifePath)
+	lifeData.add(in, out)
+	b, err := json.Marshal(lifeData)
 	if err != nil {
 		return
 	}
-	// per-pid temp so two bee processes don't clobber each other's temp file
-	// mid-write (rename is atomic, but a shared temp name is not).
-	tmp := fmt.Sprintf("%s.tmp.%d", lifePath, os.Getpid())
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, lifePath)
+	_ = atomicfile.Write(lifePath, b, 0o644)
 }
 
 // FormatLifetimeTokens compacts a token count for banner display: thousands
@@ -151,9 +136,5 @@ func trimDecimal(v float64) string {
 	if v >= 10 {
 		return fmt.Sprintf("%.0f", v)
 	}
-	s := fmt.Sprintf("%.1f", v)
-	if len(s) >= 2 && s[len(s)-2:] == ".0" {
-		return s[:len(s)-2]
-	}
-	return s
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", v), ".0")
 }

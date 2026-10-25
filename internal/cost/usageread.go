@@ -84,9 +84,9 @@ func Aggregate(recs []UsageRecord, window time.Duration, now time.Time, buckets 
 		if !inWindow(r.Time, window, now) {
 			continue
 		}
-		add(&w.Total, r)
-		addTo(w.ByProvider, r.Provider, r)
-		addTo(w.ByModel, r.Model, r)
+		w.Total.add(r.Input, r.Output, r.USD)
+		addTo(w.ByProvider, r.Provider, r.Input, r.Output, r.USD)
+		addTo(w.ByModel, r.Model, r.Input, r.Output, r.USD)
 		if !r.CostReported {
 			w.Estimated = true
 		}
@@ -140,17 +140,4 @@ func bucketIndex(t time.Time, window time.Duration, now, start time.Time, bucket
 		idx = buckets - 1
 	}
 	return idx
-}
-
-func add(s *Summary, r UsageRecord) {
-	s.Calls++
-	s.Input += r.Input
-	s.Output += r.Output
-	s.USD += r.USD
-}
-
-func addTo(m map[string]Summary, key string, r UsageRecord) {
-	s := m[key]
-	add(&s, r)
-	m[key] = s
 }

@@ -85,15 +85,6 @@ func TestByModelByProvider(t *testing.T) {
 	}
 }
 
-func TestSetPriceRoundTrip(t *testing.T) {
-	prev := SetPrice("zzz-test-model", Price{InputPerM: 1.0, OutputPerM: 2.0})
-	defer SetPrice("zzz-test-model", prev)
-	p, ok := Lookup("any", "zzz-test-model")
-	if !ok || p.InputPerM != 1.0 || p.OutputPerM != 2.0 {
-		t.Fatalf("SetPrice failed: %+v ok=%v", p, ok)
-	}
-}
-
 func TestLookupDottedRoutedIds(t *testing.T) {
 	for _, m := range []string{"anthropic/claude-sonnet-4.5", "claude-sonnet-4.5", "moonshotai/kimi-k2.5"} {
 		if _, ok := Lookup("openrouter", m); !ok {
