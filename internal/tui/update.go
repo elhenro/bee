@@ -116,22 +116,15 @@ func applyAndNotify(ctx context.Context, p *tea.Program, info update.Info) {
 // summarizeApplyOutput keeps the warn line short — full output would shove
 // the chrome aside. Falls back to last non-empty line on no clear signal.
 func summarizeApplyOutput(out string) string {
-	out = strings.TrimSpace(out)
-	if out == "" {
-		return ""
-	}
+	last := ""
 	for _, l := range strings.Split(out, "\n") {
 		l = strings.TrimSpace(l)
 		if strings.HasPrefix(l, "bee-install: done") {
 			return l
 		}
-	}
-	lines := strings.Split(out, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.TrimSpace(lines[i])
 		if l != "" {
-			return l
+			last = l
 		}
 	}
-	return ""
+	return last
 }

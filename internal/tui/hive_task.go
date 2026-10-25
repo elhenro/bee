@@ -41,7 +41,7 @@ func isContinuation(s string) bool {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.TrimRight(s, ".!? ")
 	switch s {
-	case "", "continue", "go on", "go", "keep going", "keep going.",
+	case "", "continue", "go on", "go", "keep going",
 		"proceed", "next", "more", "resume", "carry on", "yes", "y",
 		"ok", "okay", "continue please", "go ahead":
 		return true

@@ -118,16 +118,7 @@ func (p UpdatePrompt) View() string {
 	}
 	summary := repo + "@" + branch + ": " + cur + " → " + latest + ahead
 
-	labels := []string{"[1] later", "[2] update now", "[3] always auto", "[4] never ask"}
-	btns := make([]string, 4)
-	for i, lbl := range labels {
-		if i == p.focus {
-			btns[i] = p.styles.ButtonHot.Render(lbl)
-		} else {
-			btns[i] = p.styles.Button.Render(lbl)
-		}
-	}
-	row := lipgloss.JoinHorizontal(lipgloss.Top, btns[0], "  ", btns[1], "  ", btns[2], "  ", btns[3])
+	row := buttonRow(p.styles, []string{"[1] later", "[2] update now", "[3] always auto", "[4] never ask"}, p.focus)
 
 	body := strings.Join([]string{
 		title,
@@ -139,6 +130,22 @@ func (p UpdatePrompt) View() string {
 		StyleLabel.Render("enter pick · ←/→ move · esc later"),
 	}, "\n")
 	return p.styles.Modal.Render(body)
+}
+
+// buttonRow lays labels out side by side, highlighting the focused one.
+func buttonRow(st *Styles, labels []string, focus int) string {
+	parts := make([]string, 0, 2*len(labels))
+	for i, lbl := range labels {
+		if i > 0 {
+			parts = append(parts, "  ")
+		}
+		style := st.Button
+		if i == focus {
+			style = st.ButtonHot
+		}
+		parts = append(parts, style.Render(lbl))
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 }
 
 func plural(n int, word string) string {
