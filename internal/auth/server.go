@@ -101,7 +101,7 @@ func (s *LoopbackServer) Close() error {
 
 // BuildAuthorizeURLWithExtras composes the full authorize URL with PKCE params
 // plus extra vendor-specific params (audience, prompt, id_token_hint). Extras
-// override standard params if they collide — caller's responsibility.
+// override standard params if they collide, caller's responsibility.
 func BuildAuthorizeURLWithExtras(authorizeEndpoint, clientID, redirectURI, codeChallenge, state, scope string, extras map[string]string) string {
 	q := url.Values{}
 	q.Set("response_type", "code")
