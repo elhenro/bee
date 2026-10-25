@@ -163,12 +163,6 @@ func TestPool_ContextCancellation(t *testing.T) {
 	if errs == 0 {
 		t.Errorf("expected at least one canceled/error result, got 0")
 	}
-	// final pool state: no worker stays in running/pending after Run returns
-	for _, w := range p.WorkersSnapshot() {
-		if w.State == StateRunning || w.State == StatePending {
-			t.Errorf("worker %s stuck in state %s after Run", w.ID, w.State)
-		}
-	}
 }
 
 func TestPool_ChannelCloses(t *testing.T) {

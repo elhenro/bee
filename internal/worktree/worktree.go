@@ -31,7 +31,6 @@ import (
 type Worktree struct {
 	Path     string
 	repoRoot string
-	branch   string
 	base     string // HEAD sha the worktree was cut from
 }
 
@@ -89,8 +88,8 @@ func (w *Worktree) MergeBack() error {
 
 // Create allocates a new worktree rooted under the repo's standard
 // `.git/worktrees` parent dir if available, falling back to a sibling
-// directory of repoRoot. `label` is a short suffix used to name both the
-// directory and the detached branch reference for easier debugging.
+// directory of repoRoot. `label` is a short prefix used to name the
+// directory for easier debugging.
 //
 // repoRoot must point inside a git repo. Returns an error if `git` is not
 // on PATH or repoRoot is not a working tree.
@@ -141,7 +140,7 @@ func Create(repoRoot, label string) (*Worktree, error) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("git worktree add: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	return &Worktree{Path: dir, repoRoot: top, branch: label, base: base}, nil
+	return &Worktree{Path: dir, repoRoot: top, base: base}, nil
 }
 
 func gitOut(dir string, args ...string) (string, error) {

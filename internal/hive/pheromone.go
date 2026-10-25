@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // Pheromone is the hive-wide state card every bee carries in its prompt for one
@@ -227,12 +229,11 @@ func (p *Pheromone) mirror() {
 	if err != nil {
 		return
 	}
-	if _, err := tmp.WriteString(b.String()); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return
+	_, err = tmp.WriteString(b.String())
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
 	}
-	if err := tmp.Close(); err != nil {
+	if err != nil {
 		_ = os.Remove(tmp.Name())
 		return
 	}
@@ -250,9 +251,5 @@ type Tailed interface {
 // PheromonePath returns where a hive run mirrors its card:
 // <beeHome>/sessions/hive/<id>.pheromone.md. Nothing is created on disk.
 func PheromonePath(id string) (string, error) {
-	home, err := beeHome()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, "sessions", "hive", id+".pheromone.md"), nil
+	return beehome.Join("sessions", "hive", id+".pheromone.md")
 }

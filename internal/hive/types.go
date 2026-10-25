@@ -12,7 +12,7 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 )
 
-// State of a Worker bee.
+// State of a sub-task's row on the pheromone card.
 type State string
 
 const (
@@ -25,16 +25,12 @@ const (
 
 // Worker is one bee executing one task against its own Engine.
 //
-// Engine is required; the rest is filled in by Pool/Queen and observed via
-// the Result channel.
+// Engine is required; the outcome is observed via the Result channel.
 type Worker struct {
-	ID      string
-	Name    string
-	Task    string
-	Engine  *loop.Engine
-	State   State
-	Started time.Time
-	Ended   time.Time
+	ID     string
+	Name   string
+	Task   string
+	Engine *loop.Engine
 }
 
 // Result is what a Worker emits on completion. Final is the final assistant

@@ -78,7 +78,7 @@ func TestQueen_ReviewGateThreeDimensionsVerified(t *testing.T) {
 	}
 	// synthesize prompt carries the confirmed findings
 	synth := planner.prompts[1]
-	for _, want := range []string{"correctness issue", "persistence issue"} {
+	for _, want := range []string{"Critic review", "correctness issue", "persistence issue"} {
 		if !strings.Contains(synth, want) {
 			t.Errorf("synthesize prompt missing %q\nprompt=%s", want, synth)
 		}
@@ -195,26 +195,5 @@ func TestQueen_ReviewCtxCancelAborts(t *testing.T) {
 	_, err := q.Run(ctx, "t")
 	if err == nil {
 		t.Fatal("ctx cancel during review must abort the run")
-	}
-}
-
-func TestQueen_ReviewGateSupersedesCritic(t *testing.T) {
-	planner := &scriptedRunner{outputs: []string{
-		`[{"role":"builder","task":"x"}]`,
-		"final",
-	}}
-	w := &scriptedRunner{outputs: []string{"out"}}
-	critic := &scriptedRunner{outputs: []string{"SHOULD_NOT_RUN"}}
-	rev := &scriptedRunner{outputs: []string{"NONE", "NONE", "NONE"}}
-
-	q := NewQueen(planner, []Runner{w})
-	q.Critic = critic
-	q.Reviewers = []Runner{rev} // round-robins across 3 dims
-
-	if _, err := q.Run(context.Background(), "t"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(critic.prompts) != 0 {
-		t.Errorf("critic ran despite Reviewers set; prompts=%v", critic.prompts)
 	}
 }

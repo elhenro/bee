@@ -4,12 +4,10 @@
 //  1. decompose: ask Planner Runner to split the task into ≤8 sub-tasks (JSON
 //     objects pairing role + task).
 //  2. dispatch:  round-robin sub-tasks to Workers, fan out via goroutines.
-//  3. review:    (optional) hand worker outputs to Critic for a short critique.
-//  4. synthesize: hand all worker outputs (plus critique if any) back to
-//     Planner for a final summary.
-//
-// Pool from spawn.go (slice 4A) is preferred when available; this file uses
-// direct goroutine fan-out so the queen still builds even if 4A is missing.
+//  3. review:    (optional) Reviewers inspect the working tree, a Verifier
+//     re-checks every finding.
+//  4. synthesize: hand all worker outputs (plus confirmed findings if any) back
+//     to Planner for a final summary.
 package hive
 
 import (
@@ -26,71 +24,18 @@ import (
 // matches the prompt budget; defends against runaway plans.
 const MaxSubTasks = 8
 
-// Hooks observes a Queen run as it progresses. Every callback is optional;
-// nil callbacks are skipped, so existing callers (bee swarm) pass a zero
-// Hooks and see unchanged behavior. Callbacks run on the goroutine driving
-// the phase (OnWorkerStart/Done fire from worker goroutines) — keep them
-// cheap and non-blocking (a channel send the UI drains is ideal).
-type Hooks struct {
-	OnPlan        func(plan []SubTask)
-	OnWorkerStart func(idx int, sub SubTask)
-	OnWorkerDone  func(idx int, res Result)
-	OnReview      func(dimension string, claims []string)
-	OnVerify      func(f Finding)
-	OnCritique    func(critique string)
-	OnSynthesize  func()
-}
-
-func (h Hooks) plan(p []SubTask) {
-	if h.OnPlan != nil {
-		h.OnPlan(p)
-	}
-}
-func (h Hooks) workerStart(i int, s SubTask) {
-	if h.OnWorkerStart != nil {
-		h.OnWorkerStart(i, s)
-	}
-}
-func (h Hooks) workerDone(i int, r Result) {
-	if h.OnWorkerDone != nil {
-		h.OnWorkerDone(i, r)
-	}
-}
-func (h Hooks) review(dim string, claims []string) {
-	if h.OnReview != nil {
-		h.OnReview(dim, claims)
-	}
-}
-func (h Hooks) verify(f Finding) {
-	if h.OnVerify != nil {
-		h.OnVerify(f)
-	}
-}
-func (h Hooks) critique(c string) {
-	if h.OnCritique != nil {
-		h.OnCritique(c)
-	}
-}
-func (h Hooks) synthesize() {
-	if h.OnSynthesize != nil {
-		h.OnSynthesize()
-	}
-}
-
-// Queen orchestrates a planner Runner and N worker Runners. Critic is optional;
-// when set, its output is appended to the synthesize prompt.
+// Queen orchestrates a planner Runner and N worker Runners.
 type Queen struct {
 	Planner Runner
 	Workers []Runner
-	Critic  Runner
 	// Reviewers drive the verified review gate (decompose → … → review →
-	// verify → synthesize). When non-empty it supersedes Critic: each reviewer
-	// is paired to a ReviewDimension by index and inspects the real working-tree
-	// changes. Verifier (optional) re-checks every finding adversarially.
-	Reviewers        []Runner
-	Verifier         Runner
-	ReviewDimensions []ReviewDimension // 0 => DefaultReviewDimensions()
-	MaxParallel      int               // 0 => len(Workers)
+	// verify → synthesize). Each reviewer is paired to a ReviewDimension by
+	// index and inspects the real working-tree changes. Their confirmed
+	// findings are appended to the synthesize prompt. Verifier (optional)
+	// re-checks every finding adversarially.
+	Reviewers   []Runner
+	Verifier    Runner
+	MaxParallel int // 0 => len(Workers)
 	// WorkerFor, when non-nil, supersedes the fixed Workers pool: dispatch calls
 	// it once per sub-task to obtain a dedicated Runner (its own engine, often
 	// rooted in an isolated worktree). The returned done func runs after that
@@ -145,43 +90,30 @@ func (q *Queen) Run(ctx context.Context, task string) (QueenResult, error) {
 		q.Pheromone = NewPheromone("")
 	}
 	q.Pheromone.Reset(task, plan)
-	q.Hooks.plan(plan)
+	fire(q.Hooks.OnPlan, plan)
 
-	results, err := q.dispatch(ctx, plan)
-	if err != nil {
+	res := QueenResult{Plan: plan}
+	if res.WorkerResults, err = q.dispatch(ctx, plan); err != nil {
 		// dispatch only errors on ctx cancellation; worker failures are kept in
 		// Result.Err and must not abort the run.
-		return QueenResult{Plan: plan, WorkerResults: results}, err
+		return res, err
 	}
 
-	// review gate: the verified Reviewers path supersedes the legacy single
-	// Critic. Both feed their summary into synthesize via the critique string.
-	var critique string
-	var findings []Finding
-	switch {
-	case len(q.Reviewers) > 0:
-		findings, err = q.reviewAndVerify(ctx, task, plan, results)
-		if err != nil {
-			return QueenResult{Plan: plan, WorkerResults: results, Findings: findings}, fmt.Errorf("queen: review: %w", err)
+	// review gate: confirmed findings feed synthesize via the critique string.
+	if len(q.Reviewers) > 0 {
+		if res.Findings, err = q.reviewAndVerify(ctx, task, plan, res.WorkerResults); err != nil {
+			return res, fmt.Errorf("queen: review: %w", err)
 		}
-		critique = renderFindings(findings)
-		if critique != "" {
-			q.Hooks.critique(critique)
-		}
-	case q.Critic != nil:
-		critique, err = q.review(ctx, task, plan, results)
-		if err != nil {
-			return QueenResult{Plan: plan, WorkerResults: results}, fmt.Errorf("queen: review: %w", err)
-		}
-		q.Hooks.critique(critique)
+		res.Critique = renderFindings(res.Findings)
 	}
 
-	q.Hooks.synthesize()
-	final, err := q.synthesize(ctx, task, plan, results, critique)
-	if err != nil {
-		return QueenResult{Plan: plan, WorkerResults: results, Critique: critique, Findings: findings}, fmt.Errorf("queen: synthesize: %w", err)
+	if q.Hooks.OnSynthesize != nil {
+		q.Hooks.OnSynthesize()
 	}
-	return QueenResult{Plan: plan, WorkerResults: results, Critique: critique, Findings: findings, Final: final}, nil
+	if res.Final, err = q.synthesize(ctx, task, plan, res.WorkerResults, res.Critique); err != nil {
+		return res, fmt.Errorf("queen: synthesize: %w", err)
+	}
+	return res, nil
 }
 
 // decompose asks the planner to split task into 2-8 independent sub-tasks
@@ -212,125 +144,81 @@ func (q *Queen) decompose(ctx context.Context, task string) ([]SubTask, error) {
 // finish. An individual worker error does not abort siblings; it is recorded
 // in that worker's Result.Err and the run proceeds. A hard error is returned
 // only when the parent ctx is cancelled.
+//
+// With WorkerFor, each sub-task gets its own Runner from the factory, so they
+// run concurrently up to MaxParallel with no per-engine lock. The factory's
+// done func runs after each sub-task (merge-back / cleanup) and receives the
+// worker's error so a failed run's isolated tree is discarded.
 func (q *Queen) dispatch(ctx context.Context, plan []SubTask) ([]Result, error) {
 	if q.WorkerFor != nil {
-		return q.dispatchFactory(ctx, plan)
+		parallel := q.MaxParallel
+		if parallel <= 0 {
+			parallel = len(plan)
+		}
+		return q.fanOut(ctx, plan, parallel, func(idx int, st SubTask) Result {
+			runner, done, err := q.WorkerFor(idx, st)
+			if err != nil {
+				res := subResult(idx, st)
+				res.Err = fmt.Errorf("spawn worker: %w", err)
+				return res
+			}
+			res := q.runSub(ctx, idx, st, runner)
+			if done != nil {
+				done(res.Err) // merge-back / cleanup; failed runs are discarded
+			}
+			fire2(q.Hooks.OnWorkerDone, idx, res)
+			return res
+		})
 	}
-	results := make([]Result, len(plan))
 	parallel := q.MaxParallel
 	if parallel <= 0 || parallel > len(q.Workers) {
 		parallel = len(q.Workers)
 	}
-	sem := make(chan struct{}, parallel)
 	// a worker engine is not safe to drive concurrently (RunWithContentDisplay
 	// resets/writes unsynchronized per-run state, incl. maps → concurrent map
 	// write panic). When the plan has more sub-tasks than workers, round-robin
 	// reuses engines, so serialize the calls that map to each one. The semaphore
 	// alone caps only TOTAL concurrency, not per-engine.
 	locks := make([]sync.Mutex, len(q.Workers))
-
-	var wg sync.WaitGroup
-
-	for i, sub := range plan {
-		widx := i % len(q.Workers)
-		worker := q.Workers[widx]
-		wg.Add(1)
-		go func(idx, widx int, w Runner, st SubTask) {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				results[idx] = Result{
-					WorkerID: fmt.Sprintf("w%d", idx),
-					Name:     fmt.Sprintf("worker-%d", idx),
-					Task:     st.Task,
-					Err:      ctx.Err(),
-				}
-				return
-			}
-			defer func() { <-sem }()
-			end, err := q.Throttle.start(ctx, &q.running)
-			if err != nil {
-				results[idx] = Result{WorkerID: fmt.Sprintf("w%d", idx), Name: fmt.Sprintf("worker-%d", idx), Task: st.Task, Err: err}
-				return
-			}
-			defer end()
-			locks[widx].Lock()
-			defer locks[widx].Unlock()
-
-			r := q.runSub(ctx, idx, st, w)
-			results[idx] = r
-			q.Hooks.workerDone(idx, r)
-		}(i, widx, worker, sub)
-	}
-
-	wg.Wait()
-	// only ctx cancellation aborts; individual worker errors ride in Result.Err.
-	if ctx.Err() != nil {
-		return results, ctx.Err()
-	}
-	return results, nil
+	return q.fanOut(ctx, plan, parallel, func(idx int, st SubTask) Result {
+		widx := idx % len(q.Workers)
+		locks[widx].Lock()
+		defer locks[widx].Unlock()
+		res := q.runSub(ctx, idx, st, q.Workers[widx])
+		fire2(q.Hooks.OnWorkerDone, idx, res)
+		return res
+	})
 }
 
-// dispatchFactory is the WorkerFor path: each sub-task gets its own Runner from
-// the factory, so they run concurrently up to MaxParallel with no per-engine
-// lock. The factory's done func runs after each sub-task (merge-back / cleanup)
-// and receives the worker's error so a failed run's isolated tree is discarded.
-func (q *Queen) dispatchFactory(ctx context.Context, plan []SubTask) ([]Result, error) {
+// fanOut runs one goroutine per sub-task, at most parallel past the semaphore
+// and the load throttle at a time, and collects their Results in plan order.
+// A sub-task that never got to start carries the ctx error. Only ctx
+// cancellation is returned as an error.
+func (q *Queen) fanOut(ctx context.Context, plan []SubTask, parallel int, run func(idx int, st SubTask) Result) ([]Result, error) {
 	results := make([]Result, len(plan))
-	parallel := q.MaxParallel
-	if parallel <= 0 {
-		parallel = len(plan)
-	}
 	sem := make(chan struct{}, parallel)
 	var wg sync.WaitGroup
-
 	for i, sub := range plan {
 		wg.Add(1)
-		go func(idx int, st SubTask) {
+		go func() {
 			defer wg.Done()
-			base := Result{
-				WorkerID: fmt.Sprintf("w%d", idx),
-				Name:     fmt.Sprintf("worker-%d", idx),
-				Task:     st.Task,
-			}
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				base.Err = ctx.Err()
-				results[idx] = base
-				return
-			}
-			defer func() { <-sem }()
-			end, err := q.Throttle.start(ctx, &q.running)
+			release, err := q.Throttle.acquire(ctx, sem, &q.running)
 			if err != nil {
-				base.Err = err
-				results[idx] = base
+				results[i] = subResult(i, sub)
+				results[i].Err = err
 				return
 			}
-			defer end()
-
-			runner, done, err := q.WorkerFor(idx, st)
-			if err != nil {
-				base.Err = fmt.Errorf("spawn worker: %w", err)
-				results[idx] = base
-				return
-			}
-
-			base = q.runSub(ctx, idx, st, runner)
-			if done != nil {
-				done(base.Err) // merge-back / cleanup; failed runs are discarded
-			}
-			results[idx] = base
-			q.Hooks.workerDone(idx, base)
-		}(i, sub)
+			defer release()
+			results[i] = run(i, sub)
+		}()
 	}
-
 	wg.Wait()
-	if ctx.Err() != nil {
-		return results, ctx.Err()
-	}
-	return results, nil
+	return results, ctx.Err()
+}
+
+// subResult is the Result skeleton for sub-task idx.
+func subResult(idx int, st SubTask) Result {
+	return Result{WorkerID: fmt.Sprintf("w%d", idx), Name: fmt.Sprintf("worker-%d", idx), Task: st.Task}
 }
 
 // runSub drives one sub-task on a runner: attaches the pheromone tail (when
@@ -345,13 +233,9 @@ func (q *Queen) runSub(ctx context.Context, idx int, st SubTask, r Runner) Resul
 		t.SetPromptTail(q.Pheromone.Tail(idx, st))
 	}
 	q.Pheromone.Start(idx)
-	q.Hooks.workerStart(idx, st)
-	res := Result{
-		WorkerID: fmt.Sprintf("w%d", idx),
-		Name:     fmt.Sprintf("worker-%d", idx),
-		Task:     st.Task,
-		Started:  time.Now().UTC(),
-	}
+	fire2(q.Hooks.OnWorkerStart, idx, st)
+	res := subResult(idx, st)
+	res.Started = time.Now().UTC()
 	out, err := r.Run(ctx, st.Task)
 	res.Ended = time.Now().UTC()
 	if err != nil {
@@ -362,25 +246,6 @@ func (q *Queen) runSub(ctx context.Context, idx int, st SubTask, r Runner) Resul
 	res.Report = reportFor(ctx, r, out, err)
 	q.Pheromone.Finish(idx, res)
 	return res
-}
-
-// review asks the Critic to read the plan + worker outputs and emit a short
-// critique. Critic is opt-in via Queen.Critic.
-func (q *Queen) review(ctx context.Context, task string, plan []SubTask, results []Result) (string, error) {
-	var b strings.Builder
-	fmt.Fprintf(&b,
-		"Review this hive run. Read the original task, the plan, and each worker's result. "+
-			"Emit a 1-2 paragraph critique: missed edge cases, weak spots, "+
-			"and what's still uncertain. No fixes, no code.\n\n"+
-			"Original task: %s\n\n",
-		task,
-	)
-	writePlanAndResults(&b, plan, results)
-	out, err := q.Critic.Run(ctx, b.String())
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out.FinalText), nil
 }
 
 // synthesize hands all worker outputs back to the planner for a cohesive

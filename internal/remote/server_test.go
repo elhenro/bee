@@ -20,7 +20,7 @@ func (stubEngine) Send(ctx context.Context, text string, onDelta func(string)) (
 func TestIndex(t *testing.T) {
 	s := New(stubEngine{}, Options{Title: "test bee"})
 	rec := httptest.NewRecorder()
-	path := "/" + s.Token() + "/"
+	path := "/" + s.token + "/"
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 
 	if rec.Code != http.StatusOK {
@@ -51,7 +51,7 @@ func TestUnknownPathReturns404(t *testing.T) {
 func TestSend(t *testing.T) {
 	s := New(stubEngine{}, Options{})
 	rec := httptest.NewRecorder()
-	path := "/" + s.Token() + "/send"
+	path := "/" + s.token + "/send"
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"text":"hi"}`))
 	req.Header.Set("Content-Type", "application/json")
 	s.Handler().ServeHTTP(rec, req)
@@ -59,7 +59,7 @@ func TestSend(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	h := s.History()
+	h := s.history
 	if len(h) != 2 {
 		t.Fatalf("history len = %d, want 2", len(h))
 	}
@@ -74,7 +74,7 @@ func TestSend(t *testing.T) {
 func TestSendEmpty(t *testing.T) {
 	s := New(stubEngine{}, Options{})
 	rec := httptest.NewRecorder()
-	path := "/" + s.Token() + "/send"
+	path := "/" + s.token + "/send"
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"text":""}`))
 	req.Header.Set("Content-Type", "application/json")
 	s.Handler().ServeHTTP(rec, req)
@@ -87,7 +87,7 @@ func TestSendEmpty(t *testing.T) {
 func TestSendWrongContentType(t *testing.T) {
 	s := New(stubEngine{}, Options{})
 	rec := httptest.NewRecorder()
-	path := "/" + s.Token() + "/send"
+	path := "/" + s.token + "/send"
 	// form submission — classic CSRF vector
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("text=hi"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -101,7 +101,7 @@ func TestSendWrongContentType(t *testing.T) {
 func TestSendBadOrigin(t *testing.T) {
 	s := New(stubEngine{}, Options{})
 	rec := httptest.NewRecorder()
-	path := "/" + s.Token() + "/send"
+	path := "/" + s.token + "/send"
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"text":"hi"}`))
 	req.Header.Set("Content-Type", "application/json")
 	// cross-origin request — different host in Origin
@@ -119,7 +119,7 @@ func (panicEngine) Send(context.Context, string, func(string)) (string, error) {
 
 func TestSendPanicReleasesBusy(t *testing.T) {
 	s := New(panicEngine{}, Options{})
-	req := httptest.NewRequest(http.MethodPost, "/"+s.Token()+"/send", strings.NewReader(`{"text":"hi"}`))
+	req := httptest.NewRequest(http.MethodPost, "/"+s.token+"/send", strings.NewReader(`{"text":"hi"}`))
 	req.Header.Set("Content-Type", "application/json")
 	func() {
 		defer func() { _ = recover() }()

@@ -33,9 +33,9 @@ func tierParent(t *testing.T) (*loop.Engine, *int) {
 	return parent, &builds
 }
 
-func TestSpawnTier_ZeroTierKeepsParent(t *testing.T) {
+func TestTiersSpawn_ZeroTierKeepsParent(t *testing.T) {
 	parent, builds := tierParent(t)
-	eng, roll, warn, err := SpawnTier(parent, "w", config.ModelTier{})
+	eng, roll, warn, err := NewTiers(parent).Spawn("w", config.ModelTier{})
 	if err != nil || warn != "" {
 		t.Fatalf("err=%v warn=%q", err, warn)
 	}
@@ -45,9 +45,9 @@ func TestSpawnTier_ZeroTierKeepsParent(t *testing.T) {
 	}
 }
 
-func TestSpawnTier_SetTierBuildsProviderAndCfg(t *testing.T) {
+func TestTiersSpawn_SetTierBuildsProviderAndCfg(t *testing.T) {
 	parent, _ := tierParent(t)
-	eng, roll, warn, err := SpawnTier(parent, "w", config.ModelTier{Provider: "local", Model: "tiny"})
+	eng, roll, warn, err := NewTiers(parent).Spawn("w", config.ModelTier{Provider: "local", Model: "tiny"})
 	if err != nil || warn != "" {
 		t.Fatalf("err=%v warn=%q", err, warn)
 	}
@@ -63,18 +63,18 @@ func TestSpawnTier_SetTierBuildsProviderAndCfg(t *testing.T) {
 	}
 }
 
-func TestSpawnTier_ModelOnlyKeepsProvider(t *testing.T) {
+func TestTiersSpawn_ModelOnlyKeepsProvider(t *testing.T) {
 	parent, _ := tierParent(t)
-	eng, roll, _, _ := SpawnTier(parent, "w", config.ModelTier{Model: "small"})
+	eng, roll, _, _ := NewTiers(parent).Spawn("w", config.ModelTier{Model: "small"})
 	defer roll.Close()
 	if eng.Cfg.DefaultProvider != "base" || eng.Cfg.DefaultModel != "small" {
 		t.Fatalf("got %s/%s", eng.Cfg.DefaultProvider, eng.Cfg.DefaultModel)
 	}
 }
 
-func TestSpawnTier_FallbackWarns(t *testing.T) {
+func TestTiersSpawn_FallbackWarns(t *testing.T) {
 	parent, _ := tierParent(t)
-	eng, roll, warn, err := SpawnTier(parent, "w", config.ModelTier{Provider: "broken"})
+	eng, roll, warn, err := NewTiers(parent).Spawn("w", config.ModelTier{Provider: "broken"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestSpawnTier_FallbackWarns(t *testing.T) {
 	}
 
 	parent.ProviderFor = nil
-	eng2, roll2, warn2, _ := SpawnTier(parent, "w", config.ModelTier{Model: "x"})
+	eng2, roll2, warn2, _ := NewTiers(parent).Spawn("w", config.ModelTier{Model: "x"})
 	defer roll2.Close()
 	if eng2.Provider != parent.Provider || warn2 == "" {
 		t.Fatal("nil ProviderFor must fall back with a warning")

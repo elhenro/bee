@@ -2,7 +2,6 @@ package bgreg
 
 import (
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -13,13 +12,7 @@ import (
 // arrived while no process was listening. One consumer at a time; callers
 // claim the session first (see agents.Wake).
 
-func cursorPath(sessionID string) (string, error) {
-	d, err := dir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, sessionID+".inbox.cursor"), nil
-}
+func cursorPath(sessionID string) (string, error) { return File(sessionID, ".inbox.cursor") }
 
 func loadCursor(sessionID string) int64 {
 	p, err := cursorPath(sessionID)
@@ -42,20 +35,7 @@ func saveCursor(sessionID string, c int64) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(p), sessionID+"-cursor-*.tmp")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.WriteString(strconv.FormatInt(c, 10)); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return err
-	}
-	return os.Rename(tmp.Name(), p)
+	return writeAtomic(p, sessionID+"-cursor-*.tmp", []byte(strconv.FormatInt(c, 10)))
 }
 
 // InboxPending reports whether unread messages are waiting, without taking them.

@@ -23,14 +23,21 @@ func roleNamesCSV() []string {
 //
 // Fenced code blocks and prose wrappers are stripped before parsing.
 func parseSubTasks(s string) []SubTask {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil
-	}
-	s = stripFence(s)
-	body := extractArray(s)
+	body := extractArray(stripFence(s))
 	if body == "" {
 		return nil
+	}
+
+	var out []SubTask
+	add := func(role, task string) {
+		if task = strings.TrimSpace(task); task == "" {
+			return
+		}
+		r, ok := ParseRole(role)
+		if !ok {
+			r = RoleBuilder
+		}
+		out = append(out, SubTask{Role: r, Task: task})
 	}
 
 	// try object form first
@@ -38,18 +45,9 @@ func parseSubTasks(s string) []SubTask {
 		Role string `json:"role"`
 		Task string `json:"task"`
 	}
-	if err := json.Unmarshal([]byte(body), &objs); err == nil && len(objs) > 0 {
-		out := make([]SubTask, 0, len(objs))
+	if err := json.Unmarshal([]byte(body), &objs); err == nil {
 		for _, o := range objs {
-			task := strings.TrimSpace(o.Task)
-			if task == "" {
-				continue
-			}
-			role, ok := ParseRole(o.Role)
-			if !ok {
-				role = RoleBuilder
-			}
-			out = append(out, SubTask{Role: role, Task: task})
+			add(o.Role, o.Task)
 		}
 		if len(out) > 0 {
 			return out
@@ -59,26 +57,15 @@ func parseSubTasks(s string) []SubTask {
 	// fallback: legacy string array
 	var arr []string
 	if err := json.Unmarshal([]byte(body), &arr); err == nil {
-		out := make([]SubTask, 0, len(arr))
 		for _, x := range arr {
-			x = strings.TrimSpace(x)
-			if x == "" {
-				continue
-			}
-			out = append(out, SubTask{Role: RoleBuilder, Task: x})
+			add("", x)
 		}
-		return out
 	}
-	return nil
+	return out
 }
 
-// extractArray returns the first [...] block in s, or s itself if it already
-// parses as JSON. Empty string means no array found.
+// extractArray returns the first [...] block in s, or "" when there is none.
 func extractArray(s string) string {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
-		return s
-	}
 	start := strings.IndexByte(s, '[')
 	end := strings.LastIndexByte(s, ']')
 	if start < 0 || end <= start {

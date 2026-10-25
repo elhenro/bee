@@ -42,3 +42,24 @@ func (t Throttle) start(ctx context.Context, running *atomic.Int32) (func(), err
 	running.Add(1)
 	return end, nil
 }
+
+// acquire takes a slot on sem, then waits out the load throttle. release frees
+// both. A ctx that ends first returns its error and holds nothing.
+func (t Throttle) acquire(ctx context.Context, sem chan struct{}, running *atomic.Int32) (release func(), err error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case sem <- struct{}{}:
+	}
+	// cancellation may have raced the slot: don't run late workers
+	if err := ctx.Err(); err != nil {
+		<-sem
+		return nil, err
+	}
+	end, err := t.start(ctx, running)
+	if err != nil {
+		<-sem
+		return nil, err
+	}
+	return func() { end(); <-sem }, nil
+}

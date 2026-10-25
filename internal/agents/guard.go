@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/elhenro/bee/internal/beehome"
 	"github.com/elhenro/bee/internal/gate"
 	"github.com/elhenro/bee/internal/gitsafe"
 	"github.com/elhenro/bee/internal/sandbox"
@@ -51,11 +52,10 @@ func gateLinked(repoRoot string) bool {
 // under bee home, outside every agent's sandbox write roots (tmp is shared
 // with them), so no other agent can edit it while verify runs.
 func pristine(repoRoot, sha string) (string, func(), error) {
-	home, err := beeHome()
+	base, err := beehome.Join("verify")
 	if err != nil {
 		return "", nil, err
 	}
-	base := filepath.Join(home, "verify")
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		return "", nil, err
 	}

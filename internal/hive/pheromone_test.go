@@ -136,7 +136,7 @@ func TestPheromone_MirrorsToFile(t *testing.T) {
 }
 
 func TestPheromonePath_UnderBeeHome(t *testing.T) {
-	t.Setenv(envBeeHome, "/tmp/beehome")
+	t.Setenv("BEE_HOME", "/tmp/beehome")
 	p, err := PheromonePath("abc")
 	if err != nil {
 		t.Fatal(err)

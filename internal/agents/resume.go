@@ -10,6 +10,8 @@ import (
 	"github.com/elhenro/bee/internal/gitsafe"
 )
 
+const priorWork = "\n\nYou worked on this task before in this worktree; your earlier commits are on the branch.\n"
+
 // Resume re-starts a stopped agent on its existing worktree and session with
 // msg as the feedback. The new process does not reload the old transcript, so
 // the prompt restates the original task. Each resume spends one unit of the
@@ -33,9 +35,15 @@ func Resume(repoRoot string, st bgreg.Status, msg string, max int) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	pid, _, err := launch(repoRoot, st, agentPreamble+resumePrompt(st.Task, msg))
+	return restart(repoRoot, st, resumePrompt(st.Task, msg), "resume")
+}
+
+// restart starts the child for st, which the caller already flipped to active,
+// and records its pid. A failed start parks the agent for a human.
+func restart(repoRoot string, st bgreg.Status, prompt, what string) (bool, error) {
+	pid, _, err := launch(repoRoot, st, agentPreamble+prompt)
 	if err != nil {
-		Block(st.SessionID, "resume failed: "+err.Error())
+		Block(st.SessionID, what+" failed: "+err.Error())
 		return false, err
 	}
 	_ = bgreg.Update(st.SessionID, func(s *bgreg.Status) error {
@@ -59,16 +67,11 @@ func Block(id, reason string) {
 }
 
 func resumePrompt(task, feedback string) string {
-	return task + "\n\nYou worked on this task before in this worktree; your earlier commits are on the branch.\n" +
-		"The coordinator sent it back:\n\n" + feedback
+	return task + priorWork + "The coordinator sent it back:\n\n" + feedback
 }
 
 func firstLine(s string) string {
-	for i, r := range s {
-		if r == '\n' {
-			return s[:i]
-		}
-	}
+	s, _, _ = strings.Cut(s, "\n")
 	return s
 }
 
