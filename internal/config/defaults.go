@@ -25,7 +25,6 @@ func Defaults() Config {
 		// full tool surface with a per-turn 8-token classifier picking read|act,
 		// so small models (flash/mini/8b…) don't reflex into shell on greetings.
 		Role: "",
-		Yolo: false,
 		Sandbox: SandboxConfig{
 			// danger-full-access: no OS confinement — the default. The seatbelt/bwrap
 			// wrapper caused more friction than it prevented (blocked signals to
@@ -57,19 +56,15 @@ func Defaults() Config {
 		Swarm:         SwarmConfig{MaxLoadRatio: 2.0},
 		ShowBanner:    true,
 		ShowLoader:    true,
-		TutorialDone:  false,
 		MaxIterations: DefaultMaxIterations,
 		// mastermind off by default; when on, the hive spawns this many workers.
-		Mastermind:          false,
 		MastermindWorkers:   3,
 		MastermindReviewers: 1,
 		MastermindTriage:    true,
 		MastermindParallel:  true,
-		Verbose:             false,
 		ShowThoughts:        true,
 		ShowNudges:          true,
 		ShowRecap:           true,
-		Compact:             false,
 		ShowContextBar:      true,
 		Highlight:           true,
 		// silent by default: `!ls` runs in your shell without spending tokens
@@ -85,8 +80,6 @@ func Defaults() Config {
 		ShowTotalTokens: true,
 		ShowLoaderIn:    true,
 		ShowLoaderOut:   true,
-		ShowLoaderRate:  false,
-		OuterPadLR:      0,
 		UpdateCheck:     "ask",
 		UpdateRepo:      "elhenro/bee",
 		UpdateBranch:    "main",

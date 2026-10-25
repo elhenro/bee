@@ -132,6 +132,13 @@ func TestResolveAutoProfileForProvider_LocalForcesTiny(t *testing.T) {
 		{"openrouter", "claude-opus-4-7", "large"},
 		{"openrouter", "deepseek/deepseek-v4-flash", "tiny"},
 		{"openai", "gpt-5-codex", "normal"},
+		// size and name tokens match only between separators.
+		{"openrouter", "meta/llama-3.1-8b-instruct", "tiny"},
+		{"openrouter", "qwen3:7b", "tiny"},
+		{"openrouter", "phi-3", "tiny"},
+		{"openrouter", "mistral-87b", "normal"},
+		{"openrouter", "qwen-27b", "normal"},
+		{"openrouter", "alphi-1", "normal"},
 	}
 	for _, c := range cases {
 		got := ResolveAutoProfileForProvider(c.provider, c.model)

@@ -16,19 +16,7 @@ func ScaleProfileForContext(p Profile, profileName string, ctxWindow int) Profil
 	if profileName != "tiny" || ctxWindow <= 16000 {
 		return p
 	}
-	if c := scaledCap(ctxWindow, 0.05, 8000); c > p.SystemPromptBudget {
-		p.SystemPromptBudget = c
-	}
-	if c := scaledCap(ctxWindow, 0.02, 4000); c > p.ToolOutputTokens {
-		p.ToolOutputTokens = c
-	}
+	p.SystemPromptBudget = max(p.SystemPromptBudget, min(int(float64(ctxWindow)*0.05), 8000))
+	p.ToolOutputTokens = max(p.ToolOutputTokens, min(int(float64(ctxWindow)*0.02), 4000))
 	return p
-}
-
-func scaledCap(ctxWindow int, frac float64, ceiling int) int {
-	v := int(float64(ctxWindow) * frac)
-	if v > ceiling {
-		v = ceiling
-	}
-	return v
 }

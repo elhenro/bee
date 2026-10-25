@@ -1,8 +1,6 @@
 package config
 
-import (
-	"strings"
-)
+import "strings"
 
 // localProviderNames lists provider ids that run on-host. Used to gate
 // behavior that's worth the round-trip on hosted providers but wasteful
