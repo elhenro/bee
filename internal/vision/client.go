@@ -54,7 +54,14 @@ func (c Client) Describe(ctx context.Context, img []byte, mediaType, question st
 
 func (c Client) describeOpenAI(ctx context.Context, img []byte, mediaType, question string) (string, error) {
 	dataURL := "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(img)
-	body, _ := json.Marshal(map[string]any{
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	err := c.post(ctx, "/chat/completions", map[string]any{
 		"model":  c.Model,
 		"stream": false,
 		"messages": []map[string]any{{
@@ -64,25 +71,9 @@ func (c Client) describeOpenAI(ctx context.Context, img []byte, mediaType, quest
 				{"type": "image_url", "image_url": map[string]string{"url": dataURL}},
 			},
 		}},
-	})
-	url := strings.TrimRight(c.Endpoint, "/") + "/chat/completions"
-	resp, err := c.post(ctx, url, body)
+	}, &out)
 	if err != nil {
 		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("vision endpoint returned %d", resp.StatusCode)
-	}
-	var out struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("vision decode failed: %w", err)
 	}
 	if len(out.Choices) == 0 {
 		return "", fmt.Errorf("vision: empty response")
@@ -91,34 +82,28 @@ func (c Client) describeOpenAI(ctx context.Context, img []byte, mediaType, quest
 }
 
 func (c Client) describeOllama(ctx context.Context, img []byte, question string) (string, error) {
-	body, _ := json.Marshal(map[string]any{
+	var out struct {
+		Response string `json:"response"`
+	}
+	err := c.post(ctx, "/api/generate", map[string]any{
 		"model":  c.Model,
 		"prompt": question,
 		"images": []string{base64.StdEncoding.EncodeToString(img)},
 		"stream": false,
-	})
-	url := strings.TrimRight(c.Endpoint, "/") + "/api/generate"
-	resp, err := c.post(ctx, url, body)
+	}, &out)
 	if err != nil {
 		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("vision endpoint returned %d", resp.StatusCode)
-	}
-	var out struct {
-		Response string `json:"response"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("vision decode failed: %w", err)
 	}
 	return strings.TrimSpace(out.Response), nil
 }
 
-func (c Client) post(ctx context.Context, url string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+// post sends body as JSON to the endpoint's path and decodes the 200 reply
+// into out.
+func (c Client) post(ctx context.Context, path string, body map[string]any, out any) error {
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.Endpoint, "/")+path, bytes.NewReader(b))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.APIKey != "" {
@@ -126,7 +111,14 @@ func (c Client) post(ctx context.Context, url string, body []byte) (*http.Respon
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("vision request failed: %w", err)
+		return fmt.Errorf("vision request failed: %w", err)
 	}
-	return resp, nil
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("vision endpoint returned %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("vision decode failed: %w", err)
+	}
+	return nil
 }

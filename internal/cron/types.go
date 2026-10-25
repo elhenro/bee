@@ -72,28 +72,21 @@ func ParseSchedule(expr string) (*Schedule, error) {
 	if len(fields) != 5 {
 		return nil, fmt.Errorf("cron: want 5 fields, got %d in %q", len(fields), expr)
 	}
-	minute, err := parseCronField(fields[0], 0, 59)
-	if err != nil {
-		return nil, fmt.Errorf("cron minute: %w", err)
+	var f [5]cronField
+	for i, spec := range scheduleFields {
+		var err error
+		if f[i], err = parseCronField(fields[i], spec.lo, spec.hi); err != nil {
+			return nil, fmt.Errorf("cron %s: %w", spec.name, err)
+		}
 	}
-	hour, err := parseCronField(fields[1], 0, 23)
-	if err != nil {
-		return nil, fmt.Errorf("cron hour: %w", err)
-	}
-	dom, err := parseCronField(fields[2], 1, 31)
-	if err != nil {
-		return nil, fmt.Errorf("cron day-of-month: %w", err)
-	}
-	month, err := parseCronField(fields[3], 1, 12)
-	if err != nil {
-		return nil, fmt.Errorf("cron month: %w", err)
-	}
-	dow, err := parseCronField(fields[4], 0, 6)
-	if err != nil {
-		return nil, fmt.Errorf("cron day-of-week: %w", err)
-	}
-	return &Schedule{minute: minute, hour: hour, dom: dom, month: month, dow: dow}, nil
+	return &Schedule{minute: f[0], hour: f[1], dom: f[2], month: f[3], dow: f[4]}, nil
 }
+
+// scheduleFields names each expression field, in order, with its legal range.
+var scheduleFields = [5]struct {
+	name   string
+	lo, hi int
+}{{"minute", 0, 59}, {"hour", 0, 23}, {"day-of-month", 1, 31}, {"month", 1, 12}, {"day-of-week", 0, 6}}
 
 func parseCronField(expr string, lo, hi int) (cronField, error) {
 	f := cronField{lo: lo, hi: hi}

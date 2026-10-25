@@ -43,17 +43,3 @@ func (q *Queue) Acquire(ctx context.Context, key string) (func(), error) {
 		return nil, ctx.Err()
 	}
 }
-
-// Busy reports whether key currently has a holder.
-func (q *Queue) Busy(key string) bool {
-	if key == "" {
-		key = defaultResourceKey
-	}
-	q.mu.Lock()
-	ch := q.locks[key]
-	q.mu.Unlock()
-	if ch == nil {
-		return false
-	}
-	return len(ch) == 0
-}

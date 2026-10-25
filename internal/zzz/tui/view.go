@@ -22,32 +22,16 @@ func (m *Model) View() string {
 	if m.width == 0 {
 		return styDim.Render("starting zzz…")
 	}
-	innerW := m.width - 2
-	if innerW < 40 {
-		innerW = 40
-	}
+	innerW := max(m.width-2, 40)
 
-	var b strings.Builder
-	b.WriteString(m.header(innerW))
-	b.WriteString("\n")
-	b.WriteString(m.timeline(innerW))
-	b.WriteString("\n")
-	b.WriteString(m.logPanel(innerW))
-	b.WriteString("\n")
-	b.WriteString(m.livePanel(innerW))
-	b.WriteString("\n")
-	b.WriteString(m.beePanel(innerW))
-	b.WriteString("\n")
+	parts := []string{m.header(innerW), m.timeline(), m.logPanel(innerW), m.livePanel(innerW), m.beePanel()}
 	if m.done {
-		b.WriteString(m.finalPanel(innerW))
-		b.WriteString("\n")
-		b.WriteString(styDim.Render("  press q or ctrl+d to exit"))
-		return b.String()
+		parts = append(parts, m.finalPanel(), styDim.Render("  press q or ctrl+d to exit"))
+	} else {
+		parts = append(parts, m.input.View(),
+			styDim.Render("  enter to send · /stop · /abort · /note <text> · ctrl+c stop (2× force) · ctrl+d quit"))
 	}
-	b.WriteString(m.input.View())
-	b.WriteString("\n")
-	b.WriteString(styDim.Render("  enter to send · /stop · /abort · /note <text> · ctrl+c stop (2× force) · ctrl+d quit"))
-	return b.String()
+	return strings.Join(parts, "\n")
 }
 
 func (m *Model) header(w int) string {
@@ -62,7 +46,7 @@ func (m *Model) header(w int) string {
 // timeline renders the iteration ledger. Each row: moon + iter# + phase +
 // tokens. Constrained to the last N rows so the panel doesn't push the bee
 // off-screen on long runs.
-func (m *Model) timeline(w int) string {
+func (m *Model) timeline() string {
 	const maxRows = 6
 	if len(m.rows) == 0 {
 		return styDim.Render("  no iterations yet…")
@@ -125,7 +109,7 @@ func (m *Model) livePanel(w int) string {
 	return padBetween(left, right, w)
 }
 
-func (m *Model) beePanel(w int) string {
+func (m *Model) beePanel() string {
 	top, mid, bot := BeeFrame(m.tick)
 	style := lipgloss.NewStyle().Foreground(accentBee)
 	dim := styDim
@@ -138,7 +122,7 @@ func (m *Model) beePanel(w int) string {
 	return b.String()
 }
 
-func (m *Model) finalPanel(w int) string {
+func (m *Model) finalPanel() string {
 	r := m.final
 	if r == nil {
 		r = m.run
@@ -169,9 +153,5 @@ func (m *Model) finalPanel(w int) string {
 func padBetween(left, right string, w int) string {
 	lw := lipgloss.Width(left)
 	rw := lipgloss.Width(right)
-	gap := w - lw - rw
-	if gap < 2 {
-		gap = 2
-	}
-	return left + strings.Repeat(" ", gap) + right
+	return left + strings.Repeat(" ", max(w-lw-rw, 2)) + right
 }

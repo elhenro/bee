@@ -35,12 +35,13 @@ func (s *Store) hasHead() bool {
 	return err == nil
 }
 
-// headSHA returns HEAD's object name, full or short.
-func (s *Store) headSHA(full bool) (string, error) {
-	if full {
-		return s.git("rev-parse", "HEAD")
+// head returns HEAD's full and short object names.
+func (s *Store) head() (full, short string, err error) {
+	if full, err = s.git("rev-parse", "HEAD"); err != nil {
+		return
 	}
-	return s.git("rev-parse", "--short", "HEAD")
+	short, err = s.git("rev-parse", "--short", "HEAD")
+	return
 }
 
 // setRef points ref at a full object name.
@@ -72,11 +73,7 @@ func (s *Store) commitState(msg string, fresh bool) (full, short string, err err
 		return
 	}
 	if !changed && !fresh && s.hasHead() {
-		if full, err = s.headSHA(true); err != nil {
-			return
-		}
-		short, err = s.headSHA(false)
-		return
+		return s.head()
 	}
 	args := append([]string{}, commitIdentity...)
 	args = append(args, "commit", "-m", msg)
@@ -90,9 +87,5 @@ func (s *Store) commitState(msg string, fresh bool) (full, short string, err err
 	if _, err = s.run(env, args...); err != nil {
 		return
 	}
-	if full, err = s.headSHA(true); err != nil {
-		return
-	}
-	short, err = s.headSHA(false)
-	return
+	return s.head()
 }
