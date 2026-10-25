@@ -24,15 +24,18 @@ func (m Model) onOpenResume(_ openResumeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onResumeSelect(msg ResumeSelectMsg) (tea.Model, tea.Cmd) {
-	return m.failOn(m.side().OpenSession(msg.ID))
+	err := m.side().OpenSession(msg.ID)
+	return m.failOn(err)
 }
 
 func (m Model) onSessionFork(msg SessionForkMsg) (tea.Model, tea.Cmd) {
-	return m.failOn(m.side().ForkSession(msg.FromID))
+	err := m.side().ForkSession(msg.FromID)
+	return m.failOn(err)
 }
 
 func (m Model) onSessionClone(_ SessionCloneMsg) (tea.Model, tea.Cmd) {
-	return m.failOn(m.side().CloneSession())
+	err := m.side().CloneSession()
+	return m.failOn(err)
 }
 
 func (m Model) onOpenHive(_ openHiveMsg) (tea.Model, tea.Cmd) {
