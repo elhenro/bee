@@ -18,8 +18,7 @@ const maxLineBytes = 8 * 1024 * 1024
 // on the Append path. Not safe for cross-process use; callers are expected to
 // own the session.
 type Rollout struct {
-	id   string
-	path string
+	id string
 
 	mu      sync.Mutex
 	f       *os.File
@@ -50,7 +49,7 @@ func Open(id string) (*Rollout, error) {
 		_ = f.Close()
 		return nil, err
 	}
-	return &Rollout{id: id, path: p, f: f}, nil
+	return &Rollout{id: id, f: f}, nil
 }
 
 // terminateTornLine ends a last line a crash left without its newline. Without
@@ -70,9 +69,6 @@ func terminateTornLine(f *os.File) error {
 
 // ID returns the session id this rollout writes.
 func (r *Rollout) ID() string { return r.id }
-
-// FilePath returns the on-disk file path.
-func (r *Rollout) FilePath() string { return r.path }
 
 // Append writes one message as a single JSON line. The write lands in the page
 // cache immediately (readers and a killed process see it); the fsync that guards

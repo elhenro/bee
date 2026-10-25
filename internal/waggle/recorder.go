@@ -14,15 +14,14 @@ import (
 
 // Call is one recorded tool invocation in the forage log. Args holds the tool's
 // input flattened to strings (sorted-key iteration gives a deterministic shape).
-// Mutates marks a state-changing tool so the miner can exclude it. OutHash and
-// EstTokens feed dedup and yield estimation. Verified is set by MarkOutcome once
+// Mutates marks a state-changing tool so the miner can exclude it. EstTokens is
+// the result size estimate. Verified is set by MarkOutcome once
 // the work the call belonged to was kept (e.g. committed); a mutating route is
 // only ever mined from verified calls.
 type Call struct {
 	Tool      string
 	Args      map[string]string
 	Mutates   bool
-	OutHash   string
 	EstTokens int
 	Verified  bool
 }

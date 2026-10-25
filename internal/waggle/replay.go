@@ -38,7 +38,6 @@ type Replayer struct {
 	routes    []Route
 	seq       []Call
 	minPrefix int
-	yield     int
 	fired     map[string]bool
 	ledgers   map[Scope]*Ledger
 }
@@ -64,14 +63,6 @@ func (r *Replayer) SetLedger(scope Scope, l *Ledger) {
 	r.ledgers[scope] = l
 }
 
-// Routes returns how many routes the replayer holds (0 for a nil/empty one).
-func (r *Replayer) Routes() int {
-	if r == nil {
-		return 0
-	}
-	return len(r.routes)
-}
-
 // Observe appends a completed read-only call to the live window.
 func (r *Replayer) Observe(c Call) {
 	if r == nil {
@@ -83,16 +74,6 @@ func (r *Replayer) Observe(c Call) {
 	if len(r.seq) > replaySeqCap {
 		r.seq = slices.Clone(r.seq[len(r.seq)-replaySeqCap:])
 	}
-}
-
-// Yield returns the cumulative estimated tokens saved by replays this session.
-func (r *Replayer) Yield() int {
-	if r == nil {
-		return 0
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.yield
 }
 
 // Follow checks the current window for a fireable route and, if found, runs its
@@ -122,7 +103,6 @@ func (r *Replayer) Follow(ctx context.Context, exec func(context.Context, string
 		gain = len(out) / 4
 	}
 	r.mu.Lock()
-	r.yield += gain
 	ledger := r.ledgers[plan.scope]
 	r.mu.Unlock()
 	_ = ledger.Append(LedgerEntry{Name: plan.name, Steps: plan.steps, Yield: gain, Fail: diverged})
