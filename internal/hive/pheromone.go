@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/elhenro/bee/internal/atomicfile"
 	"github.com/elhenro/bee/internal/beehome"
 )
 
@@ -225,19 +226,7 @@ func (p *Pheromone) mirror() {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
-	tmp, err := os.CreateTemp(dir, filepath.Base(p.path)+"-*.tmp")
-	if err != nil {
-		return
-	}
-	_, err = tmp.WriteString(b.String())
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		_ = os.Remove(tmp.Name())
-		return
-	}
-	_ = os.Rename(tmp.Name(), p.path)
+	_ = atomicfile.Write(p.path, []byte(b.String()), 0o600)
 }
 
 // Tailed is a Runner that accepts a per-turn system-prompt tail. loop.Engine

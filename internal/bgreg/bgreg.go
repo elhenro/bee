@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/elhenro/bee/internal/atomicfile"
 	"github.com/elhenro/bee/internal/beehome"
 )
 
@@ -142,25 +143,7 @@ func writeRaw(s Status) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(p, s.SessionID+"-*.tmp", append(b, '\n'))
-}
-
-// writeAtomic replaces p with data via a temp file in the same dir plus
-// rename, so a reader never sees a torn file.
-func writeAtomic(p, tmpPattern string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(p), tmpPattern)
-	if err != nil {
-		return err
-	}
-	_, err = tmp.Write(data)
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	return os.Rename(tmp.Name(), p)
+	return atomicfile.Write(p, append(b, '\n'), 0o600)
 }
 
 // Update performs an atomic read-modify-write on the status for sessionID.

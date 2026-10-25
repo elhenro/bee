@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/elhenro/bee/internal/atomicfile"
 	"github.com/elhenro/bee/internal/beehome"
 )
 
@@ -31,7 +32,7 @@ func SaveToken(dir, provider string, tok *Token) error {
 	if err != nil {
 		return err
 	}
-	return beehome.WriteAtomic(p, b, 0o600)
+	return atomicfile.Write(p, b, 0o600)
 }
 
 // LoadToken reads a previously saved token. Returns (nil, nil) if absent.

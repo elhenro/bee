@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/atomicfile"
 	"github.com/elhenro/bee/internal/beehome"
 )
 
@@ -68,7 +69,7 @@ func SaveMeta(r *Run) error {
 	if err != nil {
 		return err
 	}
-	return beehome.WriteAtomic(filepath.Join(dir, "meta.json"), data, 0o644)
+	return atomicfile.Write(filepath.Join(dir, "meta.json"), data, 0o644)
 }
 
 // LoadMeta reads meta.json for an existing run. An unknown id leaves no
@@ -97,7 +98,7 @@ func SavePrompt(id, objective string) error {
 	if err != nil {
 		return err
 	}
-	return beehome.WriteAtomic(filepath.Join(dir, "prompt.txt"), []byte(objective), 0o644)
+	return atomicfile.Write(filepath.Join(dir, "prompt.txt"), []byte(objective), 0o644)
 }
 
 // LoadPrompt reads the saved objective.

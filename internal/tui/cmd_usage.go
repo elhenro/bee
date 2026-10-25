@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/elhenro/bee/internal/atomicfile"
 	"github.com/elhenro/bee/internal/beehome"
 )
 
@@ -70,11 +71,7 @@ func saveCmdUsage(path string, counts map[string]int) {
 	if err != nil {
 		return
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, path)
+	_ = atomicfile.Write(path, b, 0o644)
 }
 
 // sortPaletteByUsage orders entries by usage count desc, with alphabetical

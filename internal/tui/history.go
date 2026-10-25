@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
 
+	"github.com/elhenro/bee/internal/atomicfile"
 	"github.com/elhenro/bee/internal/beehome"
 )
 
@@ -262,9 +263,6 @@ func maybeTrim(p string) {
 	if len(lines) <= historyMax {
 		return
 	}
-	tmp := p + ".tmp"
 	keep := strings.Join(lines[len(lines)-historyMax:], "\n") + "\n"
-	if os.WriteFile(tmp, []byte(keep), 0o644) == nil {
-		_ = os.Rename(tmp, p)
-	}
+	_ = atomicfile.Write(p, []byte(keep), 0o644)
 }

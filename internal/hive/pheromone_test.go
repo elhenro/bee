@@ -129,7 +129,7 @@ func TestPheromone_MirrorsToFile(t *testing.T) {
 	if !strings.Contains(string(data), "### bee 1\n## report\nstatus: done\ndid: did a\nnext: nothing") {
 		t.Errorf("mirror lacks the full report:\n%s", data)
 	}
-	leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "*.tmp"))
+	leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "*.tmp*"))
 	if len(leftovers) != 0 {
 		t.Errorf("temp files left behind: %v", leftovers)
 	}

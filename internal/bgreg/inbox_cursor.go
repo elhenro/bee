@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/elhenro/bee/internal/atomicfile"
 )
 
 // The read position lives on disk next to the inbox, so whichever process
@@ -35,7 +37,7 @@ func saveCursor(sessionID string, c int64) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(p, sessionID+"-cursor-*.tmp", []byte(strconv.FormatInt(c, 10)))
+	return atomicfile.Write(p, []byte(strconv.FormatInt(c, 10)), 0o600)
 }
 
 // InboxPending reports whether unread messages are waiting, without taking them.
