@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -103,46 +104,26 @@ func runTask(ctx context.Context, t Task, opt Options, taskNum, taskTotal int) T
 	if opt.Runs <= 1 {
 		return rep
 	}
-	sumScore := rep.Score
-	sumSuc, sumFmt, sumEff := rep.Dims.Success, rep.Dims.Format, rep.Dims.Efficiency
-	sumWall := rep.Metrics.WallMillis
-	min, max := rep.Score, rep.Score
-	succ := boolToInt(rep.Succeeded)
-	samples := []float64{rep.Score}
+	runs := []TaskResult{rep}
 	for i := 1; i < opt.Runs; i++ {
-		r := runTaskOnce(ctx, t, opt, i, taskNum, taskTotal)
-		samples = append(samples, r.Score)
-		sumScore += r.Score
-		sumSuc += r.Dims.Success
-		sumFmt += r.Dims.Format
-		sumEff += r.Dims.Efficiency
-		sumWall += r.Metrics.WallMillis
-		succ += boolToInt(r.Succeeded)
-		if r.Score < min {
-			min = r.Score
+		runs = append(runs, runTaskOnce(ctx, t, opt, i, taskNum, taskTotal))
+	}
+	succ := 0
+	for _, r := range runs {
+		rep.Samples = append(rep.Samples, r.Score)
+		if r.Succeeded {
+			succ++
 		}
-		if r.Score > max {
-			max = r.Score
-		}
-		if rep.Err == "" && r.Err != "" {
+		if rep.Err == "" {
 			rep.Err = r.Err // surface any run's error
 		}
 	}
-	n := float64(opt.Runs)
-	rep.Score = sumScore / n
-	rep.Dims = Dims{Success: sumSuc / n, Format: sumFmt / n, Efficiency: sumEff / n}
-	rep.Metrics.WallMillis = sumWall / int64(opt.Runs)
-	rep.Spread = max - min
-	rep.Samples = samples
+	rep.Score = mean(runs, func(r TaskResult) float64 { return r.Score })
+	rep.Dims = meanDims(runs)
+	rep.Metrics.WallMillis = meanWallMillis(runs)
+	rep.Spread = slices.Max(rep.Samples) - slices.Min(rep.Samples)
 	rep.Succeeded = 2*succ >= opt.Runs // at least half the runs passed (ties count as success)
 	return rep
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx, taskNum, taskTotal int) TaskResult {
@@ -231,19 +212,9 @@ func runTaskOnce(ctx context.Context, t Task, opt Options, runIdx, taskNum, task
 // saveRollout copies the session jsonl out of the doomed sandbox sessions dir
 // into a durable dir, named so the harvester can trace it back to label+task+run.
 func saveRollout(sessDir, destDir, label, taskID string, runIdx int) error {
-	entries, err := os.ReadDir(sessDir)
+	src, err := sessionFile(sessDir)
 	if err != nil {
 		return err
-	}
-	var src string
-	for _, e := range entries {
-		if filepath.Ext(e.Name()) == ".jsonl" {
-			src = filepath.Join(sessDir, e.Name())
-			break
-		}
-	}
-	if src == "" {
-		return fmt.Errorf("no session jsonl to save")
 	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return err
@@ -273,17 +244,27 @@ func meanWallMillis(tasks []TaskResult) int64 {
 }
 
 func aggregate(tasks []TaskResult) (float64, float64, Dims) {
-	if len(tasks) == 0 {
-		return 0, 0, Dims{}
+	return mean(tasks, func(t TaskResult) float64 { return t.Score }),
+		mean(tasks, func(t TaskResult) float64 { return t.Spread }),
+		meanDims(tasks)
+}
+
+// mean averages f over rs, 0 for none.
+func mean(rs []TaskResult, f func(TaskResult) float64) float64 {
+	if len(rs) == 0 {
+		return 0
 	}
-	var total, spread, su, fo, ef float64
-	for _, t := range tasks {
-		total += t.Score
-		spread += t.Spread
-		su += t.Dims.Success
-		fo += t.Dims.Format
-		ef += t.Dims.Efficiency
+	sum := 0.0
+	for _, r := range rs {
+		sum += f(r)
 	}
-	n := float64(len(tasks))
-	return total / n, spread / n, Dims{Success: su / n, Format: fo / n, Efficiency: ef / n}
+	return sum / float64(len(rs))
+}
+
+func meanDims(rs []TaskResult) Dims {
+	return Dims{
+		Success:    mean(rs, func(r TaskResult) float64 { return r.Dims.Success }),
+		Format:     mean(rs, func(r TaskResult) float64 { return r.Dims.Format }),
+		Efficiency: mean(rs, func(r TaskResult) float64 { return r.Dims.Efficiency }),
+	}
 }

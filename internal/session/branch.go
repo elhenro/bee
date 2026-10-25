@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -10,26 +11,20 @@ import (
 )
 
 // Fork creates a new session rollout containing all messages up to and including
-// fromMsgID. If fromMsgID is empty the entire source session is copied (Clone).
+// fromMsgID. If fromMsgID is empty the entire source session is copied.
 // The new rollout is returned open; caller is responsible for Close.
 func Fork(srcID, fromMsgID string) (*Rollout, error) {
 	msgs, err := Read(srcID)
 	if err != nil {
 		return nil, err
 	}
-	var keep []types.Message
-	if fromMsgID == "" {
-		keep = msgs
-	} else {
-		for _, m := range msgs {
-			keep = append(keep, m)
-			if m.ID == fromMsgID {
-				break
-			}
-		}
-		if len(keep) == 0 || keep[len(keep)-1].ID != fromMsgID {
+	keep := msgs
+	if fromMsgID != "" {
+		i := slices.IndexFunc(msgs, func(m types.Message) bool { return m.ID == fromMsgID })
+		if i < 0 {
 			return nil, fmt.Errorf("session: message %q not found in %s", fromMsgID, srcID)
 		}
+		keep = msgs[:i+1]
 	}
 	newID := uuid.NewString()
 	r, err := Open(newID)
@@ -44,11 +39,6 @@ func Fork(srcID, fromMsgID string) (*Rollout, error) {
 		}
 	}
 	return r, nil
-}
-
-// Clone copies an entire session into a new rollout.
-func Clone(srcID string) (*Rollout, error) {
-	return Fork(srcID, "")
 }
 
 // BuildTree reconstructs the parent-pointer tree from a flat message slice.
@@ -111,21 +101,11 @@ func LinearPath(root *types.MessageNode, leafID string) []*types.MessageNode {
 	if !ok {
 		return nil
 	}
-	// climb to root
-	var rev []*types.MessageNode
-	cur := leaf
-	for cur != nil {
-		rev = append(rev, cur)
-		p, hasParent := parent[cur.Msg.ID]
-		if !hasParent {
-			break
-		}
-		cur = p
+	// climb to root, then flip into root→leaf order
+	var path []*types.MessageNode
+	for cur := leaf; cur != nil; cur = parent[cur.Msg.ID] {
+		path = append(path, cur)
 	}
-	// reverse
-	out := make([]*types.MessageNode, len(rev))
-	for i, n := range rev {
-		out[len(rev)-1-i] = n
-	}
-	return out
+	slices.Reverse(path)
+	return path
 }

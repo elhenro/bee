@@ -185,7 +185,7 @@ func TestFork_NotFound(t *testing.T) {
 	}
 }
 
-func TestClone_FullCopy(t *testing.T) {
+func TestFork_EmptyFromCopiesAll(t *testing.T) {
 	withTempSessionsDir(t)
 	src := seedSession(t, []types.Message{
 		mkMsg("m1", "", types.RoleUser, "1"),
@@ -194,9 +194,9 @@ func TestClone_FullCopy(t *testing.T) {
 		mkMsg("m4", "m3", types.RoleAssistant, "4"),
 	})
 
-	r, err := Clone(src)
+	r, err := Fork(src, "")
 	if err != nil {
-		t.Fatalf("Clone: %v", err)
+		t.Fatalf("Fork: %v", err)
 	}
 	newID := r.ID()
 	if err := r.Close(); err != nil {
