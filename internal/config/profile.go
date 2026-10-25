@@ -70,8 +70,7 @@ type Profile struct {
 
 // ProfileSafety mirrors safety.ProfileSafety in the config schema. Kept here
 // (rather than importing the safety package) so config has no upward dep on
-// the safety package; defaults are seeded by safety.DefaultsForProfile via
-// the bridge in defaults.go.
+// the safety package; the tiny defaults live inline in defaults.go.
 type ProfileSafety struct {
 	ExtraSafeCommands     []string `toml:"extra_safe_commands"`
 	RequireApprovalKeys   []string `toml:"require_approval_keys"`
