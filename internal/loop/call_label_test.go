@@ -128,3 +128,33 @@ func TestSignatureFor_IgnoresWhy(t *testing.T) {
 		t.Fatal("why changed the call signature, repeat detection would miss the loop")
 	}
 }
+
+// tiny budgets every token: the why arg is offered but carries no description
+func TestAdvertisedSpecs_TinyOffersWhyWithoutDescription(t *testing.T) {
+	reg := tools.NewRegistry()
+	_ = reg.Register(schemaTool{llm.ToolSpec{Name: "edit", Description: "x", Schema: labelSpecs()[0].Schema}})
+	eng, _ := newEngine(&stubProvider{}, reg)
+	eng.Cfg.Profile = "tiny"
+	eng.run = &runState{}
+	for _, s := range eng.advertisedSpecs(runPlan{}) {
+		if s.Name != "edit" {
+			continue
+		}
+		why, ok := s.Schema["properties"].(map[string]any)[types.WhyKey].(map[string]any)
+		if !ok {
+			t.Fatal("tiny should still offer why")
+		}
+		if _, has := why["description"]; has {
+			t.Fatalf("tiny kept the why description: %v", why)
+		}
+		return
+	}
+	t.Fatal("edit not advertised")
+}
+
+type schemaTool struct{ spec llm.ToolSpec }
+
+func (s schemaTool) Spec() llm.ToolSpec { return s.spec }
+func (s schemaTool) Run(context.Context, map[string]any) (tools.Result, error) {
+	return tools.Result{Content: "ok"}, nil
+}
