@@ -31,7 +31,7 @@ func renderUsageHeadline(s cost.Summary, label string) string {
 	tok := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).
 		Render(humanTokens(s.Input+s.Output) + " tokens")
 	rest := lipgloss.NewStyle().Foreground(fgSmoke).
-		Render(fmt.Sprintf("  ·  %s  ·  %d calls", fmtUSD(s.USD), s.Calls))
+		Render(fmt.Sprintf("  ·  %s  ·  %d calls", formatUSD(s.USD), s.Calls))
 	win := lipgloss.NewStyle().Foreground(fgOyster).Render("  (" + label + ")")
 	return tok + rest + win
 }
@@ -74,7 +74,7 @@ func renderProviderBars(w cost.UsageWindow, inner int) string {
 		if total > 0 {
 			frac = float64(tk) / float64(total)
 		}
-		line := txt.Render(fmt.Sprintf("  %-*s ", nameW, truncateRune(k, nameW)))
+		line := txt.Render(fmt.Sprintf("  %-*s ", nameW, truncateRunes(k, nameW)))
 		if showBar {
 			line += usageBar(frac, barW)
 		}
@@ -106,10 +106,10 @@ func renderModelRows(m map[string]cost.Summary, inner int) string {
 		s := m[k]
 		c := "—"
 		if s.USD > 0 {
-			c = fmtUSD(s.USD)
+			c = formatUSD(s.USD)
 		}
 		row := fmt.Sprintf("  %-*s  %8s  in %7s  out %7s",
-			nameW, truncateRune(k, nameW), c, humanTokens(s.Input), humanTokens(s.Output))
+			nameW, truncateRunes(k, nameW), c, humanTokens(s.Input), humanTokens(s.Output))
 		b.WriteString(txt.Render(row))
 		b.WriteString("\n")
 	}
@@ -139,13 +139,8 @@ func renderUsageFallback(t *cost.Tracker, inner int) string {
 
 // usageBar renders a width-w horizontal bar filled to frac.
 func usageBar(frac float64, w int) string {
-	if w < 1 {
-		w = 1
-	}
-	f := int(frac*float64(w) + 0.5)
-	if f > w {
-		f = w
-	}
+	w = max(w, 1)
+	f := min(int(frac*float64(w)+0.5), w)
 	if frac > 0 && f == 0 {
 		f = 1
 	}
@@ -163,7 +158,7 @@ func usageCost(provider string, usd float64) string {
 	if usd <= 0 {
 		return "—"
 	}
-	return fmtUSD(usd)
+	return formatUSD(usd)
 }
 
 func tokensOf(s cost.Summary) int { return s.Input + s.Output }

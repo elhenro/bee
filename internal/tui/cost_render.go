@@ -27,9 +27,9 @@ func renderTable(m map[string]cost.Summary, selected string, width int) string {
 	var b strings.Builder
 	for _, k := range keys {
 		s := m[k]
-		name := truncateRune(k, nameW)
+		name := truncateRunes(k, nameW)
 		row := fmt.Sprintf("%-*s  %8s  in %7s  out %7s",
-			nameW, name, fmtUSD(s.USD), humanTokens(s.Input), humanTokens(s.Output))
+			nameW, name, formatUSD(s.USD), humanTokens(s.Input), humanTokens(s.Output))
 		b.WriteString(selectMark(selected != "" && k == selected))
 		b.WriteString(lipgloss.NewStyle().Foreground(fgAsh).Render(row))
 		b.WriteString("\n")
@@ -66,12 +66,8 @@ func sparkBars(events []cost.Event, width int) string {
 		// bucket: chunk size = ceil(len/width)
 		chunk := (len(events) + width - 1) / width
 		for i := 0; i < len(events); i += chunk {
-			end := i + chunk
-			if end > len(events) {
-				end = len(events)
-			}
 			var sum float64
-			for _, e := range events[i:end] {
+			for _, e := range events[i:min(i+chunk, len(events))] {
 				sum += e.USD
 			}
 			values = append(values, sum)
@@ -85,9 +81,7 @@ func sparkFromValues(vals []float64) string {
 	blocks := []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 	maxV := 0.0
 	for _, v := range vals {
-		if v > maxV {
-			maxV = v
-		}
+		maxV = max(maxV, v)
 	}
 	if maxV <= 0 {
 		// all-zero: render the lowest block so the bar still appears.
@@ -95,24 +89,9 @@ func sparkFromValues(vals []float64) string {
 	}
 	var b strings.Builder
 	for _, v := range vals {
-		idx := int(v / maxV * float64(len(blocks)-1))
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= len(blocks) {
-			idx = len(blocks) - 1
-		}
-		b.WriteRune(blocks[idx])
+		b.WriteRune(blocks[min(max(int(v/maxV*float64(len(blocks)-1)), 0), len(blocks)-1)])
 	}
 	return b.String()
-}
-
-// fmtUSD mirrors view.go's formatUSD; duplicated to keep the pane self-contained.
-func fmtUSD(usd float64) string {
-	if usd < 1 {
-		return fmt.Sprintf("$%.4f", usd)
-	}
-	return fmt.Sprintf("$%.2f", usd)
 }
 
 // humanTokens condenses big token counts: 1.2K, 3.4M.
@@ -125,16 +104,4 @@ func humanTokens(n int) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
-}
-
-// truncateRune cuts a string to maxRune runes, appending …. ASCII-fast-path.
-func truncateRune(s string, maxRune int) string {
-	if maxRune <= 0 || len(s) <= maxRune {
-		return s
-	}
-	r := []rune(s)
-	if len(r) <= maxRune {
-		return s
-	}
-	return string(r[:maxRune-1]) + "…"
 }

@@ -26,7 +26,7 @@ func renderUsageText() string {
 	}{{"today", d}, {"7d", w}, {"30d", mo}, {"all", a}} {
 		s := r.w.Total
 		b.WriteString(fmt.Sprintf("  %-6s %9s tok  %9s  %5d calls\n",
-			r.name, humanTokens(s.Input+s.Output), fmtUSD(s.USD), s.Calls))
+			r.name, humanTokens(s.Input+s.Output), formatUSD(s.USD), s.Calls))
 	}
 	b.WriteString("\nby provider (all-time)\n")
 	keys := cost.SortedKeys(a.ByProvider)
@@ -35,7 +35,7 @@ func renderUsageText() string {
 	})
 	for _, k := range keys {
 		s := a.ByProvider[k]
-		b.WriteString(fmt.Sprintf("  %-12s %8s  %9s\n", truncateRune(k, 12), humanTokens(tokensOf(s)), usageCost(k, s.USD)))
+		b.WriteString(fmt.Sprintf("  %-12s %8s  %9s\n", truncateRunes(k, 12), humanTokens(tokensOf(s)), usageCost(k, s.USD)))
 	}
 	return b.String()
 }

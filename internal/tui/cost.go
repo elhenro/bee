@@ -160,7 +160,7 @@ func (c *CostPane) renderFilterChips() string {
 
 // renderTotals draws the headline summary line.
 func (c *CostPane) renderTotals(s cost.Summary) string {
-	usd := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).Render(fmtUSD(s.USD))
+	usd := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).Render(formatUSD(s.USD))
 	rest := lipgloss.NewStyle().Foreground(fgSmoke).Render(
 		fmt.Sprintf("  %d calls  ·  in %s  ·  out %s", s.Calls, humanTokens(s.Input), humanTokens(s.Output)),
 	)
@@ -170,9 +170,7 @@ func (c *CostPane) renderTotals(s cost.Summary) string {
 // renderSparkline draws a unicode bar chart of recent events (or buckets
 // the full history when there are too many). Width caps the bar count.
 func (c *CostPane) renderSparkline(events []cost.Event, width int) string {
-	if width < 8 {
-		width = 8
-	}
+	width = max(width, 8)
 	bars := sparkBars(events, width)
 	if bars == "" {
 		return StyleLabel.Render("(no data yet)")

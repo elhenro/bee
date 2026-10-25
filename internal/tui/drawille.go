@@ -1,6 +1,9 @@
 package tui
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Braille-pattern pixel canvas (U+2800–U+28FF). Each rune packs 8 binary
 // pixels (2 cols × 4 rows) — ~8× vertical density over ASCII art. Bit
@@ -46,12 +49,6 @@ func NewDrawilleCanvas(w, h int) *DrawilleCanvas {
 	}
 }
 
-// Width returns canvas width in pixels.
-func (c *DrawilleCanvas) Width() int { return c.w }
-
-// Height returns canvas height in pixels.
-func (c *DrawilleCanvas) Height() int { return c.h }
-
 // SetPixel turns one pixel on (true) or off (false). Out-of-bounds is a
 // no-op so animations can sweep sprites past the edge cleanly.
 func (c *DrawilleCanvas) SetPixel(x, y int, on bool) {
@@ -64,13 +61,6 @@ func (c *DrawilleCanvas) SetPixel(x, y int, on bool) {
 		c.grid[cy*c.cellsW+cx] |= bit
 	} else {
 		c.grid[cy*c.cellsW+cx] &^= bit
-	}
-}
-
-// Clear resets all pixels to off.
-func (c *DrawilleCanvas) Clear() {
-	for i := range c.grid {
-		c.grid[i] = 0
 	}
 }
 
@@ -111,12 +101,7 @@ func BrailleSparkline(vals []float64, cells int) string {
 	}
 	w := cells * braillePxW
 	c := NewDrawilleCanvas(w, braillePxH)
-	maxV := 0.0
-	for _, v := range vals {
-		if v > maxV {
-			maxV = v
-		}
-	}
+	maxV := slices.Max(vals)
 	if maxV <= 0 {
 		// flat-zero series: render baseline so the bar still appears.
 		for x := 0; x < w; x++ {
@@ -126,17 +111,8 @@ func BrailleSparkline(vals []float64, cells int) string {
 	}
 	for x := 0; x < w; x++ {
 		// pick value index, allow downsampling/upsampling.
-		i := x * len(vals) / w
-		if i >= len(vals) {
-			i = len(vals) - 1
-		}
-		hPx := int(vals[i] / maxV * float64(braillePxH))
-		if hPx < 1 {
-			hPx = 1
-		}
-		if hPx > braillePxH {
-			hPx = braillePxH
-		}
+		i := min(x*len(vals)/w, len(vals)-1)
+		hPx := min(max(int(vals[i]/maxV*float64(braillePxH)), 1), braillePxH)
 		for y := braillePxH - hPx; y < braillePxH; y++ {
 			c.SetPixel(x, y, true)
 		}

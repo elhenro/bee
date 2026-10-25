@@ -10,21 +10,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Hex glyphs (PLAN §8b.1) and honey palette.
+// Hex glyphs (PLAN §8b.1).
 const (
-	HexFilled      = "⬢"
-	HexHollow      = "⬢"
-	ColorHoneyGold = "#F2B233"
-	ColorAmber     = "#E08A1E"
-	ColorDim       = "#5F5F5F"
-	ColorAccent    = "#FFE066"
-	ColorDanger    = "#D9534F"
-	ColorAddFg     = "#7FBF6B"
-	ColorDelFg     = "#D9534F"
-	ColorMuted     = "#888888"
+	HexFilled = "⬢"
+	HexHollow = "⬢"
 )
-
-func fg(c string) lipgloss.Style { return lipgloss.NewStyle().Foreground(lipgloss.Color(c)) }
 
 // Pre-built styles. Public so 3A may compose without redefining.
 var (

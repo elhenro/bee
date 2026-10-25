@@ -20,7 +20,7 @@ import (
 // subtle / body / bright) stays consistent across themes.
 //
 //	fg: Oyster (faint) → Squid (subtle) → Smoke (secondary) → Ash (body) → Butter (bright)
-//	bg: Pepper (base) → BBQ (surface) → Charcoal (separator) → Iron (emphasis)
+//	bg: Charcoal (separator) → Iron (emphasis)
 var (
 	fgOyster = lipgloss.AdaptiveColor{Light: "#8B8996", Dark: "#5F5E6A"} // faint: hints, rules
 	fgSquid  = lipgloss.AdaptiveColor{Light: "#65636F", Dark: "#8B8997"} // subtle: args, results
@@ -28,8 +28,6 @@ var (
 	fgAsh    = lipgloss.AdaptiveColor{Light: "#222127", Dark: "#E0DCDE"} // body text
 	fgButter = lipgloss.AdaptiveColor{Light: "#17161B", Dark: "#FFFAF1"} // bright / on-accent
 
-	bgPepper   = lipgloss.AdaptiveColor{Light: "#F4F1EC", Dark: "#201F26"} // base
-	bgBBQ      = lipgloss.AdaptiveColor{Light: "#E8E4DD", Dark: "#2D2C35"} // surface
 	bgCharcoal = lipgloss.AdaptiveColor{Light: "#D2CEC6", Dark: "#3A3943"} // separator / soft border
 	bgIron     = lipgloss.AdaptiveColor{Light: "#B8B4AC", Dark: "#4D4C57"} // emphasized surface
 
@@ -53,7 +51,6 @@ var (
 // over pale backgrounds without losing the role association.
 var (
 	accentHoney = lipgloss.AdaptiveColor{Light: "#A56F00", Dark: "#FFB000"} // brand: prompt, spinner, your turns
-	accentYou   = lipgloss.AdaptiveColor{Light: "#0B63C5", Dark: "#7AB7FF"} // info blue: links
 	accentBee   = lipgloss.AdaptiveColor{Light: "#8A5A00", Dark: "#FFC857"} // soft honey: assistant marker
 	accentTool  = lipgloss.AdaptiveColor{Light: "#6B4A93", Dark: "#B79AD6"} // lilac: queen role, rare accents
 	accentCode  = lipgloss.AdaptiveColor{Light: "#0E7A6C", Dark: "#7FD1C2"} // teal: inline code
@@ -84,17 +81,8 @@ func userPanel() lipgloss.AdaptiveColor {
 	return lipgloss.AdaptiveColor{Light: "230", Dark: "236"}
 }
 
-// Aliases kept so existing callers (caveman cycle, etc.) compile without churn.
-var (
-	colorHoney  = accentHoney
-	colorBee    = accentBee
-	colorYou    = accentYou
-	colorTool   = fgSquid
-	colorDim    = fgOyster
-	colorBorder = bgCharcoal
-	colorErr    = semError
-	colorBg     = bgPepper
-)
+// alias for the prompt and picker spinner
+var colorHoney = accentHoney
 
 // Styles bundles every reusable lipgloss style.
 type Styles struct {

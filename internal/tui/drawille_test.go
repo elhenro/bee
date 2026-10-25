@@ -66,15 +66,6 @@ func TestDrawilleCanvas_OutOfBoundsIsNoOp(t *testing.T) {
 	}
 }
 
-func TestDrawilleCanvas_Clear(t *testing.T) {
-	c := NewDrawilleCanvas(2, 4)
-	c.SetPixel(0, 0, true)
-	c.Clear()
-	if got := c.ToBraille(); got != string(brailleBase) {
-		t.Fatalf("Clear() did not reset canvas, got %q", got)
-	}
-}
-
 func TestBrailleSparkline_FlatZero(t *testing.T) {
 	got := BrailleSparkline([]float64{0, 0, 0, 0}, 2)
 	// each pixel column at row 3 → bit 0x40 (col0) / 0x80 (col1) → ⡀ + ⢀ = ⣀
