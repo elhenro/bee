@@ -32,15 +32,9 @@ func runRemoteControl(args []string) {
 	model := fs.String("model", "", "override config default_model")
 	providerName := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|workspace-write-net|danger-full-access)")
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
+	parseFlags(fs, args)
 
-	cfg, err := loadConfig(*model, *providerName, *sandboxScope)
-	if err != nil {
-		exitf(1, "bee remote-control: config: %v", err)
-	}
+	cfg := mustConfig("bee remote-control", *model, *providerName, *sandboxScope)
 
 	// trust gate: anyone on the LAN who reaches the URL can drive the agent
 	// and run tools locally. Refuse full-access without explicit --yes.
@@ -52,10 +46,7 @@ func runRemoteControl(args []string) {
 	}
 	fmt.Fprintf(os.Stdout, "remote-control: clients execute locally under sandbox scope %s\n", scope)
 
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		exitf(1, "bee remote-control: provider: %v", err)
-	}
+	prov := mustProvider("bee remote-control", cfg)
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()

@@ -3,9 +3,10 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,23 +22,16 @@ func runHive() {
 	}
 
 	// detect which sessions have background logs
-	bgSet := make(map[string]bool)
 	bgLogs, _ := listBgLogs()
-	for _, id := range bgLogs {
-		bgSet[id] = true
-	}
 
 	var bg, recent []sessionInfo
 	for _, s := range sessions {
 		preview, _ := session.FirstUserText(s.ID)
-		if len(preview) > 60 {
-			preview = preview[:57] + "..."
-		}
 		info := sessionInfo{
 			ID:      s.ID,
 			Age:     humanAge(s.Created),
-			Preview: preview,
-			IsBG:    bgSet[s.ID],
+			Preview: ellipsize(preview, 60),
+			IsBG:    slices.Contains(bgLogs, s.ID),
 		}
 		if info.IsBG {
 			bg = append(bg, info)
@@ -60,14 +54,14 @@ func runHive() {
 	if len(bg) > 0 {
 		fmt.Printf("\nbackground bees (%d)\n", len(bg))
 		for _, b := range bg {
-			printBee(b, true)
+			printBee(b)
 		}
 	}
 
 	if len(recent) > 0 {
 		fmt.Printf("\nrecent sessions (%d)\n", len(recent))
 		for _, r := range recent {
-			printBee(r, false)
+			printBee(r)
 		}
 	}
 }
@@ -79,20 +73,20 @@ type sessionInfo struct {
 	IsBG    bool
 }
 
-func printBee(b sessionInfo, isBG bool) {
+func printBee(b sessionInfo) {
 	label := " "
-	if isBG {
+	if b.IsBG {
 		label = "•"
 	}
-	preview := b.Preview
-	if preview == "" {
-		preview = "(no preview)"
+	fmt.Printf("  %s %s  %-10s  %s\n", label, b.ID[:min(len(b.ID), 8)], b.Age, cmp.Or(b.Preview, "(no preview)"))
+}
+
+// ellipsize cuts s to at most n runes, ending in "..." when it was cut.
+func ellipsize(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n-3]) + "..."
 	}
-	sid := b.ID
-	if len(sid) > 8 {
-		sid = sid[:8]
-	}
-	fmt.Printf("  %s %s  %-10s  %s\n", label, sid, b.Age, preview)
+	return s
 }
 
 // listBgLogs returns session ids that have a background log file.
@@ -110,17 +104,11 @@ func listBgLogs() ([]string, error) {
 	}
 	var out []string
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
+		if id, ok := strings.CutSuffix(e.Name(), ".log"); ok && !e.IsDir() {
+			out = append(out, id)
 		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".log") {
-			continue
-		}
-		id := strings.TrimSuffix(name, ".log")
-		out = append(out, id)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out, nil
 }
 

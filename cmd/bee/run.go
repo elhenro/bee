@@ -27,6 +27,7 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
+	"github.com/elhenro/bee/internal/skills/bundled"
 	"github.com/elhenro/bee/internal/tools/skillexec"
 )
 
@@ -59,10 +60,7 @@ func headlessRun(args []string) int {
 	yes := fs.Bool("yes", false, "auto-approve any dangerous shell command without prompting (still blocks hardline-refused commands)")
 	yolo := fs.Bool("yolo", false, "alias for --yes: auto-approve dangerous commands")
 	browserOn := fs.Bool("browser", false, "enable native browser tools (open/snapshot/click/type/console) for this run")
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
+	parseFlags(fs, args)
 	if *verbose {
 		_ = os.Setenv("BEE_VERBOSE", "1")
 	}
@@ -85,10 +83,7 @@ func headlessRun(args []string) int {
 		}
 	}
 
-	cfg, err := loadConfig(*model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
-	if err != nil {
-		exitf(1, "bee run: config: %v", err)
-	}
+	cfg := mustConfig("bee run", *model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
 	// scripted provider needs deterministic Stream-call count: pin worker role
 	// (no per-turn classifier side-query fires — classifier was removed) and
 	// disable compaction + memory selection. tests script exactly the calls
@@ -106,10 +101,7 @@ func headlessRun(args []string) int {
 		cfg.Browser.Enabled = true
 	}
 
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		exitf(1, "bee run: provider: %v", err)
-	}
+	prov := mustProvider("bee run", cfg)
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
@@ -260,4 +252,13 @@ func resolveRunSkill(reg *skills.Registry, name, userMsg string) (*skills.Skill,
 		return nil, s.Body + "\n\nInput: " + userMsg
 	}
 	return nil, userMsg
+}
+
+// ensureFirstRun is best-effort. Called from `bee run` and TUI startup.
+// Silent on success, never fatal: a broken HOME shouldn't block the agent.
+// WriteDefaults is idempotent and preserves user edits (existing files are
+// never overwritten), so calling it every start back-fills any bundled
+// skills added since the user's last seed.
+func ensureFirstRun() {
+	_, _ = bundled.WriteDefaults(skills.BaseDir())
 }

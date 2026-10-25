@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -73,6 +74,26 @@ func loadConfig(model, provider, sandboxScope string) (config.Config, error) {
 		cfg.Sandbox.Scope = sandboxScope
 	}
 	return cfg, nil
+}
+
+// mustConfig is loadConfig for a CLI entry point: a failure prints
+// "<cmd>: config: ..." and exits 1.
+func mustConfig(cmd, model, provider, sandboxScope string) config.Config {
+	cfg, err := loadConfig(model, provider, sandboxScope)
+	if err != nil {
+		exitf(1, "%s: config: %v", cmd, err)
+	}
+	return cfg
+}
+
+// mustProvider is buildProvider for a CLI entry point: a failure prints
+// "<cmd>: provider: ..." and exits 1.
+func mustProvider(cmd string, cfg config.Config) llm.Provider {
+	prov, err := buildProvider(cfg)
+	if err != nil {
+		exitf(1, "%s: provider: %v", cmd, err)
+	}
+	return prov
 }
 
 // applyThinkingCaveman applies --thinking, --effort (alias; the global flag
@@ -216,4 +237,30 @@ func buildProviderInner(cfg config.Config) (llm.Provider, error) {
 	default:
 		return nil, fmt.Errorf("wire_api %q not supported yet", prov.WireAPI)
 	}
+}
+
+// prewarmLocalContext learns the active local model's context window before
+// the first turn so contextBudget and the tiny-profile scaling start from
+// reality. Synchronous on purpose: a closed port fails fast on dial and a
+// running server answers well under a second.
+func prewarmLocalContext(cfg config.Config) {
+	pc, ok := cfg.Providers[cfg.DefaultProvider]
+	if !ok || pc.BaseURL == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), localContextProbeTimeout)
+	defer cancel()
+
+	// /api/show first: its num_ctx is what the runtime really allocates.
+	// servers without it (omlx, lm-studio, vllm) 404 here, which is not a failure.
+	if n, err := llm.ProbeOllamaContext(ctx, http.DefaultClient, pc.BaseURL, cfg.DefaultModel); err == nil && n > 0 {
+		llm.RememberContextLength(cfg.DefaultModel, n)
+		return
+	}
+	// those servers advertise the window on /models (context_length,
+	// max_model_len) or /models/status, which ProbeContextLength reads.
+	if llm.ProbeContextLength(ctx, cfg.DefaultProvider, pc, cfg.DefaultModel) > 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "bee: context window unknown for %s; using fallback budget\n", cfg.DefaultModel)
 }

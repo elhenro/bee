@@ -37,10 +37,7 @@ func runFan(args []string) {
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope")
 	safe := fs.Bool("safe", false, "shorthand for --sandbox workspace-write: confine writes to cwd+tmp, block network")
 	isolated := fs.Bool("isolated", false, "give each worker its own git worktree (avoids write races)")
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
+	parseFlags(fs, args)
 	if strings.TrimSpace(*task) == "" {
 		exitf(2, "bee fan: --task is required")
 	}
@@ -53,15 +50,9 @@ func runFan(args []string) {
 		exitf(2, "bee fan: no work to do")
 	}
 
-	cfg, err := loadConfig(*model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
-	if err != nil {
-		exitf(1, "bee fan: config: %v", err)
-	}
+	cfg := mustConfig("bee fan", *model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
 
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		exitf(1, "bee fan: provider: %v", err)
-	}
+	prov := mustProvider("bee fan", cfg)
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
 	reg, err := buildTools(cwd, cfg, prov, storeDir)

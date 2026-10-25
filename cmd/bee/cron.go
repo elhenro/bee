@@ -34,8 +34,7 @@ func runCron(args []string) {
 	}
 	reg, err := loadCronRegistry()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "bee cron:", err)
-		os.Exit(1)
+		exitf(1, "bee cron: %v", err)
 	}
 	switch sub := fs.Arg(0); sub {
 	case "ls":

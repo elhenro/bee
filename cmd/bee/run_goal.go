@@ -37,14 +37,6 @@ func stalledStep(streak int, prev, reason string) (int, string) {
 	return 1, reason
 }
 
-// isWedgedTurn reports whether err is a "this turn got stuck" signal (repeated
-// failing call, per-tool cap, malformed envelope, output loop) rather than a
-// fatal error. Interactive sessions survive these — the headless goal loop
-// should too: spend the turn, reframe, retry. Escalate is excluded — that is
-// the model deliberately stopping to ask the user. Shares one definition with
-// the watchdog resume classifier via loop.IsWedge.
-func isWedgedTurn(err error) bool { return loop.IsWedge(err) }
-
 // parseGoalMessage detects a "/goal …" headless request and returns the
 // trimmed condition. show/clear/aliases and the bare command return ("", true)
 // so the caller can print a hint and exit. Non-goal messages return ("", false).
@@ -86,9 +78,12 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 				fmt.Fprintln(os.Stderr, "goal: cancelled")
 				return 0
 			}
-			// wedged turn: not fatal. spend the turn, reframe, retry — but give
-			// up after several in a row so a hopeless spiral can't burn the cap.
-			if isWedgedTurn(err) {
+			// wedged turn (repeated failing call, per-tool cap, malformed envelope,
+			// output loop): not fatal, interactive sessions survive these too.
+			// spend the turn, reframe, retry — but give up after several in a row
+			// so a hopeless spiral can't burn the cap. escalate is excluded: that
+			// is the model deliberately stopping to ask the user.
+			if loop.IsWedge(err) {
 				st.Tick()
 				wedgeStreak++
 				if wedgeStreak >= maxConsecutiveWedges {

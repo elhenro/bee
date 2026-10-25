@@ -11,13 +11,14 @@
 package main
 
 import (
-	"errors"
+	"cmp"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -155,33 +156,18 @@ func listBg() {
 		return
 	}
 
-	logSet := make(map[string]bool)
-	for _, id := range logs {
-		logSet[id] = true
-	}
-
 	fmt.Printf("%-12s %-8s %-10s %s\n", "SESSION", "PID", "AGE", "PREVIEW")
 	for _, s := range sessions {
-		if !logSet[s.ID] {
+		if !slices.Contains(logs, s.ID) {
 			continue
 		}
 		preview, _ := session.FirstUserText(s.ID)
-		if len(preview) > 50 {
-			preview = preview[:47] + "..."
-		}
-		if preview == "" {
-			preview = "(no preview)"
-		}
 		pid, _ := bghive.ReadPid(s.ID)
 		pidStr := "-"
 		if pid > 0 {
 			pidStr = strconv.Itoa(pid)
 		}
-		sid := s.ID
-		if len(sid) > 12 {
-			sid = sid[:12]
-		}
-		fmt.Printf("%-12s %-8s %-10s %s\n", sid, pidStr, humanAge(s.Created), preview)
+		fmt.Printf("%-12s %-8s %-10s %s\n", s.ID[:min(len(s.ID), 12)], pidStr, humanAge(s.Created), cmp.Or(ellipsize(preview, 50), "(no preview)"))
 	}
 }
 
@@ -206,19 +192,12 @@ func tailBg(id string) {
 		exitf(1, "bee bg --tail: seek: %v", err)
 	}
 
-	buf := make([]byte, 4096)
 	for {
-		n, err := f.Read(buf)
-		if n > 0 {
-			os.Stdout.Write(buf[:n])
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
+		// io.Copy stops at EOF without error: poll again for new log output
+		if _, err := io.Copy(os.Stdout, f); err != nil {
 			exitf(1, "bee bg --tail: read: %v", err)
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

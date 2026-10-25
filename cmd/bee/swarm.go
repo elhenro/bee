@@ -36,10 +36,7 @@ func runSwarm(args []string) {
 	isolated := fs.Bool("isolated", false, "give each worker its own git worktree (avoids write races)")
 	triage := fs.Bool("triage", true, "skip the hive on small/clear tasks (one streaming turn instead of plan+workers+review)")
 	noTriage := fs.Bool("no-triage", false, "force the full hive even when triage says simple")
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
+	parseFlags(fs, args)
 	if *nWorkers < 1 {
 		exitf(2, "bee swarm: --workers must be ≥1")
 	}
@@ -49,15 +46,9 @@ func runSwarm(args []string) {
 		exitf(2, "bee swarm: %v", err)
 	}
 
-	cfg, err := loadConfig("", "", "")
-	if err != nil {
-		exitf(1, "bee swarm: config: %v", err)
-	}
+	cfg := mustConfig("bee swarm", "", "", "")
 
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		exitf(1, "bee swarm: provider: %v", err)
-	}
+	prov := mustProvider("bee swarm", cfg)
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()

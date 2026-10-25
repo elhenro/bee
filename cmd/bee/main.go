@@ -6,14 +6,13 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 
 	"golang.org/x/term"
 
-	"github.com/elhenro/bee/internal/caveman"
-	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tui"
@@ -107,6 +106,14 @@ func failf(code int, format string, a ...any) int {
 // exitf is failf followed by an immediate exit.
 func exitf(code int, format string, a ...any) { os.Exit(failf(code, format, a...)) }
 
+// parseFlags parses args onto fs, reporting errors on stderr. A bad flag exits 2.
+func parseFlags(fs *flag.FlagSet, args []string) {
+	fs.SetOutput(os.Stderr)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+}
+
 func usage() {
 	fmt.Print(`bee — pure-Go self-learning minimalist coding agent
 
@@ -147,94 +154,6 @@ global flags (any position):
 `)
 }
 
-// stripVerboseFlag pulls --verbose / -v out of os.Args (before any --) and
-// flips BEE_VERBOSE=1 so both the TUI and headless paths render full tool
-// output. Token isn't passed through to subcommands since flag.Parse would
-// fail on the rare overlap.
-func stripVerboseFlag() {
-	out := os.Args[:1]
-	hit := false
-	for i, a := range os.Args[1:] {
-		if a == "--" { // everything after is the message, not flags
-			out = append(out, os.Args[1+i:]...)
-			break
-		}
-		if a == "--verbose" {
-			hit = true
-			continue
-		}
-		out = append(out, a)
-	}
-	if hit {
-		_ = os.Setenv("BEE_VERBOSE", "1")
-		os.Args = out
-	}
-}
-
-// stripValueFlag pulls --name <val> / --name=<val> (also single-dash) out of
-// os.Args at any position before a bare --, so it works as a global flag. The
-// last hit wins; os.Args is rewritten only on a hit. A missing value exits 2.
-func stripValueFlag(name, levels string) (val string, hit bool) {
-	out := os.Args[:1]
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			out = append(out, args[i:]...)
-			break
-		}
-		switch {
-		case a == "--"+name || a == "-"+name:
-			if i+1 >= len(args) {
-				exitf(2, "bee: --%s needs a level (%s)", name, levels)
-			}
-			i++
-			val, hit = args[i], true
-		case strings.HasPrefix(a, "--"+name+"=") || strings.HasPrefix(a, "-"+name+"="):
-			val, hit = a[strings.IndexByte(a, '=')+1:], true
-		default:
-			out = append(out, a)
-		}
-	}
-	if hit {
-		os.Args = out
-	}
-	return val, hit
-}
-
-// stripCavemanFlag handles the global --caveman <lvl> flag (e.g. `bee --caveman
-// full run msg`). The value is validated up front and stashed in BEE_CAVEMAN;
-// the TUI and headless paths pick it up after config.Load. Invalid level exits 2.
-func stripCavemanFlag() {
-	val, hit := stripValueFlag("caveman", "off|lite|full|ultra")
-	if !hit {
-		return
-	}
-	lvl, err := caveman.ParseLevel(val)
-	if err != nil {
-		exitf(2, "bee: %v", err)
-	}
-	_ = os.Setenv("BEE_CAVEMAN", string(lvl))
-}
-
-// stripEffortFlag handles the global --effort <lvl> flag (e.g. `bee --effort
-// high run msg`). Value validated up front and stashed in BEE_EFFORT; both TUI
-// and headless paths consume it after config.Load. Invalid level exits 2.
-// Subcommand-local --thinking still works via the run flagset and takes
-// precedence over BEE_EFFORT.
-func stripEffortFlag() {
-	val, hit := stripValueFlag("effort", "auto|off|low|medium|high|max")
-	if !hit {
-		return
-	}
-	canonical := llm.ParseThinking(val)
-	// ParseThinking returns Off for unknown — reject silent typos.
-	if canonical == llm.ThinkingOff && strings.ToLower(strings.TrimSpace(val)) != "off" {
-		exitf(2, "bee: --effort: unknown level %q (want auto|off|low|medium|high|max)", val)
-	}
-	_ = os.Setenv("BEE_EFFORT", string(canonical))
-}
-
 func back(args []string) {
 	// no id = resume most recent session
 	id := "latest"
@@ -268,9 +187,7 @@ func back(args []string) {
 // so `bee research foo > out.md` and scripts keep working.
 func dispatchSkill(name string, rest []string) bool {
 	ensureFirstRun()
-	reg := skills.NewRegistry()
-	_ = reg.Load(skills.BaseDir())
-	s, ok := reg.Get(name)
+	s, ok := newSkillRegistry().Get(name)
 	if !ok {
 		// crystallized routes: a recipe waggle (shell steps that change
 		// state) goes through the headless engine so each step meets the

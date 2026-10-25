@@ -71,15 +71,9 @@ func runHyperplan(args []string) {
 		exitf(2, "bee hyperplan: %v", err)
 	}
 
-	cfg, err := loadConfig(opts.Model, opts.Provider, "")
-	if err != nil {
-		exitf(1, "bee hyperplan: config: %v", err)
-	}
+	cfg := mustConfig("bee hyperplan", opts.Model, opts.Provider, "")
 
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		exitf(1, "bee hyperplan: provider: %v", err)
-	}
+	prov := mustProvider("bee hyperplan", cfg)
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
@@ -89,8 +83,7 @@ func runHyperplan(args []string) {
 	}
 
 	// critics are read-only — they reason about a plan, they don't touch disk.
-	criticAllowed := hivepkg.RoleCritic.AllowedTools()
-	criticReg, err := filterTools(rawReg, strings.Join(criticAllowed, ","))
+	criticReg, err := filterTools(rawReg, strings.Join(hivepkg.RoleCritic.AllowedTools(), ","))
 	if err != nil {
 		exitf(1, "bee hyperplan: filter critic tools: %v", err)
 	}
@@ -173,19 +166,16 @@ func runCritics(ctx context.Context, critics []hivepkg.Runner, prompts []string)
 	out := make([]criticResult, len(critics))
 	var wg sync.WaitGroup
 	for i := range critics {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			angle := attackAngles[idx%len(attackAngles)].Name
-			res := criticResult{Angle: angle}
-			run, err := critics[idx].Run(ctx, prompts[idx])
+		wg.Go(func() {
+			res := criticResult{Angle: attackAngles[i%len(attackAngles)].Name}
+			run, err := critics[i].Run(ctx, prompts[i])
 			if err != nil {
 				res.Err = err
 			} else {
 				res.Text = strings.TrimSpace(run.FinalText)
 			}
-			out[idx] = res
-		}(i)
+			out[i] = res
+		})
 	}
 	wg.Wait()
 	return out
@@ -198,7 +188,7 @@ func synthesize(ctx context.Context, synth hivepkg.Runner, plan string, critique
 	b.WriteString("\n\noriginal plan:\n<<<\n")
 	b.WriteString(plan)
 	b.WriteString("\n>>>\n\n")
-	b.WriteString(fmt.Sprintf("you have received %d adversarial critiques attacking this plan. consolidate them into a refined plan that addresses the substantive flaws. ignore noise. output as: 'Refined Plan' header, then numbered steps, then a 'Risks accepted' section for flaws you chose not to mitigate.\n\n", len(critiques)))
+	fmt.Fprintf(&b, "you have received %d adversarial critiques attacking this plan. consolidate them into a refined plan that addresses the substantive flaws. ignore noise. output as: 'Refined Plan' header, then numbered steps, then a 'Risks accepted' section for flaws you chose not to mitigate.\n\n", len(critiques))
 	for i, c := range critiques {
 		fmt.Fprintf(&b, "## Critique %d — %s angle\n", i+1, c.Angle)
 		if c.Err != nil {
