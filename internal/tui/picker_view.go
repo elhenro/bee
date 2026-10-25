@@ -73,19 +73,34 @@ func (p *Picker) renderActive(w int) string {
 // renderRows draws palette-style rows with ›/glyph/name/desc, matched-rune
 // highlights, and ↑/↓ overflow indicators.
 func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, rowFn func(int) (string, string)) string {
+	gs := lipgloss.NewStyle().Foreground(fgSquid)
+	return renderPickRows(matches, sel, w, maxPickerRows, " ", func(idx int) pickRow {
+		name, desc := rowFn(idx)
+		return pickRow{glyph: glyph, glyphStyle: gs, name: name, desc: desc}
+	})
+}
+
+// pickRow is one row of an fzf-style list.
+type pickRow struct {
+	glyph, name, desc string
+	glyphStyle        lipgloss.Style
+}
+
+// renderPickRows draws the visible window of matches. gap sits between the
+// glyph and the name; rowFn maps a match index back to its row.
+func renderPickRows(matches []fuzzy.Match, sel, w, maxRows int, gap string, rowFn func(idx int) pickRow) string {
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
 	hl := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 	selMark := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 	nameSel := lipgloss.NewStyle().Foreground(fgButter).Bold(true)
 	nameNorm := lipgloss.NewStyle().Foreground(fgSmoke)
-	gs := lipgloss.NewStyle().Foreground(fgSquid)
 
 	if len(matches) == 0 {
 		return dim.Render("   no matches")
 	}
 
 	total := len(matches)
-	start, end := scrollWindow(total, sel, maxPickerRows)
+	start, end := scrollWindow(total, sel, maxRows)
 
 	var b strings.Builder
 	if start > 0 {
@@ -94,7 +109,7 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 	}
 	for i := start; i < end; i++ {
 		m := matches[i]
-		name, desc := rowFn(m.Index)
+		r := rowFn(m.Index)
 
 		var line strings.Builder
 		if i == sel {
@@ -103,8 +118,8 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 			line.WriteString("  ")
 		}
 		line.WriteString(" ")
-		line.WriteString(gs.Render(glyph))
-		line.WriteString(" ")
+		line.WriteString(r.glyphStyle.Render(r.glyph))
+		line.WriteString(gap)
 
 		// highlight matched runes within the name only; fuzzy gives indices
 		// into the full haystack "name + space + extras", HighlightLabel masks
@@ -113,9 +128,9 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 		if i == sel {
 			ns = nameSel
 		}
-		line.WriteString(HighlightLabel(name, m.MatchedIndexes, ns, hl, 0))
-		if desc != "" {
-			line.WriteString(dim.Render("  " + desc))
+		line.WriteString(HighlightLabel(r.name, m.MatchedIndexes, ns, hl, 0))
+		if r.desc != "" {
+			line.WriteString(dim.Render("  " + r.desc))
 		}
 		row := line.String()
 		if lipglossWidth(row) > w {
