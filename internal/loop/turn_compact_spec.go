@@ -41,8 +41,7 @@ func (e *Engine) autoCompactStep(ctx context.Context, msgs []types.Message, sys 
 	if !e.compactionEnabled() {
 		return msgs
 	}
-	budget := contextBudget(e.Cfg)
-	threshold := scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)
+	budget, threshold := e.compactLimits()
 	pressure := compactPressure(sys, msgs, e.run.lastInputTokens, budget, threshold)
 	if pressure <= specStartRatio || !compactWorthwhile(msgs, budget) {
 		return msgs
@@ -55,6 +54,12 @@ func (e *Engine) autoCompactStep(ctx context.Context, msgs []types.Message, sys 
 		e.run.lastInputTokens = 0
 		return out
 	}
+	return e.compactInline(ctx, msgs)
+}
+
+// compactInline summarizes msgs on the spot and returns the shorter history
+// with its notice. a failure keeps msgs.
+func (e *Engine) compactInline(ctx context.Context, msgs []types.Message) []types.Message {
 	compacted, stats, err := e.compact(ctx, msgs)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "loop: auto-compact failed: %v\n", err)
@@ -117,8 +122,8 @@ func (e *Engine) takeSpecCompact(ctx context.Context, msgs []types.Message) ([]t
 	stats := CompactStats{
 		BeforeMsgs:   len(msgs),
 		AfterMsgs:    len(merged),
-		BeforeTokens: defaultTokenEstimator.EstimateMessages(msgs),
-		AfterTokens:  defaultTokenEstimator.EstimateMessages(merged),
+		BeforeTokens: estimateMessagesTokens(msgs),
+		AfterTokens:  estimateMessagesTokens(merged),
 		Duration:     time.Since(start),
 	}
 	return e.emitCompactNotice(merged, stats), true

@@ -31,21 +31,11 @@ func capRecentImages(msgs []types.Message) []types.Message {
 	if drop <= 0 {
 		return msgs
 	}
-	out := make([]types.Message, len(msgs))
-	for i, m := range msgs {
-		out[i] = m
-		if drop == 0 || !msgHasImage(m) {
-			continue
+	return mapImages(msgs, func(b types.ContentBlock) types.ContentBlock {
+		if drop == 0 {
+			return b
 		}
-		nc := make([]types.ContentBlock, 0, len(m.Content))
-		for _, b := range m.Content {
-			if b.Type == types.BlockImage && drop > 0 {
-				drop--
-				b = types.ContentBlock{Type: types.BlockText, Text: imageDroppedNote}
-			}
-			nc = append(nc, b)
-		}
-		out[i].Content = nc
-	}
-	return out
+		drop--
+		return textBlock(imageDroppedNote)
+	})
 }

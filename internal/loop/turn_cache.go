@@ -1,8 +1,6 @@
 package loop
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"strconv"
 	"strings"
 
@@ -37,18 +35,18 @@ func sysPromptCacheKey(cfg config.Config, cwd string, role Role, readOnly bool, 
 	for _, s := range specs {
 		b.WriteString(s.Name)
 		b.WriteByte(':')
-		b.WriteString(contentHash(s.Description))
+		b.WriteString(hash8(s.Description))
 		b.WriteByte(':')
-		b.WriteString(contentHash(s.PromptSnippet))
+		b.WriteString(hash8(s.PromptSnippet))
 		b.WriteByte(';')
 	}
 	b.WriteByte('|')
-	b.WriteString(contentHash(skillManifest))
+	b.WriteString(hash8(skillManifest))
 	b.WriteByte('|')
 	for _, r := range recs {
 		b.WriteString(r.Name)
 		b.WriteByte(':')
-		b.WriteString(contentHash(r.Body))
+		b.WriteString(hash8(r.Body))
 		b.WriteByte(':')
 		b.WriteString(strconv.FormatInt(r.Modified.UnixNano(), 10))
 		b.WriteByte(';')
@@ -57,15 +55,8 @@ func sysPromptCacheKey(cfg config.Config, cwd string, role Role, readOnly bool, 
 	for _, f := range ctxFiles {
 		b.WriteString(f.Path)
 		b.WriteByte(':')
-		b.WriteString(contentHash(f.Body))
+		b.WriteString(hash8(f.Body))
 		b.WriteByte(';')
 	}
-	sum := sha256.Sum256([]byte(b.String()))
-	return hex.EncodeToString(sum[:8])
-}
-
-// contentHash is a short digest of s for fingerprinting.
-func contentHash(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:6])
+	return hash8(b.String())
 }

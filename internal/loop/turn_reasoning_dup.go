@@ -1,6 +1,10 @@
 package loop
 
-import "github.com/elhenro/bee/internal/types"
+import (
+	"strings"
+
+	"github.com/elhenro/bee/internal/types"
+)
 
 // cross-turn reasoning-loop detection. The in-stream watchdog (repeat_stream)
 // cuts a single turn that runs away. But a model can also spin across turn
@@ -30,20 +34,10 @@ func reasoningFingerprint(content []types.ContentBlock) map[string]struct{} {
 		if b.Type != types.BlockThinking && b.Type != types.BlockText {
 			continue
 		}
-		s := b.Text
-		off := 0
-		for off < len(s) {
-			end := len(s)
-			for j := off; j < len(s); j++ {
-				if s[j] == '\n' {
-					end = j
-					break
-				}
-			}
-			if norm := normalizeBlockLine(s[off:end]); len(norm) >= blockMinLineLen {
+		for line := range strings.SplitSeq(b.Text, "\n") {
+			if norm := normalizeBlockLine(line); len(norm) >= blockMinLineLen {
 				set[norm] = struct{}{}
 			}
-			off = end + 1
 		}
 	}
 	if len(set) < reasoningDupMinLines {

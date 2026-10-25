@@ -1,36 +1,30 @@
 package loop
 
 import (
-	"time"
+	"context"
+	"strings"
 
 	"github.com/elhenro/bee/internal/types"
 )
+
+// drainSteer folds a pending mid-turn steer into the transcript as a user turn
+// before the next LLM round. non-blocking so quiet iterations don't stall.
+func (e *Engine) drainSteer(ctx context.Context, res *RunResult) {
+	select {
+	case steer := <-e.SteerCh:
+		if strings.TrimSpace(steer) != "" && e.push(ctx, res, textMessage(types.RoleUser, lastID(res.Messages), "[steer] "+steer)) == nil {
+			e.emitSteerDelivered(steer)
+		}
+	default:
+	}
+}
 
 // emitSteerDelivered tells a live UI the model now has a steer. The TUI echoes
 // a steer when typed, but the loop only reads it between iterations, so without
 // this the user cannot tell sent-and-waiting from seen-by-the-model. Ephemeral:
 // UI notice only, never model context or persisted.
 func (e *Engine) emitSteerDelivered(text string) {
-	if e.LiveMsgCh == nil {
-		return
-	}
-	note := types.Message{
-		ID:        newID(),
-		Role:      types.RoleAssistant,
-		Content:   []types.ContentBlock{{Type: types.BlockText, Text: "steer delivered: " + steerPreview(text)}},
-		Time:      time.Now().UTC(),
-		Ephemeral: true,
-	}
-	select {
-	case e.LiveMsgCh <- note:
-	default:
-	}
-}
-
-func steerPreview(s string) string {
-	r := []rune(s)
-	if len(r) > 60 {
-		return string(r[:60]) + "…"
-	}
-	return s
+	note := textMessage(types.RoleAssistant, "", "steer delivered: "+clipRunes(text, 60, "…"))
+	note.Ephemeral = true
+	trySend(e.LiveMsgCh, note)
 }

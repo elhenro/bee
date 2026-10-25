@@ -33,9 +33,7 @@ func ParseRole(s string) Role {
 		return RoleScout
 	case "queen", "mastermind":
 		return RoleQueen
-	case "worker", "auto", "edit", "yolo", "":
-		return RoleWorker
-	default:
+	default: // worker, auto, edit, yolo, empty
 		return RoleWorker
 	}
 }
@@ -85,22 +83,12 @@ var planOnlyTools = map[string]bool{
 // the read-only whitelist (scout also keeps the web tools); act turns keep
 // everything except plan-only tools.
 func filterToolSpecsForRole(specs []llm.ToolSpec, role Role, readOnly bool) []llm.ToolSpec {
-	if !readOnly {
-		out := make([]llm.ToolSpec, 0, len(specs))
-		for _, s := range specs {
-			if !planOnlyTools[s.Name] {
-				out = append(out, s)
-			}
+	return keepSpecs(specs, func(name string) bool {
+		if !readOnly {
+			return !planOnlyTools[name]
 		}
-		return out
-	}
-	out := make([]llm.ToolSpec, 0, len(specs))
-	for _, s := range specs {
-		if readOnlyTools[s.Name] || (role == RoleScout && scoutExtraTools[s.Name]) {
-			out = append(out, s)
-		}
-	}
-	return out
+		return readOnlyTools[name] || (role == RoleScout && scoutExtraTools[name])
+	})
 }
 
 // applySkillToolGrants re-adds plan-only tools named in grants that the role
@@ -177,19 +165,17 @@ func rolePromptPrefix(role Role, readOnly bool) string {
 		// worker (or any other role). Defensive no-op — see func comment.
 		return ""
 	}
-	if role == RoleScout || role == RoleQueen {
-		prefix += "TOOL RULES (hard):\n" +
-			"- To find code, symbols, types, functions, files, or anything " +
-			"that lives in this repo, use search (local grep), glob, ls, and " +
-			"read. NEVER use web_search or web_fetch to locate local code — " +
-			"e.g. finding where `compactDoneMsg` is defined is a `search` " +
-			"call, not a web search.\n" +
-			"- web_search/web_fetch are ONLY for information that cannot exist " +
-			"in this repo: external library docs, third-party APIs, current " +
-			"events. If a `site:` filter would point at your own repo, you " +
-			"want `search` instead.\n" +
-			"- If a local search returns nothing, refine the query or path — " +
-			"do NOT fall back to the web for local code.\n"
-	}
-	return prefix
+	// only scout and queen reach here
+	return prefix + "TOOL RULES (hard):\n" +
+		"- To find code, symbols, types, functions, files, or anything " +
+		"that lives in this repo, use search (local grep), glob, ls, and " +
+		"read. NEVER use web_search or web_fetch to locate local code — " +
+		"e.g. finding where `compactDoneMsg` is defined is a `search` " +
+		"call, not a web search.\n" +
+		"- web_search/web_fetch are ONLY for information that cannot exist " +
+		"in this repo: external library docs, third-party APIs, current " +
+		"events. If a `site:` filter would point at your own repo, you " +
+		"want `search` instead.\n" +
+		"- If a local search returns nothing, refine the query or path — " +
+		"do NOT fall back to the web for local code.\n"
 }

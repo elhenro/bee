@@ -30,14 +30,8 @@ func (e *Engine) finalSummaryOnCap(ctx context.Context, res *RunResult, sys, sys
 	ctx, cancel := context.WithTimeout(ctx, capSummaryTimeout)
 	defer cancel()
 
-	prompt := types.Message{
-		ID:       newID(),
-		ParentID: lastID(res.Messages),
-		Role:     types.RoleUser,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: "[iter cap reached] You've hit the iteration limit, so no more tools will run. " +
-			"Stop calling tools. Give a final summary in under 120 words: what you changed, what is verified working, and what is still left to do."}},
-		Time: time.Now().UTC(),
-	}
+	prompt := textMessage(types.RoleUser, lastID(res.Messages), "[iter cap reached] You've hit the iteration limit, so no more tools will run. "+
+		"Stop calling tools. Give a final summary in under 120 words: what you changed, what is verified working, and what is still left to do.")
 
 	// the tail (hive contract + pheromone card) stays in place so a capped
 	// worker's close-out still arrives in report shape.
@@ -92,13 +86,10 @@ func flattenToolBlocks(msgs []types.Message) []types.Message {
 			role = types.RoleUser
 		}
 		if n := len(out); n > 0 && out[n-1].Role == role {
-			out[n-1].Content = []types.ContentBlock{{Type: types.BlockText, Text: out[n-1].Content[0].Text + "\n" + txt}}
+			out[n-1].Content = []types.ContentBlock{textBlock(out[n-1].Content[0].Text + "\n" + txt)}
 			continue
 		}
-		out = append(out, types.Message{
-			Role:    role,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: txt}},
-		})
+		out = append(out, plainMessage(role, txt))
 	}
 	return out
 }

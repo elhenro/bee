@@ -1,10 +1,9 @@
 package loop
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -21,13 +20,11 @@ type ToolCallSignature struct {
 // Observation summarizes what the tracker learned about a freshly observed
 // (ToolUse, isError) pair. Caller decides how to react.
 type Observation struct {
-	Sig                           ToolCallSignature
-	RepeatCount                   int  // how many times this exact Sig has fired this Run
-	ConsecutiveSameToolFailures   int  // streak of failures on the same tool name (any args)
-	ConsecutiveSameSigFailures    int  // streak of failures on the same (tool,args) sig
-	SameResultCount               int  // successful calls of this Sig returning byte-identical output
-	ConsecutiveSameFamilyFailures int  // streak of failures sharing one (tool, error-family) key
-	IsTwoStrike                   bool // same Sig failed twice in a row → nudge (no longer bails)
+	RepeatCount                 int  // how many times this exact Sig has fired this Run
+	ConsecutiveSameToolFailures int  // streak of failures on the same tool name (any args)
+	ConsecutiveSameSigFailures  int  // streak of failures on the same (tool,args) sig
+	SameResultCount             int  // successful calls of this Sig returning byte-identical output
+	IsTwoStrike                 bool // same Sig failed twice in a row → nudge (no longer bails)
 }
 
 // repeatTracker is a per-Run signal collector. cheap to allocate.
@@ -46,12 +43,6 @@ type repeatTracker struct {
 	// last signature seen and whether it failed. used for two-strike detect.
 	lastSig    ToolCallSignature
 	lastFailed bool
-	hasLast    bool
-	// error-family streak: the last failing family key and the run of failures
-	// landing on it. reset by any success. see error_family.go.
-	familyKey    string
-	familyStreak int
-	familyActive bool
 	// failure fingerprint → times a test run returned it. see test_fail_loop.go.
 	testFails map[string]int
 	// failure keys already counted in the batch being observed; nil outside a
@@ -95,12 +86,14 @@ func (t *repeatTracker) Observe(u types.ToolUse, isErr bool) Observation {
 }
 
 // ObserveWithResult is Observe with the raw tool-result content. The content
-// fuels the identical-output streak (hashed internally) and the error-family
-// streak. Empty content skips output tracking but still permits family
-// clustering of empty-body errors.
+// fuels the identical-output streak (hashed internally). empty content skips
+// output tracking.
 func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultContent string) Observation {
 	sig := signatureFor(u)
-	resultHash := hashResult(resultContent)
+	resultHash := ""
+	if resultContent != "" {
+		resultHash = hash8(resultContent)
+	}
 	t.sigCounts[sig]++
 	if isErr {
 		if t.firstFailIn("tool:" + u.Name) {
@@ -116,66 +109,28 @@ func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultCon
 			t.lastResult[sig] = resultHash
 		}
 	}
-	familyStreak := t.observeFamily(u.Name, isErr, resultContent)
-	twoStrike := false
-	if t.hasLast && t.lastFailed && isErr && t.lastSig == sig {
-		twoStrike = true
-	}
+	twoStrike := isErr && t.lastFailed && t.lastSig == sig
 	// failBySig: extend streak only when current is err AND sig matches last err sig.
 	sigKey := "sig:" + sig.Name + ":" + sig.ArgsHash
-	if isErr && t.hasLast && t.lastFailed && t.lastSig == sig {
+	switch {
+	case twoStrike:
 		if t.firstFailIn(sigKey) {
 			t.failBySig++
 		}
-	} else if isErr {
+	case isErr:
 		t.failBySig = 1
 		t.firstFailIn(sigKey)
-	} else {
+	default:
 		t.failBySig = 0
 	}
-	t.lastSig = sig
-	t.lastFailed = isErr
-	t.hasLast = true
+	t.lastSig, t.lastFailed = sig, isErr
 	return Observation{
-		Sig:                           sig,
-		RepeatCount:                   t.sigCounts[sig],
-		ConsecutiveSameToolFailures:   t.failByTool[u.Name],
-		ConsecutiveSameSigFailures:    t.failBySig,
-		SameResultCount:               t.sameResult[sig],
-		ConsecutiveSameFamilyFailures: familyStreak,
-		IsTwoStrike:                   twoStrike,
+		RepeatCount:                 t.sigCounts[sig],
+		ConsecutiveSameToolFailures: t.failByTool[u.Name],
+		ConsecutiveSameSigFailures:  t.failBySig,
+		SameResultCount:             t.sameResult[sig],
+		IsTwoStrike:                 twoStrike,
 	}
-}
-
-// observeFamily folds one result into the error-family streak and returns the
-// current run length. A success clears the streak (the tool made progress); a
-// failure extends it only when its (tool, normalized-shape) key matches the
-// previous failing family, otherwise the streak restarts at 1.
-func (t *repeatTracker) observeFamily(toolName string, isErr bool, content string) int {
-	if !isErr {
-		t.familyStreak = 0
-		t.familyKey = ""
-		t.familyActive = false
-		return 0
-	}
-	key := errorFamilyKey(toolName, content)
-	if t.familyActive && t.familyKey == key {
-		t.familyStreak++
-	} else {
-		t.familyStreak = 1
-	}
-	t.familyKey = key
-	t.familyActive = true
-	return t.familyStreak
-}
-
-// hashResult fingerprints a tool result body for the identical-output streak.
-func hashResult(content string) string {
-	if content == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(sum[:8])
 }
 
 // signatureFor builds a stable Sig. ArgsHash = sha256 of key-sorted JSON of
@@ -186,13 +141,8 @@ func signatureFor(u types.ToolUse) ToolCallSignature {
 	if len(in) == 0 {
 		return ToolCallSignature{Name: u.Name, ArgsHash: "empty"}
 	}
-	keys := make([]string, 0, len(in))
-	for k := range in {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	var b strings.Builder
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(in)) {
 		b.WriteString(k)
 		b.WriteByte('=')
 		// json-encode each value so nested maps/slices canonicalize the same way.
@@ -204,6 +154,5 @@ func signatureFor(u types.ToolUse) ToolCallSignature {
 		}
 		b.WriteByte(';')
 	}
-	sum := sha256.Sum256([]byte(b.String()))
-	return ToolCallSignature{Name: u.Name, ArgsHash: hex.EncodeToString(sum[:8])}
+	return ToolCallSignature{Name: u.Name, ArgsHash: hash8(b.String())}
 }

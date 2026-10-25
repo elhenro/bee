@@ -19,7 +19,7 @@ const PreserveTail = 4
 
 // CompactStats reports what a Compact call achieved. Duration spans the
 // LLM summarization plus token accounting. Token figures are estimates
-// derived from the default TokenEstimator so they line up with the
+// derived from estimateMessagesTokens so they line up with the
 // auto-compact trigger heuristic.
 type CompactStats struct {
 	BeforeMsgs   int
@@ -37,95 +37,82 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	start := time.Now()
 	stats := CompactStats{
 		BeforeMsgs:   len(msgs),
-		BeforeTokens: defaultTokenEstimator.EstimateMessages(msgs),
+		BeforeTokens: estimateMessagesTokens(msgs),
+	}
+	// keep hands msgs back untouched
+	keep := func(err error) ([]types.Message, CompactStats, error) {
+		stats.Duration = time.Since(start)
+		return msgs, stats, err
+	}
+	unchanged := func() ([]types.Message, CompactStats, error) {
+		stats.AfterMsgs, stats.AfterTokens = stats.BeforeMsgs, stats.BeforeTokens
+		return keep(nil)
 	}
 	if len(msgs) <= PreserveTail {
-		stats.AfterMsgs = stats.BeforeMsgs
-		stats.AfterTokens = stats.BeforeTokens
-		stats.Duration = time.Since(start)
-		return msgs, stats, nil
+		return unchanged()
 	}
 	cut := len(msgs) - PreserveTail
 	// never start the preserved tail on an orphaned tool result: a message
 	// carrying tool_result blocks wire-translates to a role:"tool" message,
 	// which the provider rejects unless the assistant tool_use that issued it
 	// precedes it. walk the boundary back so the pair stays together.
-	for cut > 0 && hasToolResult(msgs[cut]) {
+	for cut > 0 && hasBlock(msgs[cut], types.BlockToolResult) {
 		cut--
 	}
 	if cut <= 0 {
 		// whole older slice is one tool exchange; nothing safe to summarize.
-		stats.AfterMsgs = stats.BeforeMsgs
-		stats.AfterTokens = stats.BeforeTokens
-		stats.Duration = time.Since(start)
-		return msgs, stats, nil
+		return unchanged()
 	}
 	older := msgs[:cut]
 	preserved := msgs[cut:]
 
 	var b strings.Builder
 	b.WriteString("Summarize this coding-agent conversation tersely. Keep file paths, key decisions, errors, and TODOs. Drop chatter. Caveman compress.\n\n")
-	for _, m := range older {
-		txt := flattenForSummary(m)
-		if txt == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
-	}
-	req := llm.Request{
-		Model:  model,
-		System: "You compress conversation history losslessly for the parts that matter.",
-		Messages: []types.Message{{
-			Role:    types.RoleUser,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: b.String()}},
-		}},
-	}
-	ch, err := p.Stream(ctx, req)
+	b.WriteString(renderForSummary(older))
+	sum, err := streamText(ctx, p, llm.Request{
+		Model:    model,
+		System:   "You compress conversation history losslessly for the parts that matter.",
+		Messages: []types.Message{plainMessage(types.RoleUser, b.String())},
+	})
 	if err != nil {
-		stats.Duration = time.Since(start)
-		return msgs, stats, err
-	}
-	var sum strings.Builder
-	for ev := range ch {
-		if ev.Type == llm.EventTextDelta {
-			sum.WriteString(ev.Delta)
-		}
-		if ev.Type == llm.EventError && ev.Err != nil {
-			stats.Duration = time.Since(start)
-			return msgs, stats, ev.Err
-		}
+		return keep(err)
 	}
 	if err := ctx.Err(); err != nil {
-		stats.Duration = time.Since(start)
-		return msgs, stats, err
+		return keep(err)
 	}
 	// a reasoning-only or empty stream would replace the whole history with
 	// a bare marker; fail so the caller keeps the original messages.
-	if strings.TrimSpace(sum.String()) == "" {
-		stats.Duration = time.Since(start)
-		return msgs, stats, errors.New("compact: empty summary")
+	if strings.TrimSpace(sum) == "" {
+		return keep(errors.New("compact: empty summary"))
 	}
-	summaryMsg := types.Message{
-		Role:    types.RoleUser,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: "[compacted history]\n" + sum.String()}},
-	}
-	out := append([]types.Message{summaryMsg}, preserved...)
+	out := append([]types.Message{plainMessage(types.RoleUser, "[compacted history]\n"+sum)}, preserved...)
 	stats.AfterMsgs = len(out)
-	stats.AfterTokens = defaultTokenEstimator.EstimateMessages(out)
+	stats.AfterTokens = estimateMessagesTokens(out)
 	stats.Duration = time.Since(start)
 	return out, stats, nil
 }
 
-// hasToolResult reports whether m carries any tool_result block. Such a message
-// becomes a standalone role:"tool" wire message that is only valid when the
-// assistant tool_use it answers immediately precedes it.
-func hasToolResult(m types.Message) bool {
-	for _, c := range m.Content {
-		if c.Type == types.BlockToolResult {
-			return true
+// streamText runs req on p and returns the concatenated text deltas. a stream
+// error ends the pass with the text so far; the channel is drained either way
+// so the provider goroutine exits cleanly.
+func streamText(ctx context.Context, p llm.Provider, req llm.Request) (string, error) {
+	ch, err := p.Stream(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	var (
+		sum       strings.Builder
+		streamErr error
+	)
+	for ev := range ch {
+		switch {
+		case ev.Type == llm.EventTextDelta:
+			sum.WriteString(ev.Delta)
+		case ev.Type == llm.EventError && ev.Err != nil && streamErr == nil:
+			streamErr = ev.Err
 		}
 	}
-	return false
+	return sum.String(), streamErr
 }
 
 // ShouldAutoCompact returns true if assembled prompt + history exceeds
@@ -158,7 +145,7 @@ func compactPressure(sys string, msgs []types.Message, actualInputTokens, budget
 	// the reported count predates messages appended since that request (the
 	// assistant reply and fresh tool results), so never trust it below the
 	// estimate: one huge tool output would otherwise overflow the window.
-	total := prompt.EstimateTokens(sys) + defaultTokenEstimator.EstimateMessages(msgs)
+	total := prompt.EstimateTokens(sys) + estimateMessagesTokens(msgs)
 	if actualInputTokens > total {
 		total = actualInputTokens
 	}
@@ -197,6 +184,17 @@ func flattenForSummary(m types.Message) string {
 	return strings.TrimSpace(b.String())
 }
 
+// renderForSummary lists msgs as "[role] text" lines for the summarizer.
+func renderForSummary(msgs []types.Message) string {
+	var b strings.Builder
+	for _, m := range msgs {
+		if txt := flattenForSummary(m); txt != "" {
+			fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
+		}
+	}
+	return b.String()
+}
+
 // toolInputBrief renders a tool-call input map as compact JSON, empty on error.
 func toolInputBrief(in any) string {
 	b, err := json.Marshal(in)
@@ -207,13 +205,17 @@ func toolInputBrief(in any) string {
 }
 
 // truncate clips s to n runes, marking the cut so the summarizer knows output
-// was elided rather than empty. Ranges by rune so the cut lands on a rune
-// boundary — slicing by byte could split a multi-byte rune into invalid UTF-8.
-func truncate(s string, n int) string {
+// was elided rather than empty.
+func truncate(s string, n int) string { return clipRunes(s, n, "…[truncated]") }
+
+// clipRunes cuts s to n runes and appends mark when it was longer. Ranges by
+// rune so the cut lands on a rune boundary — slicing by byte could split a
+// multi-byte rune into invalid UTF-8.
+func clipRunes(s string, n int, mark string) string {
 	count := 0
 	for i := range s {
 		if count == n {
-			return s[:i] + "…[truncated]"
+			return s[:i] + mark
 		}
 		count++
 	}
@@ -233,9 +235,5 @@ func compactWorthwhile(msgs []types.Message, budget int) bool {
 		return false
 	}
 	older := msgs[:len(msgs)-PreserveTail]
-	floor := budget / 10
-	if floor < 2000 {
-		floor = 2000
-	}
-	return defaultTokenEstimator.EstimateMessages(older) >= floor
+	return estimateMessagesTokens(older) >= max(budget/10, 2000)
 }

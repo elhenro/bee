@@ -2,6 +2,7 @@ package loop
 
 import (
 	"errors"
+	"maps"
 	"strings"
 
 	"github.com/elhenro/bee/internal/config"
@@ -43,10 +44,7 @@ func wrapShellInput(input map[string]any, cfg config.SandboxConfig, cwd string) 
 	// rebuild a single bash -c string that execs the wrapped argv. quoting
 	// is best-effort; sandbox helper paths are well-known and lack metas.
 	newCmd := joinShell(wrapped)
-	out := make(map[string]any, len(input)+2)
-	for k, v := range input {
-		out[k] = v
-	}
+	out := maps.Clone(input)
 	out["command"] = newCmd
 	// keep the unwrapped command for the approval modal + danger detect, so
 	// the user sees `rm -rf foo`, not the sandbox-exec profile blob.

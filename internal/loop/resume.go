@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/elhenro/bee/internal/types"
 )
@@ -105,24 +106,14 @@ func StripDanglingToolUse(msgs []types.Message) []types.Message {
 		return msgs
 	}
 	last := msgs[len(msgs)-1]
-	if last.Role != types.RoleAssistant {
+	if last.Role != types.RoleAssistant || !hasBlock(last, types.BlockToolUse) {
 		return msgs
 	}
-	kept := make([]types.ContentBlock, 0, len(last.Content))
-	for _, b := range last.Content {
-		if b.Type == types.BlockToolUse {
-			continue
-		}
-		kept = append(kept, b)
-	}
-	if len(kept) == len(last.Content) {
-		return msgs
-	}
+	kept := slices.DeleteFunc(slices.Clone(last.Content), func(b types.ContentBlock) bool { return b.Type == types.BlockToolUse })
 	if len(kept) == 0 {
 		return msgs[:len(msgs)-1]
 	}
-	out := make([]types.Message, len(msgs))
-	copy(out, msgs)
+	out := slices.Clone(msgs)
 	out[len(out)-1].Content = kept
 	return out
 }
@@ -135,15 +126,8 @@ func StripDanglingToolUse(msgs []types.Message) []types.Message {
 // the text. If the last message has no tool_use, this is a no-op (returns
 // msgs unchanged) so it's safe to call unconditionally on submit / resume.
 func StripBrokenToolCall(msgs []types.Message) []types.Message {
-	if len(msgs) == 0 {
-		return msgs
-	}
-	last := msgs[len(msgs)-1]
-	if last.Role != types.RoleAssistant {
-		return msgs
-	}
-	for _, b := range last.Content {
-		if b.Type == types.BlockToolUse {
+	if len(msgs) > 0 {
+		if last := msgs[len(msgs)-1]; last.Role == types.RoleAssistant && hasBlock(last, types.BlockToolUse) {
 			return msgs[:len(msgs)-1]
 		}
 	}

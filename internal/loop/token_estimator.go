@@ -1,5 +1,5 @@
-// Package loop also provides the token-estimation seam used by compaction,
-// budget checks, and any caller that needs a conversation size in tokens.
+// Package loop also provides the token-estimation seam used by compaction
+// and budget checks.
 package loop
 
 import (
@@ -9,47 +9,16 @@ import (
 	"github.com/elhenro/bee/internal/types"
 )
 
-// TokenEstimator turns a message slice into an approximate token count. It is
-// the single seam for "how big is this context?" — provider-agnostic by
-// design, so a provider-specific counter (or a real tokenizer) can be dropped
-// in later without touching call sites.
-//
-// EstimateMessages reports the cost of the message content alone.
-// EstimateContext reports the cost of the same messages as an assembled
-// context; for the default heuristic the two are equal, while a provider-aware
-// estimator may fold in framing/overhead that only exists in the wire request.
-type TokenEstimator interface {
-	EstimateMessages(msgs []types.Message) int
-	EstimateContext(msgs []types.Message) int
-}
-
-// heuristicEstimator is the built-in char/4 estimator. It is stateless, so the
-// zero value is ready to use and safe to share across goroutines.
-type heuristicEstimator struct{}
-
-// EstimateMessages sums the per-message heuristic across msgs.
-func (heuristicEstimator) EstimateMessages(msgs []types.Message) int {
+// estimateMessagesTokens is the single seam for "how big is this context?":
+// the char/4 heuristic summed over msgs. provider-agnostic, so compaction and
+// budget checks share one accounting.
+func estimateMessagesTokens(msgs []types.Message) int {
 	total := 0
 	for _, m := range msgs {
 		total += estimateMessageTokens(m)
 	}
 	return total
 }
-
-// EstimateContext estimates the assembled context. The char/4 heuristic has no
-// separate framing cost to add on top of message content, so this matches
-// EstimateMessages; a provider-aware implementation may differ.
-func (heuristicEstimator) EstimateContext(msgs []types.Message) int {
-	return heuristicEstimator{}.EstimateMessages(msgs)
-}
-
-// DefaultTokenEstimator returns the built-in heuristic estimator.
-func DefaultTokenEstimator() TokenEstimator { return heuristicEstimator{} }
-
-// defaultTokenEstimator is the process-wide seam the loop's compaction and
-// budget checks read. It defaults to the heuristic; swap it at startup or in
-// tests to inject a different accounting scheme.
-var defaultTokenEstimator TokenEstimator = heuristicEstimator{}
 
 // imageTokens is a flat per-picture cost: providers bill by pixel area, not
 // by the base64 length, so char/4 over the bytes would be wildly off

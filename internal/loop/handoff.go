@@ -39,28 +39,18 @@ func BuildHandoff(ctx context.Context, p llm.Provider, model string, msgs []type
 
 	var b strings.Builder
 	b.WriteString(handoffPreamble)
-	b.WriteString("\n## original task\n")
-	if original != "" {
-		b.WriteString(original)
-	} else {
-		b.WriteString("(none recorded)")
+	if original == "" {
+		original = "(none recorded)"
 	}
-	b.WriteString("\n")
-	if summary != "" {
-		b.WriteString("\n## what was tried\n")
-		b.WriteString(summary)
-		b.WriteString("\n")
+	section := func(title, body string) {
+		if body != "" {
+			b.WriteString("\n## " + title + "\n" + body + "\n")
+		}
 	}
-	if stall != "" {
-		b.WriteString("\n## where it got stuck\n")
-		b.WriteString(stall)
-		b.WriteString("\n")
-	}
-	if tailTxt := flattenTail(tail, partial); tailTxt != "" {
-		b.WriteString("\n## last steps\n")
-		b.WriteString(tailTxt)
-		b.WriteString("\n")
-	}
+	section("original task", original)
+	section("what was tried", summary)
+	section("where it got stuck", stall)
+	section("last steps", flattenTail(tail, partial))
 	b.WriteString("\ntake over and finish the original task.")
 	return strings.TrimSpace(b.String()), nil
 }
@@ -111,37 +101,17 @@ func summarizeMiddle(ctx context.Context, p llm.Provider, model string, middle [
 	if len(middle) == 0 {
 		return "", nil
 	}
-	var b strings.Builder
-	b.WriteString("Summarize what this coding agent attempted and learned, tersely. Keep file paths, key decisions, errors, and TODOs. Drop chatter.\n\n")
-	for _, m := range middle {
-		txt := flattenForSummary(m)
-		if txt == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
-	}
-	req := llm.Request{
+	sum, err := streamText(ctx, p, llm.Request{
 		Model:  model,
 		System: handoffSystem,
-		Messages: []types.Message{{
-			Role:    types.RoleUser,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: b.String()}},
-		}},
-	}
-	ch, err := p.Stream(ctx, req)
+		Messages: []types.Message{plainMessage(types.RoleUser,
+			"Summarize what this coding agent attempted and learned, tersely. Keep file paths, key decisions, errors, and TODOs. Drop chatter.\n\n"+
+				renderForSummary(middle))},
+	})
 	if err != nil {
 		return "", err
 	}
-	var sum strings.Builder
-	for ev := range ch {
-		if ev.Type == llm.EventTextDelta {
-			sum.WriteString(ev.Delta)
-		}
-		if ev.Type == llm.EventError && ev.Err != nil {
-			return "", ev.Err
-		}
-	}
-	return strings.TrimSpace(sum.String()), nil
+	return strings.TrimSpace(sum), nil
 }
 
 // firstUserText returns the first non-empty user text block the user wrote —

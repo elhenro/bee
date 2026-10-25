@@ -30,39 +30,28 @@ func classifyToolError(err error) string {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return toolErrTimeout
-	case errors.Is(err, os.ErrNotExist) || os.IsNotExist(err):
+	case errors.Is(err, os.ErrNotExist):
 		return toolErrNotFound
-	case errors.Is(err, os.ErrPermission) || os.IsPermission(err):
+	case errors.Is(err, os.ErrPermission):
 		return toolErrPermissionDenied
 	}
 	var je *json.SyntaxError
-	if errors.As(err, &je) {
-		return toolErrParseError
-	}
 	var jt *json.UnmarshalTypeError
-	if errors.As(err, &jt) {
+	if errors.As(err, &je) || errors.As(err, &jt) {
 		return toolErrParseError
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
-	case strings.Contains(msg, "invalid argument"),
-		strings.Contains(msg, "missing required"),
-		strings.Contains(msg, "missing field"),
-		strings.Contains(msg, "argparse"),
-		strings.Contains(msg, "unexpected type"),
-		strings.Contains(msg, "escapes workspace"),
-		strings.Contains(msg, "denied by write filter"),
-		strings.Contains(msg, "denied by"):
+	case containsAny(msg, "invalid argument", "missing required", "missing field", "argparse",
+		"unexpected type", "escapes workspace", "denied by write filter", "denied by"):
 		return toolErrInvalidArg
 	case strings.Contains(msg, "json"):
 		return toolErrParseError
-	case strings.Contains(msg, "no such file"),
-		strings.Contains(msg, "not found"):
+	case containsAny(msg, "no such file", "not found"):
 		return toolErrNotFound
 	case strings.Contains(msg, "permission denied"):
 		return toolErrPermissionDenied
-	case strings.Contains(msg, "timeout"),
-		strings.Contains(msg, "deadline exceeded"):
+	case containsAny(msg, "timeout", "deadline exceeded"):
 		return toolErrTimeout
 	}
 	return toolErrUnknown

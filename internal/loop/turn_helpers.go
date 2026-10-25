@@ -2,26 +2,18 @@ package loop
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/prompt"
 	"github.com/elhenro/bee/internal/types"
 )
-
-// cloneProfiles shallow-copies the profiles map so per-engine mutations
-// (probe-aware scaling) don't leak into a sibling engine sharing the same
-// Defaults() map.
-func cloneProfiles(in map[string]config.Profile) map[string]config.Profile {
-	out := make(map[string]config.Profile, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
 
 // prependWarningToToolResult injects a context-warning prefix into the first
 // tool_result block so the model sees it in the next turn. Mutates the
@@ -47,6 +39,15 @@ func toolResultBlocks(rs []types.ToolResult) []types.ContentBlock {
 	return out
 }
 
+// trySend delivers v without blocking: a slow consumer drops it rather than
+// stalling the loop. a nil channel drops everything.
+func trySend[T any](ch chan<- T, v T) {
+	select {
+	case ch <- v:
+	default:
+	}
+}
+
 func (e *Engine) appendMessage(ctx context.Context, m types.Message) error {
 	var err error
 	if e.Sessions != nil {
@@ -54,13 +55,39 @@ func (e *Engine) appendMessage(ctx context.Context, m types.Message) error {
 	}
 	// fan out to a live UI so tool_use / tool_result cards render mid-Run.
 	// skip user role: the TUI shows an optimistic copy before Run starts.
-	if e.LiveMsgCh != nil && m.Role != types.RoleUser {
-		select {
-		case e.LiveMsgCh <- m:
-		default:
-		}
+	if m.Role != types.RoleUser {
+		trySend(e.LiveMsgCh, m)
 	}
 	return err
+}
+
+// push persists m and adds it to the Run's transcript.
+func (e *Engine) push(ctx context.Context, res *RunResult, m types.Message) error {
+	if err := e.appendMessage(ctx, m); err != nil {
+		return err
+	}
+	res.Messages = append(res.Messages, m)
+	return nil
+}
+
+// newMessage builds a message with a fresh id and timestamp.
+func newMessage(role types.Role, parentID string, content ...types.ContentBlock) types.Message {
+	return types.Message{ID: newID(), ParentID: parentID, Role: role, Content: content, Time: time.Now().UTC()}
+}
+
+func textBlock(text string) types.ContentBlock {
+	return types.ContentBlock{Type: types.BlockText, Text: text}
+}
+
+// textMessage is newMessage with a single text block.
+func textMessage(role types.Role, parentID, text string) types.Message {
+	return newMessage(role, parentID, textBlock(text))
+}
+
+// plainMessage is a bare text message for requests and views: no id, no
+// timestamp, never persisted.
+func plainMessage(role types.Role, text string) types.Message {
+	return types.Message{Role: role, Content: []types.ContentBlock{textBlock(text)}}
 }
 
 func lastID(ms []types.Message) string {
@@ -77,6 +104,22 @@ func lastID(ms []types.Message) string {
 
 func newID() string { return uuid.NewString() }
 
+// hasBlock reports whether m carries a block of type t.
+func hasBlock(m types.Message, t types.BlockType) bool {
+	return slices.ContainsFunc(m.Content, func(b types.ContentBlock) bool { return b.Type == t })
+}
+
+// containsAny reports whether s contains any of subs.
+func containsAny(s string, subs ...string) bool {
+	return slices.ContainsFunc(subs, func(sub string) bool { return strings.Contains(s, sub) })
+}
+
+// hash8 is a short stable digest for fingerprints and dedupe keys.
+func hash8(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:8])
+}
+
 // looksLikeAttemptedToolCall heuristically detects when the final text from
 // a turn contains a tool-call attempt that the textmode parser couldn't
 // recognize: typical when a model emits bare JSON envelopes
@@ -92,28 +135,28 @@ func looksLikeAttemptedToolCall(text string, specs []llm.ToolSpec) bool {
 		return false
 	}
 	low := strings.ToLower(stripFencedRegions(text))
-	hasTypeKey := strings.Contains(low, `"type"`) || strings.Contains(low, `"name"`)
+	_, ok := mentionedSpec(low, specs, containsAny(low, `"type"`, `"name"`))
+	return ok
+}
+
+// mentionedSpec returns the first spec that lowercased text refers to as an
+// XML-ish opening tag, a quoted JSON value (quoted: only when it sits in a
+// type/name field) or a markdown summary slip: `(toolname)` paren mention.
+// Qwen3-A3B drift — model writes a prose recap (`(edit) path - did X`,
+// `(read)\n path/to/file`) instead of emitting the envelope.
+func mentionedSpec(low string, specs []llm.ToolSpec, quoted bool) (llm.ToolSpec, bool) {
 	for _, s := range specs {
 		name := strings.ToLower(s.Name)
 		if name == "" {
 			continue
 		}
-		// XML-ish opening tag with the tool name
-		if strings.Contains(low, "<"+name) {
-			return true
-		}
-		// JSON envelope referencing the tool name in a type/name field
-		if hasTypeKey && strings.Contains(low, `"`+name+`"`) {
-			return true
-		}
-		// markdown summary slip: `(toolname)` paren mention. Qwen3-A3B
-		// drift — model writes a prose recap (`(edit) path - did X`,
-		// `(read)\n path/to/file`) instead of emitting the envelope.
-		if strings.Contains(low, "("+name+")") {
-			return true
+		if strings.Contains(low, "<"+name) ||
+			quoted && strings.Contains(low, `"`+name+`"`) ||
+			strings.Contains(low, "("+name+")") {
+			return s, true
 		}
 	}
-	return false
+	return llm.ToolSpec{}, false
 }
 
 // stripFencedRegions removes ```...``` blocks from s. Unbalanced opening

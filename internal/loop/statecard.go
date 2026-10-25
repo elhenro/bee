@@ -141,28 +141,20 @@ func (c *stateCard) render() string {
 // tool_result is never sent without the assistant tool_use it answers — wire
 // formats reject orphan results.
 func (c *stateCard) view(msgs []types.Message) []types.Message {
-	start := len(msgs) - stateCardKeepMsgs
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(msgs)-stateCardKeepMsgs, 0)
 	for start > 0 && msgs[start].Role == types.RoleTool {
 		start--
 	}
-	card := types.Message{
-		Role:    types.RoleUser,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: c.render()}},
-	}
 	out := make([]types.Message, 0, len(msgs)-start+1)
-	out = append(out, card)
-	out = append(out, msgs[start:]...)
-	return out
+	out = append(out, plainMessage(types.RoleUser, c.render()))
+	return append(out, msgs[start:]...)
 }
 
 // repArg picks the most informative single argument for the action line.
 func repArg(input map[string]any) string {
 	for _, k := range []string{"command", "path", "file_path", "pattern", "query", "url", "name"} {
 		if v, ok := input[k].(string); ok && v != "" {
-			return truncateCard(v, stateCardArgChars)
+			return clipRunes(v, stateCardArgChars, "…")
 		}
 	}
 	return ""
@@ -173,18 +165,6 @@ func firstLine(s string, max int) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
 	}
-	return truncateCard(s, max)
-}
-
-// truncateCard clips to max runes with a bare ellipsis — terser than the
-// shared truncate()'s "…[truncated]" marker, which would bloat every card line.
-func truncateCard(s string, max int) string {
-	count := 0
-	for i := range s {
-		if count == max {
-			return s[:i] + "…"
-		}
-		count++
-	}
-	return s
+	// bare ellipsis: truncate()'s marker would bloat every card line
+	return clipRunes(s, max, "…")
 }

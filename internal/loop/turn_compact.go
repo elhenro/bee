@@ -94,8 +94,7 @@ func (e *Engine) PrepareResume(ctx context.Context) (CompactStats, bool, error) 
 	if !e.compactionEnabled() || len(e.InitialMessages) == 0 {
 		return CompactStats{}, false, nil
 	}
-	budget := contextBudget(e.Cfg)
-	threshold := scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)
+	budget, threshold := e.compactLimits()
 	// system prompt isn't assembled yet; estimate over history alone.
 	if !ShouldAutoCompact("", e.InitialMessages, budget, threshold) {
 		return CompactStats{}, false, nil
@@ -131,6 +130,12 @@ func contextBudget(cfg config.Config) int {
 	return 0
 }
 
+// compactLimits is the active model's window and the (widened) trigger ratio.
+func (e *Engine) compactLimits() (budget int, threshold float64) {
+	budget = contextBudget(e.Cfg)
+	return budget, scaledCompactThreshold(e.Cfg.Compaction.Threshold, budget)
+}
+
 // scaledCompactThreshold widens the default compaction threshold for large
 // context windows. The fixed 0.75 default fires far too early on 128k-class
 // models (sparse MoE: Qwen3.6-35B-A3B-4bit etc.) — at 96k tokens the agent
@@ -148,14 +153,7 @@ func scaledCompactThreshold(base float64, budget int) float64 {
 	if budget <= 0 || base <= 0 || base < compactDefaultThreshold {
 		return base
 	}
-	derived := 1.0 - 8000.0/float64(budget)
-	if derived < 0.5 {
-		derived = 0.5
-	}
-	if derived > base {
-		return derived
-	}
-	return base
+	return max(base, 1.0-8000.0/float64(budget), 0.5)
 }
 
 // compactDefaultThreshold mirrors config defaults; values below it are treated

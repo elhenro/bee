@@ -44,8 +44,7 @@ func (e *EscalateError) Error() string {
 	return fmt.Sprintf("%s: %s — next: %s", ErrEscalate.Error(), e.Reason, e.NextAction)
 }
 
-func (e *EscalateError) Is(target error) bool { return target == ErrEscalate }
-func (e *EscalateError) Unwrap() error        { return ErrEscalate }
+func (e *EscalateError) Unwrap() error { return ErrEscalate }
 
 // TwoStrikeError wraps the offending ToolUse so callers (TUI, headless
 // `bee run`) can surface tool name + args in the exit message.
@@ -57,9 +56,6 @@ type TwoStrikeError struct {
 func (e *TwoStrikeError) Error() string {
 	return fmt.Sprintf("%s: tool=%s class=%s", ErrTwoStrike.Error(), e.Use.Name, e.Class)
 }
-
-// Is lets errors.Is(err, ErrTwoStrike) match wrapped variants.
-func (e *TwoStrikeError) Is(target error) bool { return target == ErrTwoStrike }
 
 // Unwrap surfaces the sentinel for errors.Is chains.
 func (e *TwoStrikeError) Unwrap() error { return ErrTwoStrike }
@@ -77,8 +73,7 @@ func (e *PerToolFailureError) Error() string {
 	return fmt.Sprintf("%s: tool=%s streak=%d class=%s", ErrPerToolFailureCap.Error(), e.Tool, e.Streak, e.Class)
 }
 
-func (e *PerToolFailureError) Is(target error) bool { return target == ErrPerToolFailureCap }
-func (e *PerToolFailureError) Unwrap() error        { return ErrPerToolFailureCap }
+func (e *PerToolFailureError) Unwrap() error { return ErrPerToolFailureCap }
 
 // FormatStrikeError wraps a format-strike bail with the streak length so
 // callers can render "model emitted malformed envelopes 3x — switch model".
@@ -90,8 +85,7 @@ func (e *FormatStrikeError) Error() string {
 	return fmt.Sprintf("%s: streak=%d", ErrFormatStrike.Error(), e.Streak)
 }
 
-func (e *FormatStrikeError) Is(target error) bool { return target == ErrFormatStrike }
-func (e *FormatStrikeError) Unwrap() error        { return ErrFormatStrike }
+func (e *FormatStrikeError) Unwrap() error { return ErrFormatStrike }
 
 // ErrRepeatStream indicates the model's stream was cut for degenerate
 // repetition (the same phrase looped) N turns in a row — it's wedged in a token
@@ -108,8 +102,7 @@ func (e *RepeatStreamError) Error() string {
 	return fmt.Sprintf("%s: streak=%d", ErrRepeatStream.Error(), e.Streak)
 }
 
-func (e *RepeatStreamError) Is(target error) bool { return target == ErrRepeatStream }
-func (e *RepeatStreamError) Unwrap() error        { return ErrRepeatStream }
+func (e *RepeatStreamError) Unwrap() error { return ErrRepeatStream }
 
 // ErrTruncatedStream indicates the provider stream dropped mid-output (a
 // transient network error AFTER content already streamed) N turns in a row.
@@ -127,8 +120,7 @@ func (e *TruncatedStreamError) Error() string {
 	return fmt.Sprintf("%s: streak=%d", ErrTruncatedStream.Error(), e.Streak)
 }
 
-func (e *TruncatedStreamError) Is(target error) bool { return target == ErrTruncatedStream }
-func (e *TruncatedStreamError) Unwrap() error        { return ErrTruncatedStream }
+func (e *TruncatedStreamError) Unwrap() error { return ErrTruncatedStream }
 
 // ErrMaxIterations indicates the loop hit its tool-use round cap without the
 // model signalling done. Not a wedge — the model was making progress, it just
@@ -148,8 +140,7 @@ func (e *MaxIterationsError) Error() string {
 		"(or set max_iterations = 0 in config)", e.Limit)
 }
 
-func (e *MaxIterationsError) Is(target error) bool { return target == ErrMaxIterations }
-func (e *MaxIterationsError) Unwrap() error        { return ErrMaxIterations }
+func (e *MaxIterationsError) Unwrap() error { return ErrMaxIterations }
 
 // ErrEmptyCompletion indicates the provider returned whitespace-only output —
 // no text, no reasoning, no tool_use — N turns in a row. A nudge couldn't
@@ -167,8 +158,7 @@ func (e *EmptyCompletionError) Error() string {
 	return fmt.Sprintf("%s: streak=%d", ErrEmptyCompletion.Error(), e.Streak)
 }
 
-func (e *EmptyCompletionError) Is(target error) bool { return target == ErrEmptyCompletion }
-func (e *EmptyCompletionError) Unwrap() error        { return ErrEmptyCompletion }
+func (e *EmptyCompletionError) Unwrap() error { return ErrEmptyCompletion }
 
 // ErrProviderReject indicates the provider rejected the request body itself
 // (HTTP 400 with "invalid function arguments" / "invalid tool_call" / similar),
@@ -191,5 +181,4 @@ func (e *ProviderRejectError) Error() string {
 	return fmt.Sprintf("%s: %s", ErrProviderReject.Error(), e.Raw)
 }
 
-func (e *ProviderRejectError) Is(target error) bool { return target == ErrProviderReject }
-func (e *ProviderRejectError) Unwrap() error        { return ErrProviderReject }
+func (e *ProviderRejectError) Unwrap() error { return ErrProviderReject }

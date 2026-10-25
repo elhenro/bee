@@ -101,7 +101,7 @@ func TestCompact_BoundaryNeverSplitsToolPair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hasToolResult(out[1]) {
+	if hasBlock(out[1], types.BlockToolResult) {
 		t.Fatalf("preserved tail opens on orphan tool result: %+v", out[1].Content[0])
 	}
 }

@@ -178,7 +178,7 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 		raw, _ := u.Input["_raw_args"].(string)
 		msg := fmt.Sprintf("tool args failed to parse: %s\nemit args as a single JSON object, no extra markup or trailing tokens.", pe)
 		if raw != "" {
-			msg += fmt.Sprintf("\nraw=%q", truncForLog(raw, 240))
+			msg += fmt.Sprintf("\nraw=%q", clipRunes(raw, 240, "…"))
 		}
 		return types.ToolResult{UseID: u.ID, Content: msg, IsError: true}, nil
 	}
@@ -216,17 +216,22 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if err != nil {
 		return types.ToolResult{}, err
 	}
-	// scrub obvious secrets before fold into model context. confined scopes
-	// only: under danger-full-access the operator opted out of restriction
-	// layers, and redaction silently corrupts legitimate credential reads.
-	if e.Cfg.Sandbox.Confined() {
-		out.Content = safety.Redact(out.Content)
-	}
-	content, truncated := tools.TruncateWithLimit(u.Name, out.Content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
+	content, truncated := e.shapeOutput(u.Name, out.Content)
 	if truncated && e.JSONEmitter != nil {
 		e.JSONEmitter.Emit(jsonmode.Event{Type: "tool_truncated", Name: u.Name, UseID: u.ID})
 	}
 	return types.ToolResult{UseID: u.ID, Content: content, IsError: out.IsError, Images: out.Images}, nil
+}
+
+// shapeOutput is what every tool output goes through before it reaches the
+// model: scrub obvious secrets, then cap the size. redaction runs on confined
+// scopes only: under danger-full-access the operator opted out of restriction
+// layers, and redaction silently corrupts legitimate credential reads.
+func (e *Engine) shapeOutput(tool, content string) (string, bool) {
+	if e.Cfg.Sandbox.Confined() {
+		content = safety.Redact(content)
+	}
+	return tools.TruncateWithLimit(tool, content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
 }
 
 // allowedNames returns the tool names advertised this turn, sorted, for the
@@ -263,18 +268,5 @@ func unknownToolMsg(bad string, available []string) string {
 // looksLikeMarkupLeak flags tool names that smuggle in chat-template tokens
 // or arg syntax. used only for picking the hint above.
 func looksLikeMarkupLeak(s string) bool {
-	if strings.ContainsAny(s, "<>\"'\n ") {
-		return true
-	}
-	if strings.Contains(s, "｜") {
-		return true
-	}
-	return false
-}
-
-func truncForLog(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return strings.ContainsAny(s, "<>\"'\n ｜")
 }

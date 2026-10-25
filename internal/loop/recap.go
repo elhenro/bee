@@ -61,36 +61,15 @@ func GenerateRecap(ctx context.Context, p llm.Provider, model string, msgs []typ
 		text = text[len(text)-recapMaxInput:]
 	}
 	req := llm.Request{
-		Model:  model,
-		System: recapSystem,
-		Messages: []types.Message{
-			{Role: types.RoleUser, Content: []types.ContentBlock{
-				{Type: types.BlockText, Text: text},
-			}},
-		},
+		Model:       model,
+		System:      recapSystem,
+		Messages:    []types.Message{plainMessage(types.RoleUser, text)},
 		MaxTokens:   120,
 		Temperature: 0,
 		Stream:      true,
 	}
-	ch, err := p.Stream(ctx, req)
-	if err != nil {
-		return RecapResult{Err: err}
-	}
-	var (
-		buf       strings.Builder
-		streamErr error
-	)
-	for ev := range ch {
-		switch ev.Type {
-		case llm.EventTextDelta:
-			buf.WriteString(ev.Delta)
-		case llm.EventError:
-			if ev.Err != nil {
-				streamErr = ev.Err
-			}
-		}
-	}
-	raw := strings.TrimSpace(buf.String())
+	out, streamErr := streamText(ctx, p, req)
+	raw := strings.TrimSpace(out)
 	if raw == "" {
 		if streamErr != nil {
 			return RecapResult{Err: streamErr}
