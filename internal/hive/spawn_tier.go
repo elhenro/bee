@@ -67,11 +67,3 @@ func (t *Tiers) provider(tier config.ModelTier) (llm.Provider, error) {
 	t.built[tier] = p
 	return p, nil
 }
-
-// SpawnTier is a one-off Tiers.Spawn without a shared cache.
-func SpawnTier(parent *loop.Engine, label string, tier config.ModelTier) (*loop.Engine, *session.Rollout, string, error) {
-	if parent == nil {
-		return nil, nil, "", errNilEngine
-	}
-	return NewTiers(parent).Spawn(label, tier)
-}

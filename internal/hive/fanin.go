@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// summaryLineChars truncates a worker's first line to keep the summary scannable.
+const summaryLineChars = 120
+
 // Collect drains ch into a slice. Returns when the channel is closed.
 // Order matches arrival order, not submission order.
 func Collect(ch <-chan Result) []Result {
@@ -49,7 +52,7 @@ func Summary(results []Result) string {
 	fmt.Fprintf(&b, "hive: %d ok, %d failed, %s wall\n", ok, fail, wall.Round(time.Millisecond))
 	for _, r := range results {
 		tag := "ok"
-		final := oneLine(r.Final)
+		final := firstNonEmpty(clip(oneLineOf(r.Final), summaryLineChars), "(no output)")
 		if r.Err != nil {
 			tag = "err"
 			final = r.Err.Error()
@@ -81,21 +84,4 @@ func MergeText(results []Result) string {
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-// oneLine collapses Final to a single line for the summary table. Long
-// outputs are truncated to keep the summary scannable.
-func oneLine(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "(no output)"
-	}
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	const max = 120
-	if len(s) > max {
-		s = s[:max-1] + "…"
-	}
-	return s
 }

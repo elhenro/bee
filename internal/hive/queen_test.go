@@ -324,48 +324,14 @@ func TestQueen_DecomposeUnknownRoleFallsBackToBuilder(t *testing.T) {
 	}
 }
 
-func TestQueen_WithCriticAppendsToSynthesize(t *testing.T) {
-	planner := &scriptedRunner{outputs: []string{
-		`[{"role":"builder","task":"do the thing"}]`,
-		"final summary",
-	}}
-	w := &scriptedRunner{outputs: []string{"worker output"}}
-	critic := &scriptedRunner{outputs: []string{"CRITIQUE_SENTINEL_VALUE"}}
-
-	q := NewQueen(planner, []Runner{w})
-	q.Critic = critic
-
-	res, err := q.Run(context.Background(), "outer")
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if res.Critique != "CRITIQUE_SENTINEL_VALUE" {
-		t.Errorf("Critique = %q, want CRITIQUE_SENTINEL_VALUE", res.Critique)
-	}
-	if len(critic.prompts) != 1 {
-		t.Fatalf("critic saw %d prompts, want 1", len(critic.prompts))
-	}
-	// planner.prompts[1] is the synthesize prompt; must contain the critique
-	if len(planner.prompts) != 2 {
-		t.Fatalf("planner saw %d prompts, want 2", len(planner.prompts))
-	}
-	synth := planner.prompts[1]
-	if !strings.Contains(synth, "CRITIQUE_SENTINEL_VALUE") {
-		t.Errorf("synthesize prompt missing critique\nprompt=%s", synth)
-	}
-	if !strings.Contains(synth, "Critic review") {
-		t.Errorf("synthesize prompt missing 'Critic review' header\nprompt=%s", synth)
-	}
-}
-
-func TestQueen_NilCriticSkipsReview(t *testing.T) {
+func TestQueen_NoReviewersSkipsReview(t *testing.T) {
 	planner := &scriptedRunner{outputs: []string{
 		`[{"role":"builder","task":"t"}]`,
 		"final",
 	}}
 	w := &scriptedRunner{outputs: []string{"out"}}
 
-	q := NewQueen(planner, []Runner{w}) // Critic left nil
+	q := NewQueen(planner, []Runner{w}) // Reviewers left nil
 	res, err := q.Run(context.Background(), "task")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -373,7 +339,7 @@ func TestQueen_NilCriticSkipsReview(t *testing.T) {
 	if res.Critique != "" {
 		t.Errorf("Critique = %q, want empty", res.Critique)
 	}
-	// no critique → no Critic review header in synthesize prompt
+	// no findings → no Critic review header in synthesize prompt
 	if len(planner.prompts) < 2 {
 		t.Fatalf("planner prompts = %d, want >=2", len(planner.prompts))
 	}

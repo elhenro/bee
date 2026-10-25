@@ -22,14 +22,12 @@ type ReviewDimension struct {
 	Focus string
 }
 
-// DefaultReviewDimensions are the three axes checked after a hive run mutates
-// the tree. Order is stable — reviewers are paired to dimensions by index.
-func DefaultReviewDimensions() []ReviewDimension {
-	return []ReviewDimension{
-		{Name: "correctness", Focus: "does the code do what the task asked? logic bugs, wrong results, off-by-one, missed edge cases, broken or missing tests."},
-		{Name: "persistence", Focus: "is state saved and loaded correctly? data integrity, migrations, ledgers, files written to the right path, no lost or double writes."},
-		{Name: "integration", Focus: "does it fit the rest of the system? call sites updated, interfaces honored, no dangling references, the package still builds and wires together."},
-	}
+// reviewDimensions are the three axes checked after a hive run mutates the
+// tree. Order is stable — reviewers are paired to dimensions by index.
+var reviewDimensions = []ReviewDimension{
+	{Name: "correctness", Focus: "does the code do what the task asked? logic bugs, wrong results, off-by-one, missed edge cases, broken or missing tests."},
+	{Name: "persistence", Focus: "is state saved and loaded correctly? data integrity, migrations, ledgers, files written to the right path, no lost or double writes."},
+	{Name: "integration", Focus: "does it fit the rest of the system? call sites updated, interfaces honored, no dangling references, the package still builds and wires together."},
 }
 
 // Finding is one issue a reviewer raised plus the verifier's verdict. A finding
@@ -51,12 +49,8 @@ type Finding struct {
 // discards the workers' completed (already-on-disk) changes. Only context
 // cancellation aborts — that's the user pulling the plug.
 func (q *Queen) reviewAndVerify(ctx context.Context, task string, plan []SubTask, results []Result) ([]Finding, error) {
-	dims := q.ReviewDimensions
-	if len(dims) == 0 {
-		dims = DefaultReviewDimensions()
-	}
 	var findings []Finding
-	for i, dim := range dims {
+	for i, dim := range reviewDimensions {
 		if err := ctx.Err(); err != nil {
 			return findings, err
 		}
@@ -69,13 +63,13 @@ func (q *Queen) reviewAndVerify(ctx context.Context, task string, plan []SubTask
 			// non-fatal: surface the gap as a confirmed finding so it reaches
 			// both the UI card and synthesis, then move on.
 			f := Finding{Dimension: dim.Name, Claim: "review did not complete: " + err.Error(), Confirmed: true}
-			q.Hooks.review(dim.Name, nil)
-			q.Hooks.verify(f)
+			fire2(q.Hooks.OnReview, dim.Name, []string(nil))
+			fire(q.Hooks.OnVerify, f)
 			findings = append(findings, f)
 			continue
 		}
 		claims := parseFindings(out.FinalText)
-		q.Hooks.review(dim.Name, claims)
+		fire2(q.Hooks.OnReview, dim.Name, claims)
 		for _, claim := range claims {
 			f := Finding{Dimension: dim.Name, Claim: claim, Confirmed: true}
 			if q.Verifier != nil {
@@ -91,7 +85,7 @@ func (q *Queen) reviewAndVerify(ctx context.Context, task string, plan []SubTask
 					f.Confirmed, f.Verdict = parseVerdict(vout.FinalText)
 				}
 			}
-			q.Hooks.verify(f)
+			fire(q.Hooks.OnVerify, f)
 			findings = append(findings, f)
 		}
 	}

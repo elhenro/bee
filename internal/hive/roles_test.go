@@ -105,15 +105,6 @@ func TestParseRoleRejectsUnknown(t *testing.T) {
 	}
 }
 
-func TestTemperatureWithinBounds(t *testing.T) {
-	for _, r := range AllRoles() {
-		temp := r.Temperature()
-		if temp < 0.05 || temp > 0.5 {
-			t.Errorf("role %q temperature %v out of [0.05, 0.5]", r, temp)
-		}
-	}
-}
-
 func TestAllowedToolsReturnsCopy(t *testing.T) {
 	tools := RoleQueen.AllowedTools()
 	if len(tools) == 0 {

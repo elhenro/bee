@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestCollect_Drains(t *testing.T) {
@@ -83,6 +84,17 @@ func TestSummary_TruncatesLongFinal(t *testing.T) {
 		if strings.HasPrefix(line, "[ok] n") && len(line) > 200 {
 			t.Errorf("line not truncated: len=%d", len(line))
 		}
+	}
+}
+
+// a byte cut would split a multi-byte rune and emit invalid UTF-8.
+func TestSummary_TruncatesOnRuneBoundary(t *testing.T) {
+	got := Summary([]Result{{Name: "n", Final: strings.Repeat("é", 300)}})
+	if !utf8.ValidString(got) {
+		t.Fatalf("summary is not valid UTF-8: %q", got)
+	}
+	if !strings.Contains(got, strings.Repeat("é", summaryLineChars)+"…") {
+		t.Errorf("want %d runes then an ellipsis, got %q", summaryLineChars, got)
 	}
 }
 

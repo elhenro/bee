@@ -1,6 +1,7 @@
 package hive
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -119,10 +120,7 @@ func (r *Report) field(line string) *string {
 // plus the field that matters most for it. done shows what was done, partial
 // what is left, blocked what the next bee needs, died the cause.
 func (r Report) Line() string {
-	status := r.Status
-	if status == "" {
-		status = "unreported"
-	}
+	status := cmp.Or(r.Status, "unreported")
 	var detail string
 	switch status {
 	case ReportPartial:
@@ -145,10 +143,7 @@ func (r Report) Line() string {
 func (r Report) Render() string {
 	var b strings.Builder
 	b.WriteString(reportHeader + "\n")
-	status := r.Status
-	if status == "" {
-		status = "unreported"
-	}
+	status := cmp.Or(r.Status, "unreported")
 	for _, kv := range [...][2]string{{"status", status}, {"cause", r.Cause}, {"did", r.Did}, {"left", r.Left}, {"next", r.Next}} {
 		if kv[1] != "" {
 			fmt.Fprintf(&b, "%s: %s\n", kv[0], kv[1])

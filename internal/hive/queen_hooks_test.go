@@ -7,22 +7,22 @@ import (
 )
 
 // TestQueen_HooksFireInOrder verifies every hook fires for a full run and that
-// the phase ordering holds: plan → workers → critique → synthesize.
+// the phase ordering holds: plan → workers → review/verify → synthesize.
 func TestQueen_HooksFireInOrder(t *testing.T) {
 	planner := &scriptedRunner{outputs: []string{
 		`["t1", "t2"]`, // decompose
 		"final",        // synthesize
 	}}
 	worker := &scriptedRunner{outputs: []string{"w-a", "w-b"}}
-	critic := &scriptedRunner{outputs: []string{"looks fine"}}
+	reviewer := &scriptedRunner{outputs: []string{"FINDING: x.go:1 boom", "NONE", "NONE"}}
 
 	var mu sync.Mutex
 	var phases []string
 	var workerStarts, workerDones int
 
 	q := NewQueen(planner, []Runner{worker})
-	q.Critic = critic
-	q.MaxParallel = 1 // deterministic ordering for the assertions below
+	q.Reviewers = []Runner{reviewer} // round-robins across the 3 dims
+	q.MaxParallel = 1                // deterministic ordering for the assertions below
 	q.Hooks = Hooks{
 		OnPlan: func(p []SubTask) {
 			mu.Lock()
@@ -34,22 +34,16 @@ func TestQueen_HooksFireInOrder(t *testing.T) {
 		},
 		OnWorkerStart: func(int, SubTask) { mu.Lock(); workerStarts++; mu.Unlock() },
 		OnWorkerDone:  func(int, Result) { mu.Lock(); workerDones++; mu.Unlock() },
-		OnCritique: func(c string) {
-			mu.Lock()
-			phases = append(phases, "critique")
-			mu.Unlock()
-			if c != "looks fine" {
-				t.Errorf("OnCritique got %q", c)
-			}
-		},
-		OnSynthesize: func() { mu.Lock(); phases = append(phases, "synthesize"); mu.Unlock() },
+		OnReview:      func(dim string, _ []string) { mu.Lock(); phases = append(phases, "review:"+dim); mu.Unlock() },
+		OnVerify:      func(Finding) { mu.Lock(); phases = append(phases, "verify"); mu.Unlock() },
+		OnSynthesize:  func() { mu.Lock(); phases = append(phases, "synthesize"); mu.Unlock() },
 	}
 
 	if _, err := q.Run(context.Background(), "task"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if got := []string{"plan", "critique", "synthesize"}; !equalStrs(phases, got) {
+	if got := []string{"plan", "review:correctness", "verify", "review:persistence", "review:integration", "synthesize"}; !equalStrs(phases, got) {
 		t.Errorf("phase order = %v, want %v", phases, got)
 	}
 	if workerStarts != 2 || workerDones != 2 {

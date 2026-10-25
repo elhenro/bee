@@ -5,6 +5,8 @@ package hive
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,36 +40,24 @@ func NewPool(max int) *Pool {
 	return &Pool{MaxConcurrency: max}
 }
 
-// Submit registers a Worker with the pool. State starts at pending.
+// Submit registers a Worker with the pool.
 // Safe to call before Run; calling after Run is a no-op for that worker
 // because the dispatcher has already iterated the snapshot.
 func (p *Pool) Submit(w *Worker) {
 	if w == nil {
 		return
 	}
-	if w.State == "" {
-		w.State = StatePending
-	}
 	p.mu.Lock()
 	p.Workers = append(p.Workers, w)
 	p.mu.Unlock()
 }
 
-// snapshotWorkers returns a copy of the current worker slice header for
-// safe iteration without holding the lock during long-running goroutines.
+// snapshotWorkers returns a shallow copy of the Worker pointer slice for safe
+// iteration without holding the lock during long-running goroutines.
 func (p *Pool) snapshotWorkers() []*Worker {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	out := make([]*Worker, len(p.Workers))
-	copy(out, p.Workers)
-	return out
-}
-
-// WorkersSnapshot returns a shallow copy of the Worker pointer slice for
-// observers (TUI, tests). The pointed-to Worker structs are still shared,
-// so reading State/Started/Ended is a live view.
-func (p *Pool) WorkersSnapshot() []*Worker {
-	return p.snapshotWorkers()
+	return slices.Clone(p.Workers)
 }
 
 // Run dispatches submitted workers up to MaxConcurrency at a time. Each
@@ -75,8 +65,8 @@ func (p *Pool) WorkersSnapshot() []*Worker {
 // land on the returned channel as workers finish; the channel closes once
 // all workers are done (including those skipped by cancellation).
 func (p *Pool) Run(ctx context.Context) <-chan Result {
-	results := make(chan Result, len(p.Workers))
 	workers := p.snapshotWorkers()
+	results := make(chan Result, len(workers))
 
 	// one card for the fan-out: no queen plan, so each worker is a row and
 	// siblings see each other's reports as they land.
@@ -94,41 +84,20 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 	var wg sync.WaitGroup
 
 	for i, w := range workers {
-		i, w := i, w
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 
-			// honor cancellation before acquiring a slot — avoids running
-			// late workers after caller has already given up.
-			select {
-			case <-ctx.Done():
-				p.markCanceled(w)
-				results <- canceledResult(w, ctx.Err())
-				return
-			case sem <- struct{}{}:
-			}
-			defer func() { <-sem }()
-
-			// recheck after acquire (cancellation may have raced), then let
-			// the load throttle hold the start.
-			if ctx.Err() != nil {
-				p.markCanceled(w)
-				results <- canceledResult(w, ctx.Err())
-				return
-			}
-			end, err := p.Throttle.start(ctx, &p.running)
+			// honor cancellation before running: avoids starting late workers
+			// after the caller has already given up.
+			release, err := p.Throttle.acquire(ctx, sem, &p.running)
 			if err != nil {
-				p.markCanceled(w)
-				results <- canceledResult(w, ctx.Err())
+				results <- canceledResult(w, err)
 				return
 			}
-			defer end()
+			defer release()
 
-			p.markRunning(w)
-			res := runOne(ctx, w, i, ph)
-			p.markEnded(w, res.Err)
-			results <- res
+			results <- runOne(ctx, w, i, ph)
 		}()
 	}
 
@@ -151,17 +120,22 @@ func (p *Pool) rowLabel(w *Worker) string {
 // runOne executes a single worker's Engine.Run, capturing timing, the final
 // assistant text and the exit report, and keeps the worker's row on the
 // shared card current. A nil Engine is a programmer error and produces an
-// error Result rather than panicking. Tests inject a Runner via the
-// runWorker hook (see spawn_test.go).
+// error Result rather than panicking. Tests inject a Runner via runnerHook
+// (see spawn_test.go).
 func runOne(ctx context.Context, w *Worker, idx int, ph *Pheromone) Result {
-	started := time.Now().UTC()
 	r := Result{
 		WorkerID: w.ID,
 		Name:     w.Name,
 		Task:     w.Task,
-		Started:  started,
+		Started:  time.Now().UTC(),
 	}
-	runner := resolveRunner(w)
+	var runner Runner
+	if runnerHook != nil {
+		runner = runnerHook(w)
+	}
+	if runner == nil && w.Engine != nil {
+		runner = w.Engine
+	}
 	if runner == nil {
 		r.Err = errNilEngine
 		r.Ended = time.Now().UTC()
@@ -182,51 +156,9 @@ func runOne(ctx context.Context, w *Worker, idx int, ph *Pheromone) Result {
 	return r
 }
 
-// resolveRunner picks the Runner for a Worker. The default uses w.Engine;
-// tests override via runnerHook to inject a stub Runner without modifying
-// Worker (types.go is owned by another slice).
-func resolveRunner(w *Worker) Runner {
-	if runnerHook != nil {
-		if r := runnerHook(w); r != nil {
-			return r
-		}
-	}
-	if w.Engine == nil {
-		return nil
-	}
-	return w.Engine
-}
-
-// runnerHook is a test-only seam. Production leaves it nil.
+// runnerHook is a test-only seam: it supplies a stub Runner in place of the
+// Worker's Engine. Production leaves it nil.
 var runnerHook func(*Worker) Runner
-
-func (p *Pool) markRunning(w *Worker) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	w.State = StateRunning
-	w.Started = time.Now().UTC()
-}
-
-func (p *Pool) markEnded(w *Worker, err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	w.Ended = time.Now().UTC()
-	if err != nil {
-		w.State = StateFailed
-	} else {
-		w.State = StateDone
-	}
-}
-
-func (p *Pool) markCanceled(w *Worker) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	w.State = StateCanceled
-	if w.Started.IsZero() {
-		w.Started = time.Now().UTC()
-	}
-	w.Ended = time.Now().UTC()
-}
 
 func canceledResult(w *Worker, err error) Result {
 	now := time.Now().UTC()
@@ -242,8 +174,4 @@ func canceledResult(w *Worker, err error) Result {
 
 // errNilEngine is returned when a Worker without an Engine is dispatched.
 // Sentinel so tests can identify it without string-matching.
-type nilEngineErr struct{}
-
-func (nilEngineErr) Error() string { return "hive: worker has nil engine" }
-
-var errNilEngine error = nilEngineErr{}
+var errNilEngine = errors.New("hive: worker has nil engine")
