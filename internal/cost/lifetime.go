@@ -121,9 +121,10 @@ func FormatLifetimeTokens(total int64) string {
 	switch {
 	case total < 0:
 		return "0"
-	case total >= 1_000_000_000:
+	// units switch where the rounded figure would hit 1000, not at the exact power
+	case total >= 999_500_000:
 		return trimDecimal(float64(total)/1e9) + "B"
-	case total >= 1_000_000:
+	case total >= 999_500:
 		return trimDecimal(float64(total)/1e6) + "M"
 	case total >= 1_000:
 		return trimDecimal(float64(total)/1e3) + "K"
