@@ -18,16 +18,7 @@ func TestFanSmoke(t *testing.T) {
 		t.Skip("skip smoke under -short")
 	}
 	tmp := t.TempDir()
-	bin := filepath.Join(tmp, "bee"+exeSuffix())
-	{
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("go build: %v", err)
-		}
-	}
+	bin := buildBee(t)
 
 	home := filepath.Join(tmp, "home")
 	sessDir := filepath.Join(tmp, "sessions")
@@ -91,16 +82,7 @@ func TestFanPerFile(t *testing.T) {
 		t.Skip("skip smoke under -short")
 	}
 	tmp := t.TempDir()
-	bin := filepath.Join(tmp, "bee"+exeSuffix())
-	{
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("go build: %v", err)
-		}
-	}
+	bin := buildBee(t)
 
 	// create a working tmpdir with two .txt files for fan to glob.
 	workDir := filepath.Join(tmp, "work")
@@ -152,13 +134,7 @@ func TestFanRequiresTask(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skip smoke under -short")
 	}
-	tmp := t.TempDir()
-	bin := filepath.Join(tmp, "bee"+exeSuffix())
-	ctxB, cancelB := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancelB()
-	if err := exec.CommandContext(ctxB, "go", "build", "-o", bin, ".").Run(); err != nil {
-		t.Fatalf("go build: %v", err)
-	}
+	bin := buildBee(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

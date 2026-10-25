@@ -18,16 +18,7 @@ func TestBeeRuntimeRecipe(t *testing.T) {
 		t.Skip("skip recipe e2e under -short")
 	}
 	tmp := t.TempDir()
-	bin := filepath.Join(tmp, "bee"+exeSuffix())
-	{
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("go build: %v", err)
-		}
-	}
+	bin := buildBee(t)
 	home := filepath.Join(tmp, "home")
 	skillsDir := filepath.Join(home, "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {

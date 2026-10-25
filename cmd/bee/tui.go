@@ -7,13 +7,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 
 	"github.com/elhenro/bee/internal/approval"
+	"github.com/elhenro/bee/internal/beehome"
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
@@ -122,26 +122,6 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		}
 		prior = stripAgentPreambleMessages(ms)
 	}
-	// stream channel routes text deltas from the engine through bubbletea
-	// instead of letting them write to os.Stdout (which would corrupt the
-	// alt-screen). Buffered so brief consumer hiccups don't drop deltas.
-	// sized so a fast provider can outrun a busy Update cycle without the
-	// engine's non-blocking send dropping deltas; the pump batch-drains.
-	streamCh := make(chan string, 512)
-	// thinkCh routes reasoning deltas from the engine through bubbletea so
-	// chain-of-thought renders live above the answer instead of arriving
-	// in one batch after streaming ends. Same buffer size as streamCh — a
-	// reasoning model can emit deltas just as fast as text.
-	thinkCh := make(chan string, 512)
-	// progressCh routes withheld-output char counts from buffered tool-call
-	// modes so the loader's ↓ figure moves even when no text deltas flow.
-	progressCh := make(chan int, 512)
-	// liveMsgCh surfaces each assistant/tool message as the loop appends it,
-	// so tool_use / tool_result cards render mid-Run instead of only at
-	// turnDoneMsg. Buffered to avoid stalling the loop during tool bursts.
-	liveMsgCh := make(chan types.Message, 32)
-	warnCh := make(chan string, 8)
-	costs := cost.New()
 	eng := &loop.Engine{
 		Provider:    prov,
 		Tools:       reg,
@@ -156,14 +136,28 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		Stdout:      os.Stdout,
 		// buffered so a quick burst of Enter-steers from the TUI doesn't
 		// block; loop drains one per iteration anyway.
-		SteerCh:         make(chan string, 4),
-		Jobs:            jm,
-		StreamCh:        streamCh,
-		ThinkCh:         thinkCh,
-		ProgressCh:      progressCh,
-		LiveMsgCh:       liveMsgCh,
-		WarnCh:          warnCh,
-		Costs:           costs,
+		SteerCh: make(chan string, 4),
+		Jobs:    jm,
+		// stream channel routes text deltas from the engine through bubbletea
+		// instead of letting them write to os.Stdout (which would corrupt the
+		// alt-screen). Buffered so brief consumer hiccups don't drop deltas.
+		// sized so a fast provider can outrun a busy Update cycle without the
+		// engine's non-blocking send dropping deltas; the pump batch-drains.
+		StreamCh: make(chan string, 512),
+		// ThinkCh routes reasoning deltas from the engine through bubbletea so
+		// chain-of-thought renders live above the answer instead of arriving
+		// in one batch after streaming ends. Same buffer size as StreamCh — a
+		// reasoning model can emit deltas just as fast as text.
+		ThinkCh: make(chan string, 512),
+		// ProgressCh routes withheld-output char counts from buffered tool-call
+		// modes so the loader's ↓ figure moves even when no text deltas flow.
+		ProgressCh: make(chan int, 512),
+		// LiveMsgCh surfaces each assistant/tool message as the loop appends it,
+		// so tool_use / tool_result cards render mid-Run instead of only at
+		// turnDoneMsg. Buffered to avoid stalling the loop during tool bursts.
+		LiveMsgCh:       make(chan types.Message, 32),
+		WarnCh:          make(chan string, 8),
+		Costs:           cost.New(),
 		InitialMessages: prior,
 		VisionAsker:     herdr.WrapAsker(tuiAsker),
 		PersistVision:   persistVisionModel,
@@ -211,12 +205,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	commands.RegisterBuiltins(cmdReg)
 
 	// load ~/.bee/keybindings.json overrides on top of defaults
-	beeHome := os.Getenv("BEE_HOME")
-	if beeHome == "" {
-		if h, err := os.UserHomeDir(); err == nil {
-			beeHome = filepath.Join(h, ".bee")
-		}
-	}
+	beeHome, _ := beehome.Dir()
 	km := tui.LoadKeyMap(beeHome)
 
 	// resume: if the seeded history is still over the compaction threshold,

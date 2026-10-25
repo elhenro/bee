@@ -1,6 +1,10 @@
 package main
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -146,5 +150,34 @@ func TestBuildTools_UserToolsRegistered(t *testing.T) {
 	}
 	if t1.Spec().Name != "lint" {
 		t.Errorf("user tool name lost: %q", t1.Spec().Name)
+	}
+}
+
+// withWriteFilter restricts the mutation tools to matching paths; the other
+// tool surface is untouched.
+func TestBuildTools_WriteFilterRestrictsWrites(t *testing.T) {
+	dir := t.TempDir()
+	// confined scope roots the write tool at dir; unconfined would resolve
+	// relative paths against the test process cwd.
+	cfg := normalCfg()
+	cfg.Sandbox.Scope = "workspace-write"
+	reg, err := buildToolsWithApprover(dir, cfg, nil, "", nil, withWriteFilter(regexp.MustCompile(`\.go$`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, ok := reg.Get("write")
+	if !ok {
+		t.Fatal("write missing")
+	}
+	res, err := w.Run(context.Background(), map[string]any{"path": "notes.txt", "content": "x"})
+	if err != nil || !res.IsError {
+		t.Fatalf("write outside filter = (%+v, %v), want refusal", res, err)
+	}
+	if _, serr := os.Stat(filepath.Join(dir, "notes.txt")); serr == nil {
+		t.Error("filtered write touched the file")
+	}
+	res, err = w.Run(context.Background(), map[string]any{"path": "ok.go", "content": "package x\n"})
+	if err != nil || res.IsError {
+		t.Fatalf("write inside filter = (%+v, %v), want success", res, err)
 	}
 }

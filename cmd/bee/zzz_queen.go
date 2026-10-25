@@ -38,6 +38,7 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 	queenID := zzz.NewID()
 
 	runs := make([]*zzz.Run, 0, n)
+	runners := make([]zzz.Runner, 0, n)
 	cleanups := make([]func(), 0, n)
 	unlocks := make([]func(), 0, n)
 	defer func() {
@@ -49,11 +50,6 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 		}
 	}()
 
-	type built struct {
-		run    *zzz.Run
-		runner zzz.Runner
-	}
-	var ready []built
 	for i := 0; i < n; i++ {
 		run, unlock, err := startRun(zCfg)
 		if err != nil {
@@ -68,26 +64,24 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 		}
 		cleanups = append(cleanups, cleanup)
 		runs = append(runs, run)
-		ready = append(ready, built{run: run, runner: zzz.NewLoopRunner(eng)})
+		runners = append(runners, zzz.NewLoopRunner(eng))
 	}
 	if c, ok := app.(*approval.Cache); ok {
 		defer c.Flush()
 	}
-	if len(ready) == 0 {
+	if len(runs) == 0 {
 		exitf(1, "zzz: queen could not start any workers")
 	}
 
 	model := queen.New(runs, cancelAll)
 	var wg sync.WaitGroup
-	for i, b := range ready {
-		wg.Add(1)
-		go func(i int, b built) {
-			defer wg.Done()
+	for i, run := range runs {
+		wg.Go(func() {
 			// stopCh nil: graceful stop is delivered per-worker via the queen's
 			// Steerable broadcast, not this external channel.
-			err := zzz.Drive(parentCtx, nil, b.runner, zCfg, b.run, model.Worker(i))
-			model.Done(i, b.run, err)
-		}(i, b)
+			err := zzz.Drive(parentCtx, nil, runners[i], zCfg, run, model.Worker(i))
+			model.Done(i, run, err)
+		})
 	}
 
 	if err := model.Run(); err != nil {

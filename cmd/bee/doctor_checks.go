@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"github.com/elhenro/bee/internal/auth"
+	"github.com/elhenro/bee/internal/beehome"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/session"
@@ -25,13 +26,9 @@ func checkBeeBinary() check {
 }
 
 func checkBeeHome() check {
-	home, err := os.UserHomeDir()
+	dir, err := beehome.Dir()
 	if err != nil {
 		return check{"~/.bee", "fail", "no HOME", "set $HOME"}
-	}
-	dir := filepath.Join(home, ".bee")
-	if v := os.Getenv("BEE_HOME"); v != "" {
-		dir = v
 	}
 	info, err := os.Stat(dir)
 	if err != nil {
