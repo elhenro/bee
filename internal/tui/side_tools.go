@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -74,22 +75,12 @@ func (s *tuiSide) SetToolDisabled(name string, disabled bool) error {
 		return errEngineBusy
 	}
 	cfg := &s.m.eng.Cfg
-	cur := cfg.DisabledTools[:0:0]
-	dup := false
-	for _, n := range cfg.DisabledTools {
-		if n == name {
-			dup = true
-			if disabled {
-				cur = append(cur, n)
-			}
-			continue
-		}
-		cur = append(cur, n)
+	switch {
+	case !disabled:
+		cfg.DisabledTools = slices.DeleteFunc(slices.Clone(cfg.DisabledTools), func(n string) bool { return n == name })
+	case !slices.Contains(cfg.DisabledTools, name):
+		cfg.DisabledTools = append(slices.Clone(cfg.DisabledTools), name)
 	}
-	if disabled && !dup {
-		cur = append(cur, name)
-	}
-	cfg.DisabledTools = cur
 	return PersistSetting("", "disabled_tools", cfg.DisabledTools)
 }
 
@@ -107,10 +98,8 @@ func (s *tuiSide) AddUserTool(name, cmdStr, desc string) error {
 		return errEngineBusy
 	}
 	cfg := &s.m.eng.Cfg
-	for _, u := range cfg.UserTools {
-		if u.Name == name {
-			return fmt.Errorf("user tool %q already exists", name)
-		}
+	if slices.ContainsFunc(cfg.UserTools, func(u config.UserTool) bool { return u.Name == name }) {
+		return fmt.Errorf("user tool %q already exists", name)
 	}
 	if s.m.eng.Tools != nil {
 		if _, ok := s.m.eng.Tools.Get(name); ok {
@@ -122,12 +111,7 @@ func (s *tuiSide) AddUserTool(name, cmdStr, desc string) error {
 		return err
 	}
 	// rebuild the engine's tool registry so the new tool is dispatchable now
-	if s.m.eng.Rebuild != nil {
-		if err := s.m.eng.Rebuild(s.m.eng); err != nil {
-			return fmt.Errorf("user tool: rebuild: %w", err)
-		}
-	}
-	return nil
+	return rebuildEngine(s.m.eng, "user tool")
 }
 
 // RemoveUserTool drops a [[user_tools]] entry, persists, and rebuilds the
@@ -141,41 +125,21 @@ func (s *tuiSide) RemoveUserTool(name string) error {
 		return errEngineBusy
 	}
 	cfg := &s.m.eng.Cfg
-	found := false
-	out := cfg.UserTools[:0:0]
-	for _, u := range cfg.UserTools {
-		if u.Name == name {
-			found = true
-			continue
-		}
-		out = append(out, u)
-	}
-	if !found {
+	isName := func(u config.UserTool) bool { return u.Name == name }
+	if !slices.ContainsFunc(cfg.UserTools, isName) {
 		return fmt.Errorf("no user tool %q", name)
 	}
-	cfg.UserTools = out
+	cfg.UserTools = slices.DeleteFunc(slices.Clone(cfg.UserTools), isName)
 	if err := PersistSetting("", "user_tools", cfg.UserTools); err != nil {
 		return err
 	}
-	if s.m.eng.Rebuild != nil {
-		if err := s.m.eng.Rebuild(s.m.eng); err != nil {
-			return fmt.Errorf("user tool: rebuild: %w", err)
-		}
-	}
-	return nil
+	return rebuildEngine(s.m.eng, "user tool")
 }
 
 // OpenToolsPane flips a sentinel that Model.Update consumes to display the
 // tools toggle pane. Errors in headless contexts.
 func (s *tuiSide) OpenToolsPane() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	if s.m.toolsPane == nil {
-		return errors.New("no tools pane (headless)")
-	}
-	s.m.toolsRequested = true
-	return nil
+	return s.armPane("tools pane", func(m *Model) bool { return m.toolsPane != nil }, func(m *Model) { m.toolsRequested = true })
 }
 
 // SetBrowserEnabled flips browser-tool support for this session only (no
@@ -199,11 +163,9 @@ func (s *tuiSide) SetBrowserEnabled(on bool) (string, error) {
 		return "browser tools already disabled", nil
 	}
 	cfg.Browser.Enabled = on
-	if s.m.eng.Rebuild != nil {
-		if err := s.m.eng.Rebuild(s.m.eng); err != nil {
-			cfg.Browser.Enabled = prev // revert on failure
-			return "", fmt.Errorf("browser: rebuild: %w", err)
-		}
+	if err := rebuildEngine(s.m.eng, "browser"); err != nil {
+		cfg.Browser.Enabled = prev // revert on failure
+		return "", err
 	}
 	if on {
 		n := browserToolCount(s.m.eng)

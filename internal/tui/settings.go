@@ -1,13 +1,10 @@
 package tui
 
 import (
-	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -62,32 +59,11 @@ func init() {
 // fuzzy filter. Each flip applies live and writes to ~/.bee/config.toml so
 // the next launch picks the same values up.
 type SettingsPane struct {
-	open       bool
-	cursor     int
-	filter     textinput.Model
-	matches    []fuzzy.Match
-	verbose    bool
-	thought    bool
-	nudge      bool
-	recap      bool
-	compact    bool
-	ctxBar     bool
-	highlight  bool
-	callDetail bool
-	bangSilent bool
-	bee        bool
-	ctxPct     bool
-	modelName  bool
-	cwd        bool
-	effort     bool
-	turnTimer  bool
-	gitBranch  bool
-	totTokens  bool
-	banner     bool
-	loader     bool
-	loaderIn   bool
-	loaderOut  bool
-	loaderRate bool
+	open    bool
+	cursor  int
+	filter  textinput.Model
+	matches []fuzzy.Match
+	on      map[string]bool // bool rows by toml key
 	// outerPad mirrors the int value for the outer_pad_lr row. Renders as
 	// `[N]` (0..8) and cycles on enter/tab via settingsSetIntMsg.
 	outerPad int
@@ -103,23 +79,7 @@ func NewSettingsPane() *SettingsPane {
 	ti.Placeholder = "type to filter…"
 	ti.Prompt = " › "
 	ti.CharLimit = 64
-	p := &SettingsPane{
-		filter:     ti,
-		thought:    true,
-		highlight:  true,
-		bangSilent: true,
-		bee:        true,
-		ctxPct:     true,
-		modelName:  true,
-		cwd:        true,
-		effort:     true,
-		turnTimer:  true,
-		banner:     true,
-		loader:     true,
-		loaderIn:   true,
-		loaderOut:  true,
-		loaderRate: true,
-	}
+	p := &SettingsPane{filter: ti, on: map[string]bool{}}
 	p.recomputeMatches()
 	return p
 }
@@ -166,28 +126,30 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 	p.cursor = 0
 	p.filter.SetValue("")
 	p.filter.Focus()
-	p.verbose = s.Verbose
-	p.thought = s.ShowThoughts
-	p.nudge = s.ShowNudges
-	p.recap = s.ShowRecap
-	p.compact = s.Compact
-	p.ctxBar = s.ShowContextBar
-	p.highlight = s.Highlight
-	p.callDetail = s.ShowCallDetail
-	p.bangSilent = s.ShellBangSilent
-	p.bee = s.ShowBee
-	p.ctxPct = s.ShowContextPct
-	p.modelName = s.ShowModel
-	p.cwd = s.ShowCwd
-	p.effort = s.ShowEffort
-	p.turnTimer = s.ShowTurnTimer
-	p.gitBranch = s.ShowGitBranch
-	p.totTokens = s.ShowTotalTokens
-	p.banner = s.ShowBanner
-	p.loader = s.ShowLoader
-	p.loaderIn = s.ShowLoaderIn
-	p.loaderOut = s.ShowLoaderOut
-	p.loaderRate = s.ShowLoaderRate
+	p.on = map[string]bool{
+		"verbose":           s.Verbose,
+		"show_thoughts":     s.ShowThoughts,
+		"show_nudges":       s.ShowNudges,
+		"show_recap":        s.ShowRecap,
+		"compact":           s.Compact,
+		"show_context_bar":  s.ShowContextBar,
+		"highlight":         s.Highlight,
+		"show_call_detail":  s.ShowCallDetail,
+		"shell_bang_silent": s.ShellBangSilent,
+		"show_bee":          s.ShowBee,
+		"show_context_pct":  s.ShowContextPct,
+		"show_model":        s.ShowModel,
+		"show_cwd":          s.ShowCwd,
+		"show_effort":       s.ShowEffort,
+		"show_turn_timer":   s.ShowTurnTimer,
+		"show_git_branch":   s.ShowGitBranch,
+		"show_total_tokens": s.ShowTotalTokens,
+		"show_banner":       s.ShowBanner,
+		"show_loader":       s.ShowLoader,
+		"show_loader_in":    s.ShowLoaderIn,
+		"show_loader_out":   s.ShowLoaderOut,
+		"show_loader_rate":  s.ShowLoaderRate,
+	}
 	p.outerPad = s.OuterPadLR
 	p.recomputeMatches()
 }
@@ -208,35 +170,15 @@ type settingsSetIntMsg struct {
 	value int
 }
 
-// isIntRow reports whether the row keyed by key is the int-magnitude kind.
-// Today only outer_pad_lr. New int rows should append to settingsRows with
-// isInt: true and add a case here.
-func isIntRow(key string) bool {
-	return key == "outer_pad_lr"
-}
-
 // recomputeMatches fuzzy-filters settingsRows against the filter input. Empty
 // input keeps the full alphabetised list (one code path for the renderer).
 func (p *SettingsPane) recomputeMatches() {
-	needle := strings.TrimSpace(p.filter.Value())
-	if needle == "" {
-		p.matches = make([]fuzzy.Match, len(settingsRows))
-		for i, r := range settingsRows {
-			p.matches[i] = fuzzy.Match{Index: i, Str: r.label}
-		}
-	} else {
-		// match against "label  description" so descriptions can rank too;
-		// the renderer masks highlight indices to the label range.
-		hay := make([]string, len(settingsRows))
-		for i, r := range settingsRows {
-			hay[i] = r.label + "  " + r.desc
-		}
-		p.matches = fuzzy.Find(needle, hay)
-	}
-	if p.cursor >= len(p.matches) {
-		p.cursor = 0
-	}
-	if p.cursor < 0 {
+	// match against "label  description" so descriptions can rank too; the
+	// renderer masks highlight indices to the label range.
+	p.matches = FuzzyAll(p.filter.Value(), settingsRows, func(i int) string {
+		return settingsRows[i].label + "  " + settingsRows[i].desc
+	})
+	if p.cursor >= len(p.matches) || p.cursor < 0 {
 		p.cursor = 0
 	}
 }
@@ -278,8 +220,9 @@ func (p *SettingsPane) Update(msg tea.Msg) (*SettingsPane, tea.Cmd) {
 }
 
 // toggleCurrent flips the row at p.cursor (in the filtered match list) and
-// returns the side-effect command publishing the new value. Int rows are
-// routed through settingsSetIntMsg and cycled 0..N..0 instead of bool-flipped.
+// returns the side-effect command publishing the new value. The int row
+// (outer_pad_lr) is routed through settingsSetIntMsg and cycled 0..N..0
+// instead of bool-flipped.
 func (p *SettingsPane) toggleCurrent() tea.Cmd {
 	if len(p.matches) == 0 {
 		return nil
@@ -289,227 +232,15 @@ func (p *SettingsPane) toggleCurrent() tea.Cmd {
 		return nil
 	}
 	row := settingsRows[idx]
-	if isIntRow(row.key) {
-		cur := p.intRowState(row.key)
-		next := cur + 1
+	if row.isInt {
+		next := p.outerPad + 1
 		if next > outerPadMax {
 			next = 0
 		}
-		p.setIntRowState(row.key, next)
+		p.outerPad = next
 		return func() tea.Msg { return settingsSetIntMsg{key: row.key, value: next} }
 	}
-	newVal := !p.rowState(row.key)
-	p.setRowState(row.key, newVal)
+	newVal := !p.on[row.key]
+	p.on[row.key] = newVal
 	return func() tea.Msg { return settingsToggleMsg{key: row.key, value: newVal} }
-}
-
-// intRowState reads the int backing field for a given key. Mirrors rowState
-// for the bool rows; kept as a separate function so the int path doesn't
-// grow the bool switch.
-func (p *SettingsPane) intRowState(key string) int {
-	switch key {
-	case "outer_pad_lr":
-		return p.outerPad
-	}
-	return 0
-}
-
-// setIntRowState writes the int backing field for a given key.
-func (p *SettingsPane) setIntRowState(key string, v int) {
-	switch key {
-	case "outer_pad_lr":
-		if v < 0 {
-			v = 0
-		}
-		if v > outerPadMax {
-			v = outerPadMax
-		}
-		p.outerPad = v
-	}
-}
-
-// rowState reads the toggle backing field for a given key.
-func (p *SettingsPane) rowState(key string) bool {
-	switch key {
-	case "verbose":
-		return p.verbose
-	case "show_thoughts":
-		return p.thought
-	case "show_nudges":
-		return p.nudge
-	case "show_recap":
-		return p.recap
-	case "compact":
-		return p.compact
-	case "show_context_bar":
-		return p.ctxBar
-	case "highlight":
-		return p.highlight
-	case "show_call_detail":
-		return p.callDetail
-	case "shell_bang_silent":
-		return p.bangSilent
-	case "show_bee":
-		return p.bee
-	case "show_context_pct":
-		return p.ctxPct
-	case "show_model":
-		return p.modelName
-	case "show_cwd":
-		return p.cwd
-	case "show_effort":
-		return p.effort
-	case "show_turn_timer":
-		return p.turnTimer
-	case "show_git_branch":
-		return p.gitBranch
-	case "show_total_tokens":
-		return p.totTokens
-	case "show_banner":
-		return p.banner
-	case "show_loader":
-		return p.loader
-	case "show_loader_in":
-		return p.loaderIn
-	case "show_loader_out":
-		return p.loaderOut
-	case "show_loader_rate":
-		return p.loaderRate
-	}
-	return false
-}
-
-// setRowState writes the toggle backing field for a given key.
-func (p *SettingsPane) setRowState(key string, v bool) {
-	switch key {
-	case "verbose":
-		p.verbose = v
-	case "show_thoughts":
-		p.thought = v
-	case "show_nudges":
-		p.nudge = v
-	case "show_recap":
-		p.recap = v
-	case "compact":
-		p.compact = v
-	case "show_context_bar":
-		p.ctxBar = v
-	case "highlight":
-		p.highlight = v
-	case "show_call_detail":
-		p.callDetail = v
-	case "shell_bang_silent":
-		p.bangSilent = v
-	case "show_bee":
-		p.bee = v
-	case "show_context_pct":
-		p.ctxPct = v
-	case "show_model":
-		p.modelName = v
-	case "show_cwd":
-		p.cwd = v
-	case "show_effort":
-		p.effort = v
-	case "show_turn_timer":
-		p.turnTimer = v
-	case "show_git_branch":
-		p.gitBranch = v
-	case "show_total_tokens":
-		p.totTokens = v
-	case "show_banner":
-		p.banner = v
-	case "show_loader":
-		p.loader = v
-	case "show_loader_in":
-		p.loaderIn = v
-	case "show_loader_out":
-		p.loaderOut = v
-	case "show_loader_rate":
-		p.loaderRate = v
-	}
-}
-
-// View renders the modal.
-func (p *SettingsPane) View(width, height int) string {
-	if p == nil || !p.open {
-		return ""
-	}
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Settings")
-
-	hl := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
-
-	var b strings.Builder
-	b.WriteString(title)
-	b.WriteString("\n")
-	b.WriteString(p.filter.View())
-	b.WriteString("\n\n")
-
-	if len(p.matches) == 0 {
-		b.WriteString(StyleLabel.Render("  no matches"))
-		b.WriteString("\n")
-	}
-
-	// title, filter, blank, blank, hint, border (2), "+N more"
-	rng := windowRange(len(p.matches), p.cursor, paneRows(height, 8))
-	for i := rng.start; i < rng.end; i++ {
-		m := p.matches[i]
-		r := settingsRows[m.Index]
-		marker := "  "
-		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
-		if i == p.cursor {
-			marker = selectMark(true)
-			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
-		}
-		var toggle string
-		if r.isInt {
-			toggle = fmt.Sprintf("[%d]", p.intRowState(r.key))
-		} else {
-			toggle = "[ ]"
-			if p.rowState(r.key) {
-				toggle = lipgloss.NewStyle().Foreground(accentHoney).Render("[x]")
-			}
-		}
-		b.WriteString(marker)
-		b.WriteString(toggle)
-		b.WriteString("  ")
-		b.WriteString(highlightLabel(r.label, m.MatchedIndexes, nameStyle, hl, 22))
-		b.WriteString("  ")
-		b.WriteString(StyleLabel.Render(r.desc))
-		b.WriteString("\n")
-	}
-
-	if more := moreRow(rng, len(p.matches)); more != "" {
-		b.WriteString(more + "\n")
-	}
-	b.WriteString("\n")
-	b.WriteString(StyleLabel.Render("type filter · ↑/↓ pick · enter/tab toggle · esc close · saved to ~/.bee/config.toml"))
-	return boxRows(b.String(), width)
-}
-
-// highlightLabel renders label with matched runes accented, then pads the
-// visible width to n columns so toggle/desc columns stay aligned.
-func highlightLabel(label string, matched []int, base, hl lipgloss.Style, n int) string {
-	hits := map[int]struct{}{}
-	for _, idx := range matched {
-		if idx >= 0 && idx < len(label) {
-			hits[idx] = struct{}{}
-		}
-	}
-	var b strings.Builder
-	for i, r := range label {
-		ch := string(r)
-		if _, ok := hits[i]; ok {
-			b.WriteString(hl.Render(ch))
-		} else {
-			b.WriteString(base.Render(ch))
-		}
-	}
-	pad := n - lipgloss.Width(label)
-	if pad > 0 {
-		b.WriteString(strings.Repeat(" ", pad))
-	}
-	return b.String()
 }

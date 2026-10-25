@@ -4,13 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/elhenro/bee/internal/config"
-	"github.com/elhenro/bee/internal/prompt"
-	"github.com/elhenro/bee/internal/session"
-	"github.com/elhenro/bee/internal/types"
-	"github.com/google/uuid"
+	"github.com/elhenro/bee/internal/loop"
 )
 
 // compile-time assertion left implicit; the registry takes any commands.Side.
@@ -21,6 +17,54 @@ import (
 // a clear "not implemented" error so the command framework stays usable.
 type tuiSide struct {
 	m *Model
+}
+
+var errNoTUI = errors.New("no tui")
+
+// arm flips a sentinel on the model that Model.Update consumes. Errors when
+// there is no tui so the slash command can fall back to text.
+func (s *tuiSide) arm(set func(*Model)) error {
+	if s.m == nil {
+		return errNoTUI
+	}
+	set(s.m)
+	return nil
+}
+
+// armPane is arm for a pane that headless runs never build.
+func (s *tuiSide) armPane(pane string, built func(*Model) bool, set func(*Model)) error {
+	if s.m == nil {
+		return errNoTUI
+	}
+	if !built(s.m) {
+		return errors.New("no " + pane + " (headless)")
+	}
+	set(s.m)
+	return nil
+}
+
+// resetView drops transient stream state so the next flush reprints the
+// (swapped) transcript from the top.
+func (m *Model) resetView() {
+	m.partial = ""
+	m.streamFlushed = ""
+	m.streamFenceOpen = false
+	m.pendingFlushedPrefix = ""
+	m.lastErr = ""
+	m.state = StateIdle
+	m.printedCount = 0
+}
+
+// rebuildEngine reruns the engine's rebuild hook, if any, so a changed
+// provider, tool set or model takes effect on the next turn.
+func rebuildEngine(e *loop.Engine, what string) error {
+	if e.Rebuild == nil {
+		return nil
+	}
+	if err := e.Rebuild(e); err != nil {
+		return fmt.Errorf("%s: rebuild: %w", what, err)
+	}
+	return nil
 }
 
 // Compact delegates to the engine-level compactor. Stats are discarded — the
@@ -49,11 +93,7 @@ func (s *tuiSide) SwitchModel(name string) error {
 		// rebuild memory adapter so its cached model id matches the new
 		// default; provider stays the same so no client swap needed, but
 		// going through Rebuild keeps both paths consistent.
-		if s.m.eng.Rebuild != nil {
-			if err := s.m.eng.Rebuild(s.m.eng); err != nil {
-				return fmt.Errorf("model: rebuild: %w", err)
-			}
-		}
+		return rebuildEngine(s.m.eng, "model")
 	}
 	return nil
 }
@@ -64,8 +104,6 @@ func (s *tuiSide) SwitchModel(name string) error {
 // invokes Engine.Rebuild so the next turn instantiates the new provider's
 // HTTP client. Without the rebuild the engine kept streaming against the
 // pre-switch backend (e.g. ollama after picking openrouter).
-// Switching to a local provider mid-session also forces Mode = "edit" when
-// the session was sitting in "auto" — local models skip the classifier.
 func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 	if provider == "" {
 		return errors.New("model: empty provider")
@@ -78,13 +116,11 @@ func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 		if model != "" {
 			s.m.eng.Cfg.DefaultModel = model
 		}
-		// re-resolve profile + caveman when auto is in play. Explicit user
-		// choices (tiny/normal/large or full/lite/ultra/off) are preserved.
+		// re-resolve the profile when auto is in play. An explicit
+		// tiny/normal/large choice is preserved.
 		s.m.eng.Cfg = reapplyAutoProfile(s.m.eng.Cfg)
-		if s.m.eng.Rebuild != nil {
-			if err := s.m.eng.Rebuild(s.m.eng); err != nil {
-				return fmt.Errorf("model: rebuild: %w", err)
-			}
+		if err := rebuildEngine(s.m.eng, "model"); err != nil {
+			return err
 		}
 	}
 	if model != "" {
@@ -95,8 +131,7 @@ func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 
 // reapplyAutoProfile re-runs ApplyProfile-style resolution for an in-flight
 // config change. Differs from ApplyProfile: leaves a concretely-named profile
-// alone but re-derives caveman if it was "auto"/empty originally. Safe to
-// call repeatedly.
+// alone and only re-resolves "auto"/empty. Safe to call repeatedly.
 func reapplyAutoProfile(c config.Config) config.Config {
 	if c.Profile == "auto" || c.Profile == "" {
 		c.Profile = config.ResolveAutoProfileForProvider(c.DefaultProvider, c.DefaultModel)
@@ -108,14 +143,7 @@ func reapplyAutoProfile(c config.Config) config.Config {
 // provider+model picker. Returns an error in headless contexts (no picker
 // built) so the slash command can fall back to text.
 func (s *tuiSide) OpenPicker() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	if s.m.picker == nil {
-		return errors.New("no picker (headless)")
-	}
-	s.m.pickerRequested = true
-	return nil
+	return s.armPane("picker", func(m *Model) bool { return m.picker != nil }, func(m *Model) { m.pickerRequested = true })
 }
 
 // OpenHandoff arms the rescue flow: opens the same provider+model picker as
@@ -123,179 +151,10 @@ func (s *tuiSide) OpenPicker() error {
 // of a plain swap. Returns an error in headless contexts (no picker built) so
 // the slash command can fall back to text.
 func (s *tuiSide) OpenHandoff() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	if s.m.picker == nil {
-		return errors.New("no picker (headless)")
-	}
-	s.m.handoffRequested = true
-	s.m.handoffActive = true
-	return nil
-}
-
-// ListSessions enumerates rollouts on disk. Newest first by Created time
-// is good enough for the resume picker; bee/internal/session.List already
-// returns sessions with timestamps.
-func (s *tuiSide) ListSessions() ([]string, error) {
-	sess, err := session.List()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(sess))
-	for _, x := range sess {
-		out = append(out, x.ID)
-	}
-	return out, nil
-}
-
-// OpenSession swaps the engine to a previously-recorded rollout and seeds
-// scrollback with its messages. The old rollout is closed; the new one is
-// reopened in append mode so subsequent turns continue the conversation.
-func (s *tuiSide) OpenSession(id string) error {
-	if s.m == nil || s.m.eng == nil {
-		return errors.New("no engine")
-	}
-	if id == "" {
-		return errors.New("open session: empty id")
-	}
-	if s.m.engineBusy() {
-		return errEngineBusy
-	}
-	// ReadResume (not Read) collapses at the last checkpoint, so resuming a
-	// compacted session doesn't re-seed the full raw history — that would ship
-	// the whole pre-compaction log to the model on the first turn (a multi-minute
-	// local prompt-processing hang + big token bill). Falls back to raw Read when
-	// no checkpoint exists, so non-compacted sessions are unchanged.
-	prior, err := session.ReadResume(id)
-	if err != nil {
-		return err
-	}
-	roll, err := session.Open(id)
-	if err != nil {
-		return err
-	}
-	if s.m.eng.Sessions != nil {
-		_ = s.m.eng.Sessions.Close()
-	}
-	s.m.eng.Sessions = roll
-	s.m.messages = prior
-	// seed the cost tracker so the context-fill bar reflects the resumed
-	// conversation immediately. without this, LastInput() carries the prior
-	// session's value (or 0) until the next provider event lands — the bar
-	// updates only after the first reply. mirrors what /compact does via
-	// SetEstimatedInput. exact count overwrites this on the next Record.
-	// reset first: it also clears the estimate set right after it
-	if s.m.eng.Costs != nil {
-		s.m.eng.Costs.Reset()
-		s.m.eng.Costs.SetEstimatedInput(prompt.EstimateTokens(messagesText(prior)))
-	}
-	s.m.partial = ""
-	s.m.streamFlushed = ""
-	s.m.streamFenceOpen = false
-	s.m.pendingFlushedPrefix = ""
-	s.m.lastErr = ""
-	s.m.state = StateIdle
-	// Reset printedCount so flush() will emit the resumed transcript into
-	// terminal scrollback. The slash-command caller (runSlash) calls flush
-	// after Run() returns.
-	s.m.printedCount = 0
-	return nil
-}
-
-// messagesText flattens a transcript into a single string for token
-// estimation. Includes assistant/user text and tool-result bodies (the heavy
-// part of a resumed context), skips ephemeral UI-only echoes.
-func messagesText(msgs []types.Message) string {
-	var sb strings.Builder
-	for _, m := range msgs {
-		if m.Ephemeral {
-			continue
-		}
-		for _, b := range m.Content {
-			if b.Text != "" {
-				sb.WriteString(b.Text)
-				sb.WriteByte('\n')
-			}
-			if b.Result != nil && b.Result.Content != "" {
-				sb.WriteString(b.Result.Content)
-				sb.WriteByte('\n')
-			}
-		}
-	}
-	return sb.String()
-}
-
-// OpenResume asks the TUI to display the interactive resume picker.
-func (s *tuiSide) OpenResume() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	s.m.resumeRequested = true
-	return nil
-}
-
-// OpenRewind asks the TUI to display the interactive rewind picker.
-func (s *tuiSide) OpenRewind() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	s.m.rewindRequested = true
-	return nil
-}
-
-// SaveCheckpoint snapshots the work-tree now, keyed to the latest message so it
-// surfaces against the current turn in the rewind picker.
-func (s *tuiSide) SaveCheckpoint(label string) (string, error) {
-	if s.m == nil || s.m.checkpoints == nil {
-		return "", errors.New("checkpoints disabled")
-	}
-	key := ""
-	if n := len(s.m.messages); n > 0 {
-		key = s.m.messages[n-1].ID
-	}
-	if key == "" {
-		return "", errors.New("nothing to checkpoint yet")
-	}
-	return s.m.checkpoints.Snapshot(key, label)
-}
-
-// NewSession clears scrollback for a fresh conversation. Past content
-// stays in the terminal scrollback (we can't unprint stdout); flush()
-// resets its counter so future messages print correctly. Swaps the engine
-// rollout to a fresh uuid and resets the cost tracker so the context-fill
-// indicator drops back to 0% (without these, the next turn would re-send
-// the prior conversation and LastInput would still reflect the old fill).
-func (s *tuiSide) NewSession() error {
-	if s.m == nil {
-		return nil
-	}
-	if s.m.eng != nil && s.m.engineBusy() {
-		return errEngineBusy
-	}
-	s.m.messages = nil
-	s.m.partial = ""
-	s.m.streamFlushed = ""
-	s.m.streamFenceOpen = false
-	s.m.pendingFlushedPrefix = ""
-	s.m.lastErr = ""
-	s.m.state = StateIdle
-	s.m.printedCount = 0
-	if s.m.eng != nil {
-		if s.m.eng.Sessions != nil {
-			_ = s.m.eng.Sessions.Close()
-		}
-		roll, err := session.Open(uuid.NewString())
-		if err != nil {
-			return err
-		}
-		s.m.eng.Sessions = roll
-		s.m.eng.InitialMessages = nil
-		if s.m.eng.Costs != nil {
-			s.m.eng.Costs.Reset()
-		}
-	}
-	return nil
+	return s.armPane("picker", func(m *Model) bool { return m.picker != nil }, func(m *Model) {
+		m.handoffRequested = true
+		m.handoffActive = true
+	})
 }
 
 // CopyLast requires a clipboard dependency we haven't pulled in yet.
@@ -311,62 +170,25 @@ func (s *tuiSide) Quit() {
 // OpenTree flips a sentinel that Model.Update consumes to dispatch
 // ToggleSessionTreeMsg on the next tick.
 func (s *tuiSide) OpenTree() error {
-	if s.m == nil {
-		return nil
+	if s.m != nil {
+		s.m.treeRequested = true
 	}
-	s.m.treeRequested = true
 	return nil
 }
 
 // OpenCost flips a sentinel for the cost monitor pane.
 func (s *tuiSide) OpenCost() error {
-	if s.m == nil {
-		return nil
+	if s.m != nil {
+		s.m.costRequested = true
 	}
-	s.m.costRequested = true
 	return nil
 }
 
 // OpenUsage flips a sentinel for the historical usage pane. Returns an error
 // when there is no live model (headless) so the caller falls back to text.
 func (s *tuiSide) OpenUsage() error {
-	if s.m == nil {
-		return errors.New("no tui")
-	}
-	s.m.usageRequested = true
-	return nil
+	return s.arm(func(m *Model) { m.usageRequested = true })
 }
 
 // UsageText renders the usage overview as plain text (headless fallback).
 func (s *tuiSide) UsageText() string { return renderUsageText() }
-
-// ForkSession forks the active session at fromMsgID (or fully if empty) and
-// swaps the engine's rollout to the new one. Existing scrollback is cleared.
-func (s *tuiSide) ForkSession(fromMsgID string) error {
-	if s.m == nil || s.m.eng == nil || s.m.eng.Sessions == nil {
-		return errors.New("no active session")
-	}
-	if s.m.engineBusy() {
-		return errEngineBusy
-	}
-	newR, err := session.Fork(s.m.eng.Sessions.ID(), fromMsgID)
-	if err != nil {
-		return err
-	}
-	_ = s.m.eng.Sessions.Close()
-	s.m.eng.Sessions = newR
-	s.m.messages = nil
-	s.m.partial = ""
-	s.m.streamFlushed = ""
-	s.m.streamFenceOpen = false
-	s.m.pendingFlushedPrefix = ""
-	s.m.lastErr = ""
-	s.m.state = StateIdle
-	s.m.printedCount = 0
-	return nil
-}
-
-// CloneSession is Fork with no message id — copies the full session.
-func (s *tuiSide) CloneSession() error {
-	return s.ForkSession("")
-}

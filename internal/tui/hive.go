@@ -79,9 +79,6 @@ func (h *Hive) loadSessions(sessions []types.Session) {
 	}
 }
 
-// Init satisfies tea.Model.
-func (h *Hive) Init() tea.Cmd { return nil }
-
 // Update handles toggle messages for the full view. The host model owns the
 // keybinding (Ctrl+H) and forwards a ToggleHiveMsg.
 func (h *Hive) Update(msg tea.Msg) (*Hive, tea.Cmd) {
@@ -156,10 +153,7 @@ func (h *Hive) Render(width int) string {
 // RenderFull renders the Ctrl+H full hive view: a 3-wide hex grid of active
 // bees followed by a list of recent sessions.
 func (h *Hive) RenderFull(width, height int) string {
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Hive · all bees")
+	title := paneTitle("⬢ Hive · all bees")
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n\n")
@@ -200,10 +194,7 @@ func (h *Hive) RenderFull(width, height int) string {
 func renderHexGrid(bees []Bee, perRow int) string {
 	var b strings.Builder
 	for i := 0; i < len(bees); i += perRow {
-		end := i + perRow
-		if end > len(bees) {
-			end = len(bees)
-		}
+		end := min(i+perRow, len(bees))
 		var cells []string
 		for _, bee := range bees[i:end] {
 			cells = append(cells, renderHexCard(bee))

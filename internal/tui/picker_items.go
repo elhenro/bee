@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,13 +24,9 @@ type modelItem struct {
 	desc    string
 }
 
-func defaultLister(ctx context.Context, name string, cfg config.ProviderConfig) ([]llm.Model, error) {
-	return llm.ListModels(ctx, name, cfg)
-}
-
-// fuzzyAll runs fuzzy.Find on a pool, or returns pool-order matches when the
+// FuzzyAll runs fuzzy.Find on a pool, or returns pool-order matches when the
 // query is empty so the renderer stays a single code path.
-func fuzzyAll[T any](query string, pool []T, hayFn func(int) string) []fuzzy.Match {
+func FuzzyAll[T any](query string, pool []T, hayFn func(int) string) []fuzzy.Match {
 	q := strings.TrimSpace(query)
 	if q == "" {
 		out := make([]fuzzy.Match, len(pool))

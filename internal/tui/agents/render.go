@@ -2,6 +2,7 @@ package agents
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -9,11 +10,6 @@ import (
 
 	"github.com/elhenro/bee/internal/bgreg"
 )
-
-// row is one agent in the list, slotted into a section.
-type row struct {
-	bgreg.Status
-}
 
 // sectionKind groups rows for display.
 type sectionKind int
@@ -46,23 +42,18 @@ func (k sectionKind) title() string {
 // stable: needs-input first, then running, done-unmerged, merged.
 type section struct {
 	kind sectionKind
-	rows []row
+	rows []bgreg.Status
 }
 
 func classify(s bgreg.Status) sectionKind {
-	if s.State == bgreg.StateFailed {
+	switch {
+	case s.State == bgreg.StateFailed:
 		return secErrors
-	}
-	if s.MergeState == bgreg.MergeStateConflict {
+	case s.MergeState == bgreg.MergeStateConflict, s.State == bgreg.StateAwaiting:
 		return secNeedsInput
-	}
-	if s.State == bgreg.StateAwaiting {
-		return secNeedsInput
-	}
-	if s.MergeState == bgreg.MergeStateMerged {
+	case s.MergeState == bgreg.MergeStateMerged:
 		return secMerged
-	}
-	if s.State == bgreg.StateDone {
+	case s.State == bgreg.StateDone:
 		return secDoneUnmerged
 	}
 	return secRunning
@@ -70,10 +61,10 @@ func classify(s bgreg.Status) sectionKind {
 
 // buildSections groups statuses into the four fixed sections in render order.
 func buildSections(all []bgreg.Status) []section {
-	groups := map[sectionKind][]row{}
+	groups := map[sectionKind][]bgreg.Status{}
 	for _, s := range all {
 		k := classify(s)
-		groups[k] = append(groups[k], row{s})
+		groups[k] = append(groups[k], s)
 	}
 	var out []section
 	for _, k := range []sectionKind{secErrors, secNeedsInput, secRunning, secDoneUnmerged, secMerged} {
@@ -86,8 +77,8 @@ func buildSections(all []bgreg.Status) []section {
 
 // flatten returns rows in render order alongside their absolute index, so
 // arrow-key navigation can address them via a single int.
-func flatten(secs []section) []row {
-	var out []row
+func flatten(secs []section) []bgreg.Status {
+	var out []bgreg.Status
 	for _, s := range secs {
 		out = append(out, s.rows...)
 	}
@@ -141,17 +132,12 @@ func renderHeader(all []bgreg.Status, pendingModel, pendingProvider string, pref
 func sectionHint(sec section) string {
 	switch sec.kind {
 	case secDoneUnmerged:
-		for _, r := range sec.rows {
-			if r.Status.State == bgreg.StateDone {
-				return "   (auto-merging…)"
-			}
+		if slices.ContainsFunc(sec.rows, func(r bgreg.Status) bool { return r.State == bgreg.StateDone }) {
+			return "   (auto-merging…)"
 		}
-		return ""
 	case secNeedsInput:
-		for _, r := range sec.rows {
-			if r.Status.MergeState == bgreg.MergeStateConflict {
-				return "   (open agent to resolve conflict)"
-			}
+		if slices.ContainsFunc(sec.rows, func(r bgreg.Status) bool { return r.MergeState == bgreg.MergeStateConflict }) {
+			return "   (open agent to resolve conflict)"
 		}
 		return "   (open agent to reply)"
 	}
@@ -159,26 +145,26 @@ func sectionHint(sec section) string {
 }
 
 // renderRow formats one agent into a status line (and optional peek line).
-func renderRow(r row, selected bool, width int, prefs Prefs) string {
+func renderRow(r bgreg.Status, selected bool, width int, prefs Prefs) string {
 	marker := "  "
 	if selected {
 		marker = cursorStyle.Render("❯ ")
 	}
-	state := stateGlyph(r.Status)
+	state := stateGlyph(r)
 	tw := taskWidth(width)
-	task := truncate(r.Status.Task, tw)
-	elapsed := humanDuration(r.Status.StartedAt, r.Status.FinishedAt)
-	tokens := fmt.Sprintf("↑%s ↓%s", humanK(r.Status.InputTokens), humanK(r.Status.OutputTokens))
+	task := truncate(r.Task, tw)
+	elapsed := humanDuration(r.StartedAt, r.FinishedAt)
+	tokens := fmt.Sprintf("↑%s ↓%s", humanK(r.InputTokens), humanK(r.OutputTokens))
 
 	line1 := fmt.Sprintf("%s%s %-*s  %-9s  %-12s", marker, state, tw, task, elapsed, tokens)
 	if prefs.ShowChip {
-		model := shortModel(r.Status.Model)
+		model := shortModel(r.Model)
 		line1 += "  " + modelChipStyle.Render("["+model+"]")
 	}
 
 	if prefs.ShowBadges {
 		badge := ""
-		switch r.Status.MergeState {
+		switch r.MergeState {
 		case bgreg.MergeStateConflict:
 			badge = badStyle.Render("⚠ conflict")
 		case bgreg.MergeStateBlocked:
@@ -188,7 +174,7 @@ func renderRow(r row, selected bool, width int, prefs Prefs) string {
 		case bgreg.MergeStateMerging:
 			badge = busyStyle.Render("⤴ merging")
 		case bgreg.MergeStateUnmerged:
-			if r.Status.State == bgreg.StateDone {
+			if r.State == bgreg.StateDone {
 				badge = warnStyle.Render("⚠ unmerged")
 			}
 		}
@@ -201,15 +187,15 @@ func renderRow(r row, selected bool, width int, prefs Prefs) string {
 		return line1
 	}
 
-	peek := strings.TrimSpace(r.Status.LastResponse)
+	peek := strings.TrimSpace(r.LastResponse)
 	// a blocked agent's last reply is stale; the reason is what needs a human.
-	if r.Status.MergeState == bgreg.MergeStateBlocked && r.Status.ConflictMsg != "" {
-		peek = "blocked: " + r.Status.ConflictMsg
+	if r.MergeState == bgreg.MergeStateBlocked && r.ConflictMsg != "" {
+		peek = "blocked: " + r.ConflictMsg
 	}
 	if peek == "" {
 		peek = dimStyle.Render("(no response yet)")
 	} else {
-		peek = "    " + dimStyle.Render("⎿  "+truncateLines(peek, width-10, 1))
+		peek = "    " + dimStyle.Render("⎿  "+truncateLines(peek, width-10))
 	}
 	return line1 + "\n" + peek
 }
@@ -249,10 +235,7 @@ func humanDuration(start, finish time.Time) string {
 	if end.IsZero() {
 		end = time.Now()
 	}
-	d := end.Sub(start)
-	if d < 0 {
-		d = 0
-	}
+	d := max(end.Sub(start), 0)
 	switch {
 	case d < time.Minute:
 		return fmt.Sprintf("%ds", int(d.Seconds()))
@@ -300,10 +283,8 @@ func truncate(s string, n int) string {
 }
 
 // truncateLines clips s to a single line of at most width runes (multi-line
-// inputs are collapsed). Currently lines argument is reserved for future
-// multi-line peek support.
-func truncateLines(s string, width, lines int) string {
-	_ = lines
+// inputs are collapsed).
+func truncateLines(s string, width int) string {
 	s = strings.ReplaceAll(s, "\n", " ⏎ ")
 	if width < 10 {
 		width = 80

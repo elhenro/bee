@@ -61,20 +61,14 @@ func smoothLoaderRate(prev float64, delta int) float64 {
 // per-particle phase + lane + trail length keep every turn visually distinct.
 func renderTokenStream(stats LoaderStats, frame, cells int) string {
 	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 
 	// particle count: a sparse floor for the idle wait plus a throughput
 	// term. Capped at one bee per cell so wide rows don't smear solid.
 	// Floor 5 keeps the loader from collapsing to a single dot on wide
 	// terminals; the throughput term still dominates as soon as tokens flow.
-	n := 5 + stats.Rate/3
-	if n > cells {
-		n = cells
-	}
-	if n < 5 {
-		n = 5
-	}
+	n := min(5+stats.Rate/3, cells)
+	n = max(n, 5)
 
 	rng := newLCG(stats.Seed)
 	cycle := w + 8
@@ -90,9 +84,7 @@ func renderTokenStream(stats LoaderStats, frame, cells int) string {
 		}
 		c.SetPixel(x, lane, true)
 		for t := 1; t <= trail; t++ {
-			if x-t >= 0 {
-				c.SetPixel(x-t, lane, true)
-			}
+			c.SetPixel(x-t, lane, true)
 		}
 	}
 	return c.ToBraille()

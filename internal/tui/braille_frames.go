@@ -24,6 +24,13 @@ func clampCells(cells int) int {
 	return cells
 }
 
+// newLoaderCanvas clamps cells and returns a one-row canvas with its pixel
+// width.
+func newLoaderCanvas(cells int) (*DrawilleCanvas, int) {
+	w := clampCells(cells) * braillePxW
+	return NewDrawilleCanvas(w, braillePxH), w
+}
+
 // renderBraillePulse — a stylized bee silhouette (4×4 px) that beats its
 // wings on a 6-frame cadence. Centered horizontally, gentle.
 var brailleBeeIdle = []byte{
@@ -41,9 +48,7 @@ var brailleBeeFlap = []byte{
 }
 
 func renderBraillePulse(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	sprite := brailleBeeIdle
 	if (frame/6)%2 == 0 {
 		sprite = brailleBeeFlap

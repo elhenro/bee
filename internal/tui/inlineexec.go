@@ -30,10 +30,11 @@ func runInlineShell(ctx context.Context, registry *tools.Registry, cmd string, s
 	if cmd == "" {
 		return inlineExecResult{Silent: silent}
 	}
-	if registry == nil {
-		return inlineExecResult{Output: "no bash tool registered", Silent: silent, IsError: true}
+	var sh tools.Tool
+	ok := false
+	if registry != nil {
+		sh, ok = registry.Get("bash")
 	}
-	sh, ok := registry.Get("bash")
 	if !ok {
 		return inlineExecResult{Output: "no bash tool registered", Silent: silent, IsError: true}
 	}
@@ -64,10 +65,7 @@ func parseInlinePrefix(text string) (cmd string, bangCount int, isInline bool) {
 // turn. defaultSilent is the user's configured default; bangCount=2 inverts
 // it so `!!` is always the escape hatch from whichever mode is active.
 func resolveBangSilent(defaultSilent bool, bangCount int) bool {
-	if bangCount == 2 {
-		return !defaultSilent
-	}
-	return defaultSilent
+	return defaultSilent != (bangCount == 2)
 }
 
 // inlineShellDoneMsg carries a finished `!cmd` back to Update.

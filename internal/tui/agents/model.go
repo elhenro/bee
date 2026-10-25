@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -32,7 +31,7 @@ type model struct {
 	input textarea.Model
 
 	all      []bgreg.Status
-	flat     []row
+	flat     []bgreg.Status
 	sections []section
 	sel      int
 
@@ -147,9 +146,7 @@ func (m model) refresh() model {
 	if m.sel >= len(m.flat) {
 		m.sel = 0
 	}
-	if m.sel < 0 {
-		m.sel = 0
-	}
+	m.sel = max(m.sel, 0)
 	if m.notice != "" && time.Now().After(m.noticeTTL) {
 		m.notice = ""
 	}
@@ -177,18 +174,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m = m.refresh()
+		cmd := tickCmd()
 		if m.picker != nil && m.picker.Active() {
-			newP, cmd := m.picker.Update(msg)
-			m.picker = newP
-			if m.exitReq {
-				return m, tea.Quit
-			}
-			return m, tea.Batch(tickCmd(), cmd)
+			var pc tea.Cmd
+			m.picker, pc = m.picker.Update(msg)
+			cmd = tea.Batch(cmd, pc)
 		}
 		if m.exitReq {
 			return m, tea.Quit
 		}
-		return m, tickCmd()
+		return m, cmd
 
 	case refreshMsg:
 		m = m.refresh()
@@ -222,15 +217,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentsSettingsToggleMsg:
 		applyPrefToggle(&m.prefs, msg.key, msg.value)
-		if err := persistToggle(msg.key, msg.value); err != nil {
+		if err := persist(msg.key, msg.value); err != nil {
 			m.flash("persist failed: " + err.Error())
 		}
 		return m, nil
 
 	case tea.KeyMsg:
 		if m.picker != nil && m.picker.Active() {
-			newP, cmd := m.picker.Update(msg)
-			m.picker = newP
+			var cmd tea.Cmd
+			m.picker, cmd = m.picker.Update(msg)
 			return m, cmd
 		}
 		// settings pane claims keys while open; everything else flows through.
@@ -269,72 +264,15 @@ func (m *model) flash(s string) {
 }
 
 // selected returns the currently focused row, ok=false if empty list.
-func (m model) selected() (row, bool) {
+func (m model) selected() (bgreg.Status, bool) {
 	if m.sel < 0 || m.sel >= len(m.flat) {
-		return row{}, false
+		return bgreg.Status{}, false
 	}
 	return m.flat[m.sel], true
 }
 
-func (m model) View() string {
-	if m.settingsPane.isOpen() {
-		return m.settingsPane.view(m.width, m.height)
-	}
-	var b strings.Builder
-	b.WriteString(renderHeader(m.all, m.pendingModel, m.pendingProvider, m.prefs))
-	b.WriteString("\n\n")
-
-	if len(m.flat) == 0 {
-		b.WriteString(dimStyle.Render("  no agents yet — type a task below and press enter to spawn one."))
-		b.WriteString("\n\n")
-	} else {
-		idx := 0
-		for _, sec := range m.sections {
-			if sec.kind == secMerged && !m.prefs.ShowMerged {
-				// hidden section still consumes the flat-index range so the
-				// arrow-key cursor stays in sync with what's drawn.
-				idx += len(sec.rows)
-				continue
-			}
-			style := sectionStyle
-			if sec.kind == secErrors {
-				style = errSectionStyle
-			}
-			label := " " + style.Render(sec.kind.title()) + dimStyle.Render(fmt.Sprintf(" · %d", len(sec.rows)))
-			label += dimStyle.Render(sectionHint(sec))
-			b.WriteString(label)
-			b.WriteString("\n")
-			for _, r := range sec.rows {
-				selected := idx == m.sel
-				b.WriteString(renderRow(r, selected, m.width, m.prefs))
-				b.WriteString("\n")
-				idx++
-			}
-			b.WriteString("\n")
-		}
-	}
-
-	if m.palette.Active {
-		b.WriteString(m.palette.View())
-		b.WriteString("\n")
-	}
-	if m.picker != nil && m.picker.Active() {
-		b.WriteString(m.picker.View())
-		b.WriteString("\n")
-	}
-	b.WriteString(m.input.View())
-	if m.notice != "" {
-		b.WriteString("\n")
-		b.WriteString(badStyle.Render("• " + m.notice))
-	}
-	return b.String()
-}
-
 // spawnAgent calls agents.Spawn for the current input + pending model/provider.
 func (m *model) spawnAgent(prompt string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = ctx
 	res, err := agents.Spawn(agents.SpawnOpts{
 		Prompt:   prompt,
 		Model:    m.pendingModel,
@@ -346,11 +284,4 @@ func (m *model) spawnAgent(prompt string) {
 		return
 	}
 	m.flash("spawned " + res.SessionID[:8] + " on " + res.Branch)
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

@@ -1,11 +1,6 @@
 package tui
 
-import (
-	"strconv"
-	"strings"
-
-	"github.com/charmbracelet/lipgloss"
-)
+import "github.com/charmbracelet/lipgloss"
 
 // maxPaletteRows caps visible rows so the picker never blots out scrollback
 // on short terminals. Overflow is summarized with a "+N more" footer.
@@ -23,101 +18,13 @@ func (p PaletteModel) View() string {
 		w = 80
 	}
 
-	dim := lipgloss.NewStyle().Foreground(fgOyster)
-	hl := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 	cmdGlyph := lipgloss.NewStyle().Foreground(fgSquid)
 	skillGlyph := lipgloss.NewStyle().Foreground(accentCode)
-	selMark := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
-	nameSel := lipgloss.NewStyle().Foreground(fgButter).Bold(true)
-	nameNorm := lipgloss.NewStyle().Foreground(fgSmoke)
-
-	if len(p.matches) == 0 {
-		return dim.Render("   no matches")
-	}
-
-	total := len(p.matches)
-	start := 0
-	if total > maxPaletteRows {
-		if p.selected >= maxPaletteRows {
-			start = p.selected - maxPaletteRows + 1
+	return renderPickRows(p.matches, p.selected, w, maxPaletteRows, "", func(idx int) pickRow {
+		e := p.pool[idx]
+		if e.Kind == EntrySkill {
+			return pickRow{glyph: "#", glyphStyle: skillGlyph, name: e.Name, desc: e.Description}
 		}
-		if start+maxPaletteRows > total {
-			start = total - maxPaletteRows
-		}
-		if start < 0 {
-			start = 0
-		}
-	}
-	end := start + maxPaletteRows
-	if end > total {
-		end = total
-	}
-	rows := p.matches[start:end]
-	overflowAbove := start
-	overflowBelow := total - end
-
-	var b strings.Builder
-	if overflowAbove > 0 {
-		b.WriteString(dim.Render("   ↑ " + strconv.Itoa(overflowAbove) + " more"))
-		b.WriteString("\n")
-	}
-	for i, m := range rows {
-		entry := p.pool[m.Index]
-		absIdx := start + i
-
-		var line strings.Builder
-		if absIdx == p.selected {
-			line.WriteString(" " + selMark.Render(glyphSel))
-		} else {
-			line.WriteString("  ")
-		}
-		line.WriteString(" ")
-
-		glyph := "/"
-		gs := cmdGlyph
-		if entry.Kind == EntrySkill {
-			glyph = "#"
-			gs = skillGlyph
-		}
-		line.WriteString(gs.Render(glyph))
-
-		// highlight matched runes within name range only. fuzzy returns
-		// indices into "name description"; mask to [0, nameLen).
-		nameLen := len(entry.Name)
-		matchSet := map[int]struct{}{}
-		for _, idx := range m.MatchedIndexes {
-			if idx >= 0 && idx < nameLen {
-				matchSet[idx] = struct{}{}
-			}
-		}
-		ns := nameNorm
-		if absIdx == p.selected {
-			ns = nameSel
-		}
-		for j, r := range entry.Name {
-			ch := string(r)
-			if _, ok := matchSet[j]; ok {
-				line.WriteString(hl.Render(ch))
-			} else {
-				line.WriteString(ns.Render(ch))
-			}
-		}
-
-		if entry.Description != "" {
-			line.WriteString(dim.Render("  " + entry.Description))
-		}
-
-		row := line.String()
-		if lipglossWidth(row) > w {
-			row = truncateVisible(row, w)
-		}
-		b.WriteString(row)
-		if i < len(rows)-1 || overflowBelow > 0 {
-			b.WriteString("\n")
-		}
-	}
-	if overflowBelow > 0 {
-		b.WriteString(dim.Render("   ↓ " + strconv.Itoa(overflowBelow) + " more"))
-	}
-	return b.String()
+		return pickRow{glyph: "/", glyphStyle: cmdGlyph, name: e.Name, desc: e.Description}
+	})
 }

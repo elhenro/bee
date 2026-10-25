@@ -11,13 +11,9 @@ import "math"
 // gives a motion-blur read.
 func renderBrailleSwarm(frame, cells int) string {
 	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	// scale particle count with width — roughly one bee per 4 cells.
-	n := cells / 4
-	if n < 3 {
-		n = 3
-	}
+	n := max(cells/4, 3)
 	for i := 0; i < n; i++ {
 		// phase per particle uses a coprime gap so they never sync up.
 		t := float64(frame)*0.28 + float64(i)*1.379
@@ -62,12 +58,8 @@ func renderBrailleCaretSwarm(frame int) string {
 // stays populated. Reads as foraging bees leaving and returning.
 func renderBrailleForage(frame, cells int) string {
 	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
-	n := cells / 3
-	if n < 4 {
-		n = 4
-	}
+	c, w := newLoaderCanvas(cells)
+	n := max(cells/3, 4)
 	cycle := w + 16
 	for i := 0; i < n; i++ {
 		// stagger so bees emerge one after another, not in a wall.
@@ -78,9 +70,7 @@ func renderBrailleForage(frame, cells int) string {
 		y := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(braillePxH-1)))
 		c.SetPixel(x, y, true)
 		// short trail toward the hive.
-		if x-1 >= 0 {
-			c.SetPixel(x-1, y, true)
-		}
+		c.SetPixel(x-1, y, true)
 	}
 	// hive marker — solid block at left edge, always lit.
 	for y := 0; y < braillePxH; y++ {
@@ -93,14 +83,9 @@ func renderBrailleForage(frame, cells int) string {
 // along the figure-8 path. This is the actual pattern honeybees use to
 // encode flower direction and distance back at the hive.
 func renderBrailleFigure8(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cx, cy := w/2, braillePxH/2
-	r := float64(w/2 - 2)
-	if r < 6 {
-		r = 6
-	}
+	r := max(float64(w/2-2), 6)
 	rh := 1.5
 	n := 3
 	t := float64(frame) * 0.15
@@ -125,14 +110,9 @@ func renderBrailleFigure8(frame, cells int) string {
 // center, all the same direction. Tight, fast read — like a hive being
 // defended or a queen flight.
 func renderBrailleVortex(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cx, cy := w/2, braillePxH/2
-	maxR := float64(w/2 - 1)
-	if maxR < 6 {
-		maxR = 6
-	}
+	maxR := max(float64(w/2-1), 6)
 	rings := []struct {
 		rx, ry float64
 		n      int
@@ -159,12 +139,8 @@ func renderBrailleVortex(frame, cells int) string {
 // shoves the whole swarm rightward briefly. Looks like bees fighting wind.
 func renderBrailleGust(frame, cells int) string {
 	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
-	n := cells / 4
-	if n < 3 {
-		n = 3
-	}
+	c, w := newLoaderCanvas(cells)
+	n := max(cells/4, 3)
 	// slow lateral breath — bees lean into wind.
 	bias := math.Sin(float64(frame)*0.04) * float64(w) * 0.15
 	// gust spike: every 40 frames, half-period gust kicks for 8 frames.
@@ -175,12 +151,7 @@ func renderBrailleGust(frame, cells int) string {
 		t := float64(frame)*0.28 + float64(i)*1.379
 		base := (math.Sin(t) + 1) * 0.5 * float64(w-1)
 		x := int(math.Round(base + bias))
-		if x < 0 {
-			x = 0
-		}
-		if x >= w {
-			x = w - 1
-		}
+		x = min(max(x, 0), w-1)
 		y := i % braillePxH
 		c.SetPixel(x, y, true)
 	}
@@ -192,14 +163,10 @@ func renderBrailleGust(frame, cells int) string {
 // repeat. Reads as a predator scare.
 func renderBrailleScatter(frame, cells int) string {
 	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cx, cy := w/2, braillePxH/2
 	maxR := float64(w / 2)
-	n := cells / 3
-	if n < 6 {
-		n = 6
-	}
+	n := max(cells/3, 6)
 	// phase 0..1 — slow cosine cycle: 0 = grouped, 1 = fully scattered.
 	phase := (1 - math.Cos(float64(frame)*0.07)) / 2
 	r := phase * maxR
@@ -213,149 +180,11 @@ func renderBrailleScatter(frame, cells int) string {
 	return c.ToBraille()
 }
 
-// renderBrailleCompactConverge — /compact variant 1. Swarm streams in
-// from both edges toward center while wandering vertically on a sine,
-// then breathes back out. Reuses the multi-particle phase-offset sine
-// technique from renderBrailleSwarm. Reads as memory chunks being
-// gathered to be folded into a summary.
-func renderBrailleCompactConverge(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
-	cx := w / 2
-	n := cells / 3
-	if n < 5 {
-		n = 5
-	}
-	// phase 0..1..0 — 0 = converged at center, 1 = back at edges.
-	phase := (1 - math.Cos(float64(frame)*0.06)) / 2
-	for i := 0; i < n; i++ {
-		side := 1.0
-		if i%2 == 1 {
-			side = -1.0
-		}
-		// rest jitter so converged bees don't collapse onto one pixel.
-		rest := float64((i%3)-1) * 1.5
-		edge := side * float64(cx-1)
-		x := int(math.Round(float64(cx) + rest + phase*(edge-rest)))
-		if x < 0 {
-			x = 0
-		}
-		if x >= w {
-			x = w - 1
-		}
-		// vertical wander — phase-offset sine, coprime gap per bee.
-		t := float64(frame)*0.28 + float64(i)*1.379
-		y := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(braillePxH-1)))
-		c.SetPixel(x, y, true)
-		// trail one px toward center for motion-blur read.
-		dx := -1
-		if side < 0 {
-			dx = 1
-		}
-		if phase > 0.05 {
-			tx := x + dx
-			if tx >= 0 && tx < w {
-				c.SetPixel(tx, y, true)
-			}
-		}
-	}
-	// center anchor — always lit so the bar never goes fully dark.
-	c.SetPixel(cx, braillePxH/2, true)
-	return c.ToBraille()
-}
-
-// renderBrailleCompactVortex — /compact variant 2. Bees orbit center on
-// shrinking elliptical paths, collapsing inward to a tight cluster then
-// flaring back out. Layered radii (sin-perturbed per bee) avoid the bees
-// looking like a single ring. Vertical squashed since braille canvas is
-// only 4 px tall.
-func renderBrailleCompactVortex(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
-	cx, cy := w/2, braillePxH/2
-	maxR := float64(cx - 1)
-	if maxR < 4 {
-		maxR = 4
-	}
-	n := cells / 2
-	if n < 6 {
-		n = 6
-	}
-	// radial breath: 1 = scattered to maxR, 0 = pinned at center.
-	phase := (1 - math.Cos(float64(frame)*0.05)) / 2
-	for i := 0; i < n; i++ {
-		a := float64(frame)*0.20 + float64(i)*(2*math.Pi/float64(n))
-		// per-bee radius modulation so they don't look like one ring.
-		layer := 0.6 + 0.4*math.Sin(float64(i)*1.7)
-		r := phase * maxR * layer
-		x := cx + int(math.Round(r*math.Cos(a)))
-		// y compressed (×0.35) — braille is 8x denser horizontally than vertically.
-		y := cy + int(math.Round(r*0.35*math.Sin(a)))
-		if x < 0 || x >= w {
-			continue
-		}
-		c.SetPixel(x, y, true)
-		// short trail along the orbit tangent for swirl read.
-		ap := a - 0.20
-		xp := cx + int(math.Round(r*math.Cos(ap)))
-		yp := cy + int(math.Round(r*0.35*math.Sin(ap)))
-		if xp >= 0 && xp < w && (xp != x || yp != y) {
-			c.SetPixel(xp, yp, true)
-		}
-	}
-	// pulsing center marker — destination of the compression.
-	c.SetPixel(cx, cy, true)
-	return c.ToBraille()
-}
-
-// renderBrailleCompactFunnel — /compact variant 3. Bees evenly spread
-// across the full width get pulled toward the center column, like
-// memory pages funneling into a digest. Density visibly increases near
-// the center as phase rises. Vertical sine wander keeps each bee alive
-// during the squeeze.
-func renderBrailleCompactFunnel(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
-	cx := w / 2
-	n := cells
-	if n < 8 {
-		n = 8
-	}
-	// 0 = scattered across full width, 1 = collapsed onto center column.
-	phase := (1 - math.Cos(float64(frame)*0.045)) / 2
-	for i := 0; i < n; i++ {
-		home := int(math.Round(float64(i) * float64(w-1) / float64(n-1)))
-		x := home + int(math.Round(phase*float64(cx-home)))
-		if x < 0 {
-			x = 0
-		}
-		if x >= w {
-			x = w - 1
-		}
-		t := float64(frame)*0.22 + float64(i)*0.78
-		y := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(braillePxH-1)))
-		c.SetPixel(x, y, true)
-	}
-	// once collapsed past ~70%, paint accumulating column at center so
-	// the digest read is unambiguous.
-	if phase > 0.7 {
-		for y := 0; y < braillePxH; y++ {
-			c.SetPixel(cx, y, true)
-		}
-	}
-	return c.ToBraille()
-}
-
 // renderBrailleFlock — 3 cohesive sub-groups of bees flying together.
 // Each cluster has its own center motion; bees inside the cluster jitter
 // around the center. Boids-lite — cohesion + alignment without separation.
 func renderBrailleFlock(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	clusters := 3
 	perCluster := 3
 	for k := 0; k < clusters; k++ {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -22,7 +23,7 @@ var imageExts = map[string]string{
 // file. p should already be backslash-unescaped; loadImage strips surrounding
 // quotes and expands ~. Returns the block, its basename, and ok=false otherwise.
 func loadImage(p string) (types.ContentBlock, string, bool) {
-	p = expandHome(unquote(strings.TrimSpace(p)))
+	p = tools.ExpandHome(unquote(strings.TrimSpace(p)))
 	mt, ok := imageExts[strings.ToLower(filepath.Ext(p))]
 	if !ok {
 		return types.ContentBlock{}, "", false
@@ -35,7 +36,7 @@ func loadImage(p string) (types.ContentBlock, string, bool) {
 }
 
 // imageLabel is the compact scrollback/input token for a loaded image.
-func imageLabel(base string) string { return "[Image: " + truncLabel(base) + "]" }
+func imageLabel(base string) string { return "[Image: " + truncateRunes(base, imageLabelMax) + "]" }
 
 // extractImagePaths scans text for local image-file path tokens — including the
 // shell-escaped paths a terminal inserts on drag-and-drop — loads each as an
@@ -84,33 +85,30 @@ func unescape(s string) string {
 
 // start/end are rune offsets of the token in the scanned text
 type shellToken struct {
-	raw, unescaped string
-	start, end     int
+	unescaped  string
+	start, end int
 }
 
-// splitShellLike splits on unescaped whitespace, keeping both the original
-// token (raw, escapes intact) and a backslash-unescaped form. Mirrors how a
-// terminal hands over a dragged path: spaces arrive as "\ ".
+// splitShellLike splits on unescaped whitespace, keeping the backslash-
+// unescaped form of each token. Mirrors how a terminal hands over a dragged
+// path: spaces arrive as "\ ".
 func splitShellLike(s string) []shellToken {
 	var toks []shellToken
-	var raw, un strings.Builder
+	var un strings.Builder
 	rs := []rune(s)
 	start := 0
 	flush := func(end int) {
-		if raw.Len() > 0 {
-			toks = append(toks, shellToken{raw.String(), un.String(), start, end})
-			raw.Reset()
+		if un.Len() > 0 {
+			toks = append(toks, shellToken{un.String(), start, end})
 			un.Reset()
 		}
 	}
 	for i := 0; i < len(rs); i++ {
 		c := rs[i]
 		if c == '\\' && i+1 < len(rs) && (rs[i+1] == ' ' || rs[i+1] == '\\') {
-			if raw.Len() == 0 {
+			if un.Len() == 0 {
 				start = i
 			}
-			raw.WriteRune(c)
-			raw.WriteRune(rs[i+1])
 			un.WriteRune(rs[i+1])
 			i++
 			continue
@@ -119,10 +117,9 @@ func splitShellLike(s string) []shellToken {
 			flush(i)
 			continue
 		}
-		if raw.Len() == 0 {
+		if un.Len() == 0 {
 			start = i
 		}
-		raw.WriteRune(c)
 		un.WriteRune(c)
 	}
 	flush(len(rs))
@@ -136,23 +133,4 @@ func unquote(s string) string {
 		}
 	}
 	return s
-}
-
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, strings.TrimPrefix(p, "~"))
-		}
-	}
-	return p
-}
-
-// truncLabel shortens a filename to imageLabelMax runes, ellipsizing the middle
-// of the tail so the extension stays visible.
-func truncLabel(name string) string {
-	r := []rune(name)
-	if len(r) <= imageLabelMax {
-		return name
-	}
-	return string(r[:imageLabelMax-1]) + "…"
 }

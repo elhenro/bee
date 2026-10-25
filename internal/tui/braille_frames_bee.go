@@ -11,19 +11,12 @@ import "math"
 // random direction reversal driven by a stuttering hash. trail shows the
 // stagger path.
 func renderBrailleDrunk(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	// base drift very slow, but stutter shoves it around.
 	t := float64(frame) * 0.06
 	stutter := math.Sin(float64(frame)*0.41) + math.Sin(float64(frame)*0.83)*0.6
 	x := int(math.Round((math.Sin(t)+1)*0.5*float64(w-1) + stutter*float64(w)*0.12))
-	if x < 0 {
-		x = 0
-	}
-	if x >= w {
-		x = w - 1
-	}
+	x = min(max(x, 0), w-1)
 	// vertical wobble — drunk bee can't hold altitude either.
 	y := int(math.Round((math.Sin(t*3) + 1) * 0.5 * float64(braillePxH-1)))
 	c.SetPixel(x, y, true)
@@ -44,9 +37,7 @@ func renderBrailleDrunk(frame, cells int) string {
 // canvas; bee has velocity, bounces off each wall. perfect "stuck waiting"
 // gag.
 func renderBrailleJar(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	// jar walls: top, bottom, left, right edges as dotted lines.
 	for x := 0; x < w; x += 2 {
 		c.SetPixel(x, 0, true)
@@ -63,14 +54,8 @@ func renderBrailleJar(frame, cells int) string {
 		return c.ToBraille()
 	}
 	// x velocity ~3 px/frame so it actually bounces fast.
-	periodX := 2 * (innerW - 1)
-	if periodX < 2 {
-		periodX = 2
-	}
-	periodY := 2 * (innerH)
-	if periodY < 2 {
-		periodY = 2
-	}
+	periodX := max(2*(innerW-1), 2)
+	periodY := max(2*(innerH), 2)
 	px := (frame * 3) % periodX
 	if px >= innerW {
 		px = periodX - px
@@ -88,12 +73,8 @@ func renderBrailleJar(frame, cells int) string {
 // the other so the party never stops.
 func renderBrailleConga(frame, cells int) string {
 	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
-	n := cells / 4
-	if n < 4 {
-		n = 4
-	}
+	c, w := newLoaderCanvas(cells)
+	n := max(cells/4, 4)
 	gap := 6
 	for i := 0; i < n; i++ {
 		x := ((frame*2)+i*gap)%(w+gap) - gap/2
@@ -116,16 +97,11 @@ var brailleQueen = []byte{
 }
 
 func renderBrailleQueen(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	cx, cy := w/2, braillePxH/2
 	c.DrawSprite(brailleQueen, 2, 2, cx-1, cy-1)
 	// 4 attendants on rotating cardinal-points orbit.
-	r := float64(w/2 - 2)
-	if r < 4 {
-		r = 4
-	}
+	r := max(float64(w/2-2), 4)
 	t := float64(frame) * 0.16
 	for i := 0; i < 4; i++ {
 		a := t + float64(i)*(math.Pi/2)
@@ -140,20 +116,13 @@ func renderBrailleQueen(frame, cells int) string {
 // hits the pool at the bottom, ripples briefly, then a new drop forms.
 // pool grows as drops accumulate, then resets when full. very slow tempo.
 func renderBrailleDrip(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	// pool at bottom row, width grows with drop count then resets.
 	dropPeriod := 24
 	dropIdx := frame / dropPeriod
-	poolW := (dropIdx % 8) * (w / 10)
-	if poolW > w {
-		poolW = w
-	}
+	poolW := min((dropIdx%8)*(w/10), w)
 	for x := w/2 - poolW/2; x <= w/2+poolW/2 && x < w; x++ {
-		if x >= 0 {
-			c.SetPixel(x, braillePxH-1, true)
-		}
+		c.SetPixel(x, braillePxH-1, true)
 	}
 	// drop position: falls top→bottom-1 over drop period.
 	t := frame % dropPeriod
@@ -166,12 +135,8 @@ func renderBrailleDrip(frame, cells int) string {
 	}
 	// splash on impact frame.
 	if dropY == braillePxH-2 {
-		if cx-2 >= 0 {
-			c.SetPixel(cx-2, braillePxH-2, true)
-		}
-		if cx+2 < w {
-			c.SetPixel(cx+2, braillePxH-2, true)
-		}
+		c.SetPixel(cx-2, braillePxH-2, true)
+		c.SetPixel(cx+2, braillePxH-2, true)
 	}
 	return c.ToBraille()
 }
@@ -180,9 +145,7 @@ func renderBrailleDrip(frame, cells int) string {
 // finish line is a dashed vertical at w-3. bees cross one by one, then
 // pop back at the start (lap mode). reads as a sports event.
 func renderBrailleMarathon(frame, cells int) string {
-	cells = clampCells(cells)
-	w := cells * braillePxW
-	c := NewDrawilleCanvas(w, braillePxH)
+	c, w := newLoaderCanvas(cells)
 	// dashed finish line near right edge.
 	finishX := w - 3
 	if finishX < 4 {
@@ -205,9 +168,7 @@ func renderBrailleMarathon(frame, cells int) string {
 		c.SetPixel(x, lane, true)
 		// trail one step back.
 		xp := x - speeds[lane]
-		if xp >= 0 && xp < w {
-			c.SetPixel(xp, lane, true)
-		}
+		c.SetPixel(xp, lane, true)
 	}
 	return c.ToBraille()
 }

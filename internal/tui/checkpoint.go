@@ -64,10 +64,5 @@ func turnLabel(msgs []types.Message) string {
 
 // previewText collapses whitespace and truncates to n runes.
 func previewText(s string, n int) string {
-	s = strings.TrimSpace(strings.Join(strings.Fields(s), " "))
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n-1]) + "…"
-	}
-	return s
+	return truncateRunes(strings.Join(strings.Fields(s), " "), n)
 }

@@ -30,9 +30,7 @@ func makeEggFrame(cw, h, idx, total int) *DrawilleCanvas {
 		ang := float64(a) / 20.0 * 2 * math.Pi
 		x := cx + int(float64(rx)*math.Cos(ang))
 		y := h/2 + int(float64(ry)*math.Sin(ang))
-		if x >= 0 && x < cw && y >= 0 && y < h {
-			c.SetPixel(x, y, true)
-		}
+		c.SetPixel(x, y, true)
 	}
 	return c
 }
@@ -45,9 +43,7 @@ func makeLarvaFrame(cw, h, idx, total int) *DrawilleCanvas {
 		x := int((math.Sin(pt*0.3)+1)*0.5*float64(cw-4)) + 2
 		amp := float64(s) / 5.0 * 0.5
 		y := h/2 + int(math.Sin(pt*2)*amp*float64(h))
-		if x >= 0 && x < cw && y >= 0 && y < h {
-			c.SetPixel(x, y, true)
-		}
+		c.SetPixel(x, y, true)
 	}
 	return c
 }
@@ -58,19 +54,13 @@ func makePupaFrame(cw, h, idx, total int) *DrawilleCanvas {
 	cx := cw / 2
 	rx := int(10 - t*2)
 	ry := int(7 - t*1.5)
-	if rx < 3 {
-		rx = 3
-	}
-	if ry < 3 {
-		ry = 3
-	}
+	rx = max(rx, 3)
+	ry = max(ry, 3)
 	for a := 0; a < 24; a++ {
 		ang := float64(a) / 24.0 * 2 * math.Pi
 		x := cx + int(float64(rx)*math.Cos(ang))
 		y := h/2 + int(float64(ry)*math.Sin(ang))
-		if x >= 0 && x < cw && y >= 0 && y < h {
-			c.SetPixel(x, y, true)
-		}
+		c.SetPixel(x, y, true)
 	}
 	return c
 }
@@ -88,9 +78,7 @@ func makeEmergeFrame(cw, h, idx, total int) *DrawilleCanvas {
 		ry := int(5 * (1 - t*0.3))
 		x := cx + int(float64(rx)*math.Cos(ang))
 		y := h/2 + int(float64(ry)*math.Sin(ang))
-		if x >= 0 && x < cw && y >= 0 && y < h {
-			c.SetPixel(x, y, true)
-		}
+		c.SetPixel(x, y, true)
 	}
 	c.SetPixel(cx, h/2, true)
 	return c
@@ -110,19 +98,14 @@ func makeFlightFrame(cw, h, idx, total int) *DrawilleCanvas {
 		bx = cx + int(bob)
 	}
 	y := h/2 + int(math.Sin(float64(idx)*0.6)*float64(h/4))
-	sprite := []byte{0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0}
-	c.DrawSprite(sprite, 4, 4, bx, y-2)
+	c.DrawSprite(brailleBeeIdle, 4, 4, bx, y-2)
 	// wing flap on alternate frames
 	if (idx/2)%2 == 0 {
 		for dx := -2; dx <= -1; dx++ {
-			if bx+dx >= 0 && bx+dx < cw {
-				c.SetPixel(bx+dx, y, true)
-			}
+			c.SetPixel(bx+dx, y, true)
 		}
 		for dx := 4; dx <= 5; dx++ {
-			if bx+dx >= 0 && bx+dx < cw {
-				c.SetPixel(bx+dx, y, true)
-			}
+			c.SetPixel(bx+dx, y, true)
 		}
 	}
 	return c

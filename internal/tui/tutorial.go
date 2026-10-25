@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // tutorialPhase is the stage of the first-run walkthrough.
@@ -61,16 +60,7 @@ func (m Model) renderTutorial() string {
 func (m Model) renderTutorialGate() string {
 	title := m.styles.ModalTitle.Render("welcome to bee 🐝")
 	body := "a short guided tour of the basics — input, tool calls, roles,\nand slash commands. nothing real runs; it's a safe demo."
-	labels := []string{"[1] start tour", "[2] maybe later", "[3] never show again"}
-	btns := make([]string, len(labels))
-	for i, lbl := range labels {
-		if i == m.tutorial.focus {
-			btns[i] = m.styles.ButtonHot.Render(lbl)
-		} else {
-			btns[i] = m.styles.Button.Render(lbl)
-		}
-	}
-	row := lipgloss.JoinHorizontal(lipgloss.Top, btns[0], "  ", btns[1], "  ", btns[2])
+	row := buttonRow(m.styles, []string{"[1] start tour", "[2] maybe later", "[3] never show again"}, m.tutorial.focus)
 	return m.styles.Modal.Render(strings.Join([]string{
 		title, "", body, "", row, "",
 		StyleLabel.Render("enter pick · ←/→ move · esc later"),
