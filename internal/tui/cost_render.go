@@ -31,10 +31,14 @@ func renderTable(m map[string]cost.Summary, selected string, width int) string {
 		row := fmt.Sprintf("%-*s  %8s  in %7s  out %7s",
 			nameW, name, formatUSD(s.USD), humanTokens(s.Input), humanTokens(s.Output))
 		b.WriteString(selectMark(selected != "" && k == selected))
-		b.WriteString(lipgloss.NewStyle().Foreground(fgAsh).Render(row))
-		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(fgAsh).Render(row) + "\n")
 	}
 	return b.String()
+}
+
+// sectionHead is the bold secondary-tone heading over a table, newline included.
+func sectionHead(label string) string {
+	return lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render(label) + "\n"
 }
 
 // summarize rolls up a filtered event slice. Kept local because cost.Summary

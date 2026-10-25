@@ -64,8 +64,7 @@ func renderProviderBars(w cost.UsageWindow, inner int) string {
 	txt := lipgloss.NewStyle().Foreground(fgAsh)
 
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render("by provider"))
-	b.WriteString("\n")
+	b.WriteString(sectionHead("by provider"))
 	for _, k := range keys {
 		s := w.ByProvider[k]
 		tk := tokensOf(s)
@@ -78,8 +77,7 @@ func renderProviderBars(w cost.UsageWindow, inner int) string {
 			line += usageBar(frac, barW)
 		}
 		line += txt.Render(fmt.Sprintf(" %7s  %8s  %3.0f%%", humanTokens(tk), usageCost(k, s.USD), frac*100))
-		b.WriteString(line)
-		b.WriteString("\n")
+		b.WriteString(line + "\n")
 	}
 	return b.String()
 }
@@ -99,8 +97,7 @@ func renderModelRows(m map[string]cost.Summary, inner int) string {
 	txt := lipgloss.NewStyle().Foreground(fgAsh)
 
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render("by model"))
-	b.WriteString("\n")
+	b.WriteString(sectionHead("by model"))
 	for _, k := range keys {
 		s := m[k]
 		c := "—"
@@ -109,8 +106,7 @@ func renderModelRows(m map[string]cost.Summary, inner int) string {
 		}
 		row := fmt.Sprintf("  %-*s  %8s  in %7s  out %7s",
 			nameW, truncateRunes(k, nameW), c, humanTokens(s.Input), humanTokens(s.Output))
-		b.WriteString(txt.Render(row))
-		b.WriteString("\n")
+		b.WriteString(txt.Render(row) + "\n")
 	}
 	return b.String()
 }
@@ -120,15 +116,12 @@ func renderModelRows(m map[string]cost.Summary, inner int) string {
 func renderUsageFallback(t *cost.Tracker, inner int) string {
 	var b strings.Builder
 	if li, lo := cost.LifetimeTotals(); li+lo > 0 {
-		head := StyleActive.
-			Render(humanTokens(int(li+lo)) + " tokens")
+		head := StyleActive.Render(humanTokens(int(li+lo)) + " tokens")
 		sub := lipgloss.NewStyle().Foreground(fgSmoke).
 			Render(fmt.Sprintf("  ·  in %s  out %s  (lifetime)", humanTokens(int(li)), humanTokens(int(lo))))
-		b.WriteString(head + sub)
-		b.WriteString("\n")
+		b.WriteString(head + sub + "\n")
 	}
-	b.WriteString(StyleLabel.Render("  no per-call history yet — recording starts now"))
-	b.WriteString("\n")
+	b.WriteString(StyleLabel.Render("  no per-call history yet — recording starts now") + "\n")
 	if t != nil && t.Total().Calls > 0 {
 		b.WriteString("\n")
 		b.WriteString(renderModelRows(t.ByModel(), inner))

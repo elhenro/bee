@@ -121,19 +121,12 @@ func (c *CostPane) View(width, height int) string {
 	filtered := c.tracker.Filter(prov, model)
 	tot := summarize(filtered)
 
-	var b strings.Builder
-	b.WriteString(title)
-	b.WriteString("\n")
-	b.WriteString(c.renderFilterChips())
-	b.WriteString("\n\n")
-	b.WriteString(c.renderTotals(tot))
-	b.WriteString("\n")
-	b.WriteString(c.renderSparkline(filtered, width-6))
-	b.WriteString("\n\n")
-	b.WriteString(c.renderBreakdown(width - 6))
-	b.WriteString("\n")
-	b.WriteString(StyleLabel.Render("tab cycle filter · j/k pick · 0 clear · esc close"))
-	return boxModal(b.String(), width)
+	return boxModal(strings.Join([]string{
+		title, c.renderFilterChips(), "",
+		c.renderTotals(tot), c.renderSparkline(filtered, width-6), "",
+		c.renderBreakdown(width - 6),
+		StyleLabel.Render("tab cycle filter · j/k pick · 0 clear · esc close"),
+	}, "\n"), width)
 }
 
 // renderFilterChips shows which dimension is active and the selected value.
@@ -179,13 +172,6 @@ func (c *CostPane) renderSparkline(events []cost.Event, width int) string {
 // renderBreakdown prints two tables: by provider, then by model.
 func (c *CostPane) renderBreakdown(width int) string {
 	prov, model := c.activeFilter()
-	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render("by provider"))
-	b.WriteString("\n")
-	b.WriteString(renderTable(c.tracker.ByProvider(), prov, width))
-	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(fgSmoke).Bold(true).Render("by model"))
-	b.WriteString("\n")
-	b.WriteString(renderTable(c.tracker.ByModel(), model, width))
-	return b.String()
+	return sectionHead("by provider") + renderTable(c.tracker.ByProvider(), prov, width) + "\n" +
+		sectionHead("by model") + renderTable(c.tracker.ByModel(), model, width)
 }
