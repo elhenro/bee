@@ -59,15 +59,12 @@ func (e *CacheEntry) result(rawURL string, start time.Time) *FetchResult {
 	}
 }
 
-// FetchURL fetches content from a URL and converts it to markdown. confined
-// enables the SSRF guard (reject loopback/private/metadata hosts); under
-// danger-full-access it is false and any reachable host is allowed.
-func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult, error) {
-	start := time.Now()
-
+// vetURL rejects URLs the fetcher must not request: non-web schemes, hosts
+// the policy blocks and, when confined, hosts resolving to internal addresses.
+func vetURL(rawURL string, policy *DomainPolicy, confined bool) error {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid URL: %w", err)
+		return fmt.Errorf("invalid URL: %w", err)
 	}
 
 	// Only http/https. Reject file://, ftp://, gopher://, data:// etc — these
@@ -77,13 +74,13 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 	switch parsedURL.Scheme {
 	case "http", "https":
 	default:
-		return nil, fmt.Errorf("unsupported URL scheme %q: only http and https allowed", parsedURL.Scheme)
+		return fmt.Errorf("unsupported URL scheme %q: only http and https allowed", parsedURL.Scheme)
 	}
 
 	// Fast hostname blocklist pre-check (user allow/block lists, both scopes)
 	host := parsedURL.Hostname()
 	if policy != nil && !policy.IsAllowed(host) {
-		return nil, fmt.Errorf("domain %s is not allowed", host)
+		return fmt.Errorf("domain %s is not allowed", host)
 	}
 
 	// SSRF guard (confined scope only): reject hosts that resolve to private/
@@ -92,20 +89,21 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 	if confined {
 		addrs, err := net.LookupIP(host)
 		if err != nil {
-			return nil, fmt.Errorf("DNS lookup failed for %s: %w", host, err)
+			return fmt.Errorf("DNS lookup failed for %s: %w", host, err)
 		}
 		for _, ip := range addrs {
 			if isBlockedIP(ip) {
-				return nil, fmt.Errorf("host %s resolves to blocked IP %s", host, ip)
+				return fmt.Errorf("host %s resolves to blocked IP %s", host, ip)
 			}
 		}
 	}
+	return nil
+}
 
-	if entry, exists := cache.Get(rawURL); exists {
-		return entry.result(rawURL, start), nil
-	}
-
-	client := &http.Client{
+// newClient builds the HTTP client: timeout, redirect cap, per-hop policy
+// re-check and the scope-dependent dialer.
+func newClient(policy *DomainPolicy, confined bool) *http.Client {
+	return &http.Client{
 		Timeout: 20 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
@@ -128,6 +126,19 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
 	}
+}
+
+// FetchURL fetches content from a URL and converts it to markdown. confined
+// enables the SSRF guard (reject loopback/private/metadata hosts); under
+// danger-full-access it is false and any reachable host is allowed.
+func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult, error) {
+	start := time.Now()
+	if err := vetURL(rawURL, policy, confined); err != nil {
+		return nil, err
+	}
+	if entry, exists := cache.Get(rawURL); exists {
+		return entry.result(rawURL, start), nil
+	}
 
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
@@ -136,7 +147,7 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 	req.Header.Set("User-Agent", "bee/0.1 (+https://github.com/elhenro/bee)")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
-	resp, err := client.Do(req)
+	resp, err := newClient(policy, confined).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}

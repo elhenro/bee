@@ -52,8 +52,26 @@ func (o *overlay) get(path string) (*fileState, error) {
 	return st, nil
 }
 
-func missing(path string) error {
-	return fmt.Errorf("open %s: no such file or directory", path)
+// existing is get for a path the patch needs to find on disk (or earlier in
+// the batch).
+func (o *overlay) existing(path string) (*fileState, error) {
+	st, err := o.get(path)
+	if err != nil {
+		return nil, err
+	}
+	if !st.exists {
+		return nil, fmt.Errorf("open %s: no such file or directory", path)
+	}
+	return st, nil
+}
+
+// applyDiff applies one parsed File to src and returns the new content.
+func applyDiff(f *gitdiff.File, src []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := gitdiff.Apply(&buf, bytes.NewReader(src), f); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // plan applies one parsed File to the overlay and returns its summary row.
@@ -65,40 +83,9 @@ func (o *overlay) plan(f *gitdiff.File) (fileChange, error) {
 	added, removed := lineCounts(f)
 	switch {
 	case f.IsDelete:
-		if f.OldName == "" {
-			return fileChange{}, errors.New("delete patch missing old name")
-		}
-		st, err := o.get(f.OldName)
-		if err != nil {
-			return fileChange{}, err
-		}
-		if !st.exists {
-			return fileChange{}, missing(f.OldName)
-		}
-		if err := verifyDelete(f, st.data); err != nil {
-			return fileChange{}, err
-		}
-		st.exists, st.data = false, nil
-		return fileChange{path: f.OldName, kind: "delete", removed: removed}, nil
+		return o.planDelete(f, removed)
 	case f.IsNew:
-		if f.NewName == "" {
-			return fileChange{}, errors.New("create patch missing new name")
-		}
-		st, err := o.get(f.NewName)
-		if err != nil {
-			return fileChange{}, err
-		}
-		if st.exists {
-			return fileChange{}, fmt.Errorf("create patch but %s already exists", f.NewName)
-		}
-		var buf bytes.Buffer
-		if err := gitdiff.Apply(&buf, bytes.NewReader(nil), f); err != nil {
-			return fileChange{}, err
-		}
-		// ignore the patch-supplied mode: a model-controlled file mode could set
-		// over-permissive bits. New files get a fixed safe mode.
-		st.exists, st.data, st.mode = true, buf.Bytes(), 0o644
-		return fileChange{path: f.NewName, kind: "create", added: added}, nil
+		return o.planCreate(f, added)
 	case f.IsRename || f.IsCopy:
 		return o.planMove(f, added, removed)
 	}
@@ -109,23 +96,56 @@ func (o *overlay) plan(f *gitdiff.File) (fileChange, error) {
 	if path == "" {
 		return fileChange{}, errors.New("modify patch missing file name")
 	}
-	st, err := o.get(path)
+	st, err := o.existing(path)
 	if err != nil {
 		return fileChange{}, err
 	}
-	if !st.exists {
-		return fileChange{}, missing(path)
-	}
-	var buf bytes.Buffer
-	if err := gitdiff.Apply(&buf, bytes.NewReader(st.data), f); err != nil {
+	data, err := applyDiff(f, st.data)
+	if err != nil {
 		return fileChange{}, err
 	}
 	// reject empty result on modify; require explicit deletion semantics
-	if buf.Len() == 0 {
+	if len(data) == 0 {
 		return fileChange{}, fmt.Errorf("modify patch for %s produced empty file; use deleted file mode to remove", path)
 	}
-	st.data = buf.Bytes()
+	st.data = data
 	return fileChange{path: path, kind: "modify", added: added, removed: removed}, nil
+}
+
+func (o *overlay) planDelete(f *gitdiff.File, removed int) (fileChange, error) {
+	if f.OldName == "" {
+		return fileChange{}, errors.New("delete patch missing old name")
+	}
+	st, err := o.existing(f.OldName)
+	if err != nil {
+		return fileChange{}, err
+	}
+	if err := verifyDelete(f, st.data); err != nil {
+		return fileChange{}, err
+	}
+	st.exists, st.data = false, nil
+	return fileChange{path: f.OldName, kind: "delete", removed: removed}, nil
+}
+
+func (o *overlay) planCreate(f *gitdiff.File, added int) (fileChange, error) {
+	if f.NewName == "" {
+		return fileChange{}, errors.New("create patch missing new name")
+	}
+	st, err := o.get(f.NewName)
+	if err != nil {
+		return fileChange{}, err
+	}
+	if st.exists {
+		return fileChange{}, fmt.Errorf("create patch but %s already exists", f.NewName)
+	}
+	data, err := applyDiff(f, nil)
+	if err != nil {
+		return fileChange{}, err
+	}
+	// ignore the patch-supplied mode: a model-controlled file mode could set
+	// over-permissive bits. New files get a fixed safe mode.
+	st.exists, st.data, st.mode = true, data, 0o644
+	return fileChange{path: f.NewName, kind: "create", added: added}, nil
 }
 
 // verifyDelete checks the removed lines against the file so a delete built
@@ -135,11 +155,11 @@ func verifyDelete(f *gitdiff.File, data []byte) error {
 	if len(f.TextFragments) == 0 {
 		return nil
 	}
-	var buf bytes.Buffer
-	if err := gitdiff.Apply(&buf, bytes.NewReader(data), f); err != nil {
+	left, err := applyDiff(f, data)
+	if err != nil {
 		return err
 	}
-	if buf.Len() > 0 {
+	if len(left) > 0 {
 		return fmt.Errorf("delete patch for %s leaves content behind; the file differs from what the patch removes", f.OldName)
 	}
 	return nil
@@ -151,12 +171,9 @@ func (o *overlay) planMove(f *gitdiff.File, added, removed int) (fileChange, err
 	if f.OldName == "" || f.NewName == "" {
 		return fileChange{}, errors.New("rename/copy patch missing a file name")
 	}
-	src, err := o.get(f.OldName)
+	src, err := o.existing(f.OldName)
 	if err != nil {
 		return fileChange{}, err
-	}
-	if !src.exists {
-		return fileChange{}, missing(f.OldName)
 	}
 	dst, err := o.get(f.NewName)
 	if err != nil {
@@ -165,11 +182,11 @@ func (o *overlay) planMove(f *gitdiff.File, added, removed int) (fileChange, err
 	if dst.exists {
 		return fileChange{}, fmt.Errorf("rename target %s already exists", f.NewName)
 	}
-	var buf bytes.Buffer
-	if err := gitdiff.Apply(&buf, bytes.NewReader(src.data), f); err != nil {
+	data, err := applyDiff(f, src.data)
+	if err != nil {
 		return fileChange{}, err
 	}
-	dst.exists, dst.data, dst.mode = true, buf.Bytes(), src.mode
+	dst.exists, dst.data, dst.mode = true, data, src.mode
 	if f.IsRename {
 		src.exists, src.data = false, nil
 	}

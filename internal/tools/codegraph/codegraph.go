@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,18 +27,7 @@ const toolName = "codegraph"
 // ops whitelisted for dispatch. keeps shellout safe — model can't pass
 // arbitrary subcommands like `install` / `uninstall` that mutate the
 // host or rewrite the index.
-var allowedOps = map[string]bool{
-	"search":   true,
-	"query":    true,
-	"callers":  true,
-	"callees":  true,
-	"context":  true,
-	"impact":   true,
-	"trace":    true,
-	"affected": true,
-	"files":    true,
-	"status":   true,
-}
+var allowedOps = []string{"search", "query", "callers", "callees", "context", "impact", "trace", "affected", "files", "status"}
 
 // Available reports whether codegraph integration should be enabled for
 // the given working directory. Both conditions must hold: a project-local
@@ -73,7 +63,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 		Description: "Query the project's CodeGraph index for symbol relationships, " +
 			"call graphs, and code structure. Faster than grep+read for " +
 			"navigating unfamiliar code. " +
-			"Args: op (required, one of: search, query, callers, callees, context, impact, trace, affected, files, status), " +
+			"Args: op (required, one of: " + strings.Join(allowedOps, ", ") + "), " +
 			"target (symbol name, file path, or search text; required for all ops except status), " +
 			"args (optional list of extra CLI flags, e.g. ['--limit','20']).",
 		PromptSnippet: "query the .codegraph index for symbols/callers/context",
@@ -83,7 +73,7 @@ func (t *Tool) Spec() llm.ToolSpec {
 				"op": map[string]any{
 					"type":        "string",
 					"minLength":   1,
-					"description": "subcommand: search|query|callers|callees|context|impact|trace|affected|files|status",
+					"description": "subcommand: " + strings.Join(allowedOps, "|"),
 				},
 				"target": map[string]any{
 					"type":        "string",
@@ -106,8 +96,8 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if op == "" {
 		return tools.Result{Content: "missing op", IsError: true}, nil
 	}
-	if !allowedOps[op] {
-		return tools.Result{Content: fmt.Sprintf("op %q not allowed (use one of: search, query, callers, callees, context, impact, trace, affected, files, status)", op), IsError: true}, nil
+	if !slices.Contains(allowedOps, op) {
+		return tools.Result{Content: fmt.Sprintf("op %q not allowed (use one of: %s)", op, strings.Join(allowedOps, ", ")), IsError: true}, nil
 	}
 	target, _ := in["target"].(string)
 	target = strings.TrimSpace(target)

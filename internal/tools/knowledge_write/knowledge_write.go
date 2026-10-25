@@ -93,7 +93,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	}
 
 	tags := parseTags(in["tags"])
-	priority := parsePriority(in["priority"])
+	priority := tools.IntArg(in, "priority", 0)
 	expiresAt, err := parseExpires(in["expires_at"])
 	if err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
@@ -135,22 +135,6 @@ func parseTags(raw any) []string {
 		out = append(out, strings.TrimSpace(s))
 	}
 	return out
-}
-
-// parsePriority converts float64 (JSON number) to int, defaulting to 0 (sentinel).
-func parsePriority(raw any) int {
-	if raw == nil {
-		return 0
-	}
-	switch v := raw.(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	case int64:
-		return int(v)
-	}
-	return 0
 }
 
 // parseExpires converts the expires_at input to time.Time. Accepts:
