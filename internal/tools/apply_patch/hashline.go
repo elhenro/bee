@@ -18,6 +18,8 @@
 package apply_patch
 
 import (
+	"encoding/binary"
+	"math/bits"
 	"regexp"
 	"strconv"
 	"strings"
@@ -77,8 +79,6 @@ const (
 	xxh32Prime5 uint32 = 374761393
 )
 
-func rotl32(x uint32, r uint) uint32 { return (x << r) | (x >> (32 - r)) }
-
 func xxh32(data []byte, seed uint32) uint32 {
 	var h uint32
 	n := len(data)
@@ -90,13 +90,13 @@ func xxh32(data []byte, seed uint32) uint32 {
 		v3 := seed
 		v4 := seed - xxh32Prime1
 		for n-p >= 16 {
-			v1 = xxh32Round(v1, readU32(data, p))
-			v2 = xxh32Round(v2, readU32(data, p+4))
-			v3 = xxh32Round(v3, readU32(data, p+8))
-			v4 = xxh32Round(v4, readU32(data, p+12))
+			v1 = xxh32Round(v1, binary.LittleEndian.Uint32(data[p:]))
+			v2 = xxh32Round(v2, binary.LittleEndian.Uint32(data[p+4:]))
+			v3 = xxh32Round(v3, binary.LittleEndian.Uint32(data[p+8:]))
+			v4 = xxh32Round(v4, binary.LittleEndian.Uint32(data[p+12:]))
 			p += 16
 		}
-		h = rotl32(v1, 1) + rotl32(v2, 7) + rotl32(v3, 12) + rotl32(v4, 18)
+		h = bits.RotateLeft32(v1, 1) + bits.RotateLeft32(v2, 7) + bits.RotateLeft32(v3, 12) + bits.RotateLeft32(v4, 18)
 	} else {
 		h = seed + xxh32Prime5
 	}
@@ -104,13 +104,13 @@ func xxh32(data []byte, seed uint32) uint32 {
 	h += uint32(n)
 
 	for n-p >= 4 {
-		h += readU32(data, p) * xxh32Prime3
-		h = rotl32(h, 17) * xxh32Prime4
+		h += binary.LittleEndian.Uint32(data[p:]) * xxh32Prime3
+		h = bits.RotateLeft32(h, 17) * xxh32Prime4
 		p += 4
 	}
 	for p < n {
 		h += uint32(data[p]) * xxh32Prime5
-		h = rotl32(h, 11) * xxh32Prime1
+		h = bits.RotateLeft32(h, 11) * xxh32Prime1
 		p++
 	}
 
@@ -124,11 +124,7 @@ func xxh32(data []byte, seed uint32) uint32 {
 
 func xxh32Round(acc, input uint32) uint32 {
 	acc += input * xxh32Prime2
-	acc = rotl32(acc, 13)
+	acc = bits.RotateLeft32(acc, 13)
 	acc *= xxh32Prime1
 	return acc
-}
-
-func readU32(b []byte, off int) uint32 {
-	return uint32(b[off]) | uint32(b[off+1])<<8 | uint32(b[off+2])<<16 | uint32(b[off+3])<<24
 }
