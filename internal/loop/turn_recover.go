@@ -3,11 +3,101 @@ package loop
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
 )
+
+// settleTurn decides how a Run goes on after an assistant turn. It returns a
+// nudge to append before the next request, an error that ends the Run, or
+// neither: with tool calls the Run dispatches them, without it is finished.
+func (e *Engine) settleTurn(msg types.Message, text string, uses []types.ToolUse, pl runPlan, first bool) (*types.Message, error) {
+	r := e.run
+	nudge := func(body string) (*types.Message, error) {
+		m := textMessage(types.RoleUser, msg.ID, body)
+		return &m, nil
+	}
+	// a turn that ended abnormally (stream cut mid-repetition, connection
+	// dropped) with no tool call and no done signal made no progress: nudge the
+	// model, or bail once the streak says it is wedged or the link is dead.
+	// when a tool call survived, fall through: skipping dispatch would leave an
+	// orphaned tool_use in the transcript (the assistant msg is already appended)
+	// and its result carries the loop forward on its own.
+	stalled := len(uses) == 0 && !detectDoneSignal(text)
+	for _, c := range []struct {
+		hit    *bool
+		streak *int
+		bailAt int
+		bail   func(streak int) error
+		nudge  string
+	}{{
+		&r.lastTurnLooped, &r.loopCutStreak, loopCutBailAt,
+		func(n int) error { return &RepeatStreamError{Streak: n} },
+		"[nudge] your output got stuck repeating the same text and was cut off. " +
+			"stop repeating — call a tool to make progress or give a short final answer.",
+	}, {
+		&r.lastTurnTruncated, &r.truncCutStreak, truncCutBailAt,
+		func(n int) error { return &TruncatedStreamError{Streak: n} },
+		"[nudge] the connection dropped before you finished your last turn. " +
+			"continue from where you left off — call a tool to make progress or give a short final answer.",
+	}} {
+		hit := *c.hit
+		*c.hit = false
+		if hit && stalled {
+			*c.streak++
+			if *c.streak >= c.bailAt {
+				return nil, c.bail(*c.streak)
+			}
+			return nudge(c.nudge)
+		}
+		*c.streak = 0
+	}
+
+	// a turn with any text or tool call clears the empty-completion streak.
+	if strings.TrimSpace(text) != "" || len(uses) > 0 {
+		r.emptyCompletionStreak = 0
+	}
+	// any successful tool dispatch resets the format-slip streak; the model
+	// proved it can produce a parseable envelope this turn.
+	if len(uses) > 0 {
+		r.formatSlipStreak = 0
+		return nil, nil
+	}
+
+	// whitespace-only turn: no text, no reasoning, no tool. nudge once,
+	// then bail with a typed error so the wrapper can surface "switch
+	// model" instead of ending on a blank answer or spinning the budget.
+	if strings.TrimSpace(text) == "" && !hasThinkingOnly(msg) {
+		r.emptyCompletionStreak++
+		if r.emptyCompletionStreak >= emptyCompletionBailAt {
+			return nil, &EmptyCompletionError{Streak: r.emptyCompletionStreak}
+		}
+		return nudge("[nudge] your last turn was empty — no answer and no tool call. " +
+			"respond now: call a tool to make progress or give a short final answer.")
+	}
+	// format-slip streak: a turn with zero tool_uses but text that
+	// looks like an attempted call counts toward the strike budget.
+	// done-signal turns are intentional exits, not slips. real done
+	// resets the streak so the FormatStrikeError reads as consecutive.
+	if !detectDoneSignal(text) && looksLikeAttemptedToolCall(text, pl.specs) {
+		r.formatSlipStreak++
+		if r.formatSlipStreak >= formatStrikeAt {
+			return nil, &FormatStrikeError{Streak: r.formatSlipStreak}
+		}
+	} else {
+		r.formatSlipStreak = 0
+	}
+	if m := attemptRecoveryNudge(e, msg, text, uses, pl.specs); m != nil {
+		return m, nil
+	}
+	// say-only stop guard: first turn, no tool call, task-looking
+	// request — push once instead of ending the Run with nothing done.
+	// first bounds it to one nudge per Run by construction.
+	if first && !pl.readOnly && !detectDoneSignal(text) {
+		return sayOnlyStopNudge(e, msg, pl.userText), nil
+	}
+	return nil, nil
+}
 
 // formatNudgeMax is the budget for format-correction nudges per Run. After
 // the budget is spent, looksLikeAttemptedToolCall turns still bump the slip
@@ -48,13 +138,7 @@ func attemptRecoveryNudge(e *Engine, assistantMsg types.Message, finalText strin
 	if nudgeText == "" {
 		return nil
 	}
-	nudge := types.Message{
-		ID:       newID(),
-		ParentID: assistantMsg.ID,
-		Role:     types.RoleUser,
-		Content:  []types.ContentBlock{{Type: types.BlockText, Text: nudgeText}},
-		Time:     time.Now().UTC(),
-	}
+	nudge := textMessage(types.RoleUser, assistantMsg.ID, nudgeText)
 	return &nudge
 }
 
@@ -68,14 +152,8 @@ func sayOnlyStopNudge(e *Engine, assistantMsg types.Message, userText string) *t
 	if !strings.HasSuffix(e.Provider.Name(), "+jsonmode") || !looksActionable(userText) {
 		return nil
 	}
-	nudge := types.Message{
-		ID:       newID(),
-		ParentID: assistantMsg.ID,
-		Role:     types.RoleUser,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: "[nudge] your turn ended with no tool call but the request needs work. " +
-			"do it now: start with a tool (read/ls/bash), one call per turn, until done. do not describe or restate the task."}},
-		Time: time.Now().UTC(),
-	}
+	nudge := textMessage(types.RoleUser, assistantMsg.ID, "[nudge] your turn ended with no tool call but the request needs work. "+
+		"do it now: start with a tool (read/ls/bash), one call per turn, until done. do not describe or restate the task.")
 	return &nudge
 }
 
