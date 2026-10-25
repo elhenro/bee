@@ -28,10 +28,6 @@ func RefuseCmd(reason string) []string {
 	return []string{"sh", "-c", `printf '%s\n' "$1" >&2; exit 126`, "bee-sandbox", reason}
 }
 
-func unknownScopeCmd(s Scope) []string {
-	return RefuseCmd(fmt.Sprintf("sandbox: unknown scope %q (want read-only, workspace-write, workspace-write-net or danger-full-access); refusing to run unsandboxed", string(s)))
-}
-
 // lookPath is indirected for tests. Tests can swap in a stub that returns
 // ErrHelperMissing to exercise the graceful-degrade path.
 var lookPath = exec.LookPath
@@ -50,7 +46,8 @@ func Wrap(p Policy, cmd []string) ([]string, error) {
 		return cmd, nil
 	}
 	if !p.Scope.known() {
-		return unknownScopeCmd(p.Scope), fmt.Errorf("%w: %q", ErrUnknownScope, p.Scope)
+		refuse := fmt.Sprintf("sandbox: unknown scope %q (want read-only, workspace-write, workspace-write-net or danger-full-access); refusing to run unsandboxed", string(p.Scope))
+		return RefuseCmd(refuse), fmt.Errorf("%w: %q", ErrUnknownScope, p.Scope)
 	}
 	switch runtime.GOOS {
 	case "darwin":
