@@ -19,13 +19,14 @@ import (
 // written to the run's RepoRoot before Run returns to simulate the model
 // editing the tree.
 type stubRunner struct {
-	mu     sync.Mutex
-	turns  []stubTurn
-	idx    int
-	dir    string
-	total  cost.Summary
-	tokens int
-	marks  []bool // outcome marks, in order
+	mu      sync.Mutex
+	turns   []stubTurn
+	idx     int
+	dir     string
+	total   cost.Summary
+	tokens  int
+	marks   []bool // outcome marks, in order
+	prompts []string
 }
 
 func (s *stubRunner) MarkOutcome(ok bool) {
@@ -42,9 +43,10 @@ type stubTurn struct {
 	out   int
 }
 
-func (s *stubRunner) Run(_ context.Context, _ string) (loop.RunResult, error) {
+func (s *stubRunner) Run(_ context.Context, prompt string) (loop.RunResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.prompts = append(s.prompts, prompt)
 	if s.idx >= len(s.turns) {
 		return loop.RunResult{FinalText: "BLOCKED: stub exhausted"}, nil
 	}

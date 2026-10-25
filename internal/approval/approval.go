@@ -49,16 +49,11 @@ type Cache struct {
 	persistWG sync.WaitGroup
 }
 
-// NewCache builds a Cache around inner. seed contains pattern keys already in
-// the user's persistent allowlist. persist is invoked whenever a new key is
-// granted AllowAlways; pass nil to disable persistence.
-func NewCache(inner Approver, seed []string, persist func(key string) error) *Cache {
-	return NewCacheWithRequire(inner, seed, nil, persist)
-}
-
-// NewCacheWithRequire is NewCache plus a requireAlways set: keys in this set
-// bypass the session AllowSession cache and re-prompt every call. Persistent
-// AllowAlways grants still win.
+// NewCacheWithRequire builds a Cache around inner. seed contains pattern keys
+// already in the user's persistent allowlist. persist is invoked whenever a new
+// key is granted AllowAlways; pass nil to disable persistence. Keys in
+// requireAlways bypass the session AllowSession cache and re-prompt every
+// call. Persistent AllowAlways grants still win.
 func NewCacheWithRequire(inner Approver, seed []string, requireAlways []string, persist func(key string) error) *Cache {
 	c := &Cache{
 		inner:         inner,
@@ -103,22 +98,17 @@ func (c *Cache) Request(ctx context.Context, cmd, key, desc string) (Decision, e
 	case AllowAlways:
 		c.session[key] = true
 		c.persistent[key] = true
-		// persistFunc may block 50-200ms on disk IO; run async so the user
-		// gets the verdict immediately. Snapshot key + pf locally so the
-		// goroutine never touches mutated cache state.
-		pf := c.persistFunc
-		k := key
-		c.mu.Unlock()
-		if pf != nil {
-			c.persistWG.Add(1)
-			go func() {
-				defer c.persistWG.Done()
-				_ = pf(k)
-			}()
-		}
-		return d, nil
 	}
 	c.mu.Unlock()
+	// persistFunc may block 50-200ms on disk IO; run async so the user gets
+	// the verdict immediately.
+	if pf := c.persistFunc; d == AllowAlways && pf != nil {
+		c.persistWG.Add(1)
+		go func() {
+			defer c.persistWG.Done()
+			_ = pf(key)
+		}()
+	}
 	return d, nil
 }
 
@@ -129,18 +119,6 @@ func (c *Cache) Flush() {
 		return
 	}
 	c.persistWG.Wait()
-}
-
-// AlwaysAllowKeys returns the union of session + persistent grants. Useful for
-// tests and for showing the user what they've trusted.
-func (c *Cache) AlwaysAllowKeys() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	out := make([]string, 0, len(c.persistent))
-	for k := range c.persistent {
-		out = append(out, k)
-	}
-	return out
 }
 
 // Static is a fixed-verdict Approver for headless / test use. Always returns

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // Store is a shadow git repo bound to one project root.
@@ -51,7 +53,7 @@ func Open(projectRoot string) (*Store, error) {
 		return nil, err
 	}
 	root = filepath.Clean(root)
-	home, err := beeHome()
+	home, err := beehome.Dir()
 	if err != nil {
 		return nil, err
 	}
@@ -65,18 +67,6 @@ func Open(projectRoot string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
-}
-
-// beeHome resolves ~/.bee, overridable via BEE_HOME for hermetic tests.
-func beeHome() (string, error) {
-	if root := os.Getenv("BEE_HOME"); root != "" {
-		return root, nil
-	}
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(h, ".bee"), nil
 }
 
 // ensure inits the bare shadow repo and writes the .git exclude once.

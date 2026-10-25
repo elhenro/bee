@@ -65,19 +65,8 @@ func firstDue(sched *Schedule, now time.Time) time.Time {
 	return now.AddDate(100, 0, 0)
 }
 
-// SetInterval overrides the Start poll interval. Values <= 0 are ignored.
-func (s *Scheduler) SetInterval(d time.Duration) {
-	if d > 0 {
-		s.interval = d
-	}
-}
-
 // SetLogger routes deferral and error notes. Call it before Start.
 func (s *Scheduler) SetLogger(f func(string, ...any)) { s.logf = f }
-
-// Queue exposes the busy queue so callers can serialize work that shares a
-// resource key with a scheduled job.
-func (s *Scheduler) Queue() *Queue { return s.queue }
 
 // Start launches the polling loop. With no jobs it returns without starting
 // any goroutine, so an empty config leaves the scheduler idle.

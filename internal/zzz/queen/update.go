@@ -10,54 +10,43 @@ import (
 
 const tickInterval = 600 * time.Millisecond
 
-func (m *Model) Init() tea.Cmd { return tea.Batch(tickCmd(), m.waitMsg()) }
+func (m *Model) Init() tea.Cmd { return tea.Batch(tickCmd(), m.box.Wait()) }
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(tickInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func (m *Model) waitMsg() tea.Cmd {
-	return func() tea.Msg {
-		msg, ok := <-m.msgs
-		if !ok {
-			return nil
-		}
-		return msg
-	}
-}
-
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = v.Width, v.Height
+		m.width = v.Width
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(v)
 	case tickMsg:
-		m.tick++
 		return m, tickCmd()
 	case wIterMsg:
 		w := m.workers[v.idx]
 		w.iter, w.maxIt = v.n, v.max
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case wPhaseMsg:
 		m.workers[v.idx].phase = v.p
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case wTokensMsg:
 		m.workers[v.idx].tokens = v.t
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case wCommitMsg:
 		m.workers[v.idx].commits++
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case wLogMsg:
 		m.workers[v.idx].last = truncate(v.text, 80)
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case wDoneMsg:
 		w := m.workers[v.idx]
 		w.status = terminalStatus(v.run, v.err)
 		w.phase = "done"
 		m.nDone++
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	}
 	return m, nil
 }

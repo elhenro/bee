@@ -16,65 +16,54 @@ const tickInterval = 600 * time.Millisecond
 
 // Init pumps the first tick + the first msg-channel read.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(tickCmd(), m.waitMsg())
+	return tea.Batch(tickCmd(), m.box.Wait())
 }
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(tickInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-// waitMsg pulls one event off m.msgs and surfaces it as a tea.Msg. Returns
-// nil when the channel is closed so bubbletea stops pumping.
-func (m *Model) waitMsg() tea.Cmd {
-	return func() tea.Msg {
-		msg, ok := <-m.msgs
-		if !ok {
-			return nil
-		}
-		return msg
-	}
-}
-
 // Update handles every tea.Msg variant we emit + bubbletea built-ins.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = v.Width, v.Height
-		m.input.SetWidth(maxInt(40, v.Width-4))
+		m.width = v.Width
+		m.input.SetWidth(max(40, v.Width-4))
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(v)
 	case tickMsg:
 		m.tick++
-		m.now = time.Time(v)
 		return m, tickCmd()
 	case iterMsg:
 		m.touchIter(v.n, v.max)
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case phaseMsg:
 		m.touchPhase(string(v))
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case tokensMsg:
 		m.tokens = zzz.TokenStat(v)
 		if len(m.rows) > 0 && m.rows[len(m.rows)-1].status == "running" {
 			m.rows[len(m.rows)-1].tokens = m.tokens
 		}
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case commitsMsg:
-		return m, m.waitMsg()
+		if n := len(m.rows); n > 0 {
+			m.rows[n-1].status = "committed"
+		}
+		return m, m.box.Wait()
 	case logMsg:
 		v.text = cleanLogText(v.text)
 		m.log = append(m.log, v)
 		if len(m.log) > 200 {
 			m.log = m.log[len(m.log)-200:]
 		}
-		m.absorbResult(v)
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	case doneMsg:
 		m.done = true
 		m.final = v.run
 		m.finalEr = v.err
-		return m, m.waitMsg()
+		return m, m.box.Wait()
 	}
 	return m, nil
 }
@@ -189,7 +178,7 @@ func (m *Model) pushSteer(s zzz.Steer) {
 // touchIter starts a new iteration row in "running" state.
 func (m *Model) touchIter(n, max int) {
 	m.iter, m.maxIt = n, max
-	m.rows = append(m.rows, iterRow{n: n, status: "running", when: time.Now()})
+	m.rows = append(m.rows, iterRow{n: n, status: "running"})
 	if len(m.rows) > 400 {
 		m.rows = m.rows[len(m.rows)-400:]
 	}
@@ -214,16 +203,6 @@ func (m *Model) touchPhase(p string) {
 	}
 }
 
-// absorbResult sniffs zzz.Println lines for commit subjects so we can show
-// them inline. Drive emits no structured iter-result msg, only Println.
-func (m *Model) absorbResult(v logMsg) {
-	if len(m.rows) == 0 {
-		return
-	}
-	// no-op for now; tokens + phase already populate the row. Subject would
-	// require an explicit Println from Drive — left as a future hook.
-}
-
 // cleanLogText drops escape sequences and bare control bytes from text that
 // came from outside (engine output, tool lines): a stray CR or cursor move
 // would wreck the alt-screen layout. tabs become a space.
@@ -238,11 +217,4 @@ func cleanLogText(s string) string {
 		}
 		return r
 	}, s)
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

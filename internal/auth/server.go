@@ -27,22 +27,12 @@ type LoopbackServer struct {
 	srv    *http.Server
 }
 
-// StartLoopback binds 127.0.0.1:<random> and serves a single handler at path
-// (defaults to /callback). Context cancellation triggers shutdown.
-func StartLoopback(ctx context.Context, path string) (*LoopbackServer, error) {
-	return StartLoopbackOn(ctx, path, 0)
-}
-
-// StartLoopbackOn is like StartLoopback but binds to a fixed port. Pass 0 for
-// random. Used when the provider requires an exact redirect_uri match.
-func StartLoopbackOn(ctx context.Context, path string, fixedPort int) (*LoopbackServer, error) {
-	return StartLoopbackState(ctx, path, fixedPort, "")
-}
-
-// StartLoopbackState is StartLoopbackOn that only accepts callbacks carrying
-// the given state; any other request (a stray local probe, a forged redirect)
-// gets a 400 and does not consume the one result slot. Empty state skips the
-// check.
+// StartLoopbackState binds 127.0.0.1:<fixedPort> (0 = random; pin it when the
+// provider requires an exact redirect_uri match) and serves a single handler at
+// path (defaults to /callback). Context cancellation triggers shutdown. It only
+// accepts callbacks carrying the given state; any other request (a stray local
+// probe, a forged redirect) gets a 400 and does not consume the one result
+// slot. Empty state skips the check.
 func StartLoopbackState(ctx context.Context, path string, fixedPort int, state string) (*LoopbackServer, error) {
 	if path == "" {
 		path = "/callback"
@@ -109,14 +99,9 @@ func (s *LoopbackServer) Close() error {
 	return s.srv.Shutdown(ctx)
 }
 
-// BuildAuthorizeURL composes the full authorize URL with PKCE params.
-func BuildAuthorizeURL(authorizeEndpoint, clientID, redirectURI, codeChallenge, state, scope string) string {
-	return BuildAuthorizeURLWithExtras(authorizeEndpoint, clientID, redirectURI, codeChallenge, state, scope, nil)
-}
-
-// BuildAuthorizeURLWithExtras is like BuildAuthorizeURL but appends extra
-// vendor-specific params (audience, prompt, id_token_hint). Extras override
-// standard params if they collide — caller's responsibility.
+// BuildAuthorizeURLWithExtras composes the full authorize URL with PKCE params
+// plus extra vendor-specific params (audience, prompt, id_token_hint). Extras
+// override standard params if they collide, caller's responsibility.
 func BuildAuthorizeURLWithExtras(authorizeEndpoint, clientID, redirectURI, codeChallenge, state, scope string, extras map[string]string) string {
 	q := url.Values{}
 	q.Set("response_type", "code")

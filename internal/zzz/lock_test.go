@@ -68,7 +68,7 @@ func TestAcquireLock_StealsStale(t *testing.T) {
 	}
 	t.Setenv("BEE_HOME", t.TempDir())
 	dir := t.TempDir()
-	ld, err := lockDir()
+	ld, err := zzzDir("locks")
 	if err != nil {
 		t.Fatal(err)
 	}

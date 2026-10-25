@@ -38,9 +38,9 @@ const seatbeltLoopback = `(allow network-bind (local ip "localhost:*"))
 (allow network-outbound (remote ip "localhost:*"))
 `
 
-// seatbeltReadOnly denies file writes and external network but still allows
-// loopback + dev/stdio nodes so subprocesses (notably git) can run.
-const seatbeltReadOnly = `(version 1)
+// seatbeltBase is the preamble every profile starts from: exec and read
+// everywhere, no writes or network until a profile opts in.
+const seatbeltBase = `(version 1)
 (deny default)
 (allow process-exec)
 (allow process-fork)
@@ -48,7 +48,11 @@ const seatbeltReadOnly = `(version 1)
 (allow file-read*)
 (allow sysctl-read)
 (allow mach-lookup)
-(deny network*)
+`
+
+// seatbeltReadOnly denies file writes and external network but still allows
+// loopback + dev/stdio nodes so subprocesses (notably git) can run.
+const seatbeltReadOnly = seatbeltBase + `(deny network*)
 (deny file-write*)
 ` + seatbeltLoopback + seatbeltDevNodes
 
@@ -58,15 +62,7 @@ const seatbeltReadOnly = `(version 1)
 // caches under $HOME (go-build, go mod cache, npm, cargo, pip, etc.) must be
 // writable or `go build` inside the wrapped shell tool fails with
 // "open …/Library/Caches/go-build/…" because seatbelt blocks the write.
-const seatbeltWriteCommon = `(version 1)
-(deny default)
-(allow process-exec)
-(allow process-fork)
-(allow signal (target self))
-(allow file-read*)
-(allow sysctl-read)
-(allow mach-lookup)
-(deny file-write*)
+const seatbeltWriteCommon = seatbeltBase + `(deny file-write*)
 `
 
 // seatbeltWriteOpenHead/Tail wrap the dynamic (subpath ...) write rules.
@@ -114,13 +110,8 @@ func macosProfile(p Policy) (string, error) {
 		b.WriteString(seatbeltLoopback)
 		b.WriteString(seatbeltDevNodes)
 		b.WriteString(seatbeltWriteOpenHead)
-		for _, path := range cwdAliases(cwd) {
-			b.WriteString("\n    ")
-			b.WriteString(fmt.Sprintf("(subpath %q)", path))
-		}
-		for _, d := range devCacheDirs() {
-			b.WriteString("\n    ")
-			b.WriteString(fmt.Sprintf("(subpath %q)", d))
+		for _, path := range append(cwdAliases(cwd), devCacheDirs()...) {
+			fmt.Fprintf(&b, "\n    (subpath %q)", path)
 		}
 		b.WriteString(seatbeltWriteOpenTail)
 		// deny after allow: the last matching rule wins in seatbelt.
@@ -128,7 +119,7 @@ func macosProfile(p Policy) (string, error) {
 		if len(g.ReadOnly) > 0 || len(g.ModuleRegex) > 0 {
 			b.WriteString("(deny file-write*")
 			for _, path := range g.ReadOnly {
-				b.WriteString(fmt.Sprintf("\n    (subpath %q)", path))
+				fmt.Fprintf(&b, "\n    (subpath %q)", path)
 			}
 			for _, re := range g.ModuleRegex {
 				b.WriteString("\n    (regex #\"" + re + "\")") // raw literal: no escape processing
@@ -137,7 +128,7 @@ func macosProfile(p Policy) (string, error) {
 		}
 		// unlink also covers rename-away of the `.git` entry itself.
 		for _, path := range g.Pinned {
-			b.WriteString(fmt.Sprintf("(deny file-write-unlink (literal %q))\n", path))
+			fmt.Fprintf(&b, "(deny file-write-unlink (literal %q))\n", path)
 		}
 		return b.String(), nil
 	default:

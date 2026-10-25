@@ -90,16 +90,7 @@ func (m *Model) workerRow(w *workerState) string {
 	return head
 }
 
-func (m *Model) lastWidth() int {
-	w := m.width - 8
-	if w < 20 {
-		w = 20
-	}
-	if w > 120 {
-		w = 120
-	}
-	return w
-}
+func (m *Model) lastWidth() int { return min(max(m.width-8, 20), 120) }
 
 func dash(s string) string {
 	if s == "" {

@@ -11,11 +11,11 @@ func TestIsKnownSafe_RejectsExpansionHiddenFlags(t *testing.T) {
 		`date ${Z:--s} 2020-01-01`,
 		`rg ${Z:---pre=sh} x`,
 	} {
-		if IsKnownSafe(c) {
-			t.Errorf("IsKnownSafe(%q) = true, want false", c)
+		if isKnownSafe(c) {
+			t.Errorf("isKnownSafe(%q) = true, want false", c)
 		}
 	}
-	if !IsKnownSafe(`find . -type f`) || !IsKnownSafe(`git diff --stat`) {
+	if !isKnownSafe(`find . -type f`) || !isKnownSafe(`git diff --stat`) {
 		t.Error("plain read-only commands must stay safe")
 	}
 }

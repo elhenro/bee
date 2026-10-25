@@ -40,9 +40,6 @@ WINNER: <n> — <=15 word reason
 where <n> is the candidate number. Reason briefly before that line if needed,
 but the final line must start with WINNER:.`
 
-// judgeMaxDiffBytes caps each candidate diff fed to the judge.
-const judgeMaxDiffBytes = 6000
-
 // judgeMaxTokens caps the judge's reply — narration plus the verdict line.
 const judgeMaxTokens = 640
 
@@ -137,13 +134,7 @@ func parseWinner(raw string, n int) (slot int, reason string, ok bool) {
 	if err != nil || num < 1 || num > n {
 		return 0, "", false
 	}
-	reason = strings.TrimSpace(strings.TrimLeft(firstLineOf(rest[numEnd:]), "—-: "))
+	line, _, _ := strings.Cut(rest[numEnd:], "\n")
+	reason = strings.TrimSpace(strings.TrimLeft(line, "—-: "))
 	return num - 1, reason, true
-}
-
-func firstLineOf(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
 }

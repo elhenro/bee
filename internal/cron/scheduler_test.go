@@ -140,7 +140,7 @@ func TestSchedulerReleasesQueueAfterCrash(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			release, err := sc.Queue().Acquire(ctx, "git")
+			release, err := sc.queue.Acquire(ctx, "git")
 			if err != nil {
 				t.Fatalf("queue wedged after %s: %v", tc.name, err)
 			}
@@ -159,7 +159,7 @@ func TestSchedulerUsesInjectedClock(t *testing.T) {
 	clk := &fakeClock{now: future}
 	ran := make(chan struct{}, 1)
 	sc := New(clk, RunnerFunc(func(context.Context, *Job) error { ran <- struct{}{}; return nil }), reg.Jobs())
-	sc.SetInterval(time.Hour)
+	sc.interval = time.Hour
 	sc.Start(context.Background())
 	defer sc.Shutdown()
 
@@ -192,7 +192,7 @@ func TestSchedulerShutdownNoLeak(t *testing.T) {
 	}
 	before := runtime.NumGoroutine()
 	sc := New(realClock{}, nil, reg.Jobs())
-	sc.SetInterval(time.Hour)
+	sc.interval = time.Hour
 	sc.Start(context.Background())
 	sc.Shutdown()
 	if got := settleGoroutines(before); got > before {

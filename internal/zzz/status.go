@@ -20,17 +20,13 @@ type Status struct {
 	phase     string
 	tokens    TokenStat
 	commits   int
-	enabled   bool
 }
 
 // NewStatus returns a status renderer writing to w. Pass os.Stderr in
 // normal CLI use, io.Discard in tests.
 func NewStatus(w io.Writer) *Status {
-	return &Status{out: w, startedAt: time.Now(), enabled: true}
+	return &Status{out: w, startedAt: time.Now()}
 }
-
-// Disable suppresses live rendering (useful when --json or non-tty).
-func (s *Status) Disable() { s.enabled = false }
 
 func (s *Status) SetIter(n, max int) {
 	s.mu.Lock()
@@ -63,10 +59,6 @@ func (s *Status) IncCommits() {
 
 // Println prints msg on its own line, leaving the status line intact below.
 func (s *Status) Println(msg string) {
-	if !s.enabled {
-		fmt.Fprintln(s.out, msg)
-		return
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fmt.Fprintf(s.out, "\r\033[K%s\n", msg)
@@ -80,9 +72,6 @@ func (s *Status) render() {
 }
 
 func (s *Status) renderLocked() {
-	if !s.enabled {
-		return
-	}
 	elapsed := time.Since(s.startedAt).Truncate(time.Second)
 	fmt.Fprintf(s.out, "\r\033[K[zzz] iter=%d/%d phase=%s commits=%d tok=%d/%d  $%.4f  t+%s",
 		s.iter, s.maxIter, s.phase, s.commits, s.tokens.Input, s.tokens.Output, s.tokens.USD, elapsed)
@@ -90,9 +79,7 @@ func (s *Status) renderLocked() {
 
 // RenderSummary prints the multi-line exit summary. Called once at end.
 func (s *Status) RenderSummary(r *Run) {
-	if s.enabled {
-		fmt.Fprintln(s.out)
-	}
+	fmt.Fprintln(s.out)
 	dur := r.EndedAt.Sub(r.StartedAt).Truncate(time.Second)
 	w := s.out
 	if w == nil {

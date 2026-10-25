@@ -2,6 +2,9 @@ package sandbox
 
 import "testing"
 
+// isKnownSafe is IsAllowed with the built-in list only.
+func isKnownSafe(cmd string) bool { return Policy{}.IsAllowed(cmd) }
+
 func TestIsKnownSafe(t *testing.T) {
 	cases := []struct {
 		cmd  string
@@ -35,9 +38,9 @@ func TestIsKnownSafe(t *testing.T) {
 		{"   ", false},
 	}
 	for _, tc := range cases {
-		got := IsKnownSafe(tc.cmd)
+		got := isKnownSafe(tc.cmd)
 		if got != tc.want {
-			t.Errorf("IsKnownSafe(%q) = %v, want %v", tc.cmd, got, tc.want)
+			t.Errorf("isKnownSafe(%q) = %v, want %v", tc.cmd, got, tc.want)
 		}
 	}
 }
@@ -182,8 +185,8 @@ func TestIsKnownSafe_RejectsCompoundAndMutating(t *testing.T) {
 		{"/tmp/ls", false},
 	}
 	for _, tc := range cases {
-		if got := IsKnownSafe(tc.cmd); got != tc.want {
-			t.Errorf("IsKnownSafe(%q) = %v, want %v", tc.cmd, got, tc.want)
+		if got := isKnownSafe(tc.cmd); got != tc.want {
+			t.Errorf("isKnownSafe(%q) = %v, want %v", tc.cmd, got, tc.want)
 		}
 	}
 }

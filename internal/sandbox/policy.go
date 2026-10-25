@@ -79,59 +79,25 @@ type Policy struct {
 // that Untrusted mode may auto-run without asking. Prefix match: an entry "git
 // status" matches "git status" and "git status --short" but not "git stash".
 var defaultSafe = []string{
-	"ls",
-	"pwd",
-	"cat",
-	"head",
-	"tail",
-	"wc",
-	"file",
-	"echo",
-	"true",
-	"false",
-	"which",
-	"whoami",
-	"hostname",
-	"uname",
-	"date",
-	"printenv",
-	"grep",
-	"egrep",
-	"fgrep",
-	"rg",
-	"find",
-	"fd",
-	"tree",
-	"stat",
-	"du",
-	"df",
-	"git status",
-	"git diff",
-	"git log",
-	"git show",
-	"git branch",
-	"git remote",
-	"git rev-parse",
+	// inspection
+	"ls", "pwd", "cat", "head", "tail", "wc", "file", "echo", "true", "false", "which", "whoami",
+	"hostname", "uname", "date", "printenv", "stat", "du", "df",
+	// search
+	"grep", "egrep", "fgrep", "rg", "find", "fd", "tree",
+	// git
+	"git status", "git diff", "git log", "git show", "git branch", "git remote", "git rev-parse",
 	"git config --get",
-	"go build",
-	"go test",
-	"go vet",
-	"go list",
-	"go env",
-	"go version",
-	"go mod download",
-	"go mod verify",
+	// go
+	"go build", "go test", "go vet", "go list", "go env", "go version", "go mod download", "go mod verify",
 }
 
-// IsKnownSafe reports whether every command in cmd matches a built-in safe
-// prefix. cmd is tokenized first: a compound line is safe only when each
-// simple command is, and redirections, substitutions and flags that turn a
-// read-only tool into a writer (find -exec, git branch -D, ...) are refused.
-func IsKnownSafe(cmd string) bool { return Policy{}.IsAllowed(cmd) }
-
-// IsAllowed extends IsKnownSafe with the policy's per-invocation AllowList.
-// The list is matched per simple command, never against the raw line, so
-// "ls; rm x" cannot ride on an "ls" entry.
+// IsAllowed reports whether every command in cmd matches a built-in safe
+// prefix or the policy's per-invocation AllowList. cmd is tokenized first: a
+// compound line is safe only when each simple command is, and redirections,
+// substitutions and flags that turn a read-only tool into a writer (find
+// -exec, git branch -D, ...) are refused. The list is matched per simple
+// command, never against the raw line, so "ls; rm x" cannot ride on an "ls"
+// entry.
 func (p Policy) IsAllowed(cmd string) bool {
 	segs, ok := safety.PlainSegments(cmd)
 	if !ok {

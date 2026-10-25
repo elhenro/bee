@@ -13,7 +13,6 @@ import (
 // to err, reads a single line from in, maps the first char to a Decision.
 // Concurrent calls are serialised so prompts don't interleave.
 type CLI struct {
-	in     io.Reader
 	out    io.Writer
 	mu     sync.Mutex
 	reader *bufio.Reader
@@ -31,7 +30,7 @@ type cliResult struct {
 // NewCLI builds a CLI approver. Pass os.Stdin + os.Stderr for the normal case;
 // override for tests.
 func NewCLI(in io.Reader, out io.Writer) *CLI {
-	return &CLI{in: in, out: out, reader: bufio.NewReader(in)}
+	return &CLI{out: out, reader: bufio.NewReader(in)}
 }
 
 // Request prints a prompt and reads the user's choice.

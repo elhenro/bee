@@ -12,29 +12,6 @@ import (
 	"time"
 )
 
-func TestToken_Expired(t *testing.T) {
-	cases := []struct {
-		name string
-		tok  Token
-		want bool
-	}{
-		{"zero expiry treated as non-expiring", Token{IssuedAt: time.Now().Add(-time.Hour)}, false},
-		{"future", Token{ExpiresIn: 3600, IssuedAt: time.Now()}, false},
-		{"past", Token{ExpiresIn: 10, IssuedAt: time.Now().Add(-time.Hour)}, true},
-		// 5-min skew: token "valid" for 2 more minutes counts as expired so the
-		// next request triggers refresh BEFORE in-flight expiry.
-		{"within 5min skew window", Token{ExpiresIn: 3600, IssuedAt: time.Now().Add(-58 * time.Minute)}, true},
-		{"more than 5min remaining", Token{ExpiresIn: 3600, IssuedAt: time.Now().Add(-50 * time.Minute)}, false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := c.tok.Expired(); got != c.want {
-				t.Errorf("got %v want %v", got, c.want)
-			}
-		})
-	}
-}
-
 func TestExchangeCode_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -130,7 +107,7 @@ func TestLogin_StateMismatch(t *testing.T) {
 	// state. Simpler: call StartLoopback directly and just exercise the state-
 	// mismatch path inside the Login fn would require capturing internals.
 	// Instead, prove state validation by hitting the loopback w/ wrong state:
-	srv, err := StartLoopback(ctx, "")
+	srv, err := StartLoopbackState(ctx, "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,15 +155,15 @@ func TestLogin_FullFlow(t *testing.T) {
 	// hit the authorize endpoint manually because openURL won't fire in tests.
 	// Easiest: spin up a fake authorize handler that the test pokes once Login
 	// has started. We override openURL via the package-internal var.
-	prev := openURLFn
-	openURLFn = func(u string) error {
+	prev := openURL
+	openURL = func(u string) error {
 		// fire-and-forget GET to authorize
 		go func() {
 			_, _ = http.Get(u)
 		}()
 		return nil
 	}
-	defer func() { openURLFn = prev }()
+	defer func() { openURL = prev }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

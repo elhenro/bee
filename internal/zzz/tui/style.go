@@ -10,12 +10,9 @@ import "github.com/charmbracelet/lipgloss"
 
 var (
 	fgOyster = lipgloss.AdaptiveColor{Light: "#7C7A86", Dark: "#605F6B"}
-	fgSquid  = lipgloss.AdaptiveColor{Light: "#5D5B6A", Dark: "#858392"}
 	fgSmoke  = lipgloss.AdaptiveColor{Light: "#3F3E4A", Dark: "#BFBCC8"}
 	fgAsh    = lipgloss.AdaptiveColor{Light: "#201F26", Dark: "#DFDBDD"}
 	fgButter = lipgloss.AdaptiveColor{Light: "#201F26", Dark: "#FFFAF1"}
-
-	bgCharcoal = lipgloss.AdaptiveColor{Light: "#D2CEC6", Dark: "#3A3943"}
 
 	accentHoney = lipgloss.AdaptiveColor{Light: "#A56F00", Dark: "#FFB000"}
 	accentBee   = lipgloss.AdaptiveColor{Light: "#8A5A00", Dark: "#FFC857"}
@@ -38,8 +35,6 @@ var (
 	stySuccess = lipgloss.NewStyle().Foreground(semSuccess)
 	styWarning = lipgloss.NewStyle().Foreground(semWarning)
 	styError   = lipgloss.NewStyle().Foreground(semError).Bold(true)
-	styBorder  = lipgloss.NewStyle().Foreground(bgCharcoal)
-	styItalic  = lipgloss.NewStyle().Foreground(fgOyster).Italic(true)
 )
 
 // phaseGlyph maps iteration status to a bee/flower icon in the timeline.

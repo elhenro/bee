@@ -2,7 +2,6 @@ package zzz
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -92,7 +91,7 @@ func TestCommitResetCycle(t *testing.T) {
 	if err := os.WriteFile(path, []byte("changed"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ResetHard(repo, ""); err != nil {
+	if err := ResetHard(repo); err != nil {
 		t.Fatalf("ResetHard: %v", err)
 	}
 	clean, _ = IsClean(repo)
@@ -126,9 +125,6 @@ func TestCreateBranchAndCurrent(t *testing.T) {
 	cur, err := CurrentBranch(repo)
 	if err != nil || cur != "zzz/test-1" {
 		t.Fatalf("want zzz/test-1, got %q (err=%v)", cur, err)
-	}
-	if !HasBranch(repo, "zzz/test-1") {
-		t.Fatal("HasBranch should report true for created branch")
 	}
 }
 
@@ -285,10 +281,17 @@ func TestNewIDFormat(t *testing.T) {
 	}
 }
 
-func TestStatusDisableSilent(t *testing.T) {
-	s := NewStatus(io.Discard)
-	s.Disable()
-	s.SetIter(3, 10)
-	s.SetTokens(TokenStat{Input: 100, Output: 50})
-	s.Println("hi") // should not panic
+// reading an unknown run must not create its directory.
+func TestLoadUnknownRunLeavesNoDir(t *testing.T) {
+	t.Setenv("BEE_HOME", t.TempDir())
+	if _, err := LoadMeta("nope"); err == nil {
+		t.Fatal("want error for unknown run")
+	}
+	if _, err := LoadPrompt("nope"); err == nil {
+		t.Fatal("want error for unknown prompt")
+	}
+	home, _ := HomeDir()
+	if _, err := os.Stat(filepath.Join(home, "runs", "nope")); !os.IsNotExist(err) {
+		t.Fatalf("runs/nope should not exist, stat err=%v", err)
+	}
 }

@@ -6,13 +6,16 @@ import (
 	"time"
 )
 
+// busy reports whether key has a holder: the slot token is out.
+func busy(q *Queue, key string) bool { return len(q.locks[key]) == 0 }
+
 func TestQueueSerializesPerKey(t *testing.T) {
 	q := NewQueue()
 	release, err := q.Acquire(context.Background(), "git")
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	if !q.Busy("git") {
+	if !busy(q, "git") {
 		t.Fatal("expected key to be busy while held")
 	}
 
@@ -69,7 +72,7 @@ func TestQueueReleaseIsIdempotent(t *testing.T) {
 	}
 	release()
 	release() // must not double-fill the slot
-	if q.Busy("k") {
+	if busy(q, "k") {
 		t.Fatal("key should be free after release")
 	}
 }

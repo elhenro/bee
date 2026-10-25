@@ -2,6 +2,7 @@ package zzz
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -58,5 +59,26 @@ func assertEnded(t *testing.T, run *Run, ui *stubUI) {
 	}
 	if ui.summary == nil {
 		t.Fatal("summary not rendered")
+	}
+}
+
+// operator notes ride on the next prompt; blank ones and a closed steer
+// channel are harmless.
+func TestDrive_SteerNotesReachNextPrompt(t *testing.T) {
+	run, repo := setupDriveTest(t)
+	r := &stubRunner{dir: repo, turns: []stubTurn{{text: "DONE: nothing to do"}}}
+	ui := &stubUI{steer: make(chan Steer, 3)}
+	ui.steer <- Steer{Kind: SteerNote, Text: "  prefer table-driven tests  "}
+	ui.steer <- Steer{Kind: SteerNote, Text: "   "}
+	close(ui.steer)
+	if err := Drive(context.Background(), nil, r, Config{Objective: "x", MaxIterations: 2}, run, ui); err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != StatusCompleted || len(r.prompts) != 1 {
+		t.Fatalf("status=%s cause=%q prompts=%d", run.Status, run.StopCause, len(r.prompts))
+	}
+	// first iteration: no prior notes, so the nudge block is the prompt's tail
+	if _, after, _ := strings.Cut(r.prompts[0], "(live input):\n"); after != "- prefer table-driven tests\n" {
+		t.Fatalf("nudge block = %q, want the one trimmed nudge", after)
 	}
 }

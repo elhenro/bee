@@ -20,7 +20,7 @@ func newTestModel(n int) *Model {
 func drain(m *Model) {
 	for {
 		select {
-		case msg := <-m.msgs:
+		case msg := <-m.box.C:
 			m.Update(msg)
 		default:
 			return

@@ -87,15 +87,12 @@ func (s *shellScanner) run() ([]Token, error) {
 // continuation: it is consumed here so it never starts a token.
 func (s *shellScanner) skipSpace() {
 	for s.i < len(s.src) {
-		switch s.src[s.i] {
-		case ' ', '\t', '\n', '\r':
+		c := s.src[s.i]
+		switch {
+		case isSpaceByte(c):
 			s.i++
-		case '\\':
-			if s.i+1 < len(s.src) && s.src[s.i+1] == '\n' {
-				s.i += 2
-				continue
-			}
-			return
+		case c == '\\' && s.i+1 < len(s.src) && s.src[s.i+1] == '\n':
+			s.i += 2
 		default:
 			return
 		}
@@ -122,45 +119,19 @@ func (s *shellScanner) scanFdRedirect() (string, bool) {
 	return prefix + op, true
 }
 
-// scanOp consumes an operator token if one starts at the cursor.
+// scanOp consumes an operator token if one starts at the cursor. Every
+// operator byte except ; doubles up (&& || >> <<).
 func (s *shellScanner) scanOp() (string, bool) {
-	if s.i >= len(s.src) {
+	if s.i >= len(s.src) || !isOpByte(s.src[s.i]) {
 		return "", false
 	}
-	switch s.src[s.i] {
-	case ';':
-		s.i++
-		return ";", true
-	case '&':
-		if s.i+1 < len(s.src) && s.src[s.i+1] == '&' {
-			s.i += 2
-			return "&&", true
-		}
-		s.i++
-		return "&", true
-	case '|':
-		if s.i+1 < len(s.src) && s.src[s.i+1] == '|' {
-			s.i += 2
-			return "||", true
-		}
-		s.i++
-		return "|", true
-	case '>':
-		s.i++
-		if s.i < len(s.src) && s.src[s.i] == '>' {
-			s.i++
-			return ">>", true
-		}
-		return ">", true
-	case '<':
-		s.i++
-		if s.i < len(s.src) && s.src[s.i] == '<' {
-			s.i++
-			return "<<", true
-		}
-		return "<", true
+	n := 1
+	if c := s.src[s.i]; c != ';' && s.i+1 < len(s.src) && s.src[s.i+1] == c {
+		n = 2
 	}
-	return "", false
+	op := s.src[s.i : s.i+n]
+	s.i += n
+	return op, true
 }
 
 func isOpByte(b byte) bool {
@@ -171,11 +142,12 @@ func isOpByte(b byte) bool {
 	return false
 }
 
+func isSpaceByte(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\r' }
+
 // scanWord consumes a word, resolving quotes and escapes. It appends at least
 // one token even for an empty word ("" produces a word with empty Value).
 func (s *shellScanner) scanWord() (Token, error) {
 	start := s.i
-	var buf strings.Builder
 	var segs []Segment
 	addSeg := func(text string, q QuoteKind) {
 		if text == "" {
@@ -190,27 +162,25 @@ func (s *shellScanner) scanWord() (Token, error) {
 
 	for s.i < len(s.src) {
 		c := s.src[s.i]
-		switch {
-		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
-			goto done
-		case isOpByte(c):
-			goto done
-		case c == '\\':
+		if isSpaceByte(c) || isOpByte(c) {
+			break
+		}
+		switch c {
+		case '\\':
 			if s.i+1 >= len(s.src) {
-				buf.WriteByte('\\')
 				addSeg("\\", QuoteNone)
 				s.i++
 				continue
 			}
-			nc := s.src[s.i+1]
-			if nc == '\n' {
+			if s.src[s.i+1] == '\n' {
 				s.i += 2
 				continue
 			}
-			buf.WriteByte(nc)
-			addSeg(string(nc), QuoteNone)
+			// a byte slice, not string(byte): that would re-encode a UTF-8
+			// lead byte as a rune and garble the segment text
+			addSeg(s.src[s.i+1:s.i+2], QuoteNone)
 			s.i += 2
-		case c == '\'':
+		case '\'':
 			open := s.i
 			s.i++
 			segStart := s.i
@@ -220,11 +190,9 @@ func (s *shellScanner) scanWord() (Token, error) {
 			if s.i >= len(s.src) {
 				return Token{}, fmt.Errorf("safety: unterminated single quote at byte %d", open)
 			}
-			text := s.src[segStart:s.i]
-			buf.WriteString(text)
-			addSeg(text, QuoteSingle)
+			addSeg(s.src[segStart:s.i], QuoteSingle)
 			s.i++ // closing quote
-		case c == '"':
+		case '"':
 			open := s.i
 			s.i++
 			var dq strings.Builder
@@ -251,25 +219,23 @@ func (s *shellScanner) scanWord() (Token, error) {
 			if s.i >= len(s.src) {
 				return Token{}, fmt.Errorf("safety: unterminated double quote at byte %d", open)
 			}
-			text := dq.String()
-			buf.WriteString(text)
-			addSeg(text, QuoteDouble)
+			addSeg(dq.String(), QuoteDouble)
 			s.i++ // closing quote
 		default:
 			runStart := s.i
 			for s.i < len(s.src) {
 				bc := s.src[s.i]
-				if bc == ' ' || bc == '\t' || bc == '\n' || bc == '\r' ||
-					isOpByte(bc) || bc == '\\' || bc == '\'' || bc == '"' {
+				if isSpaceByte(bc) || isOpByte(bc) || bc == '\\' || bc == '\'' || bc == '"' {
 					break
 				}
 				s.i++
 			}
-			text := s.src[runStart:s.i]
-			buf.WriteString(text)
-			addSeg(text, QuoteNone)
+			addSeg(s.src[runStart:s.i], QuoteNone)
 		}
 	}
-done:
-	return Token{Kind: TokenWord, Value: buf.String(), Raw: s.src[start:s.i], Segments: segs}, nil
+	var val strings.Builder
+	for _, sg := range segs {
+		val.WriteString(sg.Text)
+	}
+	return Token{Kind: TokenWord, Value: val.String(), Raw: s.src[start:s.i], Segments: segs}, nil
 }

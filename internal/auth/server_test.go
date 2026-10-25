@@ -12,7 +12,7 @@ import (
 func TestStartLoopback_CallbackRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	srv, err := StartLoopback(ctx, "")
+	srv, err := StartLoopbackState(ctx, "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestStartLoopback_CallbackRoundTrip(t *testing.T) {
 func TestStartLoopback_ErrorParam(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	srv, err := StartLoopback(ctx, "/cb")
+	srv, err := StartLoopbackState(ctx, "/cb", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestStartLoopback_ErrorParam(t *testing.T) {
 
 func TestStartLoopback_CtxCancelShutsDown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	srv, err := StartLoopback(ctx, "")
+	srv, err := StartLoopbackState(ctx, "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,13 +91,14 @@ func TestStartLoopback_CtxCancelShutsDown(t *testing.T) {
 }
 
 func TestBuildAuthorizeURL(t *testing.T) {
-	got := BuildAuthorizeURL(
+	got := BuildAuthorizeURLWithExtras(
 		"https://auth.example/authorize",
 		"client123",
 		"http://127.0.0.1:9000/callback",
 		"chal",
 		"state42",
 		"openid email",
+		nil,
 	)
 	u, err := url.Parse(got)
 	if err != nil {
@@ -125,9 +126,9 @@ func TestBuildAuthorizeURL(t *testing.T) {
 }
 
 func TestBuildAuthorizeURL_PreservesExistingQuery(t *testing.T) {
-	got := BuildAuthorizeURL(
+	got := BuildAuthorizeURLWithExtras(
 		"https://auth.example/authorize?foo=bar",
-		"c", "r", "ch", "s", "",
+		"c", "r", "ch", "s", "", nil,
 	)
 	if !strings.Contains(got, "foo=bar&") {
 		t.Errorf("expected foo=bar preserved, got %s", got)

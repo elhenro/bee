@@ -10,39 +10,34 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
-// HomeDir returns ~/.bee/zzz. Created on first call.
-// BEE_HOME overrides ~/.bee (matches bgreg/agents and lets tests stay
-// hermetic on Windows where os.UserHomeDir reads USERPROFILE, not HOME).
-func HomeDir() (string, error) {
-	root := os.Getenv("BEE_HOME")
-	if root == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		root = filepath.Join(h, ".bee")
-	}
-	d := filepath.Join(root, "zzz")
-	if err := os.MkdirAll(d, 0o755); err != nil {
-		return "", err
-	}
-	return d, nil
+// zzzPath returns ~/.bee/zzz/<elem...> without touching the disk. BEE_HOME
+// overrides ~/.bee (matches bgreg/agents and lets tests stay hermetic on
+// Windows where os.UserHomeDir reads USERPROFILE, not HOME).
+func zzzPath(elem ...string) (string, error) {
+	return beehome.Join(append([]string{"zzz"}, elem...)...)
 }
 
-// RunDir returns ~/.bee/zzz/runs/<id>, creating it.
-func RunDir(id string) (string, error) {
-	home, err := HomeDir()
+// zzzDir is zzzPath, created.
+func zzzDir(elem ...string) (string, error) {
+	d, err := zzzPath(elem...)
 	if err != nil {
 		return "", err
 	}
-	d := filepath.Join(home, "runs", id)
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return "", err
 	}
 	return d, nil
 }
+
+// HomeDir returns ~/.bee/zzz. Created on first call.
+func HomeDir() (string, error) { return zzzDir() }
+
+// RunDir returns ~/.bee/zzz/runs/<id>, creating it.
+func RunDir(id string) (string, error) { return zzzDir("runs", id) }
 
 // WorktreeDir returns ~/.bee/zzz/worktrees/<id>. NOT created — git worktree
 // add wants a non-existent path.
@@ -73,20 +68,17 @@ func SaveMeta(r *Run) error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(dir, "meta.json.tmp")
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(dir, "meta.json"))
+	return beehome.WriteAtomic(filepath.Join(dir, "meta.json"), data, 0o644)
 }
 
-// LoadMeta reads meta.json for an existing run.
+// LoadMeta reads meta.json for an existing run. An unknown id leaves no
+// directory behind.
 func LoadMeta(id string) (*Run, error) {
-	dir, err := RunDir(id)
+	p, err := zzzPath("runs", id, "meta.json")
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, err
 	}
@@ -105,20 +97,16 @@ func SavePrompt(id, objective string) error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(dir, "prompt.txt.tmp")
-	if err := os.WriteFile(tmp, []byte(objective), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(dir, "prompt.txt"))
+	return beehome.WriteAtomic(filepath.Join(dir, "prompt.txt"), []byte(objective), 0o644)
 }
 
 // LoadPrompt reads the saved objective.
 func LoadPrompt(id string) (string, error) {
-	dir, err := RunDir(id)
+	p, err := zzzPath("runs", id, "prompt.txt")
 	if err != nil {
 		return "", err
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
+	b, err := os.ReadFile(p)
 	if err != nil {
 		return "", err
 	}

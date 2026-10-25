@@ -31,23 +31,7 @@ func SaveToken(dir, provider string, tok *Token) error {
 	if err != nil {
 		return err
 	}
-	// temp + rename: a crash mid-write or a concurrent reader never sees a
-	// truncated token file. CreateTemp makes the file 0600.
-	f, err := os.CreateTemp(dir, provider+".json.tmp.*")
-	if err != nil {
-		return err
-	}
-	_, werr := f.Write(b)
-	if cerr := f.Close(); werr == nil {
-		werr = cerr
-	}
-	if werr == nil {
-		werr = os.Rename(f.Name(), p)
-	}
-	if werr != nil {
-		_ = os.Remove(f.Name())
-	}
-	return werr
+	return beehome.WriteAtomic(p, b, 0o600)
 }
 
 // LoadToken reads a previously saved token. Returns (nil, nil) if absent.

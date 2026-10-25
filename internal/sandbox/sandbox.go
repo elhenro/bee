@@ -28,19 +28,9 @@ func RefuseCmd(reason string) []string {
 	return []string{"sh", "-c", `printf '%s\n' "$1" >&2; exit 126`, "bee-sandbox", reason}
 }
 
-func unknownScopeCmd(s Scope) []string {
-	return RefuseCmd(fmt.Sprintf("sandbox: unknown scope %q (want read-only, workspace-write, workspace-write-net or danger-full-access); refusing to run unsandboxed", string(s)))
-}
-
-// defaultLookPath is the production exec.LookPath. Wrap functions go through
-// the package-level lookPath var so tests can stub helper-missing scenarios.
-func defaultLookPath(file string) (string, error) {
-	return exec.LookPath(file)
-}
-
 // lookPath is indirected for tests. Tests can swap in a stub that returns
 // ErrHelperMissing to exercise the graceful-degrade path.
-var lookPath = defaultLookPath
+var lookPath = exec.LookPath
 
 // Wrap returns the OS-appropriate wrapped command for the given policy.
 //
@@ -56,7 +46,8 @@ func Wrap(p Policy, cmd []string) ([]string, error) {
 		return cmd, nil
 	}
 	if !p.Scope.known() {
-		return unknownScopeCmd(p.Scope), fmt.Errorf("%w: %q", ErrUnknownScope, p.Scope)
+		refuse := fmt.Sprintf("sandbox: unknown scope %q (want read-only, workspace-write, workspace-write-net or danger-full-access); refusing to run unsandboxed", string(p.Scope))
+		return RefuseCmd(refuse), fmt.Errorf("%w: %q", ErrUnknownScope, p.Scope)
 	}
 	switch runtime.GOOS {
 	case "darwin":
@@ -64,7 +55,11 @@ func Wrap(p Policy, cmd []string) ([]string, error) {
 	case "linux":
 		return wrapLinux(p, cmd)
 	case "windows":
-		return wrapWindows(p, cmd)
+		// TODO(post-v0.1): detect WSL2, re-dispatch the command via
+		// `wsl.exe -e ...` using the Linux bwrap path inside the distro. Until
+		// then degrade to the bare command with a warning so the agent loop
+		// can decide whether to proceed or abort based on its ApprovalMode.
+		return cmd, fmt.Errorf("%w: windows sandbox not implemented (WSL2 dispatch post-v0.1)", ErrUnsupported)
 	default:
 		return cmd, ErrUnsupported
 	}

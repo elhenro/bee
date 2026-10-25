@@ -19,7 +19,8 @@ type phaseMsg string
 
 type tokensMsg zzz.TokenStat
 
-type commitsMsg int
+// commitsMsg marks the running iteration committed.
+type commitsMsg struct{}
 
 type logMsg struct {
 	level string // "info" | "warn" | "err"
@@ -33,10 +34,7 @@ type doneMsg struct {
 
 // iterRow is one row in the timeline panel.
 type iterRow struct {
-	n       int
-	status  string // "running" | "committed" | "noop" | "repair" | "reset" | "failed"
-	subject string
-	tokens  zzz.TokenStat
-	commit  string // short sha
-	when    time.Time
+	n      int
+	status string // "running" | "committed" | "noop" | "repair" | "reset" | "failed"
+	tokens zzz.TokenStat
 }

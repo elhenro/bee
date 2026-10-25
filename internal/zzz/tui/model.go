@@ -1,17 +1,15 @@
 package tui
 
 import (
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/elhenro/bee/internal/zzz"
+	"github.com/elhenro/bee/internal/zzz/uikit"
 )
 
 // Model is the bubbletea state for `bee zzz`. It implements zzz.UI by
@@ -19,14 +17,11 @@ import (
 // drains via tea.Msg dispatching — Drive runs in a goroutine and never
 // touches Model fields directly.
 type Model struct {
-	run    *zzz.Run
-	cfg    zzz.Config
-	width  int
-	height int
+	run   *zzz.Run
+	width int
 
 	input  textarea.Model
 	tick   int
-	now    time.Time
 	start  time.Time
 	iter   int
 	maxIt  int
@@ -35,8 +30,7 @@ type Model struct {
 	rows   []iterRow
 	log    []logMsg
 
-	// channels
-	msgs    chan tea.Msg // ui events → Update
+	box     *uikit.Mailbox // ui events → Update
 	steer   chan zzz.Steer
 	done    bool
 	final   *zzz.Run
@@ -46,18 +40,11 @@ type Model struct {
 	// force-quits the program so a wedged iteration — one the engine can't
 	// drain steering into — can still be killed via ctx-cancel on Run() exit.
 	stopArmed bool
-
-	// closed guards m.msgs from a panic when Quit fires after Drive returned
-	// — Drive's goroutine keeps calling send() during shutdown, and a
-	// send-on-closed channel would crash the process.
-	closed   chan struct{}
-	closeMu  sync.Mutex
-	closeOne sync.Once
 }
 
 // New builds the bubbletea model. width=0 defers sizing until the first
 // WindowSizeMsg lands.
-func New(run *zzz.Run, cfg zzz.Config) *Model {
+func New(run *zzz.Run, _ zzz.Config) *Model {
 	ti := textarea.New()
 	ti.Placeholder = "type a nudge or /stop /abort /note <text>"
 	ti.Prompt = styHoney.Render("› ") + " "
@@ -79,14 +66,11 @@ func New(run *zzz.Run, cfg zzz.Config) *Model {
 	)
 
 	return &Model{
-		run:    run,
-		cfg:    cfg,
-		input:  ti,
-		start:  time.Now(),
-		now:    time.Now(),
-		msgs:   make(chan tea.Msg, 64),
-		steer:  make(chan zzz.Steer, 16),
-		closed: make(chan struct{}),
+		run:   run,
+		input: ti,
+		start: time.Now(),
+		box:   uikit.NewMailbox(64),
+		steer: make(chan zzz.Steer, 16),
 	}
 }
 
@@ -95,43 +79,15 @@ func (m *Model) Steer() <-chan zzz.Steer { return m.steer }
 
 // --- zzz.UI implementation (called from the Drive goroutine) ---
 
-func (m *Model) SetIter(n, max int)        { m.send(iterMsg{n: n, max: max}) }
-func (m *Model) SetPhase(p string)         { m.send(phaseMsg(p)) }
-func (m *Model) SetTokens(t zzz.TokenStat) { m.send(tokensMsg(t)) }
-func (m *Model) IncCommits()               { m.send(commitsMsg(1)) }
-func (m *Model) Println(msg string)        { m.send(logMsg{level: levelFor(msg), text: msg}) }
-func (m *Model) RenderSummary(r *zzz.Run) { /* TUI shows summary in finalPanel(); printing is a no-op */
-}
+func (m *Model) SetIter(n, max int)        { m.box.Send(iterMsg{n: n, max: max}) }
+func (m *Model) SetPhase(p string)         { m.box.Send(phaseMsg(p)) }
+func (m *Model) SetTokens(t zzz.TokenStat) { m.box.Send(tokensMsg(t)) }
+func (m *Model) IncCommits()               { m.box.Send(commitsMsg{}) }
+func (m *Model) Println(msg string)        { m.box.Send(logMsg{level: uikit.LevelFor(msg), text: msg}) }
+func (m *Model) RenderSummary(r *zzz.Run)  {} // finalPanel() shows the summary
 
 // Done is called by the launcher after Drive returns so the TUI can show
 // the final panel and let the user dismiss with q.
 func (m *Model) Done(r *zzz.Run, err error) {
-	m.send(doneMsg{run: r, err: err})
-}
-
-func (m *Model) send(msg tea.Msg) {
-	// closed sentinel beats the panic; Drive may keep calling send during
-	// shutdown but we must not feed a closed channel.
-	select {
-	case <-m.closed:
-		return
-	default:
-	}
-	select {
-	case m.msgs <- msg:
-	case <-m.closed:
-	default:
-		// drop on saturation; live status is non-critical (events.jsonl is canonical)
-	}
-}
-
-func levelFor(s string) string {
-	low := strings.ToLower(s)
-	switch {
-	case strings.Contains(low, "fail"), strings.Contains(low, "error"):
-		return "err"
-	case strings.Contains(low, "blocked"), strings.Contains(low, "denied"):
-		return "warn"
-	}
-	return "info"
+	m.box.Send(doneMsg{run: r, err: err})
 }

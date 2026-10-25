@@ -52,41 +52,24 @@ func Probe(ctx context.Context, repo, branch, currentSHA string) (Info, error) {
 		branch = "main"
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/%s/compare/%s...%s", repo, currentSHA, branch)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return Info{}, fmt.Errorf("build request: %w", err)
+	var body struct {
+		AheadBy  int `json:"ahead_by"`
+		BehindBy int `json:"behind_by"`
+		Commits  []struct {
+			SHA string `json:"sha"`
+		} `json:"commits"`
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "bee-updater")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return Info{}, fmt.Errorf("github: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+	status, err := githubGet(ctx, repo, "compare/"+currentSHA+"..."+branch, &body)
+	switch {
+	case err != nil:
+		return Info{}, err
+	case status == http.StatusNotFound:
 		// unknown sha (e.g. local-only commit, squash-merged history) — can't
 		// compare. Fall back to a head-of-branch probe so we still detect when
 		// main has clearly moved past us.
 		return probeHead(ctx, repo, branch, currentSHA)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return Info{}, fmt.Errorf("github: status %d", resp.StatusCode)
-	}
-	var body struct {
-		Status    string `json:"status"`
-		AheadBy   int    `json:"ahead_by"`
-		BehindBy  int    `json:"behind_by"`
-		MergeBase struct {
-			SHA string `json:"sha"`
-		} `json:"merge_base_commit"`
-		Commits []struct {
-			SHA string `json:"sha"`
-		} `json:"commits"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return Info{}, fmt.Errorf("decode: %w", err)
+	case status != http.StatusOK:
+		return Info{}, fmt.Errorf("github: status %d", status)
 	}
 	// compare/{base}...{head} with base=current, head=branch: ahead_by is the
 	// commits head has that base lacks (new on main), behind_by the reverse.
@@ -99,9 +82,7 @@ func Probe(ctx context.Context, repo, branch, currentSHA string) (Info, error) {
 	}
 	if len(body.Commits) > 0 {
 		info.LatestSHA = body.Commits[len(body.Commits)-1].SHA
-	}
-	if info.LatestSHA != "" && len(info.LatestSHA) >= 7 {
-		info.ShortSHA = info.LatestSHA[:7]
+		info.ShortSHA = shortSHA(info.LatestSHA)
 	}
 	return info, nil
 }
@@ -109,41 +90,58 @@ func Probe(ctx context.Context, repo, branch, currentSHA string) (Info, error) {
 // probeHead is the fallback when /compare can't resolve the current sha.
 // Returns Ahead=1 with the branch tip when local sha doesn't match HEAD.
 func probeHead(ctx context.Context, repo, branch, currentSHA string) (Info, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/commits/%s", repo, branch)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	var body struct {
+		SHA string `json:"sha"`
+	}
+	status, err := githubGet(ctx, repo, "commits/"+branch, &body)
 	if err != nil {
 		return Info{}, err
+	}
+	if status != http.StatusOK {
+		return Info{}, fmt.Errorf("github head: status %d", status)
+	}
+	if body.SHA == "" || strings.HasPrefix(body.SHA, currentSHA) || strings.HasPrefix(currentSHA, body.SHA) {
+		return Info{CurrentSHA: currentSHA, Repo: repo, Branch: branch}, nil
+	}
+	return Info{
+		CurrentSHA: currentSHA,
+		LatestSHA:  body.SHA,
+		ShortSHA:   shortSHA(body.SHA),
+		Ahead:      1,
+		Repo:       repo,
+		Branch:     branch,
+	}, nil
+}
+
+// githubGet fetches repos/<repo>/<path> from the GitHub API. out is decoded
+// only on a 200; any other status comes back as the code with a nil error.
+func githubGet(ctx context.Context, repo, path string, out any) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/"+repo+"/"+path, nil)
+	if err != nil {
+		return 0, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "bee-updater")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return Info{}, err
+		return 0, fmt.Errorf("github: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return Info{}, fmt.Errorf("github head: status %d", resp.StatusCode)
+		return resp.StatusCode, nil
 	}
-	var body struct {
-		SHA string `json:"sha"`
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return resp.StatusCode, fmt.Errorf("decode: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return Info{}, err
+	return resp.StatusCode, nil
+}
+
+// shortSHA is the 7-char short of sha, or "" when sha is shorter.
+func shortSHA(sha string) string {
+	if len(sha) < 7 {
+		return ""
 	}
-	if body.SHA == "" || strings.HasPrefix(body.SHA, currentSHA) || strings.HasPrefix(currentSHA, body.SHA) {
-		return Info{CurrentSHA: currentSHA, Repo: repo, Branch: branch}, nil
-	}
-	info := Info{
-		CurrentSHA: currentSHA,
-		LatestSHA:  body.SHA,
-		Ahead:      1,
-		Repo:       repo,
-		Branch:     branch,
-	}
-	if len(body.SHA) >= 7 {
-		info.ShortSHA = body.SHA[:7]
-	}
-	return info, nil
+	return sha[:7]
 }
 
 // InstallURL is the canonical curl-piped installer script.

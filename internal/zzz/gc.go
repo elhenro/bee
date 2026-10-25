@@ -3,6 +3,7 @@ package zzz
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 )
@@ -53,11 +54,7 @@ func Prune(opts PruneOpts) PruneResult {
 	// below if also old enough by MaxAge/KeepNewest.
 	if opts.StaleRunningAge > 0 {
 		for _, r := range runs {
-			if r.Status != StatusRunning {
-				continue
-			}
-			stamp := r.StartedAt
-			if now.Sub(stamp) < opts.StaleRunningAge {
+			if r.Status != StatusRunning || now.Sub(r.StartedAt) < opts.StaleRunningAge {
 				continue
 			}
 			// a long-running but live driver is not stale — reaping it would
@@ -78,13 +75,10 @@ func Prune(opts PruneOpts) PruneResult {
 		runs, _ = ListRuns()
 	}
 
-	// runs already sorted newest-first by ListRuns.
-	var terminal []*Run
-	for _, r := range runs {
-		if isTerminal(r.Status) {
-			terminal = append(terminal, r)
-		}
+	if opts.MaxAge == 0 && opts.KeepNewest == 0 {
+		return res
 	}
+	terminal := slices.DeleteFunc(runs, func(r *Run) bool { return !isTerminal(r.Status) })
 	sort.Slice(terminal, func(i, j int) bool {
 		return terminal[i].EndedAt.After(terminal[j].EndedAt)
 	})
@@ -97,9 +91,6 @@ func Prune(opts PruneOpts) PruneResult {
 			stamp = r.StartedAt
 		}
 		if opts.MaxAge > 0 && now.Sub(stamp) < opts.MaxAge {
-			continue
-		}
-		if opts.MaxAge == 0 && opts.KeepNewest == 0 {
 			continue
 		}
 		// remove worktree first so a `git worktree remove` failure doesn't
