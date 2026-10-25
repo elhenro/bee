@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bee, a coding agent harness in one Go binary</title>
+<meta name="description" content="bee is a coding agent harness in a single Go binary. Skills are subcommands, it runs on a 4k-context local model or a frontier API, and it learns your routes as it goes.">
+<meta name="keywords" content="bee, coding agent, AI agent, Go, ollama, oMLX, openrouter, local LLM, CLI, developer tools, autonomous coding">
+<meta name="author" content="Henry Schober">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fffbf2">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15141a">
+<link rel="canonical" href="https://bee.hnr.bz/">
+<link rel="alternate" type="text/plain" href="https://bee.hnr.bz/llms.txt" title="llms.txt, a structured summary for AI agents">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/assets/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<meta property="og:title" content="bee, a coding agent harness in one Go binary">
+<meta property="og:description" content="Skills are subcommands. Runs on a 4k-context local model or a frontier API. Pure Go, one static binary.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="bee">
+<meta property="og:url" content="https://bee.hnr.bz/">
+<meta property="og:image" content="https://bee.hnr.bz/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="bee fixing a failing test in a terminal, framed in honey yellow">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="bee, a coding agent harness in one Go binary">
+<meta name="twitter:description" content="Skills are subcommands. Runs on a 4k-context local model or a frontier API. Pure Go, one static binary.">
+<meta name="twitter:image" content="https://bee.hnr.bz/assets/og-image.png">
+<meta name="twitter:image:alt" content="bee fixing a failing test in a terminal, framed in honey yellow">
+<link rel="preload" href="/assets/fonts/fraunces-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/assets/sections.css">
+<script>
+  document.documentElement.classList.add('js');
+  try {
+    var t = localStorage.getItem('bee-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="bee-mark" viewBox="0 0 64 64">
+    <clipPath id="bee-clip"><path d="M32 14 51 25v22L32 58 13 47V25z"/></clipPath>
+    <g fill="#fff" fill-opacity=".95" stroke="#1f1b16" stroke-opacity=".3" stroke-width="1.5">
+      <ellipse cx="19.5" cy="13.5" rx="10" ry="6" transform="rotate(-28 19.5 13.5)"/>
+      <ellipse cx="44.5" cy="13.5" rx="10" ry="6" transform="rotate(28 44.5 13.5)"/>
+    </g>
+    <path d="M32 14 51 25v22L32 58 13 47V25z" fill="#ffb000"/>
+    <g clip-path="url(#bee-clip)" fill="#1f1b16"><rect x="10" y="29" width="44" height="5.5"/><rect x="10" y="40" width="44" height="5.5"/></g>
+  </symbol>
+  <symbol id="github" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></symbol>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="bee, home"><svg aria-hidden="true"><use href="#bee-mark"/></svg>bee</a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#why">Why bee</a>
+      <a href="#screens">Screens</a>
+      <a href="#install">Install</a>
+      <a href="#models">Models</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-end">
+      <a class="btn" href="https://github.com/elhenro/bee"><svg aria-hidden="true"><use href="#github"/></svg>GitHub</a>
+      <button class="icon-btn" id="theme" type="button" aria-label="Toggle light and dark theme">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" aria-labelledby="top">
+    <div class="wrap">
+      <p class="eyebrow"><span class="hex-dot"></span>Open source · Pure Go · MIT</p>
+      <h1 id="top">Tiny but <em>mighty</em>.</h1>
+      <p class="lede">bee is a coding agent harness in a single Go binary. It writes code, runs your tests and commits, on a 4k-context local model or a frontier API. Same workflow, your choice.</p>
+      <div class="cta">
+        <div class="cmd">
+          <span class="prompt">$</span>
+          <code id="hero-cmd">curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh</code>
+          <button class="copy" type="button" data-copy="#hero-cmd" aria-live="polite">Copy</button>
+        </div>
+        <div class="cta-links">
+          <a class="btn primary" href="#install">Quick start</a>
+          <a class="btn" href="https://github.com/elhenro/bee"><svg aria-hidden="true"><use href="#github"/></svg>Star on GitHub</a>
+        </div>
+        <p class="fine">macOS and Linux. Or <code>go install github.com/elhenro/bee/cmd/bee@latest</code></p>
+      </div>
+      <div class="stage">
+        <div class="window">
+          <video id="hero-video" controls muted loop playsinline preload="metadata" poster="/assets/shot-done.webp" width="1600" height="1252" aria-label="bee fixing a failing test: it runs the tests, reads the code, patches one line and runs the tests again">
+            <source src="/assets/hero.webm" type="video/webm">
+            <source src="/assets/hero.mp4" type="video/mp4">
+          </video>
+          <button class="vid-toggle" type="button" aria-label="Pause demo">
+            <svg class="pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+            <svg class="play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="caption">A real session on a local oMLX server with a 27B model. Not sped up.</p>
+    </div>
+  </section>
+
+  <section class="section" id="why" aria-labelledby="why-h">
+    <div class="wrap">
+      <div class="head">
+        <span class="kicker">Why bee</span>
+        <h2 id="why-h">Three ideas, <em>one binary</em>.</h2>
+        <p>Built for the small end of the model range, without giving up the big end.</p>
+      </div>
+      <div class="grid three">
+        <article class="card">
+          <div class="hex">4k</div>
+          <h3>Tiny-context friendly</h3>
+          <p>A compact system prompt, lazy top-k memory and token-budgeted tool docs. bee shrinks itself when the window gets tight, so a 4k-context Ollama model works as well as a million-token API.</p>
+        </article>
+        <article class="card">
+          <div class="hex">&gt;_</div>
+          <h3>Skills are subcommands</h3>
+          <p>Drop a markdown file in <code>~/.bee/skills</code> and run it as <code>bee &lt;name&gt;</code>. One binary on your PATH, no shell shims, from any directory in any shell.</p>
+        </article>
+        <article class="card">
+          <div class="hex">fn</div>
+          <h3>Skills are agent endpoints</h3>
+          <p>A prompt, a command or a recipe. Every skill is also a tool the model can call mid-task, so a personal agent plugs in as a sub-agent without glue code.</p>
+        </article>
+      </div>
+      <p class="note">Plus loop detection, nudges for models that stall, and a sandbox with approval gates for risky commands.</p>
+    </div>
+  </section>
+
+  <section class="section tint" id="colony" aria-labelledby="colony-h">
+    <div class="wrap">
+      <div class="head">
+        <span class="kicker">The colony</span>
+        <h2 id="colony-h">More than <em>one bee</em>.</h2>
+        <p>Roles, a hive and an overnight loop live in the same binary. None of it is required.</p>
+      </div>
+      <div class="grid three">
+        <article class="card small">
+          <h3><span class="hex-dot"></span>Three roles</h3>
+          <p><code>worker</code> does the job, <code>scout</code> researches read-only with web search, <code>queen</code> splits a big task over a hive. Cycle them with shift+tab.</p>
+        </article>
+        <article class="card small">
+          <h3><span class="hex-dot"></span>A hive that stays aligned</h3>
+          <p>Workers share a pheromone card (the goal, the plan and one status row per sibling) instead of chatting. A worker that dies leaves a death report, not a bare error.</p>
+        </article>
+        <article class="card small">
+          <h3><span class="hex-dot"></span>Parallel agents</h3>
+          <p><code>bee agents</code> gives every task its own git worktree. Finished branches are rebased, verified and fast-forwarded onto main.</p>
+        </article>
+        <article class="card small">
+          <h3><span class="hex-dot"></span>Overnight loop</h3>
+          <p><code>bee zzz</code> makes one small change per iteration, then commits or rolls back. Wake up to a branch of small, revertable commits.</p>
+          <div class="legend" aria-label="Ledger symbols"><span>🌼 committed</span><span>🍃 noop</span><span>🥀 reset</span><span>💥 failed</span></div>
+        </article>
+        <article class="card small">
+          <h3><span class="hex-dot"></span>Procedure memory</h3>
+          <p>When bee repeats the same read-only route, it crystallizes it into a runnable shortcut called a waggle. Fewer round trips, which matters most for small local models.</p>
+        </article>
+        <article class="card small">
+          <h3><span class="hex-dot"></span>Review aids</h3>
+          <p><code>bee explain</code> lists what each request changed and why. <code>bee quiz</code> makes you guess the reason first. Learn the codebase while the agent works in it.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="screens" aria-labelledby="screens-h">
+    <div class="wrap">
+      <div class="head">
+        <span class="kicker">Screens</span>
+        <h2 id="screens-h">See it <em>work</em>.</h2>
+        <p>Captures of the current terminal UI, from real sessions.</p>
+      </div>
+      <div data-gallery>
+        <div class="tabs" role="tablist" aria-label="Screenshots">
+          <button class="tab" role="tab" id="tab-done" aria-controls="panel-done" aria-selected="true">A task</button>
+          <button class="tab" role="tab" id="tab-work" aria-controls="panel-work" aria-selected="false" tabindex="-1">Live</button>
+          <button class="tab" role="tab" id="tab-models" aria-controls="panel-models" aria-selected="false" tabindex="-1">Models</button>
+          <button class="tab" role="tab" id="tab-skills" aria-controls="panel-skills" aria-selected="false" tabindex="-1">Skills</button>
+          <button class="tab" role="tab" id="tab-light" aria-controls="panel-light" aria-selected="false" tabindex="-1">Light</button>
+        </div>
+        <div class="panels">
+          <figure class="panel active" role="tabpanel" id="panel-done" aria-labelledby="tab-done">
+            <div class="stage"><div class="window"><img src="/assets/shot-done.webp" width="1838" height="1438" alt="bee after fixing a failing test: a red test run, a one-line diff in green and red, a passing test run, the answer and a change summary" decoding="async"></div></div>
+            <figcaption><strong>A task, start to finish.</strong> bee runs the tests, reads the code, patches one line, runs the tests again and lists what changed. Every call is a card, every edit is a diff.</figcaption>
+          </figure>
+          <figure class="panel" role="tabpanel" id="panel-work" aria-labelledby="tab-work">
+            <div class="stage"><div class="window"><img src="/assets/shot-work.webp" width="1838" height="1438" alt="bee mid-task with a one-line diff on screen and a spinner reading Foraging with live token counts" loading="lazy" decoding="async"></div></div>
+            <figcaption><strong>Watch it work.</strong> A live spinner with token counts. Press <code>esc</code> to interrupt at any moment.</figcaption>
+          </figure>
+          <figure class="panel" role="tabpanel" id="panel-models" aria-labelledby="tab-models">
+            <div class="stage"><div class="window"><img src="/assets/shot-models.webp" width="1838" height="1208" alt="The model picker listing local Qwen models served by oMLX" loading="lazy" decoding="async"></div></div>
+            <figcaption><strong>Any model on your machine.</strong> Press <code>ctrl+p</code>, pick a provider, then a model. bee asks your local server what it has.</figcaption>
+          </figure>
+          <figure class="panel" role="tabpanel" id="panel-skills" aria-labelledby="tab-skills">
+            <div class="stage"><div class="window"><img src="/assets/shot-skills.webp" width="1838" height="1208" alt="The slash menu listing commands and skills together" loading="lazy" decoding="async"></div></div>
+            <figcaption><strong>Commands and skills in one list.</strong> Type <code>/</code> for commands. Skills are markdown files in <code>~/.bee/skills</code> and also run as <code>bee &lt;name&gt;</code>.</figcaption>
+          </figure>
+          <figure class="panel" role="tabpanel" id="panel-light" aria-labelledby="tab-light">
+            <div class="stage"><div class="window"><img src="/assets/shot-light.webp" width="1838" height="1438" alt="The same task in a light terminal theme" loading="lazy" decoding="async"></div></div>
+            <figcaption><strong>Light terminals too.</strong> The palette adapts to your theme.</figcaption>
+          </figure>
+        </div>
+      </div>
+      <dialog class="lightbox" id="lightbox" aria-label="Full size screenshot"><img alt=""></dialog>
+    </div>
+  </section>
+
+  <section class="section tint" id="install" aria-labelledby="install-h">
+    <div class="wrap">
+      <div class="head">
+        <span class="kicker">Quick start</span>
+        <h2 id="install-h">Up and running in <em>a minute</em>.</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Install</h3>
+            <div class="install-tabs" role="group" aria-label="Install method">
+              <button type="button" aria-selected="true" data-cmd="curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh">curl</button>
+              <button type="button" aria-selected="false" data-cmd="go install github.com/elhenro/bee/cmd/bee@latest">go install</button>
+              <button type="button" aria-selected="false" data-cmd="git clone https://github.com/elhenro/bee &amp;&amp; cd bee &amp;&amp; go build -o ~/.local/bin/bee ./cmd/bee">source</button>
+            </div>
+            <div class="cmd">
+              <span class="prompt">$</span>
+              <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh</code>
+              <button class="copy" type="button" data-copy="#install-cmd" aria-live="polite">Copy</button>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Pick a model</h3>
+            <p>Run <code>bee</code>, type <code>/model</code>, choose a runtime (oMLX, Ollama, LM Studio, OpenRouter) and a model. Local or hosted, your choice.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Hand it a job</h3>
+            <p>Talk to it in the terminal UI, or run it headless. Everything else is a subcommand.</p>
+<pre class="term"><span class="p">$</span> <b>bee</b> criticize plan.md            <span class="c"># a skill is a subcommand</span>
+<span class="p">$</span> <b>bee</b> run "lint cmd/"              <span class="c"># headless, pipeable</span>
+<span class="p">$</span> <b>bee</b> swarm "migrate auth to jwt"  <span class="c"># queen plans, workers build</span>
+<span class="p">$</span> <b>bee</b> fan "audit internal/"        <span class="c"># same prompt, many bees</span>
+<span class="p">$</span> <b>bee</b> zzz "tighten error messages" <span class="c"># overnight loop</span>
+<span class="p">$</span> <b>bee</b> agents                       <span class="c"># parallel agents, one worktree each</span>
+<span class="p">$</span> <b>bee</b> remote-control               <span class="c"># drive bee from another device on your LAN</span></pre>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section" id="models" aria-labelledby="models-h">
+    <div class="wrap split">
+      <div>
+        <div class="head">
+          <span class="kicker">Local first</span>
+          <h2 id="models-h">Made for <em>local models</em>.</h2>
+        </div>
+        <p>bee works well with <a href="https://ollama.com">Ollama</a> and <a href="https://github.com/jundot/omlx">oMLX</a>, so you keep control. <strong>No API keys, no rate limits, nothing leaves your machine.</strong></p>
+        <p>On macOS, oMLX adds native Apple Silicon acceleration with prompt caching, which keeps things fast and memory-efficient. For models that only read text, bee routes images through a small local vision model.</p>
+        <ul class="pills" aria-label="Supported runtimes">
+          <li><a href="https://github.com/jundot/omlx">oMLX</a></li>
+          <li><a href="https://ollama.com">Ollama</a></li>
+          <li><a href="https://lmstudio.ai">LM Studio</a></li>
+          <li><a href="https://openrouter.ai">OpenRouter</a></li>
+        </ul>
+      </div>
+      <div class="rig">
+        <h3>My setup</h3>
+        <p>MacBook M3 Max, 64 GB. Huihui-Qwen3.6-35B-A3B at 8-bit (34.32 GB) with Qwen3-VL-4B (2.90 GB) for vision. Sampling: temperature 0.7, top-p 0.85, top-k 20, 8-bit KV cache.</p>
+        <table class="table">
+          <thead><tr><th>Also works well</th><th>Size</th></tr></thead>
+          <tbody>
+            <tr><td>gemma-4-12B-it-4bit</td><td>10.26 GB</td></tr>
+            <tr><td>gemma-4-12B-it-8bit</td><td>11.87 GB</td></tr>
+            <tr><td>gemma-4-12B-it-assistant-bf16</td><td>837 MB</td></tr>
+            <tr><td>Qwen3-Coder-Next-4bit</td><td>41.78 GB</td></tr>
+            <tr><td>Qwen3.6-27B-8bit</td><td>9.02 GB</td></tr>
+            <tr><td>Qwen3.6-35B-A3B-4bit</td><td>19.03 GB</td></tr>
+            <tr><td>Qwen3.6-35B-A3B-8bit</td><td>29.68 GB</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tint" id="faq" aria-labelledby="faq-h">
+    <div class="wrap">
+      <div class="head">
+        <span class="kicker">FAQ</span>
+        <h2 id="faq-h">Questions, <em>answered</em>.</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>What is bee?</summary>
+          <p>bee is a minimal coding agent harness written in Go. It is a single static binary that turns any LLM into an autonomous agent which writes code, runs tests, and commits changes. There is no runtime to install and no daemon, just one executable on your PATH.</p>
+        </details>
+        <details>
+          <summary>How do I install bee?</summary>
+          <p>Run <code>curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh</code>, or <code>go install github.com/elhenro/bee/cmd/bee@latest</code> if you have Go. Then run <code>bee</code>, type <code>/model</code>, choose a runtime such as oMLX, Ollama, or OpenRouter, and pick a model.</p>
+        </details>
+        <details>
+          <summary>Can bee run fully local and offline?</summary>
+          <p>Yes. bee runs against local models through Ollama or oMLX, so there are no API keys, no rate limits, and nothing leaves your machine. On macOS, oMLX adds native Apple Silicon acceleration with prompt caching for fast, memory-efficient inference.</p>
+        </details>
+        <details>
+          <summary>What hardware do I need to run bee locally?</summary>
+          <p>It scales to your machine. A MacBook M3 Max with 64 GB of RAM reliably runs a 34 GB 8-bit Qwen3.6-35B model. Smaller models such as gemma-4-12B at 10 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start.</p>
+        </details>
+        <details>
+          <summary>Which models work well with bee?</summary>
+          <p>bee works from tiny local models to frontier APIs. The reference model is Huihui-Qwen3.6-35B-A3B at 8-bit, with Qwen3-VL-4B for vision; gemma-4-12B and Qwen3-Coder-Next also perform well. bee handles vision automatically for models that only do text.</p>
+        </details>
+        <details>
+          <summary>What are bee skills?</summary>
+          <p>Skills are extra capabilities exposed as subcommands. You invoke them as <code>bee &lt;name&gt;</code>, so one binary on your PATH covers many jobs instead of a directory of separate scripts. This keeps installation to a single file while letting bee grow new abilities.</p>
+        </details>
+        <details>
+          <summary>Does bee work with hosted providers like OpenRouter?</summary>
+          <p>Yes. Besides local Ollama and oMLX, bee connects to hosted providers such as OpenRouter, so you can mix local and cloud models. Switch at any time with the <code>/model</code> command and pick whichever runtime and model fit the task and your budget.</p>
+        </details>
+        <details>
+          <summary>Can bee run many agents at once, or overnight?</summary>
+          <p>Yes. <code>bee agents</code> starts each task in its own git worktree and merges finished branches back once the verify gate passes. <code>bee swarm</code> and <code>bee fan</code> spread one task over several bees, and <code>bee zzz</code> runs an overnight loop that makes one small change per iteration and commits or rolls back, so you wake up to small, revertable commits.</p>
+        </details>
+        <details>
+          <summary>Does bee help me understand what it changed?</summary>
+          <p>Yes. On the normal and large profiles every file change carries a one-line reason from the model. <code>bee explain</code> lists what each request changed and why, and <code>bee quiz</code> makes you guess the reason before it shows you.</p>
+        </details>
+        <details>
+          <summary>Is bee free and open source?</summary>
+          <p>Yes. bee is free and open source under the MIT license, with the full source, issues, and releases on GitHub at github.com/elhenro/bee. It is pure Go and ships as a single static binary for macOS and Linux (amd64 and arm64). Windows is untested.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="section band" aria-labelledby="band-h">
+    <div class="wrap">
+      <h2 id="band-h">Klein aber <em>oho</em>.</h2>
+      <p>German for small but mighty. One binary, any model, your machine.</p>
+      <div class="cta-links" style="display:flex;flex-wrap:wrap;justify-content:center;gap:.7rem">
+        <a class="btn dark" href="https://github.com/elhenro/bee"><svg aria-hidden="true"><use href="#github"/></svg>Get bee on GitHub</a>
+        <a class="btn" href="https://github.com/elhenro/bee/releases">Releases</a>
+        <a class="btn" href="https://pkg.go.dev/github.com/elhenro/bee">Go reference</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <a class="brand" href="/"><svg aria-hidden="true"><use href="#bee-mark"/></svg>bee</a>
+    <nav aria-label="Project links">
+      <a href="https://github.com/elhenro/bee">GitHub</a>
+      <a href="https://github.com/elhenro/bee/releases">Releases</a>
+      <a href="https://pkg.go.dev/github.com/elhenro/bee">Go reference</a>
+      <a href="/llms.txt">llms.txt</a>
+    </nav>
+    <p>Built by <a href="https://github.com/elhenro">Henry Schober</a>. MIT licensed. © <span id="year">2026</span></p>
+  </div>
+</footer>
+
+<script src="/assets/site.js" defer></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://bee.hnr.bz/#website",
+      "url": "https://bee.hnr.bz/",
+      "name": "bee",
+      "description": "A coding agent harness in a single Go binary.",
+      "inLanguage": "en",
+      "publisher": { "@id": "https://bee.hnr.bz/#author" }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://bee.hnr.bz/#author",
+      "name": "Henry Schober",
+      "url": "https://github.com/elhenro",
+      "sameAs": ["https://github.com/elhenro", "https://pkg.go.dev/github.com/elhenro/bee"]
+    },
+    {
+      "@type": ["SoftwareApplication", "SoftwareSourceCode"],
+      "@id": "https://bee.hnr.bz/#software",
+      "name": "bee",
+      "description": "A minimal coding agent harness written in Go. Turns any LLM, from a tiny local model to a frontier API, into an autonomous coding agent that writes code, runs tests, and commits changes. Skills are exposed as subcommands. Runs fully local with Ollama or oMLX, or against hosted providers like OpenRouter.",
+      "url": "https://bee.hnr.bz/",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS, Linux",
+      "programmingLanguage": "Go",
+      "runtimePlatform": "Go",
+      "dateModified": "2026-10-25",
+      "codeRepository": "https://github.com/elhenro/bee",
+      "downloadUrl": "https://github.com/elhenro/bee/releases",
+      "softwareHelp": "https://github.com/elhenro/bee",
+      "license": "https://github.com/elhenro/bee/blob/main/LICENSE",
+      "image": "https://bee.hnr.bz/assets/og-image.png",
+      "author": { "@id": "https://bee.hnr.bz/#author" },
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "keywords": "coding agent, AI agent, Go, ollama, oMLX, openrouter, local LLM, CLI, developer tools, autonomous coding"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "What is bee?", "acceptedAnswer": { "@type": "Answer", "text": "bee is a minimal coding agent harness written in Go. It is a single static binary that turns any LLM into an autonomous agent which writes code, runs tests, and commits changes. There is no runtime to install and no daemon, just one executable on your PATH." } },
+    { "@type": "Question", "name": "How do I install bee?", "acceptedAnswer": { "@type": "Answer", "text": "Run curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh, or go install github.com/elhenro/bee/cmd/bee@latest if you have Go. Then run bee, type /model, choose a runtime such as oMLX, Ollama, or OpenRouter, and pick a model." } },
+    { "@type": "Question", "name": "Can bee run fully local and offline?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee runs against local models through Ollama or oMLX, so there are no API keys, no rate limits, and nothing leaves your machine. On macOS, oMLX adds native Apple Silicon acceleration with prompt caching for fast, memory-efficient inference." } },
+    { "@type": "Question", "name": "What hardware do I need to run bee locally?", "acceptedAnswer": { "@type": "Answer", "text": "It scales to your machine. A MacBook M3 Max with 64 GB of RAM reliably runs a 34 GB 8-bit Qwen3.6-35B model. Smaller models such as gemma-4-12B at 10 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start." } },
+    { "@type": "Question", "name": "Which models work well with bee?", "acceptedAnswer": { "@type": "Answer", "text": "bee works from tiny local models to frontier APIs. The reference model is Huihui-Qwen3.6-35B-A3B at 8-bit, with Qwen3-VL-4B for vision; gemma-4-12B and Qwen3-Coder-Next also perform well. bee handles vision automatically for models that only do text." } },
+    { "@type": "Question", "name": "What are bee skills?", "acceptedAnswer": { "@type": "Answer", "text": "Skills are extra capabilities exposed as subcommands. You invoke them as bee <name>, so one binary on your PATH covers many jobs instead of a directory of separate scripts. This keeps installation to a single file while letting bee grow new abilities." } },
+    { "@type": "Question", "name": "Does bee work with hosted providers like OpenRouter?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Besides local Ollama and oMLX, bee connects to hosted providers such as OpenRouter, so you can mix local and cloud models. Switch at any time with the /model command and pick whichever runtime and model fit the task and your budget." } },
+    { "@type": "Question", "name": "Can bee run many agents at once, or overnight?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee agents starts each task in its own git worktree and merges finished branches back once the verify gate passes. bee swarm and bee fan spread one task over several bees, and bee zzz runs an overnight loop that makes one small change per iteration and commits or rolls back, so you wake up to small, revertable commits." } },
+    { "@type": "Question", "name": "Does bee help me understand what it changed?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. On the normal and large profiles every file change carries a one-line reason from the model. bee explain lists what each request changed and why, and bee quiz makes you guess the reason before it shows you." } },
+    { "@type": "Question", "name": "Is bee free and open source?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee is free and open source under the MIT license, with the full source, issues, and releases on GitHub at github.com/elhenro/bee. It is pure Go and ships as a single static binary for macOS and Linux (amd64 and arm64). Windows is untested." } }
+  ]
+}
+</script>
+</body>
+</html>

@@ -1,80 +1,51 @@
 # bee website
 
-A single Go binary that serves the bee landing page. Zero dependencies at runtime.
+The landing page at https://bee.hnr.bz. A static page (HTML, two stylesheets, one script) plus a tiny Go server that embeds it for local work. No build step, no framework.
 
 ## Run locally
 
 ```sh
-# one-liner
 go run .
-
-# or build and run
-go build -o website .
-./website
-# http://localhost:8080
+# http://localhost:8080  (PORT=9000 go run . to change it)
 ```
 
-The binary embeds all assets (images, favicon, robots.txt, sitemap.xml) via `go:embed`. No external files needed.
+The server embeds `index.html`, `assets/`, `robots.txt`, `sitemap.xml` and `llms.txt` at compile time, so restart it after an edit.
 
-## Build for production
+## Build and deploy
 
 ```sh
-./build.sh
-# built to dist/
-#   dist/website          — the binary
-#   dist/index.html       — extracted HTML for static hosting
-#   dist/assets/*         — static assets
+./build.sh    # collects the static site into dist/
+./deploy.sh   # build.sh, then wrangler pages deploy dist (Cloudflare Pages)
 ```
 
-The `build.sh` script builds the binary, runs it briefly, extracts the HTML for static hosting (Cloudflare Pages, GitHub Pages, etc.), and copies assets into `dist/`.
+`dist/` is plain static files. `_headers` sets the cache and security headers on Cloudflare Pages. Crawler files sit at the deploy root so they answer `/robots.txt` and friends.
 
-## What it serves
-
-- `/` — the landing page (HTML with inline CSS/JS)
-- `/assets/*` — images, favicon, og-image
-- `/robots.txt` — crawl rules
-- `/sitemap.xml` — sitemap
-
-## How it works
+## Layout
 
 ```
-main.go
-  ├── embed.FS (assets/*)
-  ├── indexHTML (string literal — the whole page)
-  └── chi router
-        GET /          → serve indexHTML
-        GET /assets/*  → serve from embed.FS
-        GET /robots.txt
-        GET /sitemap.xml
+index.html           the page, plus JSON-LD (WebSite, SoftwareApplication, FAQPage)
+assets/site.css      tokens, base, nav, hero
+assets/sections.css  the page sections
+assets/site.js       theme, copy buttons, install tabs, gallery, hero video
+assets/fonts/        Fraunces and JetBrains Mono (OFL, licenses next to the files)
+assets/shot-*.webp   the terminal windows, cropped from the demo renders
+assets/hero.*        the hero loop (webm and mp4)
+main.go              the local server
 ```
 
-The HTML is a string literal in `main.go` — no template files, no template compilation. Just `w.Write([]byte(indexHTML))`.
+## Design
 
-Assets (screenshots, favicon, og-image) are embedded at compile time. The binary is fully self-contained.
+- Honey on cream, ink on near-black in dark mode, one accent (`#ffb000`, the same honey the TUI uses). Hex shapes are the motif: the bullets, the stage behind every screenshot, the backdrop of the closing band.
+- Serif headings (Fraunces), system sans for text, JetBrains Mono for anything typed in a terminal.
+- Theme follows the system until the toggle is used, then the choice is stored in `localStorage` (`bee-theme`).
+- The FAQ is native `<details>`. Its text must match the FAQPage JSON-LD at the bottom of `index.html`.
 
-## Features
+## Behavior worth knowing
 
-- Dark/light theme toggle (persists in localStorage)
-- Screenshot gallery with auto-rotate, keyboard nav, touch swipe
-- Copy-on-click install commands
-- Schema.org structured data
-- Responsive (mobile-friendly)
-- Theme-color meta tag for mobile browsers
+- The hero loop plays only while visible, never under `prefers-reduced-motion`, and can always be paused. Without scripts it falls back to the native video controls.
+- The screenshot gallery is a tab list: arrow keys, Home and End move between tabs, swipe works on touch, and a click opens the full size image. Without scripts all screenshots stack.
+- On a phone the full size view scrolls, because a terminal is not readable at 390px.
 
-## Config
+## Refreshing the screenshots
 
-| Env var | Default | What it does |
-|---|---|---|
-| `PORT` | `8080` | Listen port |
-
-## Architecture
-
-```
-website/
-  main.go          — server + embedded HTML
-  assets/          — images, favicon, robots.txt, sitemap
-  build.sh         — production build script
-  go.mod           — single dep: chi v5
-```
-
-Single dependency: `github.com/go-chi/chi/v5`. Everything else is stdlib.
+The windows are cropped out of the demo renders (`demo/screenshots/*.png` are the framed versions of the same runs). After a new render, crop the 2x frame at 81px inset, round the corners and encode with `cwebp -q 88 -alpha_q 100`.
