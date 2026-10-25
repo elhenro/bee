@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,6 +14,27 @@ import (
 // per call because bubbletea passes Model by value — caching a *Model
 // pointer would observe a stale copy after the next Update.
 func (m *Model) side() commands.Side { return &tuiSide{m: m} }
+
+// baseCtx is the model's context, never nil (tests run without one).
+func (m Model) baseCtx() context.Context {
+	if m.ctx == nil {
+		return context.Background()
+	}
+	return m.ctx
+}
+
+// syncStream pushes the display toggles onto the stream renderer.
+func (m *Model) syncStream() {
+	s := m.stream
+	s.SetVerbose(m.verbose)
+	s.SetShowThoughts(m.showThoughts)
+	s.SetShowNudges(m.showNudges)
+	s.SetCompact(m.compact)
+	s.SetHighlight(m.highlight)
+	s.SetShowCallDetail(m.showCallDetail)
+	s.SetLoader(m.loader)
+	s.SetShowLoader(m.showLoader)
+}
 
 // inputHeightCap is how tall the textarea can grow before further newlines
 // just scroll inside it — keeps the chrome from devouring the transcript.
@@ -46,25 +68,12 @@ func (m *Model) inputGrowForMutation() {
 // the viewport scroll inside a 1-row window and earlier text vanishes.
 // Compute the visual row count by ceil(width / innerWidth) per logical line.
 func (m *Model) syncInputHeight() {
-	inner := m.input.Width()
-	if inner < 1 {
-		inner = 1
-	}
+	inner := max(m.input.Width(), 1)
 	n := 0
 	for _, line := range strings.Split(m.input.Value(), "\n") {
-		w := uniseg.StringWidth(line)
-		rows := 1
-		if w > inner {
-			rows = (w + inner - 1) / inner
-		}
-		n += rows
+		n += max(1, (uniseg.StringWidth(line)+inner-1)/inner)
 	}
-	if n < 1 {
-		n = 1
-	}
-	if n > inputHeightCap {
-		n = inputHeightCap
-	}
+	n = min(n, inputHeightCap)
 	if m.input.Height() != n {
 		m.input.SetHeight(n)
 	}

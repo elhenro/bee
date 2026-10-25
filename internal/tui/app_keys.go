@@ -4,11 +4,24 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// recoverError clears a stale error so a gated input (palette, @ picker)
+// isn't locked behind it.
+func (m *Model) recoverError() {
+	if m.state == StateError {
+		m.state = StateIdle
+		m.lastErr = ""
+	}
+}
+
+// resetCycle drops the up/down prompt-cycling session.
+func (m *Model) resetCycle() {
+	m.cycleActive, m.cycleEntries, m.cycleStash, m.cycleIdx = false, nil, "", -1
+}
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// classic readline chords must reach the textinput when the buffer has
@@ -79,26 +92,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSubmit()
 	case key.Matches(msg, m.keys.ProviderPick):
 		return m, func() tea.Msg { return openProviderMsg{} }
-	case key.Matches(msg, m.keys.HiveOpen):
+	case key.Matches(msg, m.keys.HiveOpen, m.keys.SessionTree, m.keys.CostOpen, m.keys.SlashPalette):
 		if editingChord && !inputEmpty {
 			break
 		}
-		return m, func() tea.Msg { return openHiveMsg{} }
-	case key.Matches(msg, m.keys.SessionTree):
-		if editingChord && !inputEmpty {
-			break
+		for _, p := range []struct {
+			chord key.Binding
+			open  tea.Msg
+		}{
+			{m.keys.HiveOpen, openHiveMsg{}}, {m.keys.SessionTree, openTreeMsg{}},
+			{m.keys.CostOpen, openCostMsg{}}, {m.keys.SlashPalette, openPaletteMsg{}},
+		} {
+			if key.Matches(msg, p.chord) {
+				return m, func() tea.Msg { return p.open }
+			}
 		}
-		return m, func() tea.Msg { return openTreeMsg{} }
-	case key.Matches(msg, m.keys.CostOpen):
-		if editingChord && !inputEmpty {
-			break
-		}
-		return m, func() tea.Msg { return openCostMsg{} }
-	case key.Matches(msg, m.keys.SlashPalette):
-		if editingChord && !inputEmpty {
-			break
-		}
-		return m, func() tea.Msg { return openPaletteMsg{} }
 	case key.Matches(msg, m.keys.HistorySearch):
 		// ctrl+r opens reverse history search with the current buffer as
 		// initial filter — fzf-style, rendered inline above the input.
@@ -118,8 +126,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// substantial tasks spawn a planning+review hive; small/clear ones are
 		// triaged to a single pass.
 		if m.role == "queen" && prev != "queen" {
-			m.warning = "queen: big tasks spawn a planning+review hive; small ones run single-pass — higher quality, more tokens"
-			m.warningExpires = time.Now().Add(warningTTL)
+			m = m.withWarn("queen: big tasks spawn a planning+review hive; small ones run single-pass — higher quality, more tokens")
 			return m, tea.Batch(glowTickCmd(), warningFadeCmd())
 		}
 		return m, nil
@@ -129,8 +136,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		_ = PersistSetting("", "yolo", m.yolo)
 		// loud one-shot warning when arming; disarming is quiet.
 		if m.yolo {
-			m.warning = "yolo ON — dangerous shell auto-approves, no prompt"
-			m.warningExpires = time.Now().Add(warningTTL)
+			m = m.withWarn("yolo ON — dangerous shell auto-approves, no prompt")
 			return m, warningFadeCmd()
 		}
 		return m, nil
@@ -141,7 +147,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// through to the textarea (Up/Down move the cursor between input lines).
 	// `?` toggles the help line when the input is empty — keeps the
 	// chrome silent by default.
-	if msg.String() == "?" && m.input.Value() == "" {
+	if keyStr == "?" && inputEmpty {
 		m.showHelp = !m.showHelp
 		return m, nil
 	}
@@ -153,28 +159,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// palette — user must still be able to /model, /login, /help.
 	// Also open mid-stream: AllowDuringRun commands (/settings, /model, …)
 	// are dispatchable then, so they need their autocomplete too.
-	if msg.String() == "/" && m.input.Value() == "" && !m.palette.Active && (m.state == StateIdle || m.state == StateError || m.state == StateStreaming) {
-		if m.state == StateError {
-			m.state = StateIdle
-			m.lastErr = ""
-		}
+	if keyStr == "/" && inputEmpty && !m.palette.Active {
+		m.recoverError()
 		m.showPalette("")
 		// fall through to let the textinput consume "/"
 	}
 	// `@` while idle opens the fuzzy file picker. Also recover from
 	// StateError so the picker isn't gated behind a stale error.
-	if msg.String() == "@" && !m.atpicker.Active && (m.state == StateIdle || m.state == StateError) {
-		if m.state == StateError {
-			m.state = StateIdle
-			m.lastErr = ""
-		}
+	if keyStr == "@" && !m.atpicker.Active && (m.state == StateIdle || m.state == StateError) {
+		m.recoverError()
 		// insert the `@` literally so dismissing leaves it in place
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		m.atpicker = NewAtPicker(m.cwd)
 		m.atpicker.SetWidth(m.width)
 		m.atpicker.Active = true
-		return m, tea.Batch(cmd)
+		return m, cmd
 	}
 	// up/down cycle through past prompts (fish-style). Single-line buffers
 	// route into cycling on up; once cycling, both arrows continue regardless
@@ -193,22 +193,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if keyStr == "up" {
-				if m.cycleIdx+1 < len(m.cycleEntries) {
-					m.cycleIdx++
-				}
-				m.input.SetValue(m.cycleEntries[m.cycleIdx])
-				m.input.CursorEnd()
-				return m, nil
+				m.cycleIdx = min(m.cycleIdx+1, len(m.cycleEntries)-1)
+			} else {
+				m.cycleIdx-- // down walks back toward the stash; past it ends the cycle
 			}
-			// down: walk back toward stash; past it ends the cycle.
-			m.cycleIdx--
 			if m.cycleIdx < 0 {
 				m.cycleActive = false
 				m.input.SetValue(m.cycleStash)
-				m.input.CursorEnd()
-				return m, nil
+			} else {
+				m.input.SetValue(m.cycleEntries[m.cycleIdx])
 			}
-			m.input.SetValue(m.cycleEntries[m.cycleIdx])
 			m.input.CursorEnd()
 			return m, nil
 		}
@@ -216,37 +210,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// any other key while cycling resets the cycle — the landed-on entry
 	// becomes the new base buffer for normal editing.
 	if m.cycleActive {
-		m.cycleActive = false
-		m.cycleEntries = nil
-		m.cycleStash = ""
-		m.cycleIdx = -1
+		m.resetCycle()
 	}
 	// Tab: try path completion on the cursor line. textarea exposes only
 	// column-cursor, so we operate on the end of the current value when
 	// the cursor is at end; otherwise fall through to default behavior.
-	if msg.String() == "tab" && m.state == StateIdle {
+	// only auto-complete when buffer is a single line and cursor at end —
+	// the 95% case for path completion. multi-line tabs fall through.
+	if keyStr == "tab" && m.state == StateIdle && m.input.LineCount() == 1 {
 		val := m.input.Value()
-		// only auto-complete when buffer is a single line and cursor at end —
-		// the 95% case for path completion. multi-line tabs fall through.
-		if m.input.LineCount() == 1 {
-			start := strings.LastIndexAny(val, " \t") + 1
-			partial := val[start:]
-			if partial != "" {
-				dir := filepath.Dir(partial)
-				if dir == "." || dir == "" {
-					dir = m.cwd
-				} else if !filepath.IsAbs(dir) {
-					dir = filepath.Join(m.cwd, dir)
-				}
-				base := filepath.Base(partial)
-				cands := CompletionCandidates(dir, base)
-				if len(cands) > 0 {
-					completion := LongestCommonPrefix(cands)
-					if completion != base {
-						add := completion[len(base):]
-						m.input.SetValue(val + add)
-						return m, nil
-					}
+		if partial := val[strings.LastIndexAny(val, " \t")+1:]; partial != "" {
+			dir := filepath.Dir(partial)
+			if dir == "." || dir == "" {
+				dir = m.cwd
+			} else if !filepath.IsAbs(dir) {
+				dir = filepath.Join(m.cwd, dir)
+			}
+			base := filepath.Base(partial)
+			if cands := CompletionCandidates(dir, base); len(cands) > 0 {
+				if completion := LongestCommonPrefix(cands); completion != base {
+					m.input.SetValue(val + completion[len(base):])
+					return m, nil
 				}
 			}
 		}

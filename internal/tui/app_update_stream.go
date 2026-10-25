@@ -1,15 +1,12 @@
 package tui
 
 import (
-	"context"
-	"errors"
+	"slices"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
-	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -49,9 +46,6 @@ func (m Model) onStreamDelta(msg streamDeltaMsg) (tea.Model, tea.Cmd) {
 	if strings.ContainsRune(msg.Delta, '\n') {
 		flushCmd = m.maybeFlushPartialHead()
 	}
-	if flushCmd == nil {
-		return m, m.waitStream()
-	}
 	return m, tea.Batch(flushCmd, m.waitStream())
 }
 
@@ -64,12 +58,8 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	// by ID so a turnDoneMsg replacement followed by a late-arriving
 	// live msg doesn't double-add.
 	m.noteActivity()
-	if msg.Msg.ID != "" {
-		for _, existing := range m.messages {
-			if existing.ID == msg.Msg.ID {
-				return m, m.waitLiveMsg()
-			}
-		}
+	if id := msg.Msg.ID; id != "" && slices.ContainsFunc(m.messages, func(e types.Message) bool { return e.ID == id }) {
+		return m, m.waitLiveMsg()
 	}
 	m.messages = append(m.messages, msg.Msg)
 	// track in-flight tools for the live-region swarm: an assistant turn
@@ -95,14 +85,18 @@ func (m Model) onLiveMsg(msg liveMsgMsg) (tea.Model, tea.Cmd) {
 	// during thinking is unaffected (it doesn't read these fields); the
 	// cumulative ↓ figure also keeps including reasoning by design.
 	if hasThinkingBlock(msg.Msg) {
-		m.loaderRate = 0
-		m.loaderRateEMA = 0
-		m.loaderSampleChars = m.turnOutChars
-		m.loaderRateTokS = 0
-		m.loaderRateSamples = m.loaderRateSamples[:0]
+		m.resetLoaderRate(m.turnOutChars)
 	}
 	flushCmd := m.flush()
 	return m, tea.Batch(flushCmd, m.waitLiveMsg())
+}
+
+// resetLoaderRate zeroes the throughput readout; sampleChars is the new
+// baseline the next tick measures growth from.
+func (m *Model) resetLoaderRate(sampleChars int) {
+	m.loaderRate, m.loaderRateEMA, m.loaderRateTokS = 0, 0, 0
+	m.loaderSampleChars = sampleChars
+	m.loaderRateSamples = m.loaderRateSamples[:0]
 }
 
 // pendingToolUses extracts the tool_use blocks from an assistant message so
@@ -122,12 +116,7 @@ func pendingToolUses(m types.Message) []types.ToolUse {
 // block. Used to gate the loader-rate reset on the thinking→answer
 // transition so a pure-text turn doesn't drop its accumulated rate.
 func hasThinkingBlock(m types.Message) bool {
-	for _, b := range m.Content {
-		if b.Type == types.BlockThinking {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(m.Content, func(b types.ContentBlock) bool { return b.Type == types.BlockThinking })
 }
 
 func (m Model) onWarning(msg warningMsg) (tea.Model, tea.Cmd) {
@@ -137,8 +126,7 @@ func (m Model) onWarning(msg warningMsg) (tea.Model, tea.Cmd) {
 	// real progress signal — bump the stall clock so a recovering stream
 	// isn't double-killed by the watchdog.
 	m.noteActivity()
-	m.warning = msg.Text
-	m.warningExpires = time.Now().Add(warningTTL)
+	m = m.withWarn(msg.Text)
 	return m, tea.Batch(warningFadeCmd(), m.waitWarn())
 }
 
@@ -151,117 +139,10 @@ func (m Model) onWarningFade(_ warningFadeMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
-	// Only animate while a turn or async compact is in flight. Letting the
-	// tick die when we leave streaming/compacting keeps idle terminals quiet.
-	if m.state != StateStreaming && !m.compacting {
-		return m, nil
-	}
-	// inactivity watchdog: a streaming turn that has shown activity and then
-	// gone silent (no stream/think/tool/warn delta) for watchdogStall is
-	// treated as stalled — cancel it and wait for the cancelled turn to land
-	// before resubmitting (so two eng.Run calls never overlap). Held off until
-	// the turn's first sign of life (turnSawActivity): a queued or prefilling
-	// request on a busy local model is silent for a while, and resubmitting it
-	// only deepens the server queue — a turn that never produces anything is
-	// caught by the provider-level stall guard instead. Suppressed while the
-	// user is mid-steer (typing) and once a stall-resume is already pending.
-	// A running tool is silent by design (long build, batch job) and bounded by
-	// its own timeout: cancelling it here kills the work and the resumed model
-	// just re-runs the same call.
-	if m.state == StateStreaming && m.watchdogEnabled && !m.watchdogDisabled &&
-		!m.stallResumePending && strings.TrimSpace(m.input.Value()) == "" &&
-		len(m.pendingTools) == 0 && m.turnSawActivity && time.Since(m.lastActivityAt) >= m.watchdogStall {
-		// continue from partial output when the turn produced any, else
-		// re-send the original instruction.
-		text := resumeContinueText
-		if m.turnOutChars == 0 {
-			text = lastUserText(m.messages)
-		}
-		// cancel the hang even at the resume cap — retrigger parks it in
-		// StateError ("gave up") rather than leaving the turn wedged.
-		if strings.TrimSpace(text) != "" {
-			if m.cancelRun != nil {
-				m.cancelRun()
-				m.cancelRun = nil
-			}
-			m.stallResumePending = true
-			m.stallResumeText = text
-			m.stallResumeReason = "stalled"
-			m.warning = "bee stalled — auto-resuming…"
-			m.warningExpires = time.Now().Add(warningTTL)
-			return m, tea.Batch(warningFadeCmd(), loaderTickCmd())
-		}
-	}
-	m.loaderFrame++
-	// sample output throughput once per tick — drives particle density. Clamp
-	// to 0 so a partial reset on a tool boundary never yields a negative rate.
-	d := m.turnOutChars - m.loaderSampleChars
-	if d < 0 {
-		d = 0
-	}
-	m.loaderRate = d
-	// stall tracker for the busy-row dance: consecutive ticks with no output
-	// growth. Any growth resets it, so the form flips back to the round
-	// dance the moment tokens resume.
-	if d > 0 {
-		m.loaderStallFrames = 0
-	} else {
-		m.loaderStallFrames++
-	}
-	// EMA smooths the 1-tick flash when a provider flushes a large chunk
-	// into a single tick (or when hasThinkingBlock resets the rate between
-	// reasoning and answer). α=0.3 → ~3-tick rise time — fast enough to
-	// still feel responsive, slow enough to never balloon the particle
-	// count in a single frame.
-	m.loaderRateEMA = smoothLoaderRate(m.loaderRateEMA, d)
-	m.loaderSampleChars = m.turnOutChars
-	// sliding 10s window for the tok/s readout. Push a sample only when
-	// this tick actually produced chars, then drop anything older than 10s.
-	// Idle gaps contribute no samples, so the window reflects only the last
-	// 10s of active generation — no spikes, no slow EMA bleed.
-	now := time.Now()
-	if d > 0 {
-		m.loaderRateSamples = append(m.loaderRateSamples, rateSample{at: now, chars: d})
-	}
-	cutoff := now.Add(-10 * time.Second)
-	// prune in place from the front; samples are time-ordered by append.
-	prune := 0
-	for prune < len(m.loaderRateSamples) && !m.loaderRateSamples[prune].at.After(cutoff) {
-		prune++
-	}
-	if prune > 0 {
-		// rebuild instead of slice-header shift: keeps the backing array
-		// from drifting if a long turn floods the window.
-		next := make([]rateSample, len(m.loaderRateSamples)-prune, len(m.loaderRateSamples)-prune+8)
-		copy(next, m.loaderRateSamples[prune:])
-		m.loaderRateSamples = next
-	}
-	var winChars int
-	for _, s := range m.loaderRateSamples {
-		winChars += s.chars
-	}
-	m.loaderRateTokS = float64(winChars) / 10.0 / charsPerToken
-	return m, loaderTickCmd()
-}
-
-// onGlowTick advances the rainbow input animation. Self-rearms only while the
-// mastermind tier is active so switching it off lets the tick die and leaves
-// idle terminals quiet.
-func (m Model) onGlowTick(_ glowTickMsg) (tea.Model, tea.Cmd) {
-	if m.role != "queen" {
-		return m, nil
-	}
-	m.glowFrame++
-	return m, glowTickCmd()
-}
-
 func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 	m.compacting = false
 	if msg.err != nil {
-		m.lastErr = msg.err.Error()
-		m.state = StateError
-		return m, nil
+		return m.setError(msg.err.Error())
 	}
 	// swap in the compacted history so the next submit's engine.InitialMessages
 	// (rebuilt from m.messages in handleSubmit) carries the shorter slice.
@@ -285,10 +166,7 @@ func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	m.messages = append(m.messages, types.Message{
-		Role:    types.RoleAssistant,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: formatCompactDone(msg.stats)}},
-	})
+	m.messages = append(m.messages, assistantText(formatCompactDone(msg.stats)))
 	// drain mid-compact queue: a "continue" typed while compacting is held
 	// until now so it runs against the shrunken history. submit() pushes its
 	// own messages + cmds — batch the prior flush with whatever it returns.
@@ -299,282 +177,4 @@ func (m Model) onCompactDone(msg compactDoneMsg) (tea.Model, tea.Cmd) {
 		return newM, tea.Batch(flushed, subCmd)
 	}
 	return m, m.flush()
-}
-
-// onRecapIdleTick fires recapIdleDelay after a clean turn finish. Drops
-// itself if a newer submit bumped m.recapGen, or if the user is no longer
-// idle (state != StateIdle, or showRecap toggled off mid-wait).
-func (m Model) onRecapIdleTick(msg recapIdleTickMsg) (tea.Model, tea.Cmd) {
-	if msg.gen != m.recapGen || m.state != StateIdle || !m.showRecap {
-		return m, nil
-	}
-	return m, m.recapCmd(msg.msgs)
-}
-
-// onChangeMap prints the review card in the same dim voice as the recap.
-func (m Model) onChangeMap(msg changeMapMsg) (tea.Model, tea.Cmd) {
-	if msg.text == "" {
-		return m, nil
-	}
-	w := m.width
-	if w < minRenderWidth {
-		w = 80
-	}
-	rows := strings.Split(expandTabs(msg.text), "\n")
-	for i, row := range rows {
-		rows[i] = m.styles.Dim.Render(clipLine(row, w-2))
-	}
-	return m, m.scroll.print(strings.Join(rows, "\n"))
-}
-
-func (m Model) onRecapReady(msg recapReadyMsg) (tea.Model, tea.Cmd) {
-	// Error case renders too so the toggle is observable. Skip is silent:
-	// a model that declines to recap produced no useful output, no point
-	// cluttering the transcript with "※ recap: (skipped)".
-	var body string
-	switch {
-	case msg.text != "":
-		body = "※ recap: " + msg.text
-	case msg.err != "":
-		body = "※ recap failed: " + msg.err
-	default:
-		return m, nil
-	}
-	line := lipgloss.NewStyle().
-		Foreground(fgOyster).
-		Italic(true).
-		Render(body)
-	return m, m.scroll.print(line)
-}
-
-// isEscalate reports whether err is the loop's escalate sentinel (the model
-// chose to stop and hand control back), so onTurnDone can skip the red error
-// block and open the option picker instead.
-func isEscalate(err error) bool { return err != nil && errors.Is(err, loop.ErrEscalate) }
-
-func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
-	// ignore a stale result from a turn that was cancelled or superseded: its
-	// late turnDoneMsg would otherwise nil cancelRun (breaking esc for the live
-	// turn), flip state to idle, and clobber m.messages with an old snapshot.
-	// mirrors the recapGen / resumeErrGen epoch guards.
-	if msg.gen != m.turnGen {
-		return m, nil
-	}
-	m.cancelRun = nil
-	// freeze elapsed at turn end. Guard zero turnStartedAt — late msgs
-	// after Model reset shouldn't synthesize a huge duration.
-	if !m.turnStartedAt.IsZero() {
-		m.lastTurnDuration = time.Since(m.turnStartedAt)
-		m.turnStartedAt = time.Time{}
-	}
-	// error-resume cmd, populated in the error branch when the watchdog arms.
-	var errResumeCmd tea.Cmd
-	// a note for scrollback that is not part of the message list
-	var note string // printed after the turn's messages, so it is queued after the flush
-	// snapCmd, populated on a clean finish, snapshots the work-tree for rewind.
-	var snapCmd tea.Cmd
-	switch {
-	case m.stallResumePending && errors.Is(msg.err, context.Canceled):
-		// watchdog cancelled a stalled turn. The in-flight goroutine has now
-		// returned (we got its Canceled), so it's safe to re-trigger without
-		// two eng.Run calls overlapping. Carry the partial messages for context.
-		m.stallResumePending = false
-		text, reason := m.stallResumeText, m.stallResumeReason
-		m.stallResumeText, m.stallResumeReason = "", ""
-		if len(msg.result.Messages) > 0 {
-			m.messages = msg.result.Messages
-		}
-		m.commitFlushed()
-		m.streamFlushed = ""
-		m.streamFenceOpen = false
-		m.pendingFlushedPrefix = ""
-		m.partial = ""
-		m.thinkPartial = ""
-		m.pendingTools = nil
-		return m.retrigger(text, reason)
-	case errors.Is(msg.err, context.Canceled):
-		// user pressed esc — clean cancel, not a failure. preserve any
-		// messages the engine flushed before the cancel landed so the
-		// scrollback isn't blanked, and stay idle (StateError would
-		// gate the `/` palette and `@` picker behind error-recovery).
-		if len(msg.result.Messages) > 0 {
-			m.messages = msg.result.Messages
-		}
-		if m.interrupted {
-			m.interrupted = false
-			note = "(interrupted)"
-		}
-		m.commitFlushed()
-		m.partial = ""
-		m.thinkPartial = ""
-		m.state = StateIdle
-		// user intervened — give the next task a fresh resume budget.
-		m.resumeCount = 0
-		m.awaitingProgress = false
-	case isEscalate(msg.err):
-		// escalate isn't a crash — the model handed control back. The yellow
-		// escalate card already sits in scrollback (rendered live), so don't
-		// repeat it as a red error block. Stay idle; open the option picker
-		// when the model supplied discrete choices.
-		m.streamFlushed = ""
-		m.streamFenceOpen = false
-		m.pendingFlushedPrefix = ""
-		m.thinkPartial = ""
-		m.partial = ""
-		m.commitFlushed()
-		m.state = StateIdle
-		var esc *loop.EscalateError
-		if errors.As(msg.err, &esc) {
-			m.escalate.Show(esc.Options)
-		}
-	case msg.err != nil:
-		// drop any progressively-flushed prefix on error — there's no
-		// final assistant message to dedupe against, just clear state.
-		m.streamFlushed = ""
-		m.streamFenceOpen = false
-		m.pendingFlushedPrefix = ""
-		m.thinkPartial = ""
-		m.state = StateError
-		m.lastErr = msg.err.Error()
-		// recoverable error → schedule a bounded auto-resume after a short,
-		// visible cancel window instead of parking until the user hits Enter.
-		if m.watchdogArmedForError(msg.err) {
-			d := loop.ClassifyResume(msg.err, msg.result)
-			if len(msg.result.Messages) > 0 {
-				m.messages = msg.result.Messages // carry context into the resume
-			}
-			m.resumeErrGen++
-			m.warning = "error — auto-resuming in 3s (esc or type to cancel)…"
-			m.warningExpires = time.Now().Add(warningTTL)
-			errResumeCmd = tea.Batch(scheduleErrorResume(m.resumeErrGen, d.Continuation, d.Reason), warningFadeCmd())
-		}
-	default:
-		m.messages = msg.result.Messages
-		m.commitFlushed()
-		m.partial = ""
-		m.thinkPartial = ""
-		m.state = StateIdle
-		// clean finish — reset the resume budget for the next task.
-		m.resumeCount = 0
-		m.awaitingProgress = false
-		// snapshot the resulting code state so the user can rewind to this turn.
-		snapCmd = m.snapshotAfterTurn(msg.result.Messages)
-	}
-	// turn finished/cancelled/errored — no tools left in flight.
-	m.pendingTools = nil
-	flushCmd := m.flush()
-	if note != "" {
-		flushCmd = tea.Batch(flushCmd, m.printNotice(note))
-	}
-	// kick off the top-bar cost flash when a fresh event landed. Diff
-	// the call-count against the previous turn so multi-iteration loops
-	// fold all their per-iteration events into one visible delta.
-	costCmd := m.maybeStartCostFlash()
-	// recap: optional one-line side-LLM summary, dim italic, after the
-	// last assistant turn. Gated by m.showRecap so disabled = no extra
-	// tokens. Only on a clean finish (no error, no cancel), and only
-	// when the turn was substantive enough to warrant a recap — short
-	// greetings/Q&A skip the side call entirely (saves tokens, avoids
-	// noisy "(skipped)" lines from the model). Deferred recapIdleDelay
-	// so a follow-up submit cancels the pending tick (gen mismatch).
-	var recapCmd tea.Cmd
-	if msg.err == nil && m.showRecap && recapWorthwhile(msg.result.Messages, m.lastTurnDuration) {
-		recapCmd = recapIdleCmd(m.recapGen, msg.result.Messages)
-	}
-	var mapCmd tea.Cmd
-	if msg.err == nil {
-		mapCmd = m.changeMapCmd(msg.result.Messages)
-	}
-	// a steer the loop never got to read becomes a follow-up of its own
-	m.queue = append(m.queue, drainSteer(m.eng)...)
-	// drain one queued follow-up per turn so the TUI stays responsive
-	// between fires. Only when last turn didn't error.
-	if msg.err == nil && len(m.queue) > 0 && m.eng != nil {
-		nxt := m.queue[0]
-		m.queue = m.queue[1:]
-		nm, runCmd := m.submit(nxt)
-		return nm, tea.Batch(flushCmd, costCmd, mapCmd, recapCmd, runCmd, snapCmd)
-	}
-	// a background job finished after the loop's last look: start its turn now
-	if msg.err == nil {
-		if nm, jobCmd := m.startJobTurn(); jobCmd != nil {
-			return nm, tea.Batch(flushCmd, costCmd, mapCmd, recapCmd, jobCmd, snapCmd)
-		}
-	}
-	// post-scout handoff: a clean scout turn produced a plan, but scout strips
-	// mutators so "do it" silently no-ops. Offer to switch into worker
-	// (optionally a fresh session carrying just the plan). Queue is empty here
-	// (drained above); skip when a goal loop drives its own continuation, and
-	// skip when the turn produced no text (nothing to act on or carry).
-	if msg.err == nil && m.role == "scout" && !m.goal.Active {
-		if plan := lastAssistantText(msg.result.Messages); plan != "" {
-			m.pendingPlan = plan
-			m.planmode.Show()
-		}
-	}
-	// goal loop: on a clean finish with the queue empty, judge the active
-	// goal and either announce success, stop on caps, or auto-continue. No-op
-	// when no goal is active or the turn errored/cancelled.
-	var goalCmd tea.Cmd
-	if msg.err == nil {
-		m, goalCmd = m.maybeStartGoalEval()
-	}
-	return m, tea.Batch(flushCmd, costCmd, mapCmd, recapCmd, goalCmd, errResumeCmd, snapCmd)
-}
-
-func (m Model) onCostTick(_ costTickMsg) (tea.Model, tea.Cmd) {
-	if m.costFlashFrame >= m.costFlashUntil {
-		m.costFlashUntil = 0
-		return m, nil
-	}
-	m.costFlashFrame++
-	return m, costTickCmd()
-}
-
-func (m Model) onIntroTick(_ introTickMsg) (tea.Model, tea.Cmd) {
-	if m.introActive {
-		// build frames on first tick when width is finally known. If width
-		// still hasn't arrived (initial WindowSizeMsg pending), just rearm.
-		if m.introFrames == nil {
-			if m.width <= 0 {
-				return m, introTickCmd()
-			}
-			m.introFrames = introFrames(m.introStyle, m.width)
-			if len(m.introFrames) == 0 {
-				m.introActive = false
-				m.introDone = true
-				m.introDoneFrame = 0
-				return m, introTickCmd()
-			}
-		}
-		m.introIdx++
-		if m.introIdx >= len(m.introFrames) {
-			m.introActive = false
-			m.introFrames = nil
-			m.introDone = true
-			m.introDoneFrame = 0
-			return m, introTickCmd()
-		}
-		return m, introTickCmd()
-	}
-	// post-intro pulse: keep ticking until the bold-flash cycle settles,
-	// then push the banner to terminal scrollback so it stays anchored at
-	// the top of the conversation. Clearing introDone collapses the live
-	// region; the scrollback push adds the full placeholder block above, so
-	// the input bar stays vertically stable.
-	if m.introDone && m.introDoneFrame < introPulseFrames {
-		m.introDoneFrame++
-		if m.introDoneFrame < introPulseFrames {
-			return m, introTickCmd()
-		}
-		banner := renderIntroPlaceholder(m.width, introPulseFrames)
-		m.introDone = false
-		// intro anchored — surface the deferred first-run welcome gate now.
-		if m.tutorialPending {
-			m.tutorialPending = false
-			m.tutorial = tutorialState{active: true, phase: tutPhaseGate}
-		}
-		return m, m.scroll.print(banner)
-	}
-	return m, nil
 }

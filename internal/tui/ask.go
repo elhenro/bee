@@ -24,7 +24,6 @@ type AskModel struct {
 	focus  int
 	typing bool // custom-text input mode
 	input  textinput.Model
-	out    chan<- AskAnswerMsg
 	width  int // terminal width; bounds the modal so it never overflows
 	// queue holds questions that arrived while one is on screen, shown in
 	// arrival order once the current one is answered.
@@ -44,10 +43,7 @@ func NewAskModel(styles Styles) AskModel {
 	return AskModel{styles: &styles, input: ti}
 }
 
-// SetOutput wires the engine-facing channel. Pass nil to detach.
-func (m *AskModel) SetOutput(ch chan<- AskAnswerMsg) {
-	m.out = ch
-}
+func (m AskModel) isActive() bool { return m.Active }
 
 // SetWidth records the terminal width so View can bound the modal.
 func (m *AskModel) SetWidth(w int) {
@@ -74,13 +70,6 @@ func (m *AskModel) Show(useID string, q ask.Question) {
 			break
 		}
 	}
-}
-
-// Hide closes the picker without publishing an answer.
-func (m *AskModel) Hide() {
-	m.Active = false
-	m.question = ask.Question{}
-	m.queue = nil
 }
 
 // customIdx is the focus index of the custom-entry row, or -1 if disabled.
@@ -155,7 +144,6 @@ func (m AskModel) Update(msg tea.Msg) (AskModel, tea.Cmd) {
 }
 
 func (m AskModel) answer(ans ask.Answer) (AskModel, tea.Cmd) {
-	out := m.out
 	useID := m.useID
 	m.Active = false
 	m.typing = false
@@ -164,17 +152,7 @@ func (m AskModel) answer(ans ask.Answer) (AskModel, tea.Cmd) {
 		m.queue = append([]queuedAsk(nil), m.queue[1:]...)
 		m.Show(next.useID, next.q)
 	}
-	cmd := func() tea.Msg {
-		msg := AskAnswerMsg{UseID: useID, Answer: ans}
-		if out != nil {
-			select {
-			case out <- msg:
-			default:
-			}
-		}
-		return msg
-	}
-	return m, cmd
+	return m, func() tea.Msg { return AskAnswerMsg{UseID: useID, Answer: ans} }
 }
 
 // askModalWidth is the content width the modal wraps to. Kept compact and

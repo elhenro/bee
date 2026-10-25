@@ -85,9 +85,6 @@ func (m Model) tutorialEnterStep() (tea.Model, tea.Cmd) {
 	m.tutorial.typed = ""
 	m.tutorial.full = st.stream
 	m.loaderFrame = 0
-	if flushCmd == nil {
-		return m, tutorialTickCmd()
-	}
 	return m, tea.Batch(flushCmd, tutorialTickCmd())
 }
 
@@ -99,11 +96,7 @@ func (m Model) onTutorialTick(_ tutorialTickMsg) (tea.Model, tea.Cmd) {
 	}
 	m.loaderFrame++
 	full := []rune(m.tutorial.full)
-	shown := len([]rune(m.tutorial.typed))
-	if shown >= len(full) {
-		return m.tutorialSettle()
-	}
-	end := shown + tutorialTypeChars
+	end := len([]rune(m.tutorial.typed)) + tutorialTypeChars
 	if end >= len(full) {
 		return m.tutorialSettle()
 	}

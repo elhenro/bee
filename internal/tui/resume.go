@@ -41,18 +41,12 @@ func NewResumePicker() *ResumePicker { return &ResumePicker{} }
 // Open reports modal visibility.
 func (p *ResumePicker) Open() bool { return p.open }
 
-// Init satisfies tea.Model.
-func (p *ResumePicker) Init() tea.Cmd { return nil }
-
 // Show loads sessions from disk and opens the modal.
 func (p *ResumePicker) Show() {
 	p.entries = loadResumeEntries()
 	p.open = true
 	p.selected = 0
 }
-
-// Hide closes the modal without selecting.
-func (p *ResumePicker) Hide() { p.open = false }
 
 // SetEntries lets tests inject a deterministic list.
 func (p *ResumePicker) SetEntries(e []ResumeEntry) {
@@ -61,9 +55,6 @@ func (p *ResumePicker) SetEntries(e []ResumeEntry) {
 		p.selected = 0
 	}
 }
-
-// Entries exposes the current list (for tests + view).
-func (p *ResumePicker) Entries() []ResumeEntry { return p.entries }
 
 // Selected returns the cursor index.
 func (p *ResumePicker) Selected() int { return p.selected }
@@ -130,19 +121,13 @@ func (p *ResumePicker) View(width, height int) string {
 	if !p.open {
 		return ""
 	}
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Resume session")
+	title := StyleActive.Render("⬢ Resume session")
 	if len(p.entries) == 0 {
 		body := StyleLabel.Render("(no past sessions)")
 		return boxModal(title+"\n\n"+body+"\n\n"+StyleLabel.Render("esc close"), width)
 	}
-	inner := width - 4
-	if inner < 30 {
-		inner = 30
-	}
-	rows := p.visibleRange(height - 6)
+	inner := max(width-4, 30)
+	rows := windowRange(len(p.entries), p.selected, height-6)
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n\n")
@@ -151,10 +136,8 @@ func (p *ResumePicker) View(width, height int) string {
 		b.WriteString(renderResumeRow(e, i == p.selected, inner))
 		b.WriteString("\n")
 	}
-	if rows.end < len(p.entries) || rows.start > 0 {
-		hidden := len(p.entries) - (rows.end - rows.start)
-		b.WriteString(StyleLabel.Render("  +" + strconv.Itoa(hidden) + " more"))
-		b.WriteString("\n")
+	if more := moreRow(rows, len(p.entries)); more != "" {
+		b.WriteString(more + "\n")
 	}
 	b.WriteString("\n")
 	b.WriteString(StyleLabel.Render("↑/↓ nav · enter resume · esc close"))
@@ -162,11 +145,6 @@ func (p *ResumePicker) View(width, height int) string {
 }
 
 type rowRange struct{ start, end int }
-
-// visibleRange computes a window around the cursor that fits in maxRows.
-func (p *ResumePicker) visibleRange(maxRows int) rowRange {
-	return windowRange(len(p.entries), p.selected, maxRows)
-}
 
 func renderResumeRow(e ResumeEntry, selected bool, width int) string {
 	cursor := "  "
@@ -183,25 +161,31 @@ func renderResumeRow(e ResumeEntry, selected bool, width int) string {
 	if len(id) > 8 {
 		id = id[:8]
 	}
-	ts := humanAge(e.Created)
-	preview := strings.ReplaceAll(e.Preview, "\n", " ")
-	preview = strings.TrimSpace(preview)
-	if preview == "" {
-		preview = "(empty)"
-	}
 	// budget: cursor(2) + id(8) + space + ts(<=12) + space + preview
-	head := cursor + idStyle.Render(id) + "  " + tsStyle.Render(padRightCells(ts, 10)) + "  "
-	headW := lipglossWidth(head)
-	// no floor: on a narrow terminal the preview shrinks to nothing rather
-	// than pushing the row past the edge
-	if width <= 0 {
-		return head + prevStyle.Render(preview)
+	head := cursor + idStyle.Render(id) + "  " + tsStyle.Render(padRightCells(humanAge(e.Created), 10)) + "  "
+	return fitRow(head, rowPreview(e.Preview), prevStyle, width)
+}
+
+// rowPreview flattens a prompt to one line, "(empty)" when blank.
+func rowPreview(s string) string {
+	if s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " ")); s != "" {
+		return s
 	}
-	maxPrev := max(width-headW, 0)
+	return "(empty)"
+}
+
+// fitRow joins the head with the preview, shrinking the preview to fit width.
+// No floor: on a narrow terminal the preview shrinks to nothing rather than
+// pushing the row past the edge.
+func fitRow(head, preview string, style lipgloss.Style, width int) string {
+	if width <= 0 {
+		return head + style.Render(preview)
+	}
+	maxPrev := max(width-lipglossWidth(head), 0)
 	if lipglossWidth(preview) > maxPrev {
 		preview = truncateVisible(preview, maxPrev)
 	}
-	return truncateVisible(head+prevStyle.Render(preview), width)
+	return truncateVisible(head+style.Render(preview), width)
 }
 
 // humanAge renders a created-at timestamp as a compact relative age.

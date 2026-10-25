@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"context"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,11 +33,10 @@ func (m Model) onPaletteSelect(msg PaletteSelectMsg) (tea.Model, tea.Cmd) {
 	// behaving the same.
 	// preserve any args typed after the command name so
 	// "/research golang webfetch" reaches the dispatcher intact.
+	rest := strings.TrimPrefix(m.input.Value(), "/")
 	args := ""
-	if rest := strings.TrimPrefix(m.input.Value(), "/"); rest != "" {
-		if i := strings.IndexByte(rest, ' '); i >= 0 {
-			args = rest[i:] // includes leading space
-		}
+	if i := strings.IndexByte(rest, ' '); i >= 0 {
+		args = rest[i:] // includes leading space
 	}
 	m.input.SetValue("/" + msg.Name + args)
 	return m.handleSubmit()
@@ -127,9 +124,8 @@ func (m Model) onPickerLoginRequested(msg PickerLoginRequestedMsg) (tea.Model, t
 }
 
 func (m Model) onRolePicked(msg rolePickedMsg) (tea.Model, tea.Cmd) {
-	v := string(msg)
 	wasQueen := m.role == "queen"
-	if err := m.side().SetRole(v); err != nil {
+	if err := m.side().SetRole(string(msg)); err != nil {
 		return m.fail(err.Error())
 	}
 	// SetRole updated m.role + baked thinking already; mirror the row.
@@ -138,16 +134,14 @@ func (m Model) onRolePicked(msg rolePickedMsg) (tea.Model, tea.Cmd) {
 	// every turn now spawns a hive. Re-picking queen while already on it must
 	// not stack a second tick loop.
 	if m.role == "queen" && !wasQueen {
-		m.warning = "queen: every turn now spawns a hive — slower, higher quality, more tokens"
-		m.warningExpires = time.Now().Add(warningTTL)
+		m = m.withWarn("queen: every turn now spawns a hive — slower, higher quality, more tokens")
 		return m, tea.Batch(glowTickCmd(), warningFadeCmd())
 	}
 	return m, nil
 }
 
 func (m Model) onEffortPicked(msg effortPickedMsg) (tea.Model, tea.Cmd) {
-	v := string(msg)
-	if err := m.side().SetThinking(v); err != nil {
+	if err := m.side().SetThinking(string(msg)); err != nil {
 		return m.fail(err.Error())
 	}
 	// SetThinking canonicalized m.thinking already; mirror the current row.
@@ -160,9 +154,7 @@ func (m Model) onEffortPicked(msg effortPickedMsg) (tea.Model, tea.Cmd) {
 // onHandoffReady so Rebuild never races the summarization goroutine.
 func (m Model) onHandoffPicked(msg PickedMsg) (tea.Model, tea.Cmd) {
 	if m.eng == nil {
-		m.lastErr = "handoff: no engine"
-		m.state = StateError
-		return m, nil
+		return m.setError("handoff: no engine")
 	}
 	// stop the in-flight stuck turn; bump the epoch so its late (Canceled)
 	// turnDoneMsg is ignored and can't clobber the handoff.
@@ -185,10 +177,7 @@ func (m Model) onHandoffPicked(msg PickedMsg) (tea.Model, tea.Cmd) {
 	snapshot := nonEphemeral(m.messages)
 	partial := m.partial
 	eng := m.eng
-	ctx := m.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := m.baseCtx()
 	prov, model := msg.Provider, msg.Model
 	return m, tea.Batch(
 		loaderTickCmd(),
@@ -205,14 +194,10 @@ func (m Model) onHandoffPicked(msg PickedMsg) (tea.Model, tea.Cmd) {
 func (m Model) onHandoffReady(msg handoffReadyMsg) (tea.Model, tea.Cmd) {
 	m.handoffing = false
 	if msg.err != nil {
-		m.lastErr = "handoff: " + msg.err.Error()
-		m.state = StateError
-		return m, nil
+		return m.setError("handoff: " + msg.err.Error())
 	}
 	if err := m.side().SwitchProviderModel(msg.provider, msg.model); err != nil {
-		m.lastErr = err.Error()
-		m.state = StateError
-		return m, nil
+		return m.setError(err.Error())
 	}
 	if perr := PersistPick("", msg.provider, msg.model); perr != nil {
 		m.lastErr = "saved live but persist failed: " + perr.Error()

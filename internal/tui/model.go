@@ -21,7 +21,6 @@ type State int
 const (
 	StateIdle State = iota
 	StateStreaming
-	StateAwaitingApproval
 	StateError
 )
 
@@ -333,7 +332,7 @@ type Model struct {
 
 	// watchdog: inactivity stall detection + bounded auto-resume so a turn
 	// that hangs or stops on a recoverable error finishes unattended. Mirrored
-	// from cfg.Watchdog via WithWatchdog. The stall check reads
+	// from cfg.Watchdog (see seedFromEngine). The stall check reads
 	// time.Since(lastActivityAt) — NOT turn duration — so a productive long
 	// turn (output still streaming) is never interrupted.
 	watchdogEnabled    bool

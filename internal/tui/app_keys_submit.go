@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -10,110 +11,6 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
 )
-
-// handleImagePaste reads the system clipboard and stages an image for the
-// next submit. Only fires when idle — staging mid-stream would race with the
-// running engine's message slice. Failure (no image, headless clipboard)
-// surfaces via the standard error line.
-func (m Model) handleImagePaste() (tea.Model, tea.Cmd) {
-	if m.state != StateIdle {
-		return m, nil
-	}
-	img, err := ReadClipboardImage()
-	if err != nil {
-		m.lastErr = "clipboard: " + err.Error()
-		m.state = StateError
-		return m, nil
-	}
-	m.pendingImage = img
-	m.messages = append(m.messages, types.Message{
-		Role: types.RoleAssistant,
-		Content: []types.ContentBlock{{
-			Type: types.BlockText,
-			Text: "(image staged: " + bytesHuman(len(img)) + ")",
-		}},
-		Ephemeral: true,
-	})
-	return m, m.flush()
-}
-
-// handlePaste intercepts a bracketed paste. When the pasted text is (or
-// contains) a local image file path, it stages the image(s) and inserts a
-// compact "[Image: name]" label into the input instead of the raw path.
-// Ordinary text pastes fall through to the textarea unchanged.
-func (m Model) handlePaste(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	pasted := string(msg.Runes)
-	// common case: the whole paste is one dragged file (handles unescaped
-	// spaces a single token-scan would split).
-	if blk, base, ok := loadImage(unescape(pasted)); ok {
-		m.pendingImages = append(m.pendingImages, blk)
-		m.input.InsertString(imageLabel(base))
-		return m, nil
-	}
-	// else: scan for image path tokens embedded in surrounding text.
-	if clean, imgs := extractImagePaths(pasted); len(imgs) > 0 {
-		m.pendingImages = append(m.pendingImages, imgs...)
-		m.input.InsertString(clean)
-		return m, nil
-	}
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	return m, cmd
-}
-
-// handleFollowUp pushes the current input onto the follow-up queue. Fires
-// regardless of state — queued runs kick off as the current turn finishes.
-func (m Model) handleFollowUp() (tea.Model, tea.Cmd) {
-	text := strings.TrimSpace(m.input.Value())
-	if text == "" {
-		return m, nil
-	}
-	m.input.Reset()
-	m.queue = append(m.queue, text)
-	m.messages = append(m.messages, userEcho(text, "queued"))
-	return m, m.flush()
-}
-
-// scrollback echo of text you typed mid-turn: your turn's bar and panel, a
-// quiet tag saying what happens to it. never sent to the model as typed
-func userEcho(text, tag string) types.Message {
-	return types.Message{
-		Role:      types.RoleUser,
-		Content:   []types.ContentBlock{{Type: types.BlockText, Text: text}},
-		Display:   text + "  " + glyphSep + " " + tag,
-		Ephemeral: true,
-	}
-}
-
-// handleSteer pushes the current input into the engine's SteerCh so the
-// running Run loop picks it up between iterations. Drops with a note if
-// the channel is full or the engine isn't wired for steering.
-func (m Model) handleSteer() (tea.Model, tea.Cmd) {
-	text := strings.TrimSpace(m.input.Value())
-	if text == "" {
-		return m, nil
-	}
-	m.input.Reset()
-	if m.eng == nil || m.eng.SteerCh == nil {
-		m.messages = append(m.messages, types.Message{
-			Role:      types.RoleAssistant,
-			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(steer dropped: no channel)"}},
-			Ephemeral: true,
-		})
-		return m, m.flush()
-	}
-	select {
-	case m.eng.SteerCh <- text:
-		m.messages = append(m.messages, userEcho(text, "steer, sent at next step"))
-	default:
-		m.messages = append(m.messages, types.Message{
-			Role:      types.RoleAssistant,
-			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(steer dropped: queue full)"}},
-			Ephemeral: true,
-		})
-	}
-	return m, m.flush()
-}
 
 // handleSubmit dispatches the current input. A leading "/" routes to the
 // command registry; anything else feeds the LLM via submit(). Empty input
@@ -146,11 +43,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if strings.HasPrefix(text, "/") || strings.HasPrefix(text, "!") {
-			m.messages = append(m.messages, types.Message{
-				Role:      types.RoleAssistant,
-				Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(compacting, slash/shell commands not queued)"}},
-				Ephemeral: true,
-			})
+			m.messages = append(m.messages, ephemeral("(compacting, slash/shell commands not queued)"))
 			return m, m.flush()
 		}
 		// queue lives in m.queuedMidCompact only — renderLive paints it
@@ -169,7 +62,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 		if !strings.HasPrefix(text, "/") {
 			return m, nil
 		}
-		name := strings.SplitN(strings.TrimPrefix(text, "/"), " ", 2)[0]
+		name, _, _ := strings.Cut(text[1:], " ")
 		if m.cmds != nil {
 			if c, ok := m.cmds.Get(name); ok && c.AllowDuringRun {
 				m.input.Reset()
@@ -186,11 +79,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 			}
 		}
 		m.input.Reset()
-		m.messages = append(m.messages, types.Message{
-			Role:      types.RoleAssistant,
-			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(/" + name + " unavailable while bee is running)"}},
-			Ephemeral: true,
-		})
+		m.messages = append(m.messages, ephemeral("(/"+name+" unavailable while bee is running)"))
 		return m, m.flush()
 	}
 	text := strings.TrimSpace(m.input.Value())
@@ -201,7 +90,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 	// record every accepted submission for ctrl+r reverse search.
 	AppendHistory(text)
 	// the cycle list predates this submit and its index points into it
-	m.cycleActive, m.cycleEntries, m.cycleStash, m.cycleIdx = false, nil, "", -1
+	m.resetCycle()
 
 	// inline shell: ! follows the user's configured default (cfg.ShellBangSilent
 	// — silent by default so quick lookups don't burn tokens). !! inverts the
@@ -225,14 +114,7 @@ func (m Model) handleSubmit() (tea.Model, tea.Cmd) {
 // assistant turn like "(/new done)" replayed in context and parrots it back as
 // a bogus finish signal, ending turns early without doing the work.
 func nonEphemeral(msgs []types.Message) []types.Message {
-	out := make([]types.Message, 0, len(msgs))
-	for _, msg := range msgs {
-		if msg.Ephemeral {
-			continue
-		}
-		out = append(out, msg)
-	}
-	return out
+	return slices.DeleteFunc(slices.Clone(msgs), func(m types.Message) bool { return m.Ephemeral })
 }
 
 // submit records the user message locally and kicks off engine.Run in a goroutine.
@@ -253,9 +135,7 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	m.handoffStall = ""
 	// fresh stream — drop any lingering flush state from a previous turn so
 	// the next progressive flush starts clean.
-	m.streamFlushed = ""
-	m.streamFenceOpen = false
-	m.pendingFlushedPrefix = ""
+	m.dropFlushed()
 	m.partial = ""
 	m.loaderFrame = 0
 	// fresh token-stream loader: zero the live output counters and roll a new
@@ -264,11 +144,7 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	if m.costs != nil {
 		m.turnStartOutput = m.costs.Total().Output
 	}
-	m.loaderRate = 0
-	m.loaderRateEMA = 0
-	m.loaderSampleChars = 0
-	m.loaderRateTokS = 0
-	m.loaderRateSamples = m.loaderRateSamples[:0]
+	m.resetLoaderRate(0)
 	m.loaderSeed = time.Now().UnixNano()
 	// stamp turn start; clear last duration so the timer chip switches from
 	// "final" to "live" mode immediately, no stale final reading lingering.
@@ -331,12 +207,7 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 
 	if m.eng == nil {
 		// no engine wired (tests): synthesize an echo turn so state still advances
-		echo := types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: "(no engine: " + text + ")"}},
-		}
-		merged := append([]types.Message{}, m.messages...)
-		merged = append(merged, echo)
+		merged := append(slices.Clone(m.messages), assistantText("(no engine: "+text+")"))
 		return m, tea.Batch(
 			userFlush,
 			func() tea.Msg {
@@ -350,11 +221,7 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 		)
 	}
 
-	parent := m.ctx
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancel(m.baseCtx())
 	m.cancelRun = cancel
 	eng := m.eng
 	toggles := m.cfgSnapshot()

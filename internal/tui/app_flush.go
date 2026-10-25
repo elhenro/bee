@@ -24,9 +24,7 @@ import (
 // text block has the prefix stripped so the progressively-flushed head
 // doesn't print twice. Always cleared after this call, even on no match.
 func (m *Model) flush() tea.Cmd {
-	if m.printedCount > len(m.messages) {
-		m.printedCount = len(m.messages)
-	}
+	m.printedCount = min(m.printedCount, len(m.messages))
 	if m.printedCount == len(m.messages) {
 		m.pendingFlushedPrefix = ""
 		return nil
@@ -74,23 +72,25 @@ func (m *Model) flush() tea.Cmd {
 		if rendered == "" {
 			continue
 		}
-		// hardwrap to the terminal width before Println. Left raw, a line
-		// wider than the viewport gets soft-wrapped by the terminal but
-		// counted as one row by bubbletea's inline renderer; the miscount
-		// tears the wrapped tail on the next repaint, dropping its SGR so
-		// the last word renders in the default fg (white). Pre-wrapping keeps
-		// physical rows == logical rows. Mirrors the streaming-flush path.
-		w := m.width
-		if w < 4 {
-			w = 80
-		}
-		rendered = ansi.Hardwrap(expandTabs(rendered), w, true)
 		// RenderMessage already emits one leading "\n" in non-compact mode
 		// so each turn has a single blank-line gap; stacking another here
 		// produced double-blanks between every message in scrollback.
-		texts = append(texts, rendered)
+		texts = append(texts, m.hardwrap(rendered))
 	}
 	return m.scroll.print(texts...)
+}
+
+// hardwrap wraps rendered text to the terminal width before Println. Left raw,
+// a line wider than the viewport gets soft-wrapped by the terminal but counted
+// as one row by bubbletea's inline renderer; the miscount tears the wrapped
+// tail on the next repaint, dropping its SGR so the last word renders in the
+// default fg (white). Pre-wrapping keeps physical rows == logical rows.
+func (m *Model) hardwrap(s string) string {
+	w := m.width
+	if w < 4 {
+		w = 80
+	}
+	return ansi.Hardwrap(expandTabs(s), w, true)
 }
 
 // a one-off scrollback line that never enters m.messages: a turn result
@@ -101,11 +101,7 @@ func (m *Model) printNotice(text string) tea.Cmd {
 	if rendered == "" {
 		return nil
 	}
-	w := m.width
-	if w < 4 {
-		w = 80
-	}
-	return m.scroll.print(ansi.Hardwrap(expandTabs(rendered), w, true))
+	return m.scroll.print(m.hardwrap(rendered))
 }
 
 // commitFlushed transfers any progressively-flushed prefix from the active
@@ -113,13 +109,16 @@ func (m *Model) printNotice(text string) tea.Cmd {
 // the already-printed head from the final assistant message. Must be called
 // before m.partial is cleared on any successful or canceled stream path.
 func (m *Model) commitFlushed() {
-	if m.streamFlushed == "" {
-		m.streamFenceOpen = false
-		return
+	if m.streamFlushed != "" {
+		m.pendingFlushedPrefix = m.streamFlushed
 	}
-	m.pendingFlushedPrefix = m.streamFlushed
-	m.streamFlushed = ""
-	m.streamFenceOpen = false
+	m.streamFlushed, m.streamFenceOpen = "", false
+}
+
+// dropFlushed forgets all progressive-flush state, for a fresh turn or a
+// replaced transcript where there is nothing left to dedupe against.
+func (m *Model) dropFlushed() {
+	m.streamFlushed, m.streamFenceOpen, m.pendingFlushedPrefix = "", false, ""
 }
 
 // maybeFlushPartialHead pushes complete leading lines of m.partial into
@@ -149,8 +148,7 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 		// defensive: partial got reset without commitFlushed (shouldn't
 		// happen — every reset path commits — but bail rather than slice
 		// past length).
-		m.streamFlushed = ""
-		m.streamFenceOpen = false
+		m.streamFlushed, m.streamFenceOpen = "", false
 		return nil
 	}
 	unflushed := m.partial[flushedLen:]
@@ -174,12 +172,7 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 	if budget <= 0 {
 		return nil
 	}
-	rendered := m.stream.RenderStreaming(unflushed, m.loaderFrame)
-	w := m.width
-	if w < 4 {
-		w = 80
-	}
-	wrapped := ansi.Hardwrap(rendered, w, true)
+	wrapped := m.hardwrap(m.stream.RenderStreaming(unflushed, m.loaderFrame))
 	if strings.Count(wrapped, "\n")+1 <= budget {
 		return nil
 	}
@@ -199,7 +192,7 @@ func (m *Model) maybeFlushPartialHead() tea.Cmd {
 		return nil
 	}
 	// hardwrap like flush(): a soft-wrapped row miscounts in the inline renderer
-	return m.scroll.print(ansi.Hardwrap(expandTabs(chunk), w, true))
+	return m.scroll.print(m.hardwrap(chunk))
 }
 
 // stripTextPrefix returns a copy of msg with the leading prefix removed

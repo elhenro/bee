@@ -28,28 +28,17 @@ func LoadKeyMap(home string) KeyMap {
 	}
 
 	v := reflect.ValueOf(&km).Elem()
-	bindingType := reflect.TypeOf(key.Binding{})
 	for name, keys := range overrides {
 		f := v.FieldByName(name)
-		if !f.IsValid() {
+		if !f.IsValid() || !f.CanSet() {
 			continue
 		}
-		if f.Type() != bindingType {
-			continue
-		}
-		if !f.CanSet() {
+		b, ok := f.Addr().Interface().(*key.Binding)
+		if !ok {
 			continue
 		}
 		// preserve existing help description if present
-		help := ""
-		if existing, ok := f.Interface().(key.Binding); ok {
-			help = existing.Help().Desc
-		}
-		newBinding := key.NewBinding(
-			key.WithKeys(keys...),
-			key.WithHelp(joinFirst(keys), help),
-		)
-		f.Set(reflect.ValueOf(newBinding))
+		*b = key.NewBinding(key.WithKeys(keys...), key.WithHelp(joinFirst(keys), b.Help().Desc))
 	}
 	return km
 }

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/elhenro/bee/internal/checkpoint"
 	"github.com/elhenro/bee/internal/types"
@@ -51,9 +50,6 @@ type RewindPicker struct {
 // openRewindMsg asks the host to open the rewind picker.
 type openRewindMsg struct{}
 
-// ToggleRewindPickerMsg flips visibility.
-type ToggleRewindPickerMsg struct{}
-
 // RewindSelectMsg carries the chosen turn + restore mode back to the host.
 type RewindSelectMsg struct {
 	MsgID string
@@ -77,12 +73,6 @@ func (p *RewindPicker) Show(entries []RewindEntry) {
 	p.selected = 0
 	p.modeSel = 0
 }
-
-// Hide closes the modal.
-func (p *RewindPicker) Hide() { p.open = false }
-
-// Entries exposes the list (for tests).
-func (p *RewindPicker) Entries() []RewindEntry { return p.entries }
 
 // Update handles key events while open.
 func (p *RewindPicker) Update(msg tea.Msg) (*RewindPicker, tea.Cmd) {
@@ -156,24 +146,18 @@ func (p *RewindPicker) View(width, height int) string {
 		return ""
 	}
 	if p.stage == 1 {
-		return p.viewMode(width, height)
+		return p.viewMode(width)
 	}
-	return p.viewList(width, height)
+	return p.viewList(width)
 }
 
-func (p *RewindPicker) viewList(width, height int) string {
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Rewind")
+func (p *RewindPicker) viewList(width int) string {
+	title := StyleActive.Render("⬢ Rewind")
 	if len(p.entries) == 0 {
 		body := StyleLabel.Render("(no checkpoints yet)")
 		return boxModal(title+"\n\n"+body+"\n\n"+StyleLabel.Render("esc close"), width)
 	}
-	inner := width - 4
-	if inner < 30 {
-		inner = 30
-	}
+	inner := max(width-4, 30)
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n\n")
@@ -186,12 +170,9 @@ func (p *RewindPicker) viewList(width, height int) string {
 	return boxModal(b.String(), width)
 }
 
-func (p *RewindPicker) viewMode(width, height int) string {
+func (p *RewindPicker) viewMode(width int) string {
 	e := p.entries[p.selected]
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Rewind to: " + e.Preview)
+	title := StyleActive.Render("⬢ Rewind to: " + e.Preview)
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n\n")
@@ -219,10 +200,6 @@ func renderRewindRow(e RewindEntry, selected bool, width int) string {
 	if selected {
 		style = StyleActive
 	}
-	preview := strings.TrimSpace(strings.ReplaceAll(e.Preview, "\n", " "))
-	if preview == "" {
-		preview = "(empty)"
-	}
 	meta := e.Age
 	if e.Stat != "" {
 		meta += "  " + e.Stat
@@ -231,14 +208,7 @@ func renderRewindRow(e RewindEntry, selected bool, width int) string {
 		meta += "  (no code)"
 	}
 	head := cursor + style.Render(padRightCells(meta, 24)) + "  "
-	if width <= 0 {
-		return head + style.Render(preview)
-	}
-	maxPrev := max(width-lipglossWidth(head), 0)
-	if lipglossWidth(preview) > maxPrev {
-		preview = truncateVisible(preview, maxPrev)
-	}
-	return truncateVisible(head+style.Render(preview), width)
+	return fitRow(head, rowPreview(e.Preview), style, width)
 }
 
 // buildRewindEntries groups messages into turns (newest first) and joins each

@@ -131,18 +131,11 @@ func translateModifyOtherKeys(buf []byte) (out, held []byte) {
 	// be confused with the start of a CSI introducer. Map back to legacy ESC
 	// byte so panes that check km.String() == "esc" can see it.
 	out = bytes.ReplaceAll(out, []byte("\x1b[27u"), []byte{0x1b})
-	// Kitty CSI u for ctrl+letter chords (a..z, mod 5 = ctrl) → legacy 0x01..0x1a.
-	// With disambiguate mode enabled (CSI > 1 u), Ghostty/Kitty/foot stop sending
-	// the bare 0x03/0x04/... bytes for ctrl+letter and instead emit CSI 99;5u etc.
-	// Bubbletea v1's parser does not recognise CSI u, so without this translation
-	// ctrl+c and ctrl+d arrive as unknownCSISequenceMsg and the user is trapped.
-	for c := byte('a'); c <= 'z'; c++ {
-		seq := []byte{0x1b, '['}
-		seq = append(seq, []byte(itoa(int(c)))...)
-		seq = append(seq, ';', '5', 'u')
-		out = bytes.ReplaceAll(out, seq, []byte{c - 'a' + 1})
-	}
-	// everything else in CSI u form: alt+key -> ESC+key, ctrl+symbol -> C0.
+	// everything else in CSI u form: alt+key -> ESC+key, ctrl+key -> C0. With
+	// disambiguate mode on (CSI > 1 u), the terminal stops sending the bare
+	// 0x03/0x04/... bytes for ctrl+letter and emits CSI 99;5u etc. Bubbletea
+	// v1's parser does not recognise CSI u, so without this translation ctrl+c
+	// and ctrl+d arrive as unknownCSISequenceMsg and the user is trapped.
 	out = translateKittyCSIu(out)
 	// hold back a trailing partial ESC[ sequence (no terminator yet) so a
 	// chord that arrives across two reads still matches on the next pass.
@@ -154,22 +147,6 @@ func translateModifyOtherKeys(buf []byte) (out, held []byte) {
 		}
 	}
 	return out, held
-}
-
-// itoa renders n as ASCII decimal. Avoids strconv import in a hot path that
-// only needs unsigned small ints (Unicode codepoints 97..122).
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [4]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
 }
 
 // isPartialCSI reports whether s looks like an incomplete CSI sequence —

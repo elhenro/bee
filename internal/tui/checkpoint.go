@@ -12,10 +12,7 @@ import (
 const maxCheckpoints = 200
 
 // checkpointDoneMsg reports the result of an async per-turn snapshot.
-type checkpointDoneMsg struct {
-	sha string
-	err error
-}
+type checkpointDoneMsg struct{ err error }
 
 // snapshotAfterTurn captures the work-tree at the end of a turn, keyed by the
 // turn's last message id so code and conversation rewind land at the same point.
@@ -33,11 +30,11 @@ func (m Model) snapshotAfterTurn(msgs []types.Message) tea.Cmd {
 	label := turnLabel(msgs)
 	store := m.checkpoints
 	return func() tea.Msg {
-		sha, err := store.Snapshot(key, label)
+		_, err := store.Snapshot(key, label)
 		if err == nil {
 			_ = store.Prune(maxCheckpoints)
 		}
-		return checkpointDoneMsg{sha: sha, err: err}
+		return checkpointDoneMsg{err: err}
 	}
 }
 
