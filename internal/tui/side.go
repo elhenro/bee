@@ -104,8 +104,6 @@ func (s *tuiSide) SwitchModel(name string) error {
 // invokes Engine.Rebuild so the next turn instantiates the new provider's
 // HTTP client. Without the rebuild the engine kept streaming against the
 // pre-switch backend (e.g. ollama after picking openrouter).
-// Switching to a local provider mid-session also forces Mode = "edit" when
-// the session was sitting in "auto" — local models skip the classifier.
 func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 	if provider == "" {
 		return errors.New("model: empty provider")
@@ -118,8 +116,8 @@ func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 		if model != "" {
 			s.m.eng.Cfg.DefaultModel = model
 		}
-		// re-resolve profile + caveman when auto is in play. Explicit user
-		// choices (tiny/normal/large or full/lite/ultra/off) are preserved.
+		// re-resolve the profile when auto is in play. An explicit
+		// tiny/normal/large choice is preserved.
 		s.m.eng.Cfg = reapplyAutoProfile(s.m.eng.Cfg)
 		if err := rebuildEngine(s.m.eng, "model"); err != nil {
 			return err
@@ -133,8 +131,7 @@ func (s *tuiSide) SwitchProviderModel(provider, model string) error {
 
 // reapplyAutoProfile re-runs ApplyProfile-style resolution for an in-flight
 // config change. Differs from ApplyProfile: leaves a concretely-named profile
-// alone but re-derives caveman if it was "auto"/empty originally. Safe to
-// call repeatedly.
+// alone and only re-resolves "auto"/empty. Safe to call repeatedly.
 func reapplyAutoProfile(c config.Config) config.Config {
 	if c.Profile == "auto" || c.Profile == "" {
 		c.Profile = config.ResolveAutoProfileForProvider(c.DefaultProvider, c.DefaultModel)
