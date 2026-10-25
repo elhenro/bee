@@ -3,7 +3,7 @@ package hive
 // Hooks observes a Queen run as it progresses. Every callback is optional;
 // nil callbacks are skipped, so existing callers (bee swarm) pass a zero
 // Hooks and see unchanged behavior. Callbacks run on the goroutine driving
-// the phase (OnWorkerStart/Done fire from worker goroutines) — keep them
+// the phase (OnWorkerStart/Done fire from worker goroutines), so keep them
 // cheap and non-blocking (a channel send the UI drains is ideal).
 type Hooks struct {
 	OnPlan        func(plan []SubTask)

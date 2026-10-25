@@ -23,7 +23,7 @@ type ReviewDimension struct {
 }
 
 // reviewDimensions are the three axes checked after a hive run mutates the
-// tree. Order is stable — reviewers are paired to dimensions by index.
+// tree. Order is stable, reviewers are paired to dimensions by index.
 var reviewDimensions = []ReviewDimension{
 	{Name: "correctness", Focus: "does the code do what the task asked? logic bugs, wrong results, off-by-one, missed edge cases, broken or missing tests."},
 	{Name: "persistence", Focus: "is state saved and loaded correctly? data integrity, migrations, ledgers, files written to the right path, no lost or double writes."},
