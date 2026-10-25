@@ -1,11 +1,11 @@
 package cost
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/elhenro/bee/internal/jsonl"
 )
 
 // UsageRecord is one completed-turn usage line in the append-only usage log.
@@ -39,21 +39,9 @@ func AppendUsage(r UsageRecord) {
 		return
 	}
 	r.Time = r.Time.UTC()
-	b, err := json.Marshal(r)
-	if err != nil {
-		return
-	}
 	usageMu.Lock()
 	defer usageMu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.Write(append(b, '\n'))
+	_ = jsonl.Append(path, r)
 }
 
 // ResetUsageForTest removes the usage log so a test starts from empty. Test-

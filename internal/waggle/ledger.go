@@ -11,6 +11,7 @@ import (
 
 	"github.com/elhenro/bee/internal/atomicfile"
 	"github.com/elhenro/bee/internal/flock"
+	"github.com/elhenro/bee/internal/jsonl"
 )
 
 // LedgerEntry is one recorded reuse of a waggle. Yield is the estimated tokens
@@ -49,17 +50,7 @@ func (l *Ledger) Append(e LedgerEntry) error {
 		return err
 	}
 	defer flock.Lock(l.path)()
-	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	b, err := json.Marshal(e)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(append(b, '\n'))
-	return err
+	return jsonl.Append(l.path, e)
 }
 
 // scanLedger calls fn for every well-formed named entry in a JSONL ledger,

@@ -9,7 +9,7 @@ import (
 // runtimeKinds validates the runtime fields of a step list. It reports
 // runtime=true when every step carries a Kind, false when none does, and an
 // error when the list mixes the two or a kinded step is malformed.
-func runtimeKinds(steps []RecipeStep, ids map[string]bool, knownTools map[string]bool) (bool, error) {
+func runtimeKinds(steps []RecipeStep, ids map[string]bool) (bool, error) {
 	kinded := 0
 	for _, st := range steps {
 		if st.Kind != "" {
@@ -23,14 +23,14 @@ func runtimeKinds(steps []RecipeStep, ids map[string]bool, knownTools map[string
 		return false, fmt.Errorf("runtime recipe: every step needs a kind (tool|shell|bee), %d of %d have one", kinded, len(steps))
 	}
 	for _, st := range steps {
-		if err := validateRuntimeStep(st, ids, knownTools); err != nil {
+		if err := validateRuntimeStep(st, ids); err != nil {
 			return false, fmt.Errorf("step %s: %w", st.ID, err)
 		}
 	}
 	return true, nil
 }
 
-func validateRuntimeStep(st RecipeStep, ids map[string]bool, knownTools map[string]bool) error {
+func validateRuntimeStep(st RecipeStep, ids map[string]bool) error {
 	switch st.Kind {
 	case StepTool:
 		if st.Tool == "" {
@@ -40,9 +40,6 @@ func validateRuntimeStep(st RecipeStep, ids map[string]bool, knownTools map[stri
 		// shell-quoted; raw substitution into a command is an injection path.
 		if st.Tool == "bash" || st.Tool == "escalate" {
 			return fmt.Errorf("kind tool cannot name %q (use kind: shell, or next: escalate)", st.Tool)
-		}
-		if knownTools != nil && !knownTools[st.Tool] {
-			return fmt.Errorf("tool %q is not registered", st.Tool)
 		}
 	case StepShell:
 		if st.Run == "" {

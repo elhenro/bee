@@ -59,30 +59,30 @@ const (
 // parser auto-assigns step-N when empty) but useful when a later step's
 // OnFailure jumps to a named recovery step.
 type RecipeStep struct {
-	ID          string
-	Description string
+	ID          string `yaml:"id"`
+	Description string `yaml:"description"`
 	// Tool is the tool the model should call. Use "escalate" to ask the
 	// user. Empty = free-form (model chooses for this step).
-	Tool string
+	Tool string `yaml:"tool"`
 	// Args is an optional example payload rendered into the prompt as a
 	// literal JSON envelope. Small models follow shape examples better
 	// than schema prose.
-	Args map[string]any
+	Args map[string]any `yaml:"args"`
 	// OnFailure: step id to jump to if Tool fails. "escalate" = call the
 	// escalate tool. Empty = abort the recipe.
-	OnFailure string
+	OnFailure string `yaml:"on_failure"`
 
 	// runtime-only fields (Kind != ""). Templates may reference {{args}},
 	// {{argv.N}} and {{<step-id>}} for an earlier step's output; inside Run
 	// each value is shell-quoted on substitution.
-	Kind   StepKind
-	Run    string   // kind=shell: the command line
-	Prompt string   // kind=bee: the prompt template
-	Tools  []string // kind=bee: optional tool allowlist for that turn
+	Kind   StepKind `yaml:"kind"`
+	Run    string   `yaml:"run"`    // kind=shell: the command line
+	Prompt string   `yaml:"prompt"` // kind=bee: the prompt template
+	Tools  []string `yaml:"tools"`  // kind=bee: optional tool allowlist for that turn
 	// Next routes after success: "" = following step, "stop" = finish ok,
 	// "escalate" = finish and hand back to the user, or a step id.
-	Next string
+	Next string `yaml:"next"`
 	// FailIf is a regexp; a step whose output matches it counts as failed
 	// even when the tool itself succeeded. Lets a bee step branch by answer.
-	FailIf string
+	FailIf string `yaml:"fail_if"`
 }

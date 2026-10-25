@@ -14,13 +14,13 @@ import (
 // frontmatter is the raw YAML shape on disk. Kind-specific fields are
 // validated after unmarshal.
 type frontmatter struct {
-	Name        string          `yaml:"name"`
-	Type        string          `yaml:"type"`
-	Description string          `yaml:"description"`
-	Tools       []string        `yaml:"tools"`
-	Exec        []string        `yaml:"exec"`
-	Stream      bool            `yaml:"stream"`
-	Steps       []recipeStepRaw `yaml:"steps"`
+	Name        string       `yaml:"name"`
+	Type        string       `yaml:"type"`
+	Description string       `yaml:"description"`
+	Tools       []string     `yaml:"tools"`
+	Exec        []string     `yaml:"exec"`
+	Stream      bool         `yaml:"stream"`
+	Steps       []RecipeStep `yaml:"steps"`
 }
 
 // ParseFile reads a *.md skill file and returns a validated Skill.
@@ -83,9 +83,8 @@ func Parse(path string, raw []byte) (Skill, error) {
 	case KindRecipe:
 		// recipeBuild renders the steps into s.Body so the rest of bee
 		// treats a recipe like an enriched prompt skill — no new engine
-		// runtime needed. knownTools=nil at parse time (no registry); the
-		// runtime catches unknown-tool calls via the existing tools.Get path.
-		if err := recipeBuild(&s, meta.Steps, nil); err != nil {
+		// runtime needed.
+		if err := recipeBuild(&s, meta.Steps); err != nil {
 			return Skill{}, fmt.Errorf("%s: %w", path, err)
 		}
 	}
