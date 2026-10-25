@@ -5,7 +5,7 @@
 # so tool calls render authentically. for fully offline preview swap to
 # `Env BEE_TEST_PROVIDER "stub"` — output will be text-only, no tool chrome.
 
-Output demo/bee.gif
+Output demo/bee-quick.gif
 
 Set Shell "bash"
 Set FontFamily "JetBrainsMono Nerd Font"

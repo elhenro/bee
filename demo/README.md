@@ -1,16 +1,24 @@
-# bee demo tape
+# bee demo
 
-VHS tape for the README gif. Re-render with:
+`bee.gif` and `screenshots/` are live recordings of the real TUI, not mock-ups. A 27B model (Qwen3.8, 4-bit) runs on a local oMLX server, bee fixes a failing test in a throwaway Go project, and VHS records the terminal at 2x inside the honey frame. Nothing is scripted or sped up.
+
+- `bee.gif`: the README loop, about 25 seconds.
+- `screenshots/`: stills from the same sessions (`done`, `work`, `models`, `skills`, `light`).
+- The website uses the same renders, cropped to the window: `website/assets/shot-*.webp` and `hero.*`.
+
+The render setup lives in `private/demo-render/` (git-ignored): one VHS tape per scene, `render.sh` to record them, `post.sh` to turn the raw frames into the gif, the README PNGs and the website media. It needs `vhs`, `ffmpeg`, `gifsicle`, `librsvg`, `imagemagick` and the JetBrainsMono Nerd Font, plus a running `omlx serve --headless --port 8080`.
+
+A real model is not deterministic. If a take wanders (it can), run the scene again.
+
+## Quick take
+
+`bee.tape` records a short session with whatever provider your config points at, to `bee-quick.gif`:
 
 ```sh
 brew install vhs ttyd ffmpeg gifsicle                   # one-time
 brew install --cask font-jetbrains-mono-nerd-font       # one-time
-vhs demo/bee.tape                                       # → demo/bee.gif (~4 MB raw)
-gifsicle -O3 --lossy=80 --colors 128 demo/bee.gif -o demo/bee.gif   # → ~1.7 MB
+vhs demo/bee.tape                                       # -> demo/bee-quick.gif
+gifsicle -O3 --lossy=80 --colors 128 demo/bee-quick.gif -o demo/bee-quick.gif
 ```
 
-## Conventions
-
-- 1000x600, JetBrainsMono Nerd Font 14, Catppuccin Mocha — match bee TUI palette
-- Real provider used so tool calls render authentically (set `OPENROUTER_API_KEY` first, or whatever your config points at). Swap to `Env BEE_TEST_PROVIDER "stub"` for offline preview — output will be text-only, no tool chrome.
-- Keep gif under ~2 MB for smooth README scroll. `gifsicle -O3 --lossy=80 --colors 128` is the sweet spot for bee's flat dark TUI.
+Keep a gif under about 2 MB so the README scrolls smoothly. Flat dark UI like bee's compresses well.

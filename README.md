@@ -32,7 +32,9 @@
 [![Go Report](https://goreportcard.com/badge/github.com/elhenro/bee)](https://goreportcard.com/report/github.com/elhenro/bee)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/elhenro/bee)](https://github.com/elhenro/bee/releases)
-<img src="./demo/bee.gif" alt="bee demo" />
+[![Website](https://img.shields.io/badge/website-bee.hnr.bz-FFB000)](https://bee.hnr.bz)
+
+<img src="./demo/bee.gif" alt="bee fixing a failing test in the terminal: it runs the tests, reads the code, patches one line and runs the tests again" />
 
 bee coding agent harness. Pure Go, single static binary, requires Go 1.26+ to build.
 
@@ -50,6 +52,23 @@ go build -o ~/.local/bin/bee ./cmd/bee
 export OPENROUTER_API_KEY=<REDACTED>
 bee
 ```
+
+## A look
+
+Real sessions against a local oMLX server. Every tool call is a card, every edit is a diff.
+
+<img src="./demo/screenshots/done.png" alt="bee after fixing a failing test: a red test run, a one-line diff, a passing test run, the answer and a change summary" />
+
+<table>
+  <tr>
+    <td width="50%"><a href="./demo/screenshots/work.png"><img src="./demo/screenshots/work.png" alt="bee mid-task with a diff on screen and a spinner with live token counts"></a><br><sub><b>Live.</b> Token counts while it works, <code>esc</code> interrupts.</sub></td>
+    <td width="50%"><a href="./demo/screenshots/models.png"><img src="./demo/screenshots/models.png" alt="the model picker listing the models of the local server"></a><br><sub><b>Any local model.</b> <code>ctrl+p</code>, pick a provider, pick a model.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><a href="./demo/screenshots/skills.png"><img src="./demo/screenshots/skills.png" alt="the slash menu listing commands and skills together"></a><br><sub><b>Skills and commands.</b> Type <code>/</code>. Skills also run as <code>bee &lt;name&gt;</code>.</sub></td>
+    <td width="50%"><a href="./demo/screenshots/light.png"><img src="./demo/screenshots/light.png" alt="the same task in a light terminal theme"></a><br><sub><b>Light terminals too.</b> The palette follows your theme.</sub></td>
+  </tr>
+</table>
 
 ## Why?
 
