@@ -40,6 +40,32 @@ func LongestCommonPrefix(ss []string) string {
 	return p
 }
 
+// completePath extends the last word of val to the longest common prefix of
+// the files it names under cwd. ok is false when nothing can be added.
+func completePath(cwd, val string) (string, bool) {
+	partial := val[strings.LastIndexAny(val, " \t")+1:]
+	if partial == "" {
+		return val, false
+	}
+	// Split, not Dir/Base: "src/" is the directory src with an empty prefix
+	dir, base := filepath.Split(partial)
+	switch {
+	case dir == "":
+		dir = cwd
+	case !filepath.IsAbs(dir):
+		dir = filepath.Join(cwd, dir)
+	}
+	cands := CompletionCandidates(dir, base)
+	if len(cands) == 0 {
+		return val, false
+	}
+	completion := LongestCommonPrefix(cands)
+	if completion == base {
+		return val, false
+	}
+	return val + completion[len(base):], true
+}
+
 // fuzzyMax caps the fuzzy file walker so the @-picker stays snappy.
 const fuzzyMax = 50
 

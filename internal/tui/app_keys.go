@@ -2,7 +2,6 @@ package tui
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -218,21 +217,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// only auto-complete when buffer is a single line and cursor at end —
 	// the 95% case for path completion. multi-line tabs fall through.
 	if keyStr == "tab" && m.state == StateIdle && m.input.LineCount() == 1 {
-		val := m.input.Value()
-		if partial := val[strings.LastIndexAny(val, " \t")+1:]; partial != "" {
-			dir := filepath.Dir(partial)
-			if dir == "." || dir == "" {
-				dir = m.cwd
-			} else if !filepath.IsAbs(dir) {
-				dir = filepath.Join(m.cwd, dir)
-			}
-			base := filepath.Base(partial)
-			if cands := CompletionCandidates(dir, base); len(cands) > 0 {
-				if completion := LongestCommonPrefix(cands); completion != base {
-					m.input.SetValue(val + completion[len(base):])
-					return m, nil
-				}
-			}
+		if completed, ok := completePath(m.cwd, m.input.Value()); ok {
+			m.input.SetValue(completed)
+			return m, nil
 		}
 		// no path completion — let textinput accept the ghost suggestion.
 	}
