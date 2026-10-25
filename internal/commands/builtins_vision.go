@@ -13,17 +13,9 @@ func registerVision(r *Registry) {
 			if s == nil {
 				return "usage: /vision <model> [endpoint] [api]", nil
 			}
-			var model, endpoint, api string
-			if len(args) > 0 {
-				model = args[0]
-			}
-			if len(args) > 1 {
-				endpoint = args[1]
-			}
-			if len(args) > 2 {
-				api = args[2]
-			}
-			return s.VisionFallback(model, endpoint, api)
+			var a [3]string
+			copy(a[:], args)
+			return s.VisionFallback(a[0], a[1], a[2])
 		},
 	})
 }

@@ -174,35 +174,21 @@ func (f *fakeSide) GetShowNudges() bool           { return f.showNudges }
 func (f *fakeSide) SetShowRecap(bool) error       { return nil }
 func (f *fakeSide) GetShowRecap() bool            { return false }
 func (f *fakeSide) SetShowContextBar(bool) error  { return nil }
-func (f *fakeSide) GetShowContextBar() bool       { return false }
 func (f *fakeSide) SetShowCallDetail(bool) error  { return nil }
-func (f *fakeSide) GetShowCallDetail() bool       { return false }
 func (f *fakeSide) SetHighlight(bool) error       { return nil }
-func (f *fakeSide) GetHighlight() bool            { return true }
 func (f *fakeSide) SetShellBangSilent(bool) error { return nil }
 func (f *fakeSide) GetShellBangSilent() bool      { return true }
 func (f *fakeSide) SetShowBee(bool) error         { return nil }
-func (f *fakeSide) GetShowBee() bool              { return true }
 func (f *fakeSide) SetShowContextPct(bool) error  { return nil }
-func (f *fakeSide) GetShowContextPct() bool       { return true }
 func (f *fakeSide) SetShowModel(bool) error       { return nil }
-func (f *fakeSide) GetShowModel() bool            { return true }
 func (f *fakeSide) SetShowCwd(bool) error         { return nil }
-func (f *fakeSide) GetShowCwd() bool              { return true }
 func (f *fakeSide) SetShowEffort(bool) error      { return nil }
-func (f *fakeSide) GetShowEffort() bool           { return true }
 func (f *fakeSide) SetShowTurnTimer(bool) error   { return nil }
-func (f *fakeSide) GetShowTurnTimer() bool        { return true }
 func (f *fakeSide) SetShowGitBranch(bool) error   { return nil }
-func (f *fakeSide) GetShowGitBranch() bool        { return false }
 func (f *fakeSide) SetShowTotalTokens(bool) error { return nil }
-func (f *fakeSide) GetShowTotalTokens() bool      { return false }
 func (f *fakeSide) SetShowLoaderIn(bool) error    { return nil }
-func (f *fakeSide) GetShowLoaderIn() bool         { return true }
 func (f *fakeSide) SetShowLoaderOut(bool) error   { return nil }
-func (f *fakeSide) GetShowLoaderOut() bool        { return true }
 func (f *fakeSide) SetShowLoaderRate(bool) error  { return nil }
-func (f *fakeSide) GetShowLoaderRate() bool       { return true }
 func (f *fakeSide) SetOuterPadLR(n int) error {
 	f.outerPadLR = n
 	f.outerPadLRSet = true

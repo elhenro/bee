@@ -12,7 +12,9 @@ package commands
 
 import (
 	"context"
-	"sort"
+	"maps"
+	"slices"
+	"strings"
 	"sync"
 )
 
@@ -138,18 +140,12 @@ type Side interface {
 	GetCompact() bool
 	// SetShowContextBar toggles the bottom context-fill strip. Persists to config.
 	SetShowContextBar(v bool) error
-	// GetShowContextBar returns the current show-context-bar flag.
-	GetShowContextBar() bool
 	// SetShowCallDetail toggles the full-call row under labeled tool calls.
 	// Persists to config.
 	SetShowCallDetail(v bool) error
-	// GetShowCallDetail returns the current show-call-detail flag.
-	GetShowCallDetail() bool
 	// SetHighlight toggles chroma syntax-highlighting across diff/file/bash
 	// previews. Persists to config.
 	SetHighlight(v bool) error
-	// GetHighlight returns the current highlight flag.
-	GetHighlight() bool
 	// SetShellBangSilent flips the default behavior of `!cmd`. true = run
 	// locally without forwarding; false = legacy forward-to-LLM. `!!` always
 	// inverts. Persists to config.
@@ -159,28 +155,17 @@ type Side interface {
 	// Top-bar chrome toggles. Each persists to config; flipping all five off
 	// collapses the entire status row.
 	SetShowBee(v bool) error
-	GetShowBee() bool
 	SetShowContextPct(v bool) error
-	GetShowContextPct() bool
 	SetShowModel(v bool) error
-	GetShowModel() bool
 	SetShowCwd(v bool) error
-	GetShowCwd() bool
 	SetShowEffort(v bool) error
-	GetShowEffort() bool
 	SetShowTurnTimer(v bool) error
-	GetShowTurnTimer() bool
 	SetShowGitBranch(v bool) error
-	GetShowGitBranch() bool
 	SetShowTotalTokens(v bool) error
-	GetShowTotalTokens() bool
 	// loader readout figure toggles: ↑ input, ↓ output, avg tok/s. Persist.
 	SetShowLoaderIn(v bool) error
-	GetShowLoaderIn() bool
 	SetShowLoaderOut(v bool) error
-	GetShowLoaderOut() bool
 	SetShowLoaderRate(v bool) error
-	GetShowLoaderRate() bool
 	// SetShowBanner toggles the startup intro animation + bee logo. Persists.
 	// Takes effect on next launch (intro is one-shot).
 	SetShowBanner(v bool) error
@@ -267,11 +252,13 @@ type Registry struct {
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry { return &Registry{m: map[string]Command{}} }
 
-// Register adds or overwrites a command by name.
-func (r *Registry) Register(c Command) {
+// Register adds or overwrites commands by name.
+func (r *Registry) Register(cs ...Command) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.m[c.Name] = c
+	for _, c := range cs {
+		r.m[c.Name] = c
+	}
 }
 
 // Get returns the command and whether it exists.
@@ -286,10 +273,7 @@ func (r *Registry) Get(name string) (Command, bool) {
 func (r *Registry) List() []Command {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]Command, 0, len(r.m))
-	for _, c := range r.m {
-		out = append(out, c)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	out := slices.Collect(maps.Values(r.m))
+	slices.SortFunc(out, func(a, b Command) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }

@@ -2,9 +2,36 @@ package commands
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
+
+// boolSetting is one on/off key of /settings. names lists the accepted
+// spellings, the first being the canonical key; status is the one-line
+// description in the headless listing (empty = not listed there).
+type boolSetting struct {
+	names  []string
+	status string
+	get    func(Side) bool
+	set    func(Side, bool) error
+}
+
+// boolSettings is in listing order.
+var boolSettings = []boolSetting{
+	{[]string{"verbose", "v", "verbosity"}, "full tool output", Side.GetVerbose, Side.SetVerbose},
+	{[]string{"show_thoughts", "thoughts", "thought", "think", "show-thoughts"}, "render agent reasoning blocks", Side.GetShowThoughts, Side.SetShowThoughts},
+	{[]string{"show_nudges", "nudge", "nudges", "show-nudges"}, "show loop [nudge] recovery turns", Side.GetShowNudges, Side.SetShowNudges},
+	{[]string{"show_recap", "recap", "recaps", "show-recap"}, "one-line side-LLM recap after each turn", Side.GetShowRecap, Side.SetShowRecap},
+	{[]string{"compact", "dense", "tight"}, "drop tui spacing (gutter, blank, tint, OSC 133)", Side.GetCompact, Side.SetCompact},
+	{[]string{"shell_bang_silent", "bang", "shell_bang", "bang_silent"}, "", Side.GetShellBangSilent, Side.SetShellBangSilent},
+	{[]string{"show_banner", "banner", "intro"}, "", Side.GetShowBanner, Side.SetShowBanner},
+	{[]string{"show_loader", "loader", "generating"}, "", Side.GetShowLoader, Side.SetShowLoader},
+}
+
+// outerPadNames are the accepted spellings of the one numeric setting.
+var outerPadNames = []string{"outer_pad_lr", "padding", "outer_pad", "outer-pad"}
 
 // registerSettings adds the /settings command and its helpers.
 func registerSettings(r *Registry) {
@@ -12,18 +39,15 @@ func registerSettings(r *Registry) {
 		Name:           "settings",
 		Description:    "toggle verbosity + agent-thought visibility (persisted)",
 		AllowDuringRun: true,
-		Run: func(_ context.Context, args []string, s Side) (string, error) {
-			if s == nil {
-				return "", nil
-			}
-			if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		Run: withSide(func(_ context.Context, args []string, s Side) (string, error) {
+			if wantsHelp(args) {
 				if err := s.OpenSettings(); err == nil {
 					return "", nil
 				}
 				return renderSettingsStatus(s), nil
 			}
 			return applySettingsArg(args, s)
-		},
+		}),
 	})
 }
 
@@ -31,24 +55,12 @@ func registerSettings(r *Registry) {
 func renderSettingsStatus(s Side) string {
 	var b strings.Builder
 	b.WriteString("settings:\n")
-	b.WriteString("  verbose       ")
-	b.WriteString(onOff(s.GetVerbose()))
-	b.WriteString("  full tool output\n")
-	b.WriteString("  show_thoughts ")
-	b.WriteString(onOff(s.GetShowThoughts()))
-	b.WriteString("  render agent reasoning blocks\n")
-	b.WriteString("  show_nudges   ")
-	b.WriteString(onOff(s.GetShowNudges()))
-	b.WriteString("  show loop [nudge] recovery turns\n")
-	b.WriteString("  show_recap    ")
-	b.WriteString(onOff(s.GetShowRecap()))
-	b.WriteString("  one-line side-LLM recap after each turn\n")
-	b.WriteString("  compact       ")
-	b.WriteString(onOff(s.GetCompact()))
-	b.WriteString("  drop tui spacing (gutter, blank, tint, OSC 133)\n")
-	b.WriteString("  outer_pad_lr  ")
-	b.WriteString(strconv.Itoa(s.GetOuterPadLR()))
-	b.WriteString("    blank cells left+right around the TUI (0-8, 0=off)\n\n")
+	for _, st := range boolSettings {
+		if st.status != "" {
+			fmt.Fprintf(&b, "  %-13s %s  %s\n", st.names[0], onOff(st.get(s)), st.status)
+		}
+	}
+	fmt.Fprintf(&b, "  %-13s %d    blank cells left+right around the TUI (0-8, 0=off)\n\n", outerPadNames[0], s.GetOuterPadLR())
 	b.WriteString("usage: /settings <key> <on|off>\n")
 	b.WriteString("       /settings outer_pad_lr <0-8>\n")
 	b.WriteString("       /settings              (open pane)\n")
@@ -59,48 +71,19 @@ func renderSettingsStatus(s Side) string {
 // Single-arg toggle form (`/settings verbose`) flips the current value.
 func applySettingsArg(args []string, s Side) (string, error) {
 	key := strings.ToLower(args[0])
-	switch key {
-	case "verbose", "v", "verbosity":
-		key = "verbose"
-	case "thoughts", "thought", "think", "show_thoughts", "show-thoughts":
-		key = "show_thoughts"
-	case "nudge", "nudges", "show_nudges", "show-nudges":
-		key = "show_nudges"
-	case "recap", "recaps", "show_recap", "show-recap":
-		key = "show_recap"
-	case "compact", "dense", "tight":
-		key = "compact"
-	case "bang", "shell_bang", "shell_bang_silent", "bang_silent":
-		key = "shell_bang_silent"
-	case "banner", "show_banner", "intro":
-		key = "show_banner"
-	case "loader", "show_loader", "generating":
-		key = "show_loader"
-	case "outer_pad_lr", "padding", "outer_pad", "outer-pad":
-		key = "outer_pad_lr"
-	default:
-		return "unknown setting " + quote(args[0]) + " (want: verbose | show_thoughts | show_nudges | show_recap | compact | shell_bang_silent | show_banner | show_loader | outer_pad_lr)", nil
+	if slices.Contains(outerPadNames, key) {
+		return applyOuterPad(args, s)
 	}
-	// Int keys must supply a numeric value; they have no "flip" semantics.
-	if key == "outer_pad_lr" {
-		if len(args) < 2 {
-			return "outer_pad_lr needs a number 0-8 (e.g. /settings outer_pad_lr 2)", nil
+	i := slices.IndexFunc(boolSettings, func(st boolSetting) bool { return slices.Contains(st.names, key) })
+	if i < 0 {
+		keys := make([]string, 0, len(boolSettings)+1)
+		for _, st := range boolSettings {
+			keys = append(keys, st.names[0])
 		}
-		n, err := strconv.Atoi(strings.TrimSpace(args[1]))
-		if err != nil {
-			return "outer_pad_lr: want a number 0-8, got " + quote(args[1]), nil
-		}
-		if n < 0 {
-			n = 0
-		}
-		if n > 8 {
-			n = 8
-		}
-		if err := s.SetOuterPadLR(n); err != nil {
-			return "", err
-		}
-		return "outer_pad_lr: " + strconv.Itoa(n), nil
+		keys = append(keys, outerPadNames[0])
+		return "unknown setting " + quote(args[0]) + " (want: " + strings.Join(keys, " | ") + ")", nil
 	}
+	st := boolSettings[i]
 	var newVal bool
 	if len(args) >= 2 {
 		v, ok := parseOnOff(args[1])
@@ -109,49 +92,28 @@ func applySettingsArg(args []string, s Side) (string, error) {
 		}
 		newVal = v
 	} else {
-		// single-arg form: flip current value
-		switch key {
-		case "verbose":
-			newVal = !s.GetVerbose()
-		case "show_thoughts":
-			newVal = !s.GetShowThoughts()
-		case "show_nudges":
-			newVal = !s.GetShowNudges()
-		case "show_recap":
-			newVal = !s.GetShowRecap()
-		case "compact":
-			newVal = !s.GetCompact()
-		case "shell_bang_silent":
-			newVal = !s.GetShellBangSilent()
-		case "show_banner":
-			newVal = !s.GetShowBanner()
-		case "show_loader":
-			newVal = !s.GetShowLoader()
-		}
+		newVal = !st.get(s) // single-arg form: flip current value
 	}
-	var err error
-	switch key {
-	case "verbose":
-		err = s.SetVerbose(newVal)
-	case "show_thoughts":
-		err = s.SetShowThoughts(newVal)
-	case "show_nudges":
-		err = s.SetShowNudges(newVal)
-	case "show_recap":
-		err = s.SetShowRecap(newVal)
-	case "compact":
-		err = s.SetCompact(newVal)
-	case "shell_bang_silent":
-		err = s.SetShellBangSilent(newVal)
-	case "show_banner":
-		err = s.SetShowBanner(newVal)
-	case "show_loader":
-		err = s.SetShowLoader(newVal)
-	}
-	if err != nil {
+	if err := st.set(s, newVal); err != nil {
 		return "", err
 	}
-	return key + ": " + onOff(newVal), nil
+	return st.names[0] + ": " + onOff(newVal), nil
+}
+
+// applyOuterPad sets the numeric padding key; it has no flip semantics.
+func applyOuterPad(args []string, s Side) (string, error) {
+	if len(args) < 2 {
+		return "outer_pad_lr needs a number 0-8 (e.g. /settings outer_pad_lr 2)", nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(args[1]))
+	if err != nil {
+		return "outer_pad_lr: want a number 0-8, got " + quote(args[1]), nil
+	}
+	n = min(max(n, 0), 8)
+	if err := s.SetOuterPadLR(n); err != nil {
+		return "", err
+	}
+	return "outer_pad_lr: " + strconv.Itoa(n), nil
 }
 
 func onOff(v bool) string {

@@ -59,57 +59,53 @@ func readForInline(cwd, rel string) (string, bool) {
 	if !strings.HasPrefix(abs, filepath.Clean(cwd)+string(filepath.Separator)) && abs != filepath.Clean(cwd) {
 		return "", false
 	}
-	info, err := os.Stat(abs)
-	if err != nil || info.IsDir() {
+	data, truncated, ok := readCapped(abs)
+	if !ok {
 		return "", false
 	}
-	f, err := os.Open(abs)
+	out := fmt.Sprintf("### @%s\n```\n%s\n```", rel, strings.TrimRight(string(data), "\n"))
+	if truncated {
+		out += fmt.Sprintf("\n(truncated at %d bytes)", MaxFileBytes)
+	}
+	return out, true
+}
+
+// readCapped reads a regular text file up to MaxFileBytes; truncated reports
+// a longer file. Directories and binaries fail.
+func readCapped(path string) (data []byte, truncated, ok bool) {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return nil, false, false
+	}
+	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return nil, false, false
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
-	if err != nil {
-		return "", false
+	data, err = io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
+	if err != nil || isBinaryBytes(data) {
+		return nil, false, false
 	}
-	if isBinaryBytes(data) {
-		return "", false
-	}
-	truncated := false
 	if len(data) > MaxFileBytes {
-		data = data[:MaxFileBytes]
-		truncated = true
+		return data[:MaxFileBytes], true, true
 	}
-	body := string(data)
-	body = strings.TrimRight(body, "\n")
-	var b strings.Builder
-	fmt.Fprintf(&b, "### @%s\n```\n%s\n```", rel, body)
-	if truncated {
-		fmt.Fprintf(&b, "\n(truncated at %d bytes)", MaxFileBytes)
-	}
-	return b.String(), true
+	return data, false, true
 }
 
 // isBinaryBytes mirrors the heuristic in tools/read/read.go without
 // pulling in a circular dep. NUL byte OR >30% non-text in first 4KB.
 func isBinaryBytes(buf []byte) bool {
+	buf = buf[:min(len(buf), 4096)]
 	if len(buf) == 0 {
 		return false
 	}
-	if len(buf) > 4096 {
-		buf = buf[:4096]
-	}
-	for _, b := range buf {
-		if b == 0 {
-			return true
-		}
-	}
 	nonText := 0
 	for _, b := range buf {
-		if b == '\t' || b == '\n' || b == '\r' || b == '\f' || b == '\b' {
-			continue
-		}
-		if b < 0x20 || b == 0x7f {
+		switch {
+		case b == 0:
+			return true
+		case b == '\t' || b == '\n' || b == '\r' || b == '\f' || b == '\b':
+		case b < 0x20 || b == 0x7f:
 			nonText++
 		}
 	}

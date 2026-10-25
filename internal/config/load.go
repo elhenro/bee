@@ -88,38 +88,30 @@ func mergeFile(c *Config, path string) error {
 // mergeEnv overrides selected top-level fields from environment variables.
 // Empty env vars are ignored.
 func mergeEnv(c *Config) {
-	if v := os.Getenv("BEE_PROVIDER"); v != "" {
-		c.DefaultProvider = v
+	for env, dst := range map[string]*string{
+		"BEE_PROVIDER":      &c.DefaultProvider,
+		"BEE_MODEL":         &c.DefaultModel,
+		"BEE_CAVEMAN":       &c.Caveman,
+		"BEE_PROFILE":       &c.Profile,
+		"BEE_MODE":          &c.Mode,
+		"BEE_ROLE":          &c.Role,
+		"BEE_SHELL":         &c.Shell.Shell,
+		"BEE_SHELL_RC_FILE": &c.Shell.RCFile,
+	} {
+		if v := os.Getenv(env); v != "" {
+			*dst = v
+		}
 	}
-	if v := os.Getenv("BEE_MODEL"); v != "" {
-		c.DefaultModel = v
-	}
-	if v := os.Getenv("BEE_CAVEMAN"); v != "" {
-		c.Caveman = v
-	}
-	if v := os.Getenv("BEE_PROFILE"); v != "" {
-		c.Profile = v
-	}
-	if v := os.Getenv("BEE_MODE"); v != "" {
-		c.Mode = v
-	}
-	if v := os.Getenv("BEE_ROLE"); v != "" {
-		c.Role = v
-	}
-	if v := os.Getenv("BEE_YOLO"); v != "" {
-		c.Yolo = boolEnv(v)
+	for env, dst := range map[string]*bool{
+		"BEE_YOLO":     &c.Yolo,
+		"BEE_SHELL_RC": &c.Shell.UseUserRC,
+	} {
+		if v := os.Getenv(env); v != "" {
+			*dst = boolEnv(v)
+		}
 	}
 	if v := os.Getenv("BEE_EXTRA_TOOLS"); v != "" {
 		c.ExtraTools = splitCSV(v)
-	}
-	if v := os.Getenv("BEE_SHELL_RC"); v != "" {
-		c.Shell.UseUserRC = boolEnv(v)
-	}
-	if v := os.Getenv("BEE_SHELL"); v != "" {
-		c.Shell.Shell = v
-	}
-	if v := os.Getenv("BEE_SHELL_RC_FILE"); v != "" {
-		c.Shell.RCFile = v
 	}
 }
 

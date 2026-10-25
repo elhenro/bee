@@ -2,65 +2,67 @@ package commands
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 )
 
 // registerLogin adds login + logout commands.
 func registerLogin(r *Registry) {
-	r.Register(Command{
-		Name:        "login",
-		Description: "interactive auth picker — /login or /login <provider>",
-		Run: func(ctx context.Context, args []string, s Side) (string, error) {
-			if s == nil {
-				return "usage: /login <provider>", nil
-			}
-			if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-				if err := s.OpenLogin(); err == nil {
+	r.Register(
+		Command{
+			Name:        "login",
+			Description: "interactive auth picker — /login or /login <provider>",
+			Run: func(ctx context.Context, args []string, s Side) (string, error) {
+				if s == nil {
+					return "usage: /login <provider>", nil
+				}
+				if wantsHelp(args) {
+					if err := s.OpenLogin(); err == nil {
+						return "", nil
+					}
+					return renderLoginStatus(s.LoginStatus()), nil
+				}
+				name := args[0]
+				status := s.LoginStatus()
+				match := findProvider(status, name)
+				if match == nil {
+					return "unknown provider " + quote(name) + "\n" + renderLoginStatus(status), nil
+				}
+				if !match.HasOAuth {
+					// non-oauth providers: prefer the TUI pane (handles inline
+					// api-key entry). Fall back to text hint when headless.
+					if err := s.OpenLogin(); err == nil {
+						return "", nil
+					}
+					return loginNoOAuthHint(*match), nil
+				}
+				if err := s.Login(ctx, name); err != nil {
+					return "", err
+				}
+				return "logged in to " + name, nil
+			},
+		},
+		Command{
+			Name:        "logout",
+			Description: "remove stored OAuth token — /logout <provider>",
+			Run: func(_ context.Context, args []string, s Side) (string, error) {
+				if len(args) == 0 {
+					return "usage: /logout <provider>", nil
+				}
+				if s == nil {
 					return "", nil
 				}
-				return renderLoginStatus(s.LoginStatus()), nil
-			}
-			name := args[0]
-			status := s.LoginStatus()
-			match := findProvider(status, name)
-			if match == nil {
-				return "unknown provider " + quote(name) + "\n" + renderLoginStatus(status), nil
-			}
-			if !match.HasOAuth {
-				// non-oauth providers: prefer the TUI pane (handles inline
-				// api-key entry). Fall back to text hint when headless.
-				if err := s.OpenLogin(); err == nil {
-					return "", nil
-				}
-				return loginNoOAuthHint(*match), nil
-			}
-			if err := s.Login(ctx, name); err != nil {
-				return "", err
-			}
-			return "logged in to " + name, nil
+				return "", s.Logout(args[0])
+			},
 		},
-	})
-	r.Register(Command{
-		Name:        "logout",
-		Description: "remove stored OAuth token — /logout <provider>",
-		Run: func(_ context.Context, args []string, s Side) (string, error) {
-			if len(args) == 0 {
-				return "usage: /logout <provider>", nil
-			}
-			if s == nil {
-				return "", nil
-			}
-			return "", s.Logout(args[0])
-		},
-	})
+	)
 }
 
 // findProvider returns the entry matching name, or nil.
 func findProvider(list []ProviderAuth, name string) *ProviderAuth {
-	for i := range list {
-		if list[i].Name == name {
-			return &list[i]
-		}
+	if i := slices.IndexFunc(list, func(p ProviderAuth) bool { return p.Name == name }); i >= 0 {
+		return &list[i]
 	}
 	return nil
 }
@@ -73,9 +75,7 @@ func renderLoginStatus(list []ProviderAuth) string {
 	}
 	width := 0
 	for _, p := range list {
-		if len(p.Name) > width {
-			width = len(p.Name)
-		}
+		width = max(width, len(p.Name))
 	}
 	var b strings.Builder
 	b.WriteString("providers:\n")
@@ -84,11 +84,7 @@ func renderLoginStatus(list []ProviderAuth) string {
 		if p.IsDefault {
 			marker = "* "
 		}
-		b.WriteString(marker)
-		b.WriteString(padRight(p.Name, width))
-		b.WriteString("  ")
-		b.WriteString(authSummary(p))
-		b.WriteByte('\n')
+		fmt.Fprintf(&b, "%s%s  %s\n", marker, padRight(p.Name, width), authSummary(p))
 	}
 	b.WriteString("\nusage: /login <provider>   (oauth flow if configured)\n")
 	b.WriteString("       /logout <provider>  (remove saved token)\n")

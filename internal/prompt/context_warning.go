@@ -22,15 +22,5 @@ func clampRatio(inputTokens, contextLimit int) float64 {
 	if contextLimit <= 0 {
 		return 0
 	}
-	if inputTokens < 0 {
-		inputTokens = 0
-	}
-	r := float64(inputTokens) / float64(contextLimit)
-	if r < 0 {
-		return 0
-	}
-	if r > 1 {
-		return 1
-	}
-	return r
+	return min(max(float64(inputTokens)/float64(contextLimit), 0), 1)
 }

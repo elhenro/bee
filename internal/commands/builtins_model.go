@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -23,7 +22,7 @@ func RunModelCommand(args []string, s modelSide) (string, error) {
 	if s == nil {
 		return "usage: /model [id]", nil
 	}
-	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+	if wantsHelp(args) {
 		if err := s.OpenPicker(); err == nil {
 			return "", nil
 		}
@@ -41,80 +40,68 @@ func RunModelCommand(args []string, s modelSide) (string, error) {
 
 // registerModel adds model + role commands.
 func registerModel(r *Registry) {
-	r.Register(Command{
-		Name:           "model",
-		Description:    "interactive model picker — /model, /model <id>, or /model <provider>/<id>",
-		AllowDuringRun: true,
-		Run: func(_ context.Context, args []string, s Side) (string, error) {
-			return RunModelCommand(args, s)
+	r.Register(
+		Command{
+			Name:           "model",
+			Description:    "interactive model picker — /model, /model <id>, or /model <provider>/<id>",
+			AllowDuringRun: true,
+			Run: func(_ context.Context, args []string, s Side) (string, error) {
+				return RunModelCommand(args, s)
+			},
 		},
-	})
-	r.Register(Command{
-		Name:           "role",
-		Description:    "set agent role — /role [worker|scout|queen] (or open the picker)",
-		AllowDuringRun: true,
-		Run: func(_ context.Context, args []string, s Side) (string, error) {
-			if s == nil {
-				return "", nil
-			}
-			if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-				if err := s.OpenRolePicker(); err == nil {
-					return "", nil
+		Command{
+			Name:           "role",
+			Description:    "set agent role — /role [worker|scout|queen] (or open the picker)",
+			AllowDuringRun: true,
+			Run: withSide(func(_ context.Context, args []string, s Side) (string, error) {
+				if wantsHelp(args) {
+					if err := s.OpenRolePicker(); err == nil {
+						return "", nil
+					}
+					return "role: " + s.GetRole() + " (usage: /role <worker|scout|queen>)", nil
 				}
-				return "role: " + s.GetRole() + " (usage: /role <worker|scout|queen>)", nil
-			}
-			if err := s.SetRole(args[0]); err != nil {
-				return "", err
-			}
-			return "role: " + s.GetRole(), nil
-		},
-	})
-	r.Register(Command{
-		Name:           "effort",
-		Description:    "pin reasoning budget — /effort <off|low|medium|high|max|auto>",
-		AllowDuringRun: true,
-		Run: func(_ context.Context, args []string, s Side) (string, error) {
-			if s == nil {
-				return "", nil
-			}
-			if len(args) == 0 {
-				if err := s.OpenEffortPicker(); err == nil {
-					return "", nil
+				if err := s.SetRole(args[0]); err != nil {
+					return "", err
 				}
-				return "effort: " + s.GetThinking() +
-					" (usage: /effort <off|low|medium|high|max|auto>)", nil
-			}
-			if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-				return "effort: " + s.GetThinking() +
-					" (usage: /effort <off|low|medium|high|max|auto>)", nil
-			}
-			if err := s.SetThinking(args[0]); err != nil {
-				return "", err
-			}
-			return "effort: " + s.GetThinking(), nil
+				return "role: " + s.GetRole(), nil
+			}),
 		},
-	})
-	r.Register(Command{
-		Name:           "iterations",
-		Description:    "set per-Run tool-use cap — /iterations <n>, /iterations 0 for unlimited",
-		AllowDuringRun: true,
-		Run:            func(_ context.Context, args []string, s Side) (string, error) { return runIterations(args, s) },
-	})
-	r.Register(Command{
-		Name:           "iter",
-		Description:    "alias for /iterations",
-		AllowDuringRun: true,
-		Run:            func(_ context.Context, args []string, s Side) (string, error) { return runIterations(args, s) },
-	})
+		Command{
+			Name:           "effort",
+			Description:    "pin reasoning budget — /effort <off|low|medium|high|max|auto>",
+			AllowDuringRun: true,
+			Run: withSide(func(_ context.Context, args []string, s Side) (string, error) {
+				usage := func() string {
+					return "effort: " + s.GetThinking() + " (usage: /effort <off|low|medium|high|max|auto>)"
+				}
+				if len(args) == 0 {
+					if err := s.OpenEffortPicker(); err == nil {
+						return "", nil
+					}
+					return usage(), nil
+				}
+				if wantsHelp(args) {
+					return usage(), nil
+				}
+				if err := s.SetThinking(args[0]); err != nil {
+					return "", err
+				}
+				return "effort: " + s.GetThinking(), nil
+			}),
+		},
+		iterationsCmd("iterations", "set per-Run tool-use cap — /iterations <n>, /iterations 0 for unlimited"),
+		iterationsCmd("iter", "alias for /iterations"),
+	)
+}
+
+func iterationsCmd(name, desc string) Command {
+	return Command{Name: name, Description: desc, AllowDuringRun: true, Run: withSide(runIterations)}
 }
 
 // runIterations backs /iterations and its /iter alias: prints the current cap
 // on no args, otherwise sets it. 0 = unlimited; negatives clamp to 0.
-func runIterations(args []string, s Side) (string, error) {
-	if s == nil {
-		return "", nil
-	}
-	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+func runIterations(_ context.Context, args []string, s Side) (string, error) {
+	if wantsHelp(args) {
 		return "iterations: " + fmtIterCap(s.GetMaxIterations()) +
 			" (usage: /iterations <n>, /iterations 0 for unlimited)", nil
 	}
@@ -136,7 +123,7 @@ func fmtIterCap(n int) string {
 	if n <= 0 {
 		return "unlimited"
 	}
-	return fmt.Sprintf("%d", n)
+	return strconv.Itoa(n)
 }
 
 // splitProviderModel parses "<provider>/<model>" when the prefix matches a
