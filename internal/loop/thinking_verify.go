@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -43,12 +44,7 @@ func looksLikeUntaggedReasoning(text string) bool {
 	if t == "" {
 		return false
 	}
-	for _, p := range reasoningOpeners {
-		if strings.HasPrefix(t, p) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(reasoningOpeners, func(p string) bool { return strings.HasPrefix(t, p) })
 }
 
 // hasThinkingBlock reports whether msg carries any reasoning block, regardless

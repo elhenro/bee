@@ -92,10 +92,8 @@ func (e *Engine) describeCached(ctx context.Context, c vision.Client, b types.Co
 	return txt
 }
 
-func hasImageBlocks(msgs []types.Message) bool { return slices.ContainsFunc(msgs, msgHasImage) }
-
-func msgHasImage(m types.Message) bool {
-	return slices.ContainsFunc(m.Content, func(b types.ContentBlock) bool { return b.Type == types.BlockImage })
+func hasImageBlocks(msgs []types.Message) bool {
+	return slices.ContainsFunc(msgs, func(m types.Message) bool { return hasBlock(m, types.BlockImage) })
 }
 
 // mapImages returns a copy of msgs with every image block replaced by f(block).
@@ -104,7 +102,7 @@ func mapImages(msgs []types.Message, f func(types.ContentBlock) types.ContentBlo
 	out := make([]types.Message, len(msgs))
 	for i, m := range msgs {
 		out[i] = m
-		if !msgHasImage(m) {
+		if !hasBlock(m, types.BlockImage) {
 			continue
 		}
 		nc := make([]types.ContentBlock, len(m.Content))

@@ -65,11 +65,7 @@ func degenerateTailPeriod(s string) int {
 			return 0
 		}
 	}
-	maxP := len(s) / loopMinReps
-	if maxP > loopMaxPeriod {
-		maxP = loopMaxPeriod
-	}
-	for p := loopMinUnit; p <= maxP; p++ {
+	for p := loopMinUnit; p <= min(len(s)/loopMinReps, loopMaxPeriod); p++ {
 		if isPeriodicSuffix(s, p, loopMinReps) {
 			return p
 		}

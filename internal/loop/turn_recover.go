@@ -197,7 +197,7 @@ func guessAttemptedSpec(text string, specs []llm.ToolSpec) llm.ToolSpec {
 		if name == "" {
 			continue
 		}
-		if strings.Contains(low, "<"+name) || strings.Contains(low, `"`+name+`"`) || strings.Contains(low, "("+name+")") {
+		if mentionsTool(low, name, true) {
 			return s
 		}
 	}

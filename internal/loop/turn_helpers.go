@@ -104,6 +104,11 @@ func lastID(ms []types.Message) string {
 
 func newID() string { return uuid.NewString() }
 
+// hasBlock reports whether m carries a block of type t.
+func hasBlock(m types.Message, t types.BlockType) bool {
+	return slices.ContainsFunc(m.Content, func(b types.ContentBlock) bool { return b.Type == t })
+}
+
 // containsAny reports whether s contains any of subs.
 func containsAny(s string, subs ...string) bool {
 	return slices.ContainsFunc(subs, func(sub string) bool { return strings.Contains(s, sub) })
@@ -136,22 +141,22 @@ func looksLikeAttemptedToolCall(text string, specs []llm.ToolSpec) bool {
 		if name == "" {
 			continue
 		}
-		// XML-ish opening tag with the tool name
-		if strings.Contains(low, "<"+name) {
-			return true
-		}
-		// JSON envelope referencing the tool name in a type/name field
-		if hasTypeKey && strings.Contains(low, `"`+name+`"`) {
-			return true
-		}
-		// markdown summary slip: `(toolname)` paren mention. Qwen3-A3B
-		// drift — model writes a prose recap (`(edit) path - did X`,
-		// `(read)\n path/to/file`) instead of emitting the envelope.
-		if strings.Contains(low, "("+name+")") {
+		if mentionsTool(low, name, hasTypeKey) {
 			return true
 		}
 	}
 	return false
+}
+
+// mentionsTool reports whether lowercased text refers to a tool as an
+// XML-ish opening tag, a quoted JSON value (quoted: only when it sits in a
+// type/name field) or a markdown summary slip: `(toolname)` paren mention.
+// Qwen3-A3B drift — model writes a prose recap (`(edit) path - did X`,
+// `(read)\n path/to/file`) instead of emitting the envelope.
+func mentionsTool(low, name string, quoted bool) bool {
+	return strings.Contains(low, "<"+name) ||
+		quoted && strings.Contains(low, `"`+name+`"`) ||
+		strings.Contains(low, "("+name+")")
 }
 
 // stripFencedRegions removes ```...``` blocks from s. Unbalanced opening

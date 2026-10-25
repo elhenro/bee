@@ -56,7 +56,7 @@ func Compact(ctx context.Context, p llm.Provider, model string, msgs []types.Mes
 	// carrying tool_result blocks wire-translates to a role:"tool" message,
 	// which the provider rejects unless the assistant tool_use that issued it
 	// precedes it. walk the boundary back so the pair stays together.
-	for cut > 0 && hasToolResult(msgs[cut]) {
+	for cut > 0 && hasBlock(msgs[cut], types.BlockToolResult) {
 		cut--
 	}
 	if cut <= 0 {
@@ -119,18 +119,6 @@ func streamText(ctx context.Context, p llm.Provider, req llm.Request) (string, e
 		}
 	}
 	return sum.String(), streamErr
-}
-
-// hasToolResult reports whether m carries any tool_result block. Such a message
-// becomes a standalone role:"tool" wire message that is only valid when the
-// assistant tool_use it answers immediately precedes it.
-func hasToolResult(m types.Message) bool {
-	for _, c := range m.Content {
-		if c.Type == types.BlockToolResult {
-			return true
-		}
-	}
-	return false
 }
 
 // ShouldAutoCompact returns true if assembled prompt + history exceeds

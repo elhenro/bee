@@ -48,7 +48,7 @@ func TestRun_CancelDuringLastToolPersistsResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(disk) != 3 || disk[2].Role != types.RoleTool || !hasToolResult(disk[2]) {
+	if len(disk) != 3 || disk[2].Role != types.RoleTool || !hasBlock(disk[2], types.BlockToolResult) {
 		t.Fatalf("rollout must end with the tool_result message, got %d msgs", len(disk))
 	}
 	if last := res.Messages[len(res.Messages)-1]; last.Role != types.RoleTool {
