@@ -1,6 +1,10 @@
 package loop
 
-import "github.com/elhenro/bee/internal/llm"
+import (
+	"slices"
+
+	"github.com/elhenro/bee/internal/llm"
+)
 
 // profileToolAllowlist trims the tool surface advertised per profile. Registry
 // stays full so any explicit call still executes, but the manifest + request
@@ -40,6 +44,17 @@ var profileToolAllowlist = map[string]map[string]bool{
 	},
 }
 
+// keepSpecs returns the specs whose name passes keep, as a fresh slice.
+func keepSpecs(specs []llm.ToolSpec, keep func(name string) bool) []llm.ToolSpec {
+	out := make([]llm.ToolSpec, 0, len(specs))
+	for _, s := range specs {
+		if keep(s.Name) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // filterToolSpecsDisabled removes any spec whose name appears in disabled.
 // Live filter so toggling /tools mid-session takes effect on the next turn
 // without rebuilding the registry.
@@ -47,18 +62,7 @@ func filterToolSpecsDisabled(specs []llm.ToolSpec, disabled []string) []llm.Tool
 	if len(disabled) == 0 {
 		return specs
 	}
-	drop := make(map[string]bool, len(disabled))
-	for _, n := range disabled {
-		drop[n] = true
-	}
-	out := make([]llm.ToolSpec, 0, len(specs))
-	for _, s := range specs {
-		if drop[s.Name] {
-			continue
-		}
-		out = append(out, s)
-	}
-	return out
+	return keepSpecs(specs, func(n string) bool { return !slices.Contains(disabled, n) })
 }
 
 // filterToolSpecsForProfile drops tool specs that fall outside the profile's
@@ -71,15 +75,5 @@ func filterToolSpecsForProfile(specs []llm.ToolSpec, profile string, extras ...s
 	if !ok {
 		return specs
 	}
-	extra := make(map[string]bool, len(extras))
-	for _, n := range extras {
-		extra[n] = true
-	}
-	out := make([]llm.ToolSpec, 0, len(specs))
-	for _, s := range specs {
-		if allow[s.Name] || extra[s.Name] {
-			out = append(out, s)
-		}
-	}
-	return out
+	return keepSpecs(specs, func(n string) bool { return allow[n] || slices.Contains(extras, n) })
 }

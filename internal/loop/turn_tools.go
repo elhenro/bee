@@ -178,7 +178,7 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 		raw, _ := u.Input["_raw_args"].(string)
 		msg := fmt.Sprintf("tool args failed to parse: %s\nemit args as a single JSON object, no extra markup or trailing tokens.", pe)
 		if raw != "" {
-			msg += fmt.Sprintf("\nraw=%q", truncForLog(raw, 240))
+			msg += fmt.Sprintf("\nraw=%q", clipRunes(raw, 240, "…"))
 		}
 		return types.ToolResult{UseID: u.ID, Content: msg, IsError: true}, nil
 	}
@@ -270,11 +270,4 @@ func looksLikeMarkupLeak(s string) bool {
 		return true
 	}
 	return false
-}
-
-func truncForLog(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

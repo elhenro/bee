@@ -34,37 +34,23 @@ func estimatorCorpus() []types.Message {
 	}
 }
 
-// TestTokenEstimatorDefaultMatchesHeuristic pins the default implementation to
-// the historical estimateMessageTokens sum, so the extraction is a pure seam.
-func TestTokenEstimatorDefaultMatchesHeuristic(t *testing.T) {
+// TestEstimateMessagesTokensSumsMessages pins the slice estimate to the
+// per-message heuristic sum.
+func TestEstimateMessagesTokensSumsMessages(t *testing.T) {
 	corpus := estimatorCorpus()
 	want := 0
 	for _, m := range corpus {
 		want += estimateMessageTokens(m)
 	}
-	got := DefaultTokenEstimator().EstimateMessages(corpus)
-	if got != want {
-		t.Fatalf("EstimateMessages = %d, want %d (sum of estimateMessageTokens)", got, want)
-	}
-}
-
-// TestTokenEstimatorContextMatchesMessages documents that the heuristic has no
-// extra context framing cost: context and message estimates coincide.
-func TestTokenEstimatorContextMatchesMessages(t *testing.T) {
-	corpus := estimatorCorpus()
-	l := DefaultTokenEstimator()
-	if got, want := l.EstimateContext(corpus), l.EstimateMessages(corpus); got != want {
-		t.Fatalf("EstimateContext = %d, want %d", got, want)
+	if got := estimateMessagesTokens(corpus); got != want {
+		t.Fatalf("estimateMessagesTokens = %d, want %d (sum of estimateMessageTokens)", got, want)
 	}
 }
 
 // TestTokenEstimatorEmpty guards the empty-slice boundary.
 func TestTokenEstimatorEmpty(t *testing.T) {
-	if got := DefaultTokenEstimator().EstimateMessages(nil); got != 0 {
-		t.Fatalf("EstimateMessages(nil) = %d, want 0", got)
-	}
-	if got := DefaultTokenEstimator().EstimateContext(nil); got != 0 {
-		t.Fatalf("EstimateContext(nil) = %d, want 0", got)
+	if got := estimateMessagesTokens(nil); got != 0 {
+		t.Fatalf("estimateMessagesTokens(nil) = %d, want 0", got)
 	}
 }
 

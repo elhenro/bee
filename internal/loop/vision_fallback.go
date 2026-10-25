@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"slices"
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
@@ -33,14 +34,14 @@ func (e *Engine) applyVisionFallback(ctx context.Context, msgs []types.Message) 
 			e.run.visionWarned = true
 			e.warnf("model %q has no vision and no [vision] fallback set — image dropped. run /vision <model> or set [vision] in config", e.Cfg.DefaultModel)
 		}
-		return swapImages(msgs, func(types.ContentBlock) string {
-			return "[image omitted: active model has no vision; configure a fallback vision model]"
+		return mapImages(msgs, func(types.ContentBlock) types.ContentBlock {
+			return textBlock("[image omitted: active model has no vision; configure a fallback vision model]")
 		})
 	}
 	// e.run.visionCache is allocated (or borrowed from the previous Run) by
 	// freshRunState, so the lazy-init guard that used to live here is gone.
-	return swapImages(msgs, func(b types.ContentBlock) string {
-		return e.describeCached(ctx, client, b)
+	return mapImages(msgs, func(b types.ContentBlock) types.ContentBlock {
+		return textBlock(e.describeCached(ctx, client, b))
 	})
 }
 
@@ -91,45 +92,29 @@ func (e *Engine) describeCached(ctx context.Context, c vision.Client, b types.Co
 	return txt
 }
 
-func hasImageBlocks(msgs []types.Message) bool {
-	for _, m := range msgs {
-		for _, b := range m.Content {
-			if b.Type == types.BlockImage {
-				return true
-			}
-		}
-	}
-	return false
+func hasImageBlocks(msgs []types.Message) bool { return slices.ContainsFunc(msgs, msgHasImage) }
+
+func msgHasImage(m types.Message) bool {
+	return slices.ContainsFunc(m.Content, func(b types.ContentBlock) bool { return b.Type == types.BlockImage })
 }
 
-// swapImages returns a copy of msgs with every image block replaced by a text
-// block whose text comes from repl. Messages without images share the original
-// content slice (no needless copy).
-func swapImages(msgs []types.Message, repl func(types.ContentBlock) string) []types.Message {
+// mapImages returns a copy of msgs with every image block replaced by f(block).
+// Messages without images share the original content slice (no needless copy).
+func mapImages(msgs []types.Message, f func(types.ContentBlock) types.ContentBlock) []types.Message {
 	out := make([]types.Message, len(msgs))
 	for i, m := range msgs {
 		out[i] = m
 		if !msgHasImage(m) {
 			continue
 		}
-		nc := make([]types.ContentBlock, 0, len(m.Content))
-		for _, b := range m.Content {
+		nc := make([]types.ContentBlock, len(m.Content))
+		for j, b := range m.Content {
 			if b.Type == types.BlockImage {
-				nc = append(nc, types.ContentBlock{Type: types.BlockText, Text: repl(b)})
-				continue
+				b = f(b)
 			}
-			nc = append(nc, b)
+			nc[j] = b
 		}
 		out[i].Content = nc
 	}
 	return out
-}
-
-func msgHasImage(m types.Message) bool {
-	for _, b := range m.Content {
-		if b.Type == types.BlockImage {
-			return true
-		}
-	}
-	return false
 }

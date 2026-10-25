@@ -162,7 +162,7 @@ func (c *stateCard) view(msgs []types.Message) []types.Message {
 func repArg(input map[string]any) string {
 	for _, k := range []string{"command", "path", "file_path", "pattern", "query", "url", "name"} {
 		if v, ok := input[k].(string); ok && v != "" {
-			return truncateCard(v, stateCardArgChars)
+			return clipRunes(v, stateCardArgChars, "…")
 		}
 	}
 	return ""
@@ -173,18 +173,6 @@ func firstLine(s string, max int) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
 	}
-	return truncateCard(s, max)
-}
-
-// truncateCard clips to max runes with a bare ellipsis — terser than the
-// shared truncate()'s "…[truncated]" marker, which would bloat every card line.
-func truncateCard(s string, max int) string {
-	count := 0
-	for i := range s {
-		if count == max {
-			return s[:i] + "…"
-		}
-		count++
-	}
-	return s
+	// bare ellipsis: truncate()'s marker would bloat every card line
+	return clipRunes(s, max, "…")
 }

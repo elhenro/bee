@@ -1,8 +1,6 @@
 package loop
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"regexp"
 	"strings"
 
@@ -37,8 +35,7 @@ func testFailFingerprint(u types.ToolUse, output string) string {
 		return ""
 	}
 	norm := noiseRe.ReplaceAllString(strings.Join(lines, "\n"), "")
-	sum := sha256.Sum256([]byte(norm))
-	return hex.EncodeToString(sum[:8])
+	return hash8(norm)
 }
 
 // observeTestFail counts one test run's failure fingerprint and returns how

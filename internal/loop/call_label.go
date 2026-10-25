@@ -1,6 +1,8 @@
 package loop
 
 import (
+	"maps"
+
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
@@ -26,15 +28,9 @@ func addCallLabels(specs []llm.ToolSpec, cfg config.Config) []llm.ToolSpec {
 		if _, taken := props[types.CallLabelKey]; taken {
 			continue
 		}
-		withProps := make(map[string]any, len(props)+1)
-		for k, v := range props {
-			withProps[k] = v
-		}
+		withProps := maps.Clone(props)
 		withProps[types.CallLabelKey] = map[string]any{"type": "string", "description": callLabelDesc}
-		schema := make(map[string]any, len(s.Schema))
-		for k, v := range s.Schema {
-			schema[k] = v
-		}
+		schema := maps.Clone(s.Schema)
 		schema["properties"] = withProps
 		out[i].Schema = schema
 	}

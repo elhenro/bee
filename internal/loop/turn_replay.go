@@ -102,11 +102,7 @@ func stringifyArgs(in map[string]any) map[string]string {
 		if strings.HasPrefix(k, "_") {
 			continue
 		}
-		if s, ok := v.(string); ok {
-			out[k] = s
-		} else {
-			out[k] = fmt.Sprintf("%v", v)
-		}
+		out[k] = fmt.Sprint(v)
 	}
 	return out
 }

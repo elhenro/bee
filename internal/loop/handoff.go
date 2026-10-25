@@ -120,28 +120,18 @@ func summarizeMiddle(ctx context.Context, p llm.Provider, model string, middle [
 		}
 		fmt.Fprintf(&b, "[%s] %s\n", m.Role, txt)
 	}
-	req := llm.Request{
+	sum, err := streamText(ctx, p, llm.Request{
 		Model:  model,
 		System: handoffSystem,
 		Messages: []types.Message{{
 			Role:    types.RoleUser,
 			Content: []types.ContentBlock{{Type: types.BlockText, Text: b.String()}},
 		}},
-	}
-	ch, err := p.Stream(ctx, req)
+	})
 	if err != nil {
 		return "", err
 	}
-	var sum strings.Builder
-	for ev := range ch {
-		if ev.Type == llm.EventTextDelta {
-			sum.WriteString(ev.Delta)
-		}
-		if ev.Type == llm.EventError && ev.Err != nil {
-			return "", ev.Err
-		}
-	}
-	return strings.TrimSpace(sum.String()), nil
+	return strings.TrimSpace(sum), nil
 }
 
 // firstUserText returns the first non-empty user text block the user wrote —

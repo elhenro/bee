@@ -2,6 +2,7 @@ package loop
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/types"
@@ -67,20 +68,13 @@ func observeDuplicateWrites(e *Engine, uses []types.ToolUse, results []types.Too
 }
 
 // canonicalArgsBody builds the dup-key body from input over the listed keys.
-// not a hash itself — duplicateWriteTracker.hashBody handles the hashing.
+// not a hash itself — duplicateWriteTracker hashes it.
 func canonicalArgsBody(input map[string]any, keys []string) string {
-	var out string
+	var b strings.Builder
 	for _, k := range keys {
 		if v, ok := input[k]; ok {
-			out += k + "="
-			switch s := v.(type) {
-			case string:
-				out += s
-			default:
-				out += fmt.Sprintf("%v", s)
-			}
-			out += ";"
+			fmt.Fprintf(&b, "%s=%v;", k, v)
 		}
 	}
-	return out
+	return b.String()
 }

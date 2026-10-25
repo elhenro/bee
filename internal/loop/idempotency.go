@@ -1,10 +1,5 @@
 package loop
 
-import (
-	"crypto/sha256"
-	"encoding/hex"
-)
-
 // duplicateWriteTracker spots when the model writes identical content to the
 // same path twice within one Run without intervening read. small models that
 // lose context window can re-emit the same write — wastes turns and confuses
@@ -27,7 +22,7 @@ func newDuplicateWriteTracker() *duplicateWriteTracker {
 // ObserveWrite records a write of body to path and returns true when this
 // write duplicates the most recent write to the same path with no read in between.
 func (t *duplicateWriteTracker) ObserveWrite(path, body string) bool {
-	h := hashBody(body)
+	h := hash8(body)
 	dup := false
 	if prev, ok := t.lastWriteHash[path]; ok && prev == h && !t.readSince[path] {
 		dup = true
@@ -42,9 +37,4 @@ func (t *duplicateWriteTracker) ObserveWrite(path, body string) bool {
 // intentionally re-applied the same content.
 func (t *duplicateWriteTracker) ObserveRead(path string) {
 	t.readSince[path] = true
-}
-
-func hashBody(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:8])
 }

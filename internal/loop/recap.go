@@ -72,25 +72,8 @@ func GenerateRecap(ctx context.Context, p llm.Provider, model string, msgs []typ
 		Temperature: 0,
 		Stream:      true,
 	}
-	ch, err := p.Stream(ctx, req)
-	if err != nil {
-		return RecapResult{Err: err}
-	}
-	var (
-		buf       strings.Builder
-		streamErr error
-	)
-	for ev := range ch {
-		switch ev.Type {
-		case llm.EventTextDelta:
-			buf.WriteString(ev.Delta)
-		case llm.EventError:
-			if ev.Err != nil {
-				streamErr = ev.Err
-			}
-		}
-	}
-	raw := strings.TrimSpace(buf.String())
+	out, streamErr := streamText(ctx, p, req)
+	raw := strings.TrimSpace(out)
 	if raw == "" {
 		if streamErr != nil {
 			return RecapResult{Err: streamErr}

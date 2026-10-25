@@ -117,8 +117,8 @@ func (e *Engine) takeSpecCompact(ctx context.Context, msgs []types.Message) ([]t
 	stats := CompactStats{
 		BeforeMsgs:   len(msgs),
 		AfterMsgs:    len(merged),
-		BeforeTokens: defaultTokenEstimator.EstimateMessages(msgs),
-		AfterTokens:  defaultTokenEstimator.EstimateMessages(merged),
+		BeforeTokens: estimateMessagesTokens(msgs),
+		AfterTokens:  estimateMessagesTokens(merged),
 		Duration:     time.Since(start),
 	}
 	return e.emitCompactNotice(merged, stats), true

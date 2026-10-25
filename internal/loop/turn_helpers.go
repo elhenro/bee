@@ -2,26 +2,17 @@ package loop
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/prompt"
 	"github.com/elhenro/bee/internal/types"
 )
-
-// cloneProfiles shallow-copies the profiles map so per-engine mutations
-// (probe-aware scaling) don't leak into a sibling engine sharing the same
-// Defaults() map.
-func cloneProfiles(in map[string]config.Profile) map[string]config.Profile {
-	out := make(map[string]config.Profile, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
 
 // prependWarningToToolResult injects a context-warning prefix into the first
 // tool_result block so the model sees it in the next turn. Mutates the
@@ -47,6 +38,15 @@ func toolResultBlocks(rs []types.ToolResult) []types.ContentBlock {
 	return out
 }
 
+// trySend delivers v without blocking: a slow consumer drops it rather than
+// stalling the loop. A nil channel drops everything.
+func trySend[T any](ch chan<- T, v T) {
+	select {
+	case ch <- v:
+	default:
+	}
+}
+
 func (e *Engine) appendMessage(ctx context.Context, m types.Message) error {
 	var err error
 	if e.Sessions != nil {
@@ -54,13 +54,39 @@ func (e *Engine) appendMessage(ctx context.Context, m types.Message) error {
 	}
 	// fan out to a live UI so tool_use / tool_result cards render mid-Run.
 	// skip user role: the TUI shows an optimistic copy before Run starts.
-	if e.LiveMsgCh != nil && m.Role != types.RoleUser {
-		select {
-		case e.LiveMsgCh <- m:
-		default:
-		}
+	if m.Role != types.RoleUser {
+		trySend(e.LiveMsgCh, m)
 	}
 	return err
+}
+
+// push persists m and adds it to the Run's transcript.
+func (e *Engine) push(ctx context.Context, res *RunResult, m types.Message) error {
+	if err := e.appendMessage(ctx, m); err != nil {
+		return err
+	}
+	res.Messages = append(res.Messages, m)
+	return nil
+}
+
+// newMessage builds a message with a fresh id and timestamp.
+func newMessage(role types.Role, parentID string, content ...types.ContentBlock) types.Message {
+	return types.Message{ID: newID(), ParentID: parentID, Role: role, Content: content, Time: time.Now().UTC()}
+}
+
+func textBlock(text string) types.ContentBlock {
+	return types.ContentBlock{Type: types.BlockText, Text: text}
+}
+
+// textMessage is newMessage with a single text block.
+func textMessage(role types.Role, parentID, text string) types.Message {
+	return newMessage(role, parentID, textBlock(text))
+}
+
+// plainMessage is a bare text message for requests and views: no id, no
+// timestamp, never persisted.
+func plainMessage(role types.Role, text string) types.Message {
+	return types.Message{Role: role, Content: []types.ContentBlock{textBlock(text)}}
 }
 
 func lastID(ms []types.Message) string {
@@ -76,6 +102,12 @@ func lastID(ms []types.Message) string {
 }
 
 func newID() string { return uuid.NewString() }
+
+// hash8 is a short stable digest for fingerprints and dedupe keys.
+func hash8(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:8])
+}
 
 // looksLikeAttemptedToolCall heuristically detects when the final text from
 // a turn contains a tool-call attempt that the textmode parser couldn't

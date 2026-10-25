@@ -161,12 +161,8 @@ func degenerateBlockTail(s string) int {
 	var bestKey string
 	bestCount := 0
 	off := 0
-	for off < len(s) {
-		end := len(s)
-		if nl := strings.IndexByte(s[off:], '\n'); nl >= 0 {
-			end = off + nl
-		}
-		if norm := normalizeBlockLine(s[off:end]); len(norm) >= blockMinLineLen {
+	for line := range strings.SplitSeq(s, "\n") {
+		if norm := normalizeBlockLine(line); len(norm) >= blockMinLineLen {
 			st := seen[norm]
 			if st == nil {
 				st = &stat{firstAt: off}
@@ -177,10 +173,7 @@ func degenerateBlockTail(s string) int {
 				bestCount, bestKey = st.count, norm
 			}
 		}
-		if end >= len(s) {
-			break
-		}
-		off = end + 1
+		off += len(line) + 1
 	}
 	if bestCount < blockMinReps {
 		return -1

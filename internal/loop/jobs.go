@@ -85,11 +85,7 @@ func jobDur(d time.Duration) string {
 }
 
 func oneLineCmd(s string, max int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > max {
-		return string(r[:max]) + "…"
-	}
-	return s
+	return clipRunes(strings.Join(strings.Fields(s), " "), max, "…")
 }
 
 // injectJobNotice appends finished background jobs to the transcript as a user
@@ -101,21 +97,10 @@ func (e *Engine) injectJobNotice(ctx context.Context, msgs *[]types.Message) {
 	if !ok {
 		return
 	}
-	msg := types.Message{
-		ID:       newID(),
-		ParentID: lastID(*msgs),
-		Role:     types.RoleUser,
-		Content:  []types.ContentBlock{{Type: types.BlockText, Text: text}},
-		Time:     time.Now().UTC(),
-		Display:  display,
-	}
+	msg := textMessage(types.RoleUser, lastID(*msgs), text)
+	msg.Display = display
 	// a failed session write must not swallow the result: the model still gets it
 	_ = e.appendMessage(ctx, msg)
 	*msgs = append(*msgs, msg)
-	if e.LiveMsgCh != nil {
-		select {
-		case e.LiveMsgCh <- msg:
-		default:
-		}
-	}
+	trySend(e.LiveMsgCh, msg)
 }

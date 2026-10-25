@@ -17,20 +17,9 @@ func (e *Engine) emitCompactNotice(msgs []types.Message, stats CompactStats) []t
 	if stats.BeforeMsgs == stats.AfterMsgs {
 		return msgs
 	}
-	note := types.Message{
-		ID:        newID(),
-		ParentID:  lastID(msgs),
-		Role:      types.RoleAssistant,
-		Content:   []types.ContentBlock{{Type: types.BlockText, Text: formatCompactNotice(stats)}},
-		Time:      time.Now().UTC(),
-		Ephemeral: true,
-	}
-	if e.LiveMsgCh != nil {
-		select {
-		case e.LiveMsgCh <- note:
-		default:
-		}
-	}
+	note := textMessage(types.RoleAssistant, lastID(msgs), formatCompactNotice(stats))
+	note.Ephemeral = true
+	trySend(e.LiveMsgCh, note)
 	return append(msgs, note)
 }
 
