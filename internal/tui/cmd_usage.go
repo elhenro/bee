@@ -71,7 +71,7 @@ func saveCmdUsage(path string, counts map[string]int) {
 	if err != nil {
 		return
 	}
-	_ = atomicfile.Write(path, b, 0o644)
+	_ = atomicfile.Write(path, b, 0o600)
 }
 
 // sortPaletteByUsage orders entries by usage count desc, with alphabetical

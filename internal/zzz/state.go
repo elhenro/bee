@@ -69,7 +69,7 @@ func SaveMeta(r *Run) error {
 	if err != nil {
 		return err
 	}
-	return atomicfile.Write(filepath.Join(dir, "meta.json"), data, 0o644)
+	return atomicfile.Write(filepath.Join(dir, "meta.json"), data, 0o600)
 }
 
 // LoadMeta reads meta.json for an existing run. An unknown id leaves no
@@ -98,7 +98,7 @@ func SavePrompt(id, objective string) error {
 	if err != nil {
 		return err
 	}
-	return atomicfile.Write(filepath.Join(dir, "prompt.txt"), []byte(objective), 0o644)
+	return atomicfile.Write(filepath.Join(dir, "prompt.txt"), []byte(objective), 0o600)
 }
 
 // LoadPrompt reads the saved objective.

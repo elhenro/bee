@@ -111,7 +111,7 @@ func AddLifetime(in, out int) {
 	if err != nil {
 		return
 	}
-	_ = atomicfile.Write(lifePath, b, 0o644)
+	_ = atomicfile.Write(lifePath, b, 0o600)
 }
 
 // FormatLifetimeTokens compacts a token count for banner display: thousands

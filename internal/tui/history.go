@@ -264,5 +264,5 @@ func maybeTrim(p string) {
 		return
 	}
 	keep := strings.Join(lines[len(lines)-historyMax:], "\n") + "\n"
-	_ = atomicfile.Write(p, []byte(keep), 0o644)
+	_ = atomicfile.Write(p, []byte(keep), 0o600)
 }
