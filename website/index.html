@@ -282,17 +282,14 @@
       </div>
       <div class="rig">
         <h3>My setup</h3>
-        <p>MacBook M3 Max, 64 GB. Huihui-Qwen3.6-35B-A3B at 8-bit (34.32 GB) with Qwen3-VL-4B (2.90 GB) for vision. Sampling: temperature 0.7, top-p 0.85, top-k 20, 8-bit KV cache.</p>
+        <p>MacBook M3 Max, 64 GB, serving through oMLX with multi-token prediction on. Qwen3.8-27B is the reference model. Sampling: temperature 1.0, top-p 0.95, top-k 20.</p>
         <table class="table">
-          <thead><tr><th>Also works well</th><th>Size</th></tr></thead>
+          <thead><tr><th>Models I run</th><th>Size</th></tr></thead>
           <tbody>
-            <tr><td>gemma-4-12B-it-4bit</td><td>10.26 GB</td></tr>
-            <tr><td>gemma-4-12B-it-8bit</td><td>11.87 GB</td></tr>
-            <tr><td>gemma-4-12B-it-assistant-bf16</td><td>837 MB</td></tr>
-            <tr><td>Qwen3-Coder-Next-4bit</td><td>41.78 GB</td></tr>
-            <tr><td>Qwen3.6-27B-8bit</td><td>9.02 GB</td></tr>
-            <tr><td>Qwen3.6-35B-A3B-4bit</td><td>19.03 GB</td></tr>
-            <tr><td>Qwen3.6-35B-A3B-8bit</td><td>29.68 GB</td></tr>
+            <tr><td>Qwen3.8-27B-oQ4e-mtp</td><td>17 GB</td></tr>
+            <tr><td>Ornith-1.5-35B-A3B-oQ4e-mtp</td><td>21.6 GB</td></tr>
+            <tr><td>MiMo-V2.6-Distill-Qwen-9B-OptiQ-4bit</td><td>7.1 GB</td></tr>
+            <tr><td>Qwen3.5-0.8B-MLX-4bit</td><td>652 MB</td></tr>
           </tbody>
         </table>
       </div>
@@ -320,11 +317,11 @@
         </details>
         <details>
           <summary>What hardware do I need to run bee locally?</summary>
-          <p>It scales to your machine. A MacBook M3 Max with 64 GB of RAM reliably runs a 34 GB 8-bit Qwen3.6-35B model. Smaller models such as gemma-4-12B at 10 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start.</p>
+          <p>It scales to your machine. A MacBook M3 Max with 64 GB of RAM runs a 17 GB Qwen3.8-27B or a 22 GB 35B-A3B model with room to spare. Smaller models such as MiMo-V2.6 9B at 7 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start.</p>
         </details>
         <details>
           <summary>Which models work well with bee?</summary>
-          <p>bee works from tiny local models to frontier APIs. The reference model is Huihui-Qwen3.6-35B-A3B at 8-bit, with Qwen3-VL-4B for vision; gemma-4-12B and Qwen3-Coder-Next also perform well. bee handles vision automatically for models that only do text.</p>
+          <p>bee works from tiny local models to frontier APIs. The reference model is Qwen3.8-27B (oQ4e, with multi-token prediction) on oMLX; Ornith-1.5-35B-A3B and MiMo-V2.6 9B also run well here. For models that only read text, bee routes images through a small local vision model.</p>
         </details>
         <details>
           <summary>What are bee skills?</summary>
@@ -428,8 +425,8 @@
     { "@type": "Question", "name": "What is bee?", "acceptedAnswer": { "@type": "Answer", "text": "bee is a minimal coding agent harness written in Go. It is a single static binary that turns any LLM into an autonomous agent which writes code, runs tests, and commits changes. There is no runtime to install and no daemon, just one executable on your PATH." } },
     { "@type": "Question", "name": "How do I install bee?", "acceptedAnswer": { "@type": "Answer", "text": "Run curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh, or go install github.com/elhenro/bee/cmd/bee@latest if you have Go. Then run bee, type /model, choose a runtime such as oMLX, Ollama, or OpenRouter, and pick a model." } },
     { "@type": "Question", "name": "Can bee run fully local and offline?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee runs against local models through Ollama or oMLX, so there are no API keys, no rate limits, and nothing leaves your machine. On macOS, oMLX adds native Apple Silicon acceleration with prompt caching for fast, memory-efficient inference." } },
-    { "@type": "Question", "name": "What hardware do I need to run bee locally?", "acceptedAnswer": { "@type": "Answer", "text": "It scales to your machine. A MacBook M3 Max with 64 GB of RAM reliably runs a 34 GB 8-bit Qwen3.6-35B model. Smaller models such as gemma-4-12B at 10 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start." } },
-    { "@type": "Question", "name": "Which models work well with bee?", "acceptedAnswer": { "@type": "Answer", "text": "bee works from tiny local models to frontier APIs. The reference model is Huihui-Qwen3.6-35B-A3B at 8-bit, with Qwen3-VL-4B for vision; gemma-4-12B and Qwen3-Coder-Next also perform well. bee handles vision automatically for models that only do text." } },
+    { "@type": "Question", "name": "What hardware do I need to run bee locally?", "acceptedAnswer": { "@type": "Answer", "text": "It scales to your machine. A MacBook M3 Max with 64 GB of RAM runs a 17 GB Qwen3.8-27B or a 22 GB 35B-A3B model with room to spare. Smaller models such as MiMo-V2.6 9B at 7 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start." } },
+    { "@type": "Question", "name": "Which models work well with bee?", "acceptedAnswer": { "@type": "Answer", "text": "bee works from tiny local models to frontier APIs. The reference model is Qwen3.8-27B (oQ4e, with multi-token prediction) on oMLX; Ornith-1.5-35B-A3B and MiMo-V2.6 9B also run well here. For models that only read text, bee routes images through a small local vision model." } },
     { "@type": "Question", "name": "What are bee skills?", "acceptedAnswer": { "@type": "Answer", "text": "Skills are extra capabilities exposed as subcommands. You invoke them as bee <name>, so one binary on your PATH covers many jobs instead of a directory of separate scripts. This keeps installation to a single file while letting bee grow new abilities." } },
     { "@type": "Question", "name": "Does bee work with hosted providers like OpenRouter?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Besides local Ollama and oMLX, bee connects to hosted providers such as OpenRouter, so you can mix local and cloud models. Switch at any time with the /model command and pick whichever runtime and model fit the task and your budget." } },
     { "@type": "Question", "name": "Can bee run many agents at once, or overnight?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee agents starts each task in its own git worktree and merges finished branches back once the verify gate passes. bee swarm and bee fan spread one task over several bees, and bee zzz runs an overnight loop that makes one small change per iteration and commits or rolls back, so you wake up to small, revertable commits." } },
