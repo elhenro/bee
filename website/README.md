@@ -30,6 +30,8 @@ assets/site.js       theme, copy buttons, install tabs, gallery, hero video
 assets/fonts/        Fraunces and JetBrains Mono (OFL, licenses next to the files)
 assets/shot-*.webp   the terminal windows, cropped from the demo renders
 assets/hero.*        the hero loop (webm and mp4)
+404.html             the not found page (Pages serves it with a real 404)
+favicon.ico          for crawlers and browsers that ask for /favicon.ico
 main.go              the local server
 ```
 

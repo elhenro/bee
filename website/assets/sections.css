@@ -9,6 +9,8 @@
 }
 .head h2 em { font-style: italic; font-weight: 400; color: var(--honey-deep); }
 .head p { margin: 1rem 0 0; color: var(--muted); text-wrap: pretty; }
+.head.big { margin-bottom: clamp(1.5rem, 4vw, 2.6rem); }
+.head.big h2 { font-size: clamp(4.5rem, 16vw, 9rem); line-height: 0.92; letter-spacing: -0.04em; }
 .kicker {
   display: inline-block; margin-bottom: 0.9rem; color: var(--honey-deep);
   font: 500 0.78rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase;

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found | bee</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fffbf2">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15141a">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/site.css">
+<style>
+  .lost { display: grid; place-content: center; justify-items: center; gap: 1.1rem; min-height: 72vh; padding: 4rem 0; text-align: center; }
+  .lost h1 { margin: 0; font: 600 clamp(6rem, 24vw, 12rem)/0.9 var(--serif); letter-spacing: -0.04em; }
+  .lost h1 em { font-style: italic; font-weight: 400; color: var(--honey-deep); }
+  .lost p { margin: 0; color: var(--muted); }
+</style>
+<script>
+  try {
+    var t = localStorage.getItem('bee-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
+</head>
+<body>
+<header class="nav">
+  <div class="wrap"><a class="brand" href="/" aria-label="bee, home"><img src="/assets/favicon.svg" alt="" width="30" height="30">bee</a></div>
+</header>
+<main class="wrap lost">
+  <h1>4<em>0</em>4</h1>
+  <p>This page flew off. The hive is back this way.</p>
+  <a class="btn primary" href="/">Go to bee.hnr.bz</a>
+</main>
+</body>
+</html>

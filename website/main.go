@@ -16,10 +16,13 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
+//go:embed 404.html
+var notFoundHTML []byte
+
 //go:embed assets/*
 var assetsFS embed.FS
 
-//go:embed robots.txt sitemap.xml llms.txt
+//go:embed robots.txt sitemap.xml llms.txt favicon.ico
 var seoFS embed.FS
 
 func init() {
@@ -59,6 +62,14 @@ func main() {
 	r.Get("/robots.txt", seoFile("robots.txt", "text/plain; charset=utf-8"))
 	r.Get("/sitemap.xml", seoFile("sitemap.xml", "application/xml; charset=utf-8"))
 	r.Get("/llms.txt", seoFile("llms.txt", "text/plain; charset=utf-8"))
+	r.Get("/favicon.ico", seoFile("favicon.ico", "image/x-icon"))
+
+	// a real 404, so stray urls are not indexed as copies of the home page
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(notFoundHTML)
+	})
 
 	assetsSub, _ := fs.Sub(assetsFS, "assets")
 	files := http.StripPrefix("/assets", http.FileServer(http.FS(assetsSub)))

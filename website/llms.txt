@@ -2,7 +2,7 @@
 
 > bee is a minimal coding agent harness written in Go. A single static binary that turns any LLM, from a tiny local model to a frontier API, into an autonomous coding agent that writes code, runs tests, and commits changes. Skills are exposed as subcommands (`bee <name>`), so one binary on your PATH does many jobs. This file helps AI assistants and answer engines load accurate, current docs with minimal tokens.
 
-bee runs fully local with Ollama or oMLX (no API keys, no rate limits, nothing leaves your machine), or against hosted providers like OpenRouter. Author: Henry Schober. Source and issues: https://github.com/elhenro/bee
+bee runs fully local with Ollama or oMLX (no API keys, no rate limits, your code stays on your machine), or against hosted providers like OpenRouter, OpenAI, Anthropic and Gemini. Author: Henry Schober. Source and issues: https://github.com/elhenro/bee
 
 ## Docs
 
@@ -13,7 +13,8 @@ bee runs fully local with Ollama or oMLX (no API keys, no rate limits, nothing l
 ## Install
 
 - Install script: `curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh`
-- Go install: `go install github.com/elhenro/bee/cmd/bee@latest`
+- Go install: `go install github.com/elhenro/bee/cmd/bee@latest` (Go 1.26+)
+- Prebuilt binaries for macOS and Linux (amd64, arm64) are on the releases page. Windows is untested.
 - Then run `bee`, type `/model`, choose a runtime (oMLX, Ollama, OpenRouter, ...) and pick a model. Local or hosted, your choice.
 
 ## What it is
@@ -22,6 +23,12 @@ bee runs fully local with Ollama or oMLX (no API keys, no rate limits, nothing l
 - Pure Go: single static binary, no runtime dependencies
 - Skills: `bee <name>` subcommands, one binary, one PATH entry
 - Works everywhere: Ollama and oMLX local, OpenRouter hosted, tiny models to frontier
+- No profiles: every model gets the same defaults. Lower the budgets in `~/.bee/config.toml` for a small context window
+- Roles: worker (default), scout (read-only research and web), queen (a hive of workers). Cycle with shift+tab
+- Parallel work: `bee agents` (one git worktree per task), `bee swarm`, `bee fan`
+- Overnight loop: `bee zzz` makes one small change per iteration, then commits or rolls back
+- Review aids: `bee explain` and `bee quiz` show what each request changed and why
+- Procedure memory: a repeated read-only route becomes a replayable shortcut (a waggle)
 
 ## Local LLMs
 
