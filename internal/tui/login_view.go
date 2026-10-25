@@ -17,10 +17,7 @@ func (p *LoginPane) View(width, height int) string {
 	if p.inputting {
 		return p.viewInput(width, height)
 	}
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Login")
+	title := paneTitle("⬢ Login")
 
 	var b strings.Builder
 	b.WriteString(title)
@@ -55,10 +52,7 @@ func (p *LoginPane) View(width, height int) string {
 
 // viewInput renders the api-key entry sub-mode.
 func (p *LoginPane) viewInput(width, height int) string {
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Login · " + p.inputFor)
+	title := paneTitle("⬢ Login · " + p.inputFor)
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n\n")
@@ -79,12 +73,7 @@ func (p *LoginPane) viewInput(width, height int) string {
 // renderLoginRow draws one provider row with cursor marker, name, default
 // flag, and auth-state indicators.
 func renderLoginRow(p commands.ProviderAuth, selected bool, nameW int) string {
-	marker := "  "
-	nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
-	if selected {
-		marker = selectMark(true)
-		nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
-	}
+	marker, nameStyle := paneRow(selected)
 	name := p.Name
 	if p.IsDefault {
 		name += " (default)"

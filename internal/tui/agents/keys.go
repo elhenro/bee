@@ -42,8 +42,7 @@ func (m model) handleKey(km tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.exitReq = true
 		return m, tea.Quit
 	case "ctrl+p":
-		nm, cmd := m.runSlash("/model")
-		return nm, cmd
+		return m.runSlash("/model")
 	}
 
 	// `/` on empty input opens the palette. `/` itself flows into the
@@ -73,7 +72,7 @@ func (m model) handleKey(km tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if r, ok := m.selected(); ok {
-				m.attachID = r.Status.SessionID
+				m.attachID = r.SessionID
 				m.exitReq = true
 				return m, tea.Quit
 			}
@@ -89,8 +88,7 @@ func (m model) handleKey(km tea.KeyMsg) (tea.Model, tea.Cmd) {
 		text := strings.TrimSpace(val)
 		m.input.Reset()
 		if strings.HasPrefix(text, "/") {
-			nm, cmd := m.runSlash(text)
-			return nm, cmd
+			return m.runSlash(text)
 		}
 		m.spawnAgent(text)
 		return m, refreshCmd()

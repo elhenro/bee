@@ -148,10 +148,7 @@ func (t *SessionTree) View(width, height int) string {
 	if !t.open {
 		return ""
 	}
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Session tree")
+	title := paneTitle("⬢ Session tree")
 	if t.root == nil {
 		body := StyleLabel.Render("(no messages yet)")
 		return boxModal(title+"\n\n"+body, width)

@@ -80,10 +80,7 @@ func (p *ToolsPane) View(width, height int) string {
 	if p == nil || !p.open {
 		return ""
 	}
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Tools")
+	title := paneTitle("⬢ Tools")
 
 	var b strings.Builder
 	b.WriteString(title)
@@ -105,12 +102,7 @@ func (p *ToolsPane) View(width, height int) string {
 	rng := windowRange(len(p.rows), p.cursor, paneRows(height, 7))
 	for i := rng.start; i < rng.end; i++ {
 		r := p.rows[i]
-		marker := "  "
-		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
-		if i == p.cursor {
-			marker = selectMark(true)
-			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
-		}
+		marker, nameStyle := paneRow(i == p.cursor)
 		toggle := lipgloss.NewStyle().Foreground(accentHoney).Render("[x]")
 		if r.Disabled {
 			toggle = "[ ]"

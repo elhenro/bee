@@ -32,7 +32,7 @@ type model struct {
 	input textarea.Model
 
 	all      []bgreg.Status
-	flat     []row
+	flat     []bgreg.Status
 	sections []section
 	sel      int
 
@@ -267,9 +267,9 @@ func (m *model) flash(s string) {
 }
 
 // selected returns the currently focused row, ok=false if empty list.
-func (m model) selected() (row, bool) {
+func (m model) selected() (bgreg.Status, bool) {
 	if m.sel < 0 || m.sel >= len(m.flat) {
-		return row{}, false
+		return bgreg.Status{}, false
 	}
 	return m.flat[m.sel], true
 }

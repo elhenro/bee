@@ -83,22 +83,14 @@ func (p *choicePane) View(width, height int) string {
 	if p == nil || !p.open {
 		return ""
 	}
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render(p.title)
+	title := paneTitle(p.title)
 
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n\n")
 
 	for i, e := range p.levels {
-		marker := "  "
-		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
-		if i == p.cursor {
-			marker = selectMark(true)
-			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
-		}
+		marker, nameStyle := paneRow(i == p.cursor)
 		b.WriteString(marker)
 		b.WriteString(nameStyle.Render(padRightVisible(e.label, 8)))
 		b.WriteString("  ")

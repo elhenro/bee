@@ -153,10 +153,7 @@ func (h *Hive) Render(width int) string {
 // RenderFull renders the Ctrl+H full hive view: a 3-wide hex grid of active
 // bees followed by a list of recent sessions.
 func (h *Hive) RenderFull(width, height int) string {
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Hive · all bees")
+	title := paneTitle("⬢ Hive · all bees")
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString("\n\n")

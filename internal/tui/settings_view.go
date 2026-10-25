@@ -12,10 +12,7 @@ func (p *SettingsPane) View(width, height int) string {
 	if p == nil || !p.open {
 		return ""
 	}
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Settings")
+	title := paneTitle("⬢ Settings")
 
 	hl := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 
@@ -35,12 +32,7 @@ func (p *SettingsPane) View(width, height int) string {
 	for i := rng.start; i < rng.end; i++ {
 		m := p.matches[i]
 		r := settingsRows[m.Index]
-		marker := "  "
-		nameStyle := lipgloss.NewStyle().Foreground(fgOyster)
-		if i == p.cursor {
-			marker = selectMark(true)
-			nameStyle = nameStyle.Foreground(accentHoney).Bold(true)
-		}
+		marker, nameStyle := paneRow(i == p.cursor)
 		var toggle string
 		if r.isInt {
 			toggle = fmt.Sprintf("[%d]", p.outerPad)
