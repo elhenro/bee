@@ -24,24 +24,15 @@ func (m Model) onOpenResume(_ openResumeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onResumeSelect(msg ResumeSelectMsg) (tea.Model, tea.Cmd) {
-	if err := m.side().OpenSession(msg.ID); err != nil {
-		return m.fail(err.Error())
-	}
-	return m, nil
+	return m.failOn(m.side().OpenSession(msg.ID))
 }
 
 func (m Model) onSessionFork(msg SessionForkMsg) (tea.Model, tea.Cmd) {
-	if err := m.side().ForkSession(msg.FromID); err != nil {
-		return m.fail(err.Error())
-	}
-	return m, nil
+	return m.failOn(m.side().ForkSession(msg.FromID))
 }
 
 func (m Model) onSessionClone(_ SessionCloneMsg) (tea.Model, tea.Cmd) {
-	if err := m.side().CloneSession(); err != nil {
-		return m.fail(err.Error())
-	}
-	return m, nil
+	return m.failOn(m.side().CloneSession())
 }
 
 func (m Model) onOpenHive(_ openHiveMsg) (tea.Model, tea.Cmd) {
@@ -52,16 +43,7 @@ func (m Model) onOpenHive(_ openHiveMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) onCloseAgentView(_ CloseAgentViewMsg) (tea.Model, tea.Cmd) {
-	if m.agentView != nil {
-		m.agentView.Close()
-	}
-	return m, nil
-}
-
-func (m Model) onAttachSession(_ AttachSessionMsg) (tea.Model, tea.Cmd) {
-	// attach defers to the side adapter; AgentView returns the id and the
-	// outer app routes it to /attach. For now: just close the pane.
+func (m Model) onCloseAgentView() (tea.Model, tea.Cmd) {
 	if m.agentView != nil {
 		m.agentView.Close()
 	}

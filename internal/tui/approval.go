@@ -46,12 +46,12 @@ type ApprovalModel struct {
 	focus int
 	// width is the terminal width, so View can bound the modal.
 	width int
-	// out is the channel the parent passes for Engine wakeup.
-	out chan<- ApprovalDecisionMsg
 	// queue holds requests that arrived while one is on screen (parallel
 	// workers); each is shown in arrival order once the current one resolves.
 	queue []ApprovalRequest
 }
+
+func (m ApprovalModel) isActive() bool { return m.Active }
 
 // SetWidth records the terminal width so View can bound the modal.
 func (m *ApprovalModel) SetWidth(w int) {
@@ -61,11 +61,6 @@ func (m *ApprovalModel) SetWidth(w int) {
 // NewApprovalModel returns a fresh, inactive modal.
 func NewApprovalModel(styles Styles, keys KeyMap) ApprovalModel {
 	return ApprovalModel{styles: &styles, keys: keys}
-}
-
-// SetOutput wires the engine-facing channel. Pass nil to detach.
-func (m *ApprovalModel) SetOutput(ch chan<- ApprovalDecisionMsg) {
-	m.out = ch
 }
 
 // Show opens the modal for the given request, or queues it behind the one
@@ -78,13 +73,6 @@ func (m *ApprovalModel) Show(req ApprovalRequest) {
 	m.Request = req
 	m.Active = true
 	m.focus = 0
-}
-
-// Hide closes the modal without publishing a decision.
-func (m *ApprovalModel) Hide() {
-	m.Active = false
-	m.Request = ApprovalRequest{}
-	m.queue = nil
 }
 
 // Update handles modal key events. Returns the updated model + an optional cmd
@@ -101,7 +89,7 @@ func (m ApprovalModel) Update(msg tea.Msg) (ApprovalModel, tea.Cmd) {
 	case key.Matches(km, m.keys.ApproveAllow):
 		// "enter" submits the focused button; explicit a/y still picks allow-once.
 		if km.String() == "enter" {
-			return m.decide(m.decisionFor(m.focus))
+			return m.decide(approvalChoices[m.focus].decision)
 		}
 		return m.decide(ApprovalAllow)
 	case key.Matches(km, m.keys.ApproveSession):
@@ -120,21 +108,7 @@ func (m ApprovalModel) Update(msg tea.Msg) (ApprovalModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m ApprovalModel) decisionFor(idx int) ApprovalDecision {
-	switch idx {
-	case 1:
-		return ApprovalSession
-	case 2:
-		return ApprovalAlways
-	case 3:
-		return ApprovalDeny
-	default:
-		return ApprovalAllow
-	}
-}
-
 func (m ApprovalModel) decide(d ApprovalDecision) (ApprovalModel, tea.Cmd) {
-	out := m.out
 	useID := m.Request.UseID
 	m.Active = false
 	if len(m.queue) > 0 {
@@ -142,18 +116,7 @@ func (m ApprovalModel) decide(d ApprovalDecision) (ApprovalModel, tea.Cmd) {
 		m.queue = append([]ApprovalRequest(nil), m.queue[1:]...)
 		m.Show(next)
 	}
-	cmd := func() tea.Msg {
-		dec := ApprovalDecisionMsg{UseID: useID, Decision: d}
-		// best-effort fanout to engine channel; non-blocking
-		if out != nil {
-			select {
-			case out <- dec:
-			default:
-			}
-		}
-		return dec
-	}
-	return m, cmd
+	return m, func() tea.Msg { return ApprovalDecisionMsg{UseID: useID, Decision: d} }
 }
 
 // approvalActionLines caps how many lines of the action (command) the panel
@@ -161,9 +124,13 @@ func (m ApprovalModel) decide(d ApprovalDecision) (ApprovalModel, tea.Cmd) {
 // blow it up to full-screen.
 const approvalActionLines = 8
 
-// approvalChoices are the decision labels in focus order, each with its key.
-var approvalChoices = [4]struct{ key, label string }{
-	{"a", "allow once"}, {"s", "session"}, {"f", "forever"}, {"d", "deny"},
+// approvalChoices are the decisions in focus order, each with its key and label.
+var approvalChoices = [4]struct {
+	key, label string
+	decision   ApprovalDecision
+}{
+	{"a", "allow once", ApprovalAllow}, {"s", "session", ApprovalSession},
+	{"f", "forever", ApprovalAlways}, {"d", "deny", ApprovalDeny},
 }
 
 // title names what is being asked: a path outside the project for the

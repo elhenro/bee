@@ -92,9 +92,4 @@ func (m Model) withWarn(text string) Model {
 	return m
 }
 
-func shortSHA(s string) string {
-	if len(s) >= 7 {
-		return s[:7]
-	}
-	return s
-}
+func shortSHA(s string) string { return s[:min(len(s), 7)] }

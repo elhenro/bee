@@ -90,55 +90,25 @@ func (p AtPickerModel) View() string {
 	if w <= 0 {
 		w = 80
 	}
-
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
-	selMark := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
-	nameSel := lipgloss.NewStyle().Foreground(fgButter).Bold(true)
-	nameNorm := lipgloss.NewStyle().Foreground(fgSmoke)
-	glyph := lipgloss.NewStyle().Foreground(accentHoney)
-
-	var b strings.Builder
-	b.WriteString(" " + glyph.Render("@") + " " + p.input.View())
-	b.WriteString("\n")
-
-	if len(p.matches) == 0 {
-		b.WriteString(dim.Render("   no matches"))
-		return b.String()
-	}
-
+	lines := []string{" " + lipgloss.NewStyle().Foreground(accentHoney).Render("@") + " " + p.input.View()}
 	total := len(p.matches)
+	if total == 0 {
+		return strings.Join(append(lines, dim.Render("   no matches")), "\n")
+	}
 	start, end := scrollWindow(total, p.selected, maxAtPickerRows)
-	overflowAbove := start
-	overflowBelow := total - end
-
-	if overflowAbove > 0 {
-		b.WriteString(dim.Render("   ↑ " + strconv.Itoa(overflowAbove) + " more"))
-		b.WriteString("\n")
+	if start > 0 {
+		lines = append(lines, dim.Render("   ↑ "+strconv.Itoa(start)+" more"))
 	}
 	for i := start; i < end; i++ {
-		var line strings.Builder
+		mark, name := "  ", lipgloss.NewStyle().Foreground(fgSmoke)
 		if i == p.selected {
-			line.WriteString(" " + selMark.Render(glyphSel))
-		} else {
-			line.WriteString("  ")
+			mark, name = " "+StyleActive.Render(glyphSel), lipgloss.NewStyle().Foreground(fgButter).Bold(true)
 		}
-		line.WriteString(" ")
-		ns := nameNorm
-		if i == p.selected {
-			ns = nameSel
-		}
-		line.WriteString(ns.Render(p.matches[i]))
-		row := line.String()
-		if lipglossWidth(row) > w {
-			row = truncateVisible(row, w)
-		}
-		b.WriteString(row)
-		if i < end-1 || overflowBelow > 0 {
-			b.WriteString("\n")
-		}
+		lines = append(lines, truncateVisible(mark+" "+name.Render(p.matches[i]), w))
 	}
-	if overflowBelow > 0 {
-		b.WriteString(dim.Render("   ↓ " + strconv.Itoa(overflowBelow) + " more"))
+	if end < total {
+		lines = append(lines, dim.Render("   ↓ "+strconv.Itoa(total-end)+" more"))
 	}
-	return b.String()
+	return strings.Join(lines, "\n")
 }

@@ -19,8 +19,6 @@ func newApprovalFixture() ApprovalModel {
 
 func TestApproval_AllowKey(t *testing.T) {
 	m := newApprovalFixture()
-	out := make(chan ApprovalDecisionMsg, 1)
-	m.SetOutput(out)
 
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	if cmd == nil {
@@ -36,14 +34,6 @@ func TestApproval_AllowKey(t *testing.T) {
 	}
 	if dec.Decision != ApprovalAllow || dec.UseID != "u-42" {
 		t.Fatalf("got %+v", dec)
-	}
-	select {
-	case got := <-out:
-		if got.Decision != ApprovalAllow {
-			t.Fatalf("channel got %+v", got)
-		}
-	default:
-		t.Fatal("expected channel publish")
 	}
 }
 

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -58,17 +57,32 @@ func (m *Model) mirrorToEngine() {
 	m.cfgSnapshot().apply(m.eng)
 }
 
+// setError parks msg on the error line and unlocks input, as a failed command
+// does. Unlike fail it also fires while a turn streams.
+func (m Model) setError(msg string) (tea.Model, tea.Cmd) {
+	m.lastErr = msg
+	m.state = StateError
+	return m, nil
+}
+
 // fail surfaces msg: a transient notice while a turn streams (StateError
 // would unlock the input and orphan the running turn), the error line
 // otherwise.
 func (m Model) fail(msg string) (Model, tea.Cmd) {
 	if m.state == StateStreaming {
-		m.warning = msg
-		m.warningExpires = time.Now().Add(warningTTL)
+		m = m.withWarn(msg)
 		return m, warningFadeCmd()
 	}
 	m.lastErr = msg
 	m.state = StateError
+	return m, nil
+}
+
+// failOn surfaces err through fail when set.
+func (m Model) failOn(err error) (tea.Model, tea.Cmd) {
+	if err != nil {
+		return m.fail(err.Error())
+	}
 	return m, nil
 }
 

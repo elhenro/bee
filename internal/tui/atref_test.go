@@ -34,6 +34,32 @@ func TestLongestCommonPrefix(t *testing.T) {
 	}
 }
 
+func TestCompletePath(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "sub"), 0o755)
+	os.WriteFile(filepath.Join(dir, "sub", "only.txt"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "alpha.go"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "alpha_test.go"), nil, 0o644)
+	tests := []struct {
+		val, want string
+		ok        bool
+	}{
+		{"see al", "see alpha", true},
+		{"alpha", "alpha", false},
+		{"sub/", "sub/only.txt", true}, // trailing slash lists the directory
+		{"sub/on", "sub/only.txt", true},
+		{"./su", "./sub", true},
+		{"nope", "nope", false},
+		{"say ", "say ", false},
+	}
+	for _, tt := range tests {
+		got, ok := completePath(dir, tt.val)
+		if got != tt.want || ok != tt.ok {
+			t.Errorf("completePath(%q) = %q, %v; want %q, %v", tt.val, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
 func TestFuzzyFiles_BasicMatch(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "internal", "tui"), 0o755)

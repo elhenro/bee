@@ -2,8 +2,6 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -22,12 +20,7 @@ func (m Model) toggleLastToolOutput() (tea.Model, tea.Cmd) {
 	if rendered == "" {
 		return m, nil
 	}
-	w := m.width
-	if w < 4 {
-		w = 80
-	}
-	rendered = ansi.Hardwrap(rendered, w, true)
-	return m, m.scroll.print(rendered)
+	return m, m.scroll.print(m.hardwrap(rendered))
 }
 
 // lastToolResultMessage walks messages backward for the latest one carrying a

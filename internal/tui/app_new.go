@@ -26,20 +26,18 @@ func NewModel(eng *loop.Engine, cwd, modelName, scope string, lvl caveman.Level)
 	ti.CharLimit = 16384
 	ti.SetHeight(1)
 	ti.SetWidth(40)
-	// kill the default rounded border + cell padding so the textarea sits
-	// flush like the old textinput.
-	ti.FocusedStyle.Base = lipgloss.NewStyle()
-	ti.BlurredStyle.Base = lipgloss.NewStyle()
-	// cursor line shares the text color: the textarea paints the active row with
-	// CursorLine instead of Text, so a bare style would dim the row you type on.
-	ti.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(fgButter)
-	ti.BlurredStyle.CursorLine = lipgloss.NewStyle().Foreground(fgButter)
-	ti.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(colorHoney)
-	ti.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(colorHoney)
-	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(fgOyster)
-	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(fgOyster)
-	ti.FocusedStyle.Text = lipgloss.NewStyle().Foreground(fgButter)
-	ti.BlurredStyle.Text = lipgloss.NewStyle().Foreground(fgButter)
+	for _, st := range []*textarea.Style{&ti.FocusedStyle, &ti.BlurredStyle} {
+		// kill the default rounded border + cell padding so the textarea sits
+		// flush like the old textinput.
+		st.Base = lipgloss.NewStyle()
+		// cursor line shares the text color: the textarea paints the active row
+		// with CursorLine instead of Text, so a bare style would dim the row you
+		// type on.
+		st.CursorLine = lipgloss.NewStyle().Foreground(fgButter)
+		st.Prompt = lipgloss.NewStyle().Foreground(colorHoney)
+		st.Placeholder = lipgloss.NewStyle().Foreground(fgOyster)
+		st.Text = lipgloss.NewStyle().Foreground(fgButter)
+	}
 	ti.Focus()
 	ti.Cursor.SetMode(cursor.CursorStatic)
 	// enter is reserved for submit (handleKey catches it before Update).

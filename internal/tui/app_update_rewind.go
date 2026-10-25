@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -50,8 +49,7 @@ func (m Model) onRewindSelect(msg RewindSelectMsg) (tea.Model, tea.Cmd) {
 			notes = append(notes, "conversation")
 		}
 	}
-	m.warning = "rewind: " + strings.Join(notes, " + ")
-	m.warningExpires = time.Now().Add(warningTTL)
+	m = m.withWarn("rewind: " + strings.Join(notes, " + "))
 	return m, tea.Batch(m.flush(), warningFadeCmd())
 }
 
@@ -74,9 +72,7 @@ func (m Model) rewindConversation(toMsgID string) (Model, error) {
 	m.eng.Sessions = newR
 	m.messages = prior
 	m.partial = ""
-	m.streamFlushed = ""
-	m.streamFenceOpen = false
-	m.pendingFlushedPrefix = ""
+	m.dropFlushed()
 	m.lastErr = ""
 	m.state = StateIdle
 	m.printedCount = 0
@@ -89,8 +85,7 @@ func (m Model) rewindConversation(toMsgID string) (Model, error) {
 // onCheckpointDone surfaces a per-turn snapshot failure; success is silent.
 func (m Model) onCheckpointDone(msg checkpointDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		m.warning = "checkpoint failed: " + msg.err.Error()
-		m.warningExpires = time.Now().Add(warningTTL)
+		m = m.withWarn("checkpoint failed: " + msg.err.Error())
 		return m, warningFadeCmd()
 	}
 	return m, nil

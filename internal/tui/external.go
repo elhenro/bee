@@ -18,17 +18,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/elhenro/bee/internal/mux"
-	"github.com/elhenro/bee/internal/types"
 )
-
-// ephemeral builds a transient assistant note (cleared on next turn).
-func ephemeral(text string) types.Message {
-	return types.Message{
-		Role:      types.RoleAssistant,
-		Content:   []types.ContentBlock{{Type: types.BlockText, Text: text}},
-		Ephemeral: true,
-	}
-}
 
 // suspendedJob is a parked (Ctrl-Z'd) child process.
 type suspendedJob struct {
@@ -106,13 +96,24 @@ func (m Model) resumeJob() tea.Cmd {
 // plain blocking run.
 func (m Model) launchJob(name string, cmd *exec.Cmd, dir string, resumePid int) tea.Cmd {
 	if !mux.JobSupported() {
-		return tea.Exec(ttyExec{cmd}, func(err error) tea.Msg {
+		return tea.Exec(termExec{cmd.Run}, func(err error) tea.Msg {
 			return externalDoneMsg{what: name, err: err}
 		})
 	}
-	je := &jobExec{cmd: cmd, resumePid: resumePid}
-	return tea.Exec(je, func(err error) tea.Msg {
-		return externalDoneMsg{what: name, err: err, suspended: je.stopped, pid: je.pid, dir: dir}
+	var stopped bool // child was Ctrl-Z'd (still alive) rather than exited
+	var pid int
+	run := func() (err error) {
+		fd := os.Stdin.Fd()
+		if resumePid != 0 {
+			stopped, err = mux.ResumeJob(resumePid, fd)
+			pid = resumePid
+			return err
+		}
+		stopped, pid, err = mux.StartJob(cmd, fd)
+		return err
+	}
+	return tea.Exec(termExec{run}, func(err error) tea.Msg {
+		return externalDoneMsg{what: name, err: err, suspended: stopped, pid: pid, dir: dir}
 	})
 }
 
@@ -131,46 +132,17 @@ func (m Model) onExternalDone(msg externalDoneMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// jobExec is a tea.ExecCommand that runs (or resumes) a child under job
-// control, toggling bee's keyboard-protocol modes off for the child. SetStd*
-// are no-ops: ExecCmd already wired the real terminal.
-type jobExec struct {
-	cmd       *exec.Cmd
-	resumePid int
-	stopped   bool // child was Ctrl-Z'd (still alive) rather than exited
-	pid       int
-}
+// termExec is a tea.ExecCommand that hands the child the real terminal for the
+// duration of run, toggling bee's keyboard-protocol modes off. SetStd* are
+// no-ops: ExecCmd already wired the real terminal.
+type termExec struct{ run func() error }
 
-func (j *jobExec) Run() error {
+func (t termExec) Run() error {
 	io.WriteString(os.Stdout, modifyOtherKeysDisable)
 	defer io.WriteString(os.Stdout, modifyOtherKeysEnable)
-	fd := os.Stdin.Fd()
-	if j.resumePid != 0 {
-		stopped, err := mux.ResumeJob(j.resumePid, fd)
-		j.stopped = stopped
-		j.pid = j.resumePid
-		return err
-	}
-	stopped, pid, err := mux.StartJob(j.cmd, fd)
-	j.stopped, j.pid = stopped, pid
-	return err
+	return t.run()
 }
 
-func (*jobExec) SetStdin(io.Reader)  {}
-func (*jobExec) SetStdout(io.Writer) {}
-func (*jobExec) SetStderr(io.Writer) {}
-
-// ttyExec is the plain (non-job-control) fallback: hand the child the real
-// terminal and toggle keyboard-protocol modes off for its duration.
-type ttyExec struct{ cmd *exec.Cmd }
-
-func (t ttyExec) Run() error {
-	io.WriteString(os.Stdout, modifyOtherKeysDisable)
-	err := t.cmd.Run()
-	io.WriteString(os.Stdout, modifyOtherKeysEnable)
-	return err
-}
-
-func (ttyExec) SetStdin(io.Reader)  {}
-func (ttyExec) SetStdout(io.Writer) {}
-func (ttyExec) SetStderr(io.Writer) {}
+func (termExec) SetStdin(io.Reader)  {}
+func (termExec) SetStdout(io.Writer) {}
+func (termExec) SetStderr(io.Writer) {}

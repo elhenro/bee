@@ -1,26 +1,14 @@
 package tui
 
 import (
-	"context"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/elhenro/bee/internal/learn"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
 )
-
-// recapTimeout caps the side-call so a stuck provider can't drag the turn
-// past the loader fading out. Conservative — most recaps complete in a
-// second or two against deepseek-v4-flash class models.
-const recapTimeout = 20 * time.Second
-
-// recapIdleDelay defers the side-call until the user has been idle for
-// this long after a turn finishes. New submits bump m.recapGen and the
-// scheduled tick drops itself when its captured gen no longer matches.
-const recapIdleDelay = 3 * time.Second
 
 // quitConfirmWindow is how long a single ctrl+d arms the quit-confirm flow.
 // After this elapses, the next ctrl+d re-arms instead of quitting.
@@ -88,9 +76,12 @@ type handoffReadyMsg struct {
 // invisible on a remote terminal.
 const loaderTickInterval = 120 * time.Millisecond
 
-func loaderTickCmd() tea.Cmd {
-	return tea.Tick(loaderTickInterval, func(time.Time) tea.Msg { return loaderTickMsg{} })
+// tickAfter delivers msg once after d.
+func tickAfter(d time.Duration, msg tea.Msg) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return msg })
 }
+
+func loaderTickCmd() tea.Cmd { return tickAfter(loaderTickInterval, loaderTickMsg{}) }
 
 // glowTickMsg drives the queen rainbow-input animation. Unlike the loader
 // tick it runs at idle too — it self-rearms for as long as the queen role is
@@ -101,9 +92,7 @@ type glowTickMsg struct{}
 // redraw cost stays invisible; the full-hue cycle lands around 7s.
 const glowTickInterval = 120 * time.Millisecond
 
-func glowTickCmd() tea.Cmd {
-	return tea.Tick(glowTickInterval, func(time.Time) tea.Msg { return glowTickMsg{} })
-}
+func glowTickCmd() tea.Cmd { return tickAfter(glowTickInterval, glowTickMsg{}) }
 
 // costTickMsg drives the post-turn cost flash animation. Self-rearms while
 // costFlashFrame < costFlashUntil; dies on its own once the flash completes.
@@ -117,18 +106,14 @@ const costTickInterval = 160 * time.Millisecond
 // 1.3s — brief acknowledgement, no nagging shimmer.
 const costFlashDuration = 8
 
-func costTickCmd() tea.Cmd {
-	return tea.Tick(costTickInterval, func(time.Time) tea.Msg { return costTickMsg{} })
-}
+func costTickCmd() tea.Cmd { return tickAfter(costTickInterval, costTickMsg{}) }
 
 // introTickMsg advances the non-blocking startup intro animation. Self-rearms
 // while introActive; the animation lives above the input bar so typing is
 // available from frame zero.
 type introTickMsg struct{}
 
-func introTickCmd() tea.Cmd {
-	return tea.Tick(introFrameDelay, func(time.Time) tea.Msg { return introTickMsg{} })
-}
+func introTickCmd() tea.Cmd { return tickAfter(introFrameDelay, introTickMsg{}) }
 
 // turnDoneMsg is published when the engine finishes a Run. gen is the
 // m.turnGen epoch captured at submit; onTurnDone ignores a msg whose gen no
@@ -138,34 +123,6 @@ type turnDoneMsg struct {
 	gen    int
 	result loop.RunResult
 	err    error
-}
-
-// recapReadyMsg carries the synthesized one-line recap back into Update so
-// it can be flushed into scrollback as a dim italic post-turn line. text
-// non-empty = render recap; skipped = render "(skip)" diagnostic; err
-// non-empty = render error so the user sees why the side-call failed.
-type recapReadyMsg struct {
-	text    string
-	skipped bool
-	err     string
-}
-
-// recapIdleTickMsg fires recapIdleDelay after a turn finished. gen is the
-// m.recapGen value captured when the tick was scheduled — a new submit
-// since then bumps m.recapGen so the firing tick drops itself instead of
-// kicking off the side-call. msgs is the snapshot to summarise.
-type recapIdleTickMsg struct {
-	gen  int
-	msgs []types.Message
-}
-
-// recapIdleCmd schedules a recapIdleTickMsg after recapIdleDelay carrying
-// the supplied gen and msgs. tea.Tick can't pass closure data, so we wrap
-// time.After in a goroutine-style cmd.
-func recapIdleCmd(gen int, msgs []types.Message) tea.Cmd {
-	return tea.Tick(recapIdleDelay, func(time.Time) tea.Msg {
-		return recapIdleTickMsg{gen: gen, msgs: msgs}
-	})
 }
 
 // sentinel msgs for unwired panes — slice 3B/3C consume them later.
@@ -211,199 +168,74 @@ func (m *Model) maybeStartCostFlash() tea.Cmd {
 	return costTickCmd()
 }
 
-// waitStream returns a tea.Cmd that blocks on the next text delta. The
-// pump re-arms itself in Update so the channel keeps draining. Returns
-// nil (a no-op cmd) when no channel is wired.
-func (m Model) waitStream() tea.Cmd {
-	if m.streamCh == nil {
+// pump returns a tea.Cmd that blocks on the next value of ch and wraps it into
+// a message. Update re-arms it on receipt so the channel keeps draining. nil
+// (a no-op cmd) when no channel is wired.
+func pump[T any](ch chan T, msg func(first T) tea.Msg) tea.Cmd {
+	if ch == nil {
 		return nil
 	}
-	ch := m.streamCh
 	return func() tea.Msg {
-		d, ok := <-ch
+		v, ok := <-ch
 		if !ok {
 			return nil
 		}
-		// batch-drain whatever queued while Update was busy: one delta per
-		// Update cycle can't keep up with fast providers, the buffer fills,
-		// and the engine's non-blocking send starts dropping deltas (visible
-		// text gaps mid-stream).
-		return streamDeltaMsg{Delta: drainInto(d, ch)}
+		return msg(v)
 	}
 }
 
-// drainInto appends every immediately-available delta to first without
-// blocking. Shared by the stream and think pumps.
-func drainInto(first string, ch chan string) string {
-	var b strings.Builder
-	b.WriteString(first)
+// drainChan collects first plus whatever queued on ch while Update was busy: one
+// value per Update cycle can't keep up with fast providers, the buffer fills,
+// and the engine's non-blocking send starts dropping deltas (visible text gaps
+// mid-stream).
+func drainChan[T any](first T, ch chan T) []T {
+	out := []T{first}
 	for {
 		select {
 		case more, ok := <-ch:
 			if !ok {
-				return b.String()
+				return out
 			}
-			b.WriteString(more)
+			out = append(out, more)
 		default:
-			return b.String()
+			return out
 		}
 	}
 }
 
-// waitProgress blocks on the next withheld-output count. Same re-arming
-// pattern as waitStream; batch-drains queued counts into one msg.
+// waitStream blocks on the next text delta and batch-drains what queued behind it.
+func (m Model) waitStream() tea.Cmd {
+	ch := m.streamCh
+	return pump(ch, func(d string) tea.Msg { return streamDeltaMsg{Delta: strings.Join(drainChan(d, ch), "")} })
+}
+
+// waitProgress batch-drains queued withheld-output counts into one msg.
 func (m Model) waitProgress() tea.Cmd {
-	if m.progressCh == nil {
-		return nil
-	}
 	ch := m.progressCh
-	return func() tea.Msg {
-		n, ok := <-ch
-		if !ok {
-			return nil
+	return pump(ch, func(n int) tea.Msg {
+		total := 0
+		for _, v := range drainChan(n, ch) {
+			total += v
 		}
-		for {
-			select {
-			case more, ok := <-ch:
-				if !ok {
-					return progressMsg{N: n}
-				}
-				n += more
-			default:
-				return progressMsg{N: n}
-			}
-		}
-	}
+		return progressMsg{N: total}
+	})
 }
 
-// waitThink returns a tea.Cmd that blocks on the next reasoning delta.
-// Same re-arming pattern as waitStream — Update re-issues the cmd on
-// receipt so the channel keeps draining.
+// waitThink blocks on the next reasoning delta, same pattern as waitStream.
 func (m Model) waitThink() tea.Cmd {
-	if m.thinkCh == nil {
-		return nil
-	}
 	ch := m.thinkCh
-	return func() tea.Msg {
-		d, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return thinkDeltaMsg{Delta: drainInto(d, ch)}
-	}
+	return pump(ch, func(d string) tea.Msg { return thinkDeltaMsg{Delta: strings.Join(drainChan(d, ch), "")} })
 }
 
-// waitLiveMsg blocks on the next mid-Run message from the engine. Same
-// re-arming pattern as waitStream.
+// waitLiveMsg blocks on the next mid-Run message from the engine.
 func (m Model) waitLiveMsg() tea.Cmd {
-	if m.liveMsgCh == nil {
-		return nil
-	}
-	ch := m.liveMsgCh
-	return func() tea.Msg {
-		msg, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return liveMsgMsg{Msg: msg}
-	}
+	return pump(m.liveMsgCh, func(msg types.Message) tea.Msg { return liveMsgMsg{Msg: msg} })
 }
 
-// waitWarn blocks on the next transient notice from Engine.WarnCh. Same
-// re-arming pattern as waitStream — Update re-issues the cmd on receipt.
+// waitWarn blocks on the next transient notice from Engine.WarnCh.
 func (m Model) waitWarn() tea.Cmd {
-	if m.warnCh == nil {
-		return nil
-	}
-	ch := m.warnCh
-	return func() tea.Msg {
-		w, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return warningMsg{Text: w}
-	}
+	return pump(m.warnCh, func(w string) tea.Msg { return warningMsg{Text: w} })
 }
 
 // warningFadeCmd fires once after warningTTL to clear the displayed line.
-func warningFadeCmd() tea.Cmd {
-	return tea.Tick(warningTTL, func(time.Time) tea.Msg { return warningFadeMsg{} })
-}
-
-// recapMinDuration / recapMinTextLen gate the recap heuristic. Tuned so a
-// quick greeting or one-liner Q&A skips the side call entirely; only turns
-// that did real work (tool use, long reply, or wall-clock >= threshold)
-// trigger a recap.
-const (
-	recapMinDuration = 15 * time.Second
-	recapMinTextLen  = 600
-)
-
-// recapWorthwhile reports whether the just-finished turn merits a recap.
-// True if any tool was used, the turn ran long, or the assistant produced
-// a substantive reply. Scans the trailing assistant run only — stops at
-// the previous user message, matching extractRecapInput's scope.
-func recapWorthwhile(msgs []types.Message, dur time.Duration) bool {
-	if dur >= recapMinDuration {
-		return true
-	}
-	var textLen int
-	for i := len(msgs) - 1; i >= 0; i-- {
-		m := msgs[i]
-		if m.Role == types.RoleUser {
-			break
-		}
-		if m.Role != types.RoleAssistant {
-			continue
-		}
-		for _, c := range m.Content {
-			switch c.Type {
-			case types.BlockToolUse:
-				return true
-			case types.BlockText:
-				textLen += len(c.Text)
-			}
-		}
-	}
-	return textLen >= recapMinTextLen
-}
-
-// recapCmd kicks off a side-LLM summarization of the just-finished turn and
-// publishes recapReadyMsg with the result. Runs detached from the model's
-// long-lived ctx so a cancellation of the next user input doesn't abort the
-// recap mid-call; bounded by recapTimeout instead.
-func (m Model) recapCmd(msgs []types.Message) tea.Cmd {
-	if m.eng == nil || m.eng.Provider == nil {
-		return nil
-	}
-	prov := m.eng.Provider
-	model := m.eng.Cfg.DefaultModel
-	copyMsgs := append([]types.Message(nil), msgs...)
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), recapTimeout)
-		defer cancel()
-		r := loop.GenerateRecap(ctx, prov, model, copyMsgs)
-		msg := recapReadyMsg{text: r.Text, skipped: r.Skipped}
-		if r.Err != nil {
-			msg.err = r.Err.Error()
-		}
-		return msg
-	}
-}
-
-// changeMapMsg carries the end-of-turn review card back into Update.
-type changeMapMsg struct{ text string }
-
-// changeMapCmd builds the review card for the turn's file mutations. It is
-// local work (git + code index), so it needs no model call and shows as soon
-// as the turn ends.
-func (m Model) changeMapCmd(msgs []types.Message) tea.Cmd {
-	if m.eng == nil {
-		return nil
-	}
-	cwd := m.eng.Cwd
-	copyMsgs := append([]types.Message(nil), msgs...)
-	return func() tea.Msg {
-		return changeMapMsg{text: learn.ChangeMap(context.Background(), cwd, copyMsgs)}
-	}
-}
+func warningFadeCmd() tea.Cmd { return tickAfter(warningTTL, warningFadeMsg{}) }

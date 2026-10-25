@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,10 +17,7 @@ func (m Model) waitJobs() tea.Cmd {
 		return nil
 	}
 	ch := m.eng.Jobs.Wake()
-	ctx := m.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := m.baseCtx()
 	return func() tea.Msg {
 		select {
 		case <-ch:

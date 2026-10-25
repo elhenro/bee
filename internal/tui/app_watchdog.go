@@ -32,9 +32,7 @@ type resumeAfterErrorMsg struct {
 // scheduleErrorResume arms a resumeAfterErrorMsg carrying the continuation to
 // re-trigger with once the delay elapses.
 func scheduleErrorResume(gen int, continuation, reason string) tea.Cmd {
-	return tea.Tick(resumeErrorDelay, func(time.Time) tea.Msg {
-		return resumeAfterErrorMsg{gen: gen, continuation: continuation, reason: reason}
-	})
+	return tickAfter(resumeErrorDelay, resumeAfterErrorMsg{gen: gen, continuation: continuation, reason: reason})
 }
 
 // noteActivity records that the in-flight turn produced something — resets the
@@ -49,12 +47,15 @@ func (m *Model) noteActivity() {
 	}
 }
 
-// WithWatchdog mirrors the resolved cfg.Watchdog values onto the model.
-func (m Model) WithWatchdog(enabled bool, stall time.Duration, maxResumes int) Model {
-	m.watchdogEnabled = enabled
-	m.watchdogStall = stall
-	m.watchdogMaxResumes = maxResumes
-	return m
+// textOf concatenates the text blocks of m, trimmed.
+func textOf(m types.Message) string {
+	var b strings.Builder
+	for _, blk := range m.Content {
+		if blk.Type == types.BlockText {
+			b.WriteString(blk.Text)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // lastUserText returns the text of the most recent non-ephemeral user message —
@@ -65,13 +66,7 @@ func lastUserText(msgs []types.Message) string {
 		if msgs[i].Role != types.RoleUser || msgs[i].Ephemeral {
 			continue
 		}
-		var b strings.Builder
-		for _, blk := range msgs[i].Content {
-			if blk.Type == types.BlockText {
-				b.WriteString(blk.Text)
-			}
-		}
-		if s := strings.TrimSpace(b.String()); s != "" {
+		if s := textOf(msgs[i]); s != "" {
 			return s
 		}
 	}
@@ -121,19 +116,13 @@ func (m Model) handleWatchdog(args []string) (tea.Model, tea.Cmd) {
 	case "":
 		m.watchdogDisabled = !m.watchdogDisabled
 	default:
-		m.lastErr = "/watchdog: use on|off"
-		m.state = StateError
-		return m, nil
+		return m.setError("/watchdog: use on|off")
 	}
 	state := "on"
 	if m.watchdogDisabled || !m.watchdogEnabled {
 		state = "off"
 	}
-	m.messages = append(m.messages, types.Message{
-		Role:      types.RoleAssistant,
-		Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(watchdog " + state + ")"}},
-		Ephemeral: true,
-	})
+	m.messages = append(m.messages, ephemeral("(watchdog "+state+")"))
 	return m, m.flush()
 }
 
@@ -149,10 +138,8 @@ func (m Model) retrigger(text, reason string) (tea.Model, tea.Cmd) {
 	}
 	m.resumeCount++
 	m.awaitingProgress = true
-	m.warning = "bee " + reason + " — auto-resuming (" +
-		strconv.Itoa(m.resumeCount) + "/" + strconv.Itoa(m.watchdogMaxResumes) + ")…"
-	m.warningExpires = time.Now().Add(warningTTL)
-	display := "(auto-resume " + strconv.Itoa(m.resumeCount) + "/" + strconv.Itoa(m.watchdogMaxResumes) + ": " + reason + ")"
-	nm, cmd := m.submitWithDisplay(text, display)
+	tries := strconv.Itoa(m.resumeCount) + "/" + strconv.Itoa(m.watchdogMaxResumes)
+	m = m.withWarn("bee " + reason + " — auto-resuming (" + tries + ")…")
+	nm, cmd := m.submitWithDisplay(text, "(auto-resume "+tries+": "+reason+")")
 	return nm, tea.Batch(cmd, warningFadeCmd())
 }

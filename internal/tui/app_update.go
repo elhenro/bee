@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,26 +29,18 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	// disarms the confirm so a stray ctrl+d in the input bar doesn't leave
 	// the program one-keystroke from death.
 	if km, ok := msg.(tea.KeyMsg); ok {
-		switch km.String() {
-		case "ctrl+c":
-			if m.cancelRun != nil {
-				m.cancelRun()
-			}
-			return m, tea.Quit
-		case "ctrl+d":
-			if m.quitArmed && time.Since(m.quitArmedAt) <= quitConfirmWindow {
+		switch k := km.String(); k {
+		case "ctrl+c", "ctrl+d":
+			if k == "ctrl+c" || (m.quitArmed && time.Since(m.quitArmedAt) <= quitConfirmWindow) {
 				if m.cancelRun != nil {
 					m.cancelRun()
 				}
 				return m, tea.Quit
 			}
-			m.quitArmed = true
-			m.quitArmedAt = time.Now()
+			m.quitArmed, m.quitArmedAt = true, time.Now()
 			return m, nil
 		default:
-			if m.quitArmed {
-				m.quitArmed = false
-			}
+			m.quitArmed = false
 		}
 	}
 	// Seeded auto-submit from Init (skill dispatch into the TUI). Route it
@@ -129,29 +120,19 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	// ticks, window size, pump re-arms) must reach the main switch or the
 	// pumps die and a turn never completes while a modal is up.
 	if isInputMsg(msg) {
-		if m.escalate.Active {
-			newEsc, cmd := m.escalate.Update(msg)
-			m.escalate = newEsc
+		if cmd, ok := claimModal(&m.escalate, msg); ok {
 			return m, cmd
 		}
-		if m.planmode.Active {
-			newPM, cmd := m.planmode.Update(msg)
-			m.planmode = newPM
+		if cmd, ok := claimModal(&m.planmode, msg); ok {
 			return m, cmd
 		}
-		if m.approval.Active {
-			newApp, cmd := m.approval.Update(msg)
-			m.approval = newApp
+		if cmd, ok := claimModal(&m.approval, msg); ok {
 			return m, cmd
 		}
-		if m.askModel.Active {
-			newAsk, cmd := m.askModel.Update(msg)
-			m.askModel = newAsk
+		if cmd, ok := claimModal(&m.askModel, msg); ok {
 			return m, cmd
 		}
-		if m.updatePrompt.Active {
-			newP, cmd := m.updatePrompt.Update(msg)
-			m.updatePrompt = newP
+		if cmd, ok := claimModal(&m.updatePrompt, msg); ok {
 			return m, cmd
 		}
 	}
@@ -170,208 +151,24 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 	if nm, cmd, claimed := m.claimByPane(msg); claimed {
 		return nm, cmd
 	}
+	return m.route(msg)
+}
 
-	switch msg := msg.(type) {
+// modal is an inline prompt that consumes input while active.
+type modal[T any] interface {
+	isActive() bool
+	Update(tea.Msg) (T, tea.Cmd)
+}
 
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		// re-size text input to fit
-		m.input.SetWidth(max(0, msg.Width-2))
-		prev := m.stream
-		m.stream = NewStreamRenderer(*m.styles, max(minRenderWidth, msg.Width))
-		if prev != nil {
-			// a resize mid-tool-call must not orphan the call's result
-			m.stream.toolUses, m.stream.afterTool = prev.toolUses, prev.afterTool
-		}
-		m.stream.SetVerbose(m.verbose)
-		m.stream.SetShowThoughts(m.showThoughts)
-		m.stream.SetShowNudges(m.showNudges)
-		m.stream.SetCompact(m.compact)
-		m.stream.SetHighlight(m.highlight)
-		m.stream.SetShowCallDetail(m.showCallDetail)
-		m.stream.SetLoader(m.loader)
-		m.stream.SetShowLoader(m.showLoader)
-		m.palette.SetWidth(msg.Width)
-		m.atpicker.SetWidth(msg.Width)
-		m.history.SetWidth(msg.Width)
-		m.askModel.SetWidth(msg.Width)
-		m.approval.SetWidth(msg.Width)
-		m.escalate.SetWidth(msg.Width)
-		m.planmode.SetWidth(msg.Width)
-		if m.picker != nil {
-			m.picker.SetSize(msg.Width-4, msg.Height-4)
-		}
-		return m, nil
+func (p UpdatePrompt) isActive() bool { return p.Active }
 
-	case tea.KeyMsg:
-		// a word that lands in one read ("up", "enter", "tab") spells a key's
-		// name, so bindings would fire on it. feed it a rune at a time, as if
-		// keyed in. bracketed pastes stay whole
-		if len(msg.Runes) > 1 && msg.Type == tea.KeyRunes && !msg.Paste && !msg.Alt {
-			return m.typeRunes(msg.Runes)
-		}
-		nm, cmd := m.handleKey(msg)
-		// palette filter mirrors the main input. Close palette if the user
-		// backspaced past the leading "/".
-		if mm, ok := nm.(Model); ok && mm.palette.Active {
-			val := mm.input.Value()
-			if strings.HasPrefix(val, "/") {
-				mm.palette.SetRunOnly(mm.state == StateStreaming)
-				mm.palette.SetFilter(val[1:])
-			} else {
-				mm.palette.Active = false
-			}
-			return mm, cmd
-		}
-		return nm, cmd
-
-	case inlineShellDoneMsg:
-		return m.onInlineShellDone(msg)
-	case streamDeltaMsg:
-		return m.onStreamDelta(msg)
-	case thinkDeltaMsg:
-		return m.onThinkDelta(msg)
-	case progressMsg:
-		return m.onProgress(msg)
-	case liveMsgMsg:
-		return m.onLiveMsg(msg)
-	case warningMsg:
-		return m.onWarning(msg)
-	case warningFadeMsg:
-		return m.onWarningFade(msg)
-	case jobsWakeMsg:
-		return m.onJobsWake(msg)
-	case loaderTickMsg:
-		return m.onLoaderTick(msg)
-	case glowTickMsg:
-		return m.onGlowTick(msg)
-	case compactDoneMsg:
-		return m.onCompactDone(msg)
-	case handoffReadyMsg:
-		return m.onHandoffReady(msg)
-	case externalDoneMsg:
-		return m.onExternalDone(msg)
-	case turnDoneMsg:
-		return m.onTurnDone(msg)
-	case resumeAfterErrorMsg:
-		return m.onResumeAfterError(msg)
-	case goalEvalDoneMsg:
-		return m.onGoalEvalDone(msg)
-	case recapIdleTickMsg:
-		return m.onRecapIdleTick(msg)
-	case recapReadyMsg:
-		return m.onRecapReady(msg)
-	case changeMapMsg:
-		return m.onChangeMap(msg)
-	case costTickMsg:
-		return m.onCostTick(msg)
-	case introTickMsg:
-		return m.onIntroTick(msg)
-	case tutorialTickMsg:
-		return m.onTutorialTick(msg)
-	case openTutorialMsg:
-		return m.onOpenTutorial(msg)
-
-	case openPaletteMsg:
-		return m.onOpenPalette(msg)
-	case PaletteSelectMsg:
-		return m.onPaletteSelect(msg)
-	case PaletteDismissedMsg:
-		return m.onPaletteDismissed(msg)
-	case AtPickerSelectMsg:
-		return m.onAtPickerSelect(msg)
-	case AtPickerDismissedMsg:
-		return m, nil
-	case HistorySelectMsg:
-		return m.onHistorySelect(msg)
-	case HistoryDismissedMsg:
-		return m, nil
-
-	case openTreeMsg:
-		return m.onOpenTree(msg)
-	case openResumeMsg:
-		return m.onOpenResume(msg)
-	case ResumeSelectMsg:
-		return m.onResumeSelect(msg)
-	case ResumeDismissedMsg:
-		return m, nil
-	case openRewindMsg:
-		return m.onOpenRewind(msg)
-	case RewindSelectMsg:
-		return m.onRewindSelect(msg)
-	case RewindDismissedMsg:
-		return m, nil
-	case checkpointDoneMsg:
-		return m.onCheckpointDone(msg)
-	case SessionForkMsg:
-		return m.onSessionFork(msg)
-	case SessionCloneMsg:
-		return m.onSessionClone(msg)
-	case SessionSwitchMsg:
-		// F5 scope: in-place leaf switching needs deeper rollout refactor.
-		// Keep the cursor selection client-side; user can /fork to materialize.
-		return m, nil
-
-	case openCostMsg:
-		return m.onOpenCost(msg)
-	case openUsageMsg:
-		return m.onOpenUsage(msg)
-	case openLoginMsg:
-		return m.onOpenLogin(msg)
-	case openRoleMsg:
-		return m.onOpenRole(msg)
-	case openEffortMsg:
-		return m.onOpenEffort(msg)
-	case openSettingsMsg:
-		return m.onOpenSettings(msg)
-	case settingsToggleMsg:
-		return m.onSettingsToggle(msg)
-	case settingsSetIntMsg:
-		return m.onSettingsSetInt(msg)
-	case openToolsMsg:
-		return m.onOpenTools(msg)
-	case toolsToggleMsg:
-		return m.onToolsToggle(msg)
-	case loginActionDoneMsg:
-		return m.onLoginActionDone(msg)
-
-	case openProviderMsg:
-		return m.onOpenProvider(msg)
-	case PickedMsg:
-		return m.onPicked(msg)
-	case PickerDismissedMsg:
-		// cancelling the picker mid-/handoff disarms the flow; the stuck turn
-		// (if any) keeps running since we never reached onHandoffPicked.
-		m.handoffActive = false
-		return m, nil
-	case PickerLoginRequestedMsg:
-		return m.onPickerLoginRequested(msg)
-	case rolePickedMsg:
-		return m.onRolePicked(msg)
-	case effortPickedMsg:
-		return m.onEffortPicked(msg)
-
-	case updateAvailableMsg:
-		return m.onUpdateAvailable(msg)
-	case updateDecisionMsg:
-		return m.onUpdateDecision(msg)
-	case updateAppliedMsg:
-		return m.onUpdateApplied(msg)
-
-	case openHiveMsg:
-		return m.onOpenHive(msg)
-	case CloseAgentViewMsg:
-		return m.onCloseAgentView(msg)
-	case AttachSessionMsg:
-		return m.onAttachSession(msg)
-	case agentTickMsg:
-		return m.onAgentTick(msg)
+// claimModal feeds msg to the modal at *p when it is active.
+func claimModal[T modal[T]](p *T, msg tea.Msg) (cmd tea.Cmd, claimed bool) {
+	if !(*p).isActive() {
+		return nil, false
 	}
-
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	return m, cmd
+	*p, cmd = (*p).Update(msg)
+	return cmd, true
 }
 
 // isInputMsg reports whether msg is user input a modal may claim.

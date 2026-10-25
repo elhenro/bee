@@ -5,53 +5,42 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// keyPane is an overlay pane that claims key presses while open.
+type keyPane[P any] interface {
+	comparable
+	Open() bool
+	Update(tea.Msg) (P, tea.Cmd)
+}
+
+// claimKey feeds a key press to the pane at *p when it is set and open.
+func claimKey[P keyPane[P]](p *P, msg tea.Msg) (cmd tea.Cmd, claimed bool) {
+	var unset P
+	if _, ok := msg.(tea.KeyMsg); !ok || *p == unset || !(*p).Open() {
+		return nil, false
+	}
+	*p, cmd = (*p).Update(msg)
+	return cmd, true
+}
+
 // claimByPane routes the message to whichever overlay pane is open and
 // wants to consume it. Returns claimed=true when the caller should return
 // immediately with the produced (Model, Cmd).
 func (m Model) claimByPane(msg tea.Msg) (Model, tea.Cmd, bool) {
-	// session tree modal claims keys while open.
-	if m.tree != nil && m.tree.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newT, cmd := m.tree.Update(msg)
-			m.tree = newT
-			return m, cmd, true
-		}
+	// session tree, resume, rewind, cost and usage panes claim keys while open.
+	if cmd, ok := claimKey(&m.tree, msg); ok {
+		return m, cmd, true
 	}
-
-	// resume picker modal claims keys while open.
-	if m.resume != nil && m.resume.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newR, cmd := m.resume.Update(msg)
-			m.resume = newR
-			return m, cmd, true
-		}
+	if cmd, ok := claimKey(&m.resume, msg); ok {
+		return m, cmd, true
 	}
-
-	// rewind picker modal claims keys while open.
-	if m.rewind != nil && m.rewind.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newR, cmd := m.rewind.Update(msg)
-			m.rewind = newR
-			return m, cmd, true
-		}
+	if cmd, ok := claimKey(&m.rewind, msg); ok {
+		return m, cmd, true
 	}
-
-	// cost pane claims keys while open.
-	if m.costPane != nil && m.costPane.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newC, cmd := m.costPane.Update(msg)
-			m.costPane = newC
-			return m, cmd, true
-		}
+	if cmd, ok := claimKey(&m.costPane, msg); ok {
+		return m, cmd, true
 	}
-
-	// usage pane claims keys while open.
-	if m.usagePane != nil && m.usagePane.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newU, cmd := m.usagePane.Update(msg)
-			m.usagePane = newU
-			return m, cmd, true
-		}
+	if cmd, ok := claimKey(&m.usagePane, msg); ok {
+		return m, cmd, true
 	}
 
 	// model picker claims all input while active. a finished model fetch is
@@ -72,48 +61,21 @@ func (m Model) claimByPane(msg tea.Msg) (Model, tea.Cmd, bool) {
 
 	// login pane claims keys while open. async loginActionDoneMsg is
 	// routed unconditionally below so the pane can clear its busy flag.
-	if m.loginPane != nil && m.loginPane.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newL, cmd := m.loginPane.Update(msg)
-			m.loginPane = newL
-			return m, cmd, true
-		}
+	if cmd, ok := claimKey(&m.loginPane, msg); ok {
+		return m, cmd, true
 	}
-
-	// role pane claims keys while open.
-	if m.rolePane != nil && m.rolePane.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newE, cmd := m.rolePane.Update(msg)
-			m.rolePane = newE
-			return m, cmd, true
-		}
+	// role, effort, settings and tools panes claim keys while open.
+	if cmd, ok := claimKey(&m.rolePane, msg); ok {
+		return m, cmd, true
 	}
-
-	// effort pane claims keys while open.
-	if m.effortPane != nil && m.effortPane.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newE, cmd := m.effortPane.Update(msg)
-			m.effortPane = newE
-			return m, cmd, true
-		}
+	if cmd, ok := claimKey(&m.effortPane, msg); ok {
+		return m, cmd, true
 	}
-
-	// settings pane claims keys while open.
-	if m.settingsPane != nil && m.settingsPane.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newS, cmd := m.settingsPane.Update(msg)
-			m.settingsPane = newS
-			return m, cmd, true
-		}
+	if cmd, ok := claimKey(&m.settingsPane, msg); ok {
+		return m, cmd, true
 	}
-
-	// tools pane claims keys while open.
-	if m.toolsPane != nil && m.toolsPane.Open() {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			newT, cmd := m.toolsPane.Update(msg)
-			m.toolsPane = newT
-			return m, cmd, true
-		}
+	if cmd, ok := claimKey(&m.toolsPane, msg); ok {
+		return m, cmd, true
 	}
 
 	// palette is active: nav keys go to palette, everything else falls

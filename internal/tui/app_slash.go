@@ -1,14 +1,12 @@
 package tui
 
 import (
-	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/skills"
-	"github.com/elhenro/bee/internal/types"
 )
 
 // runSlash parses "/name args…", looks up the command, runs it, and
@@ -27,9 +25,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		return m, m.openTermCmd(strings.Join(parts[1:], " "))
 	}
 	if m.cmds == nil {
-		m.lastErr = "no command registry"
-		m.state = StateError
-		return m, nil
+		return m.setError("no command registry")
 	}
 	c, ok := m.cmds.Get(parts[0])
 	if !ok {
@@ -40,9 +36,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		if m.skills != nil {
 			if sk, found := m.skills.Get(parts[0]); found {
 				if sk.Kind != skills.KindPrompt && sk.Kind != skills.KindRecipe {
-					m.lastErr = "/" + parts[0] + ": skill kind " + string(sk.Kind) + " not invokable as a slash command; exec skills are auto-registered as tools and prompt/recipe bodies are folded into the user turn"
-					m.state = StateError
-					return m, nil
+					return m.setError("/" + parts[0] + ": skill kind " + string(sk.Kind) + " not invokable as a slash command; exec skills are auto-registered as tools and prompt/recipe bodies are folded into the user turn")
 				}
 				userMsg := sk.Body
 				if len(parts) > 1 {
@@ -54,9 +48,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 					}
 				}
 				if strings.TrimSpace(userMsg) == "" {
-					m.lastErr = "/" + parts[0] + ": skill has empty body"
-					m.state = StateError
-					return m, nil
+					return m.setError("/" + parts[0] + ": skill has empty body")
 				}
 				m.palette.Bump(parts[0])
 				// grant the skill's declared plan-only tools (e.g. /plan's
@@ -69,9 +61,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 				return m.submitWithDisplay(userMsg, "/"+strings.Join(parts, " "))
 			}
 		}
-		m.lastErr = "unknown command /" + parts[0]
-		m.state = StateError
-		return m, nil
+		return m.setError("unknown command /" + parts[0])
 	}
 	m.palette.Bump(parts[0])
 
@@ -84,11 +74,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 			m.cancelTurn()
 			msg = "stopped"
 		}
-		m.messages = append(m.messages, types.Message{
-			Role:      types.RoleAssistant,
-			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(" + msg + ")"}},
-			Ephemeral: true,
-		})
+		m.messages = append(m.messages, ephemeral("("+msg+")"))
 		return m, m.flush()
 	}
 
@@ -123,11 +109,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 			"run `bee remote-control` in a separate terminal to start it.\n" +
 			"it prints a URL + QR code to open on a phone or browser.\n" +
 			"the machine must be reachable on your LAN; commands execute locally here."
-		m.messages = append(m.messages, types.Message{
-			Role:      types.RoleAssistant,
-			Content:   []types.ContentBlock{{Type: types.BlockText, Text: info}},
-			Ephemeral: true,
-		})
+		m.messages = append(m.messages, ephemeral(info))
 		return m, m.flush()
 	}
 
@@ -141,10 +123,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		m.compacting = true
 		m.loaderFrame = 0
 		eng := m.eng
-		ctx := m.ctx
-		if ctx == nil {
-			ctx = context.Background()
-		}
+		ctx := m.baseCtx()
 		return m, tea.Batch(
 			loaderTickCmd(),
 			func() tea.Msg {
@@ -156,100 +135,46 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 			},
 		)
 	}
-	ctx := m.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	out, err := c.Run(ctx, parts[1:], m.side())
+	out, err := c.Run(m.baseCtx(), parts[1:], m.side())
 	if err != nil {
-		m.lastErr = err.Error()
-		m.state = StateError
-		return m, nil
+		return m.setError(err.Error())
 	}
 	// /quit asks the TUI to exit — bubble that up as tea.Quit.
 	if m.quitRequested {
 		return m, tea.Quit
 	}
-	// /tree asks to open the modal — dispatch the open message.
-	if m.treeRequested {
-		m.treeRequested = false
-		return m, func() tea.Msg { return openTreeMsg{} }
-	}
-	// /resume asks to open the resume picker.
-	if m.resumeRequested {
-		m.resumeRequested = false
-		return m, func() tea.Msg { return openResumeMsg{} }
-	}
-	// /rewind asks to open the rewind picker.
-	if m.rewindRequested {
-		m.rewindRequested = false
-		return m, func() tea.Msg { return openRewindMsg{} }
-	}
-	// /cost asks to open the cost modal.
-	if m.costRequested {
-		m.costRequested = false
-		return m, func() tea.Msg { return openCostMsg{} }
-	}
-	// /usage asks to open the historical usage modal.
-	if m.usageRequested {
-		m.usageRequested = false
-		return m, func() tea.Msg { return openUsageMsg{} }
-	}
-	// /login (no args) asks to open the login pane.
-	if m.loginRequested {
-		m.loginRequested = false
-		return m, func() tea.Msg { return openLoginMsg{} }
-	}
-	// /tutorial asks to replay the interactive walkthrough.
-	if m.tutorialRequested {
-		m.tutorialRequested = false
-		return m, func() tea.Msg { return openTutorialMsg{} }
-	}
-	// /role (no args) asks to open the role picker.
-	if m.roleRequested {
-		m.roleRequested = false
-		return m, func() tea.Msg { return openRoleMsg{} }
-	}
-	// /effort (no args) asks to open the effort picker.
-	if m.effortRequested {
-		m.effortRequested = false
-		return m, func() tea.Msg { return openEffortMsg{} }
-	}
-	// /settings asks to open the settings pane.
-	if m.settingsRequested {
-		m.settingsRequested = false
-		return m, func() tea.Msg { return openSettingsMsg{} }
-	}
-	// /tools asks to open the tools toggle pane.
-	if m.toolsRequested {
-		m.toolsRequested = false
-		return m, func() tea.Msg { return openToolsMsg{} }
-	}
-	// /handoff arms the rescue flow then opens the same picker as /model;
-	// handoffActive (set alongside) routes the resulting pick into the handoff.
-	if m.handoffRequested {
-		m.handoffRequested = false
-		return m, func() tea.Msg { return openProviderMsg{} }
-	}
-	// /model (no args) asks to open the provider+model picker.
-	if m.pickerRequested {
-		m.pickerRequested = false
-		return m, func() tea.Msg { return openProviderMsg{} }
+	// commands that open a pane flag the Model (via Side); turn the flag into
+	// the matching open message. /handoff arms the rescue flow first and opens
+	// the same picker as /model.
+	for _, r := range []struct {
+		flag *bool
+		open tea.Msg
+	}{
+		{&m.treeRequested, openTreeMsg{}},
+		{&m.resumeRequested, openResumeMsg{}},
+		{&m.rewindRequested, openRewindMsg{}},
+		{&m.costRequested, openCostMsg{}},
+		{&m.usageRequested, openUsageMsg{}},
+		{&m.loginRequested, openLoginMsg{}},
+		{&m.tutorialRequested, openTutorialMsg{}},
+		{&m.roleRequested, openRoleMsg{}},
+		{&m.effortRequested, openEffortMsg{}},
+		{&m.settingsRequested, openSettingsMsg{}},
+		{&m.toolsRequested, openToolsMsg{}},
+		{&m.handoffRequested, openProviderMsg{}},
+		{&m.pickerRequested, openProviderMsg{}},
+	} {
+		if *r.flag {
+			*r.flag = false
+			return m, func() tea.Msg { return r.open }
+		}
 	}
 	if out == "" {
 		// pure side-effect: echo a brief confirmation into scrollback.
-		m.messages = append(m.messages, types.Message{
-			Role:      types.RoleAssistant,
-			Content:   []types.ContentBlock{{Type: types.BlockText, Text: "(/" + parts[0] + " done)"}},
-			Ephemeral: true,
-		})
+		m.messages = append(m.messages, ephemeral("(/"+parts[0]+" done)"))
 		return m, m.flush()
 	}
 	// command produced text — render it as assistant output, not a LLM turn.
-	m.messages = append(m.messages, types.Message{
-		Role:      types.RoleAssistant,
-		Content:   []types.ContentBlock{{Type: types.BlockText, Text: out}},
-		Ephemeral: true,
-	})
+	m.messages = append(m.messages, ephemeral(out))
 	return m, m.flush()
 }

@@ -35,20 +35,14 @@ type planOption struct {
 // fresh session carrying just the plan) in one keystroke. Inactive = renders
 // nothing.
 type PlanModeModel struct {
-	styles  *Styles
-	Active  bool
+	optionList
 	options []planOption
-	focus   int
-	width   int
 }
 
 // NewPlanModeModel returns a fresh, inactive picker.
 func NewPlanModeModel(styles Styles) PlanModeModel {
-	return PlanModeModel{styles: &styles}
+	return PlanModeModel{optionList: optionList{styles: &styles}}
 }
-
-// SetWidth records the terminal width so View can wrap option rows.
-func (m *PlanModeModel) SetWidth(w int) { m.width = w }
 
 // Show opens the picker. Focus defaults to the trailing "keep scouting" option
 // so a reflexive enter never switches role or fires a build turn; the build
@@ -65,40 +59,14 @@ func (m *PlanModeModel) Show() {
 	m.focus = len(opts) - 1
 }
 
-// Hide closes the picker without publishing a choice.
-func (m *PlanModeModel) Hide() {
-	m.Active = false
-	m.options = nil
-}
-
 // Update handles picker key events. Returns the model + an optional cmd that
 // publishes the choice. Caller forwards the cmd.
 func (m PlanModeModel) Update(msg tea.Msg) (PlanModeModel, tea.Cmd) {
+	if idx := m.key(msg, len(m.options)); idx >= 0 {
+		return m.pick(idx)
+	}
 	if !m.Active {
-		return m, nil
-	}
-	km, ok := msg.(tea.KeyMsg)
-	if !ok {
-		return m, nil
-	}
-	switch km.String() {
-	case "up", "k", "shift+tab":
-		m.focus = (m.focus + len(m.options) - 1) % len(m.options)
-	case "down", "j", "tab":
-		m.focus = (m.focus + 1) % len(m.options)
-	case "esc":
-		m.Hide()
-		return m, nil
-	case "enter":
-		return m.pick(m.focus)
-	default:
-		if len(km.String()) == 1 {
-			if c := km.String()[0]; c >= '1' && c <= '9' {
-				if idx := int(c - '1'); idx < len(m.options) {
-					return m.pick(idx)
-				}
-			}
-		}
+		m.options = nil
 	}
 	return m, nil
 }
@@ -117,29 +85,12 @@ func (m PlanModeModel) View() string {
 	if !m.Active {
 		return ""
 	}
-	rail := m.styles.WarnRail.Render("▎")
-	dim := m.styles.Dim
-	width := m.width - 6
-	if width < 20 {
-		width = 20
-	}
-	lines := []string{rail + " " + m.styles.WarnBadge.Render(" SCOUT READY ") + " " + dim.Render("how do you want to proceed?")}
+	labels := make([]string, len(m.options))
 	for i, opt := range m.options {
-		label := pad(i+1) + opt.label
-		wrapped := wrapHanging(label, width)
-		for j, wl := range wrapped {
-			switch {
-			case j > 0:
-				lines = append(lines, rail+"      "+dim.Render(wl))
-			case i == m.focus:
-				lines = append(lines, rail+" "+m.styles.ButtonHot.Render("›"+wl))
-			default:
-				lines = append(lines, rail+"   "+wl)
-			}
-		}
+		labels[i] = opt.label
 	}
-	lines = append(lines, rail+" "+dim.Render("↑↓ move · 1-9 pick · enter select · esc keep scouting"))
-	return strings.Join(lines, "\n")
+	head := m.styles.WarnBadge.Render(" SCOUT READY ") + " " + m.styles.Dim.Render("how do you want to proceed?")
+	return m.render(head, labels, "↑↓ move · 1-9 pick · enter select · esc keep scouting")
 }
 
 // continuePrompt is submitted when the user picks a build option without a
@@ -185,16 +136,9 @@ func freshDisplay(plan string) string {
 // the model just wrote. Empty when there's no assistant turn.
 func lastAssistantText(msgs []types.Message) string {
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role != types.RoleAssistant {
-			continue
+		if msgs[i].Role == types.RoleAssistant {
+			return textOf(msgs[i])
 		}
-		var b strings.Builder
-		for _, blk := range msgs[i].Content {
-			if blk.Type == types.BlockText {
-				b.WriteString(blk.Text)
-			}
-		}
-		return strings.TrimSpace(b.String())
 	}
 	return ""
 }
@@ -221,9 +165,7 @@ func (m Model) clearForFreshSession() (Model, error) {
 	}
 	m.messages = nil
 	m.partial = ""
-	m.streamFlushed = ""
-	m.streamFenceOpen = false
-	m.pendingFlushedPrefix = ""
+	m.dropFlushed()
 	m.lastErr = ""
 	m.state = StateIdle
 	m.printedCount = 0

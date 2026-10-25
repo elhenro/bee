@@ -1,52 +1,48 @@
 package tui
 
 import (
+	"cmp"
+
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/elhenro/bee/internal/commands"
 )
+
+// togglePane sends the toggle message to the pane at *p, creating it on first use.
+func togglePane[P keyPane[P]](p *P, create func() P, toggle tea.Msg) tea.Cmd {
+	var unset P
+	if *p == unset {
+		*p = create()
+	}
+	var cmd tea.Cmd
+	*p, cmd = (*p).Update(toggle)
+	return cmd
+}
 
 func (m Model) onOpenCost(_ openCostMsg) (tea.Model, tea.Cmd) {
 	if m.isLocalProvider() {
 		m.lastErr = "cost monitor hidden for local provider"
 		return m, nil
 	}
-	if m.costPane == nil {
-		m.costPane = NewCostPane(m.costs)
-	}
-	newC, cmd := m.costPane.Update(ToggleCostPaneMsg{})
-	m.costPane = newC
-	return m, cmd
+	return m, togglePane(&m.costPane, func() *CostPane { return NewCostPane(m.costs) }, ToggleCostPaneMsg{})
 }
 
 // onOpenUsage toggles the historical usage pane. Unlike the cost monitor it is
 // not gated on the active provider: past usage may include non-local providers
 // even when the current one is local.
 func (m Model) onOpenUsage(_ openUsageMsg) (tea.Model, tea.Cmd) {
-	if m.usagePane == nil {
-		m.usagePane = NewUsagePane(m.costs)
-	}
-	newU, cmd := m.usagePane.Update(ToggleUsagePaneMsg{})
-	m.usagePane = newU
-	return m, cmd
+	return m, togglePane(&m.usagePane, func() *UsagePane { return NewUsagePane(m.costs) }, ToggleUsagePaneMsg{})
 }
 
 func (m Model) onOpenLogin(_ openLoginMsg) (tea.Model, tea.Cmd) {
-	if m.loginPane == nil {
-		m.loginPane = NewLoginPane(m.side())
-	}
-	newL, cmd := m.loginPane.Update(ToggleLoginPaneMsg{})
-	m.loginPane = newL
-	return m, cmd
+	return m, togglePane(&m.loginPane, func() *LoginPane { return NewLoginPane(m.side()) }, ToggleLoginPaneMsg{})
 }
 
 func (m Model) onOpenRole(_ openRoleMsg) (tea.Model, tea.Cmd) {
 	if m.rolePane == nil {
 		m.rolePane = NewRolePane()
 	}
-	cur := m.role
-	if cur == "" {
-		cur = "worker"
-	}
-	m.rolePane.Show(cur)
+	m.rolePane.Show(cmp.Or(m.role, "worker"))
 	return m, nil
 }
 
@@ -54,11 +50,7 @@ func (m Model) onOpenEffort(_ openEffortMsg) (tea.Model, tea.Cmd) {
 	if m.effortPane == nil {
 		m.effortPane = NewEffortPane()
 	}
-	cur := m.thinking
-	if cur == "" {
-		cur = "auto"
-	}
-	m.effortPane.Show(cur)
+	m.effortPane.Show(cmp.Or(m.thinking, "auto"))
 	return m, nil
 }
 
@@ -94,62 +86,49 @@ func (m Model) onOpenSettings(_ openSettingsMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
-	// each toggle applies live + persists; side handles all three.
-	var err error
-	switch msg.key {
-	case "verbose":
-		err = m.side().SetVerbose(msg.value)
-	case "show_thoughts":
-		err = m.side().SetShowThoughts(msg.value)
-	case "show_nudges":
-		err = m.side().SetShowNudges(msg.value)
-	case "show_recap":
-		err = m.side().SetShowRecap(msg.value)
-	case "compact":
-		err = m.side().SetCompact(msg.value)
-	case "show_context_bar":
-		err = m.side().SetShowContextBar(msg.value)
-	case "highlight":
-		err = m.side().SetHighlight(msg.value)
-	case "show_call_detail":
-		err = m.side().SetShowCallDetail(msg.value)
-	case "shell_bang_silent":
-		err = m.side().SetShellBangSilent(msg.value)
-	case "show_bee":
-		err = m.side().SetShowBee(msg.value)
-	case "show_context_pct":
-		err = m.side().SetShowContextPct(msg.value)
-	case "show_model":
-		err = m.side().SetShowModel(msg.value)
-	case "show_cwd":
-		err = m.side().SetShowCwd(msg.value)
-	case "show_effort":
-		err = m.side().SetShowEffort(msg.value)
-	case "show_turn_timer":
-		err = m.side().SetShowTurnTimer(msg.value)
-	case "show_git_branch":
-		err = m.side().SetShowGitBranch(msg.value)
-	case "show_total_tokens":
-		err = m.side().SetShowTotalTokens(msg.value)
-	case "show_banner":
-		err = m.side().SetShowBanner(msg.value)
-	case "show_loader":
-		err = m.side().SetShowLoader(msg.value)
-	case "show_loader_in":
-		err = m.side().SetShowLoaderIn(msg.value)
-	case "show_loader_out":
-		err = m.side().SetShowLoaderOut(msg.value)
-	case "show_loader_rate":
-		err = m.side().SetShowLoaderRate(msg.value)
-	}
+// settingSetters maps a settings-pane toggle key to the Side setter that
+// applies it live and persists it.
+var settingSetters = map[string]func(commands.Side, bool) error{
+	"verbose":           commands.Side.SetVerbose,
+	"show_thoughts":     commands.Side.SetShowThoughts,
+	"show_nudges":       commands.Side.SetShowNudges,
+	"show_recap":        commands.Side.SetShowRecap,
+	"compact":           commands.Side.SetCompact,
+	"show_context_bar":  commands.Side.SetShowContextBar,
+	"highlight":         commands.Side.SetHighlight,
+	"show_call_detail":  commands.Side.SetShowCallDetail,
+	"shell_bang_silent": commands.Side.SetShellBangSilent,
+	"show_bee":          commands.Side.SetShowBee,
+	"show_context_pct":  commands.Side.SetShowContextPct,
+	"show_model":        commands.Side.SetShowModel,
+	"show_cwd":          commands.Side.SetShowCwd,
+	"show_effort":       commands.Side.SetShowEffort,
+	"show_turn_timer":   commands.Side.SetShowTurnTimer,
+	"show_git_branch":   commands.Side.SetShowGitBranch,
+	"show_total_tokens": commands.Side.SetShowTotalTokens,
+	"show_banner":       commands.Side.SetShowBanner,
+	"show_loader":       commands.Side.SetShowLoader,
+	"show_loader_in":    commands.Side.SetShowLoaderIn,
+	"show_loader_out":   commands.Side.SetShowLoaderOut,
+	"show_loader_rate":  commands.Side.SetShowLoaderRate,
+}
+
+// failQuietly surfaces a persist error unless a turn is streaming: don't kill
+// an in-flight turn over a persist hiccup.
+func (m Model) failQuietly(err error) Model {
 	if err != nil && m.state != StateStreaming {
-		// don't kill an in-flight turn over a persist hiccup; surface the
-		// error only when idle.
 		m.lastErr = err.Error()
 		m.state = StateError
 	}
-	return m, nil
+	return m
+}
+
+func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
+	var err error
+	if set := settingSetters[msg.key]; set != nil {
+		err = set(m.side(), msg.value)
+	}
+	return m.failQuietly(err), nil
 }
 
 // onSettingsSetInt handles the int-magnitude row cycle (only outer_pad_lr
@@ -158,16 +137,11 @@ func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
 // View() picks the new padding up without restart.
 func (m Model) onSettingsSetInt(msg settingsSetIntMsg) (tea.Model, tea.Cmd) {
 	var err error
-	switch msg.key {
-	case "outer_pad_lr":
+	if msg.key == "outer_pad_lr" {
 		m.outerPadLR = msg.value
 		err = m.side().SetOuterPadLR(msg.value)
 	}
-	if err != nil && m.state != StateStreaming {
-		m.lastErr = err.Error()
-		m.state = StateError
-	}
-	return m, nil
+	return m.failQuietly(err), nil
 }
 
 func (m Model) onOpenTools(_ openToolsMsg) (tea.Model, tea.Cmd) {
@@ -179,11 +153,7 @@ func (m Model) onOpenTools(_ openToolsMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onToolsToggle(msg toolsToggleMsg) (tea.Model, tea.Cmd) {
-	if err := m.side().SetToolDisabled(msg.name, msg.disabled); err != nil && m.state != StateStreaming {
-		m.lastErr = err.Error()
-		m.state = StateError
-	}
-	return m, nil
+	return m.failQuietly(m.side().SetToolDisabled(msg.name, msg.disabled)), nil
 }
 
 func (m Model) onLoginActionDone(msg loginActionDoneMsg) (tea.Model, tea.Cmd) {

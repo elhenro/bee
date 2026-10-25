@@ -11,6 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // historyMax caps the on-disk history file. Sized for years of prompts so
@@ -126,9 +128,8 @@ func (p HistoryPickerModel) View() string {
 		w = 80
 	}
 	dim := lipgloss.NewStyle().Foreground(fgOyster)
-	headBold := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
 
-	crumb := " " + headBold.Render("history") + dim.Render("  ⌃r search past prompts")
+	crumb := " " + StyleActive.Render("history") + dim.Render("  ⌃r search past prompts")
 
 	body := renderRows(p.matches, p.selected, p.input.Value(), glyphSep, w, func(idx int) (string, string) {
 		entry := p.entries[idx]
@@ -150,17 +151,26 @@ func (p HistoryPickerModel) View() string {
 
 var historyMu sync.Mutex
 
-// historyPath returns ~/.bee/history (honors BEE_HOME).
+// historyPath returns ~/.bee/history (honors BEE_HOME), "" when unresolvable.
 func historyPath() string {
-	home := os.Getenv("BEE_HOME")
-	if home == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		home = filepath.Join(h, ".bee")
+	p, _ := beehome.Join("history")
+	return p
+}
+
+// readHistoryLines returns every line of the history file, nil when unreadable.
+func readHistoryLines(p string) []string {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil
 	}
-	return filepath.Join(home, "history")
+	defer f.Close()
+	var lines []string
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<16), 1<<20)
+	for sc.Scan() {
+		lines = append(lines, sc.Text())
+	}
+	return lines
 }
 
 // LoadHistory reads ~/.bee/history newest-first, dedupes consecutive entries.
@@ -171,31 +181,21 @@ func LoadHistory() []string {
 	}
 	historyMu.Lock()
 	defer historyMu.Unlock()
-	f, err := os.Open(p)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	var lines []string
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<16), 1<<20)
-	for sc.Scan() {
-		t := strings.TrimRight(sc.Text(), "\r\n")
-		if t == "" {
-			continue
-		}
-		lines = append(lines, decodeHistory(t))
-	}
+	lines := readHistoryLines(p)
 	// reverse to newest-first and dedupe globally — most-recent occurrence
 	// wins so autosuggestions surface the freshest match for any prefix.
 	out := make([]string, 0, len(lines))
 	seen := make(map[string]struct{}, len(lines))
 	for i := len(lines) - 1; i >= 0; i-- {
-		if _, ok := seen[lines[i]]; ok {
+		if lines[i] == "" {
 			continue
 		}
-		seen[lines[i]] = struct{}{}
-		out = append(out, lines[i])
+		l := decodeHistory(lines[i])
+		if _, ok := seen[l]; ok {
+			continue
+		}
+		seen[l] = struct{}{}
+		out = append(out, l)
 	}
 	return out
 }
@@ -258,31 +258,13 @@ func maybeTrim(p string) {
 	if fi, err := os.Stat(p); err != nil || fi.Size() < int64(historyMax)*8 {
 		return
 	}
-	f, err := os.Open(p)
-	if err != nil {
-		return
-	}
-	var lines []string
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<16), 1<<20)
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
-	_ = f.Close()
+	lines := readHistoryLines(p)
 	if len(lines) <= historyMax {
 		return
 	}
-	keep := lines[len(lines)-historyMax:]
 	tmp := p + ".tmp"
-	w, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return
+	keep := strings.Join(lines[len(lines)-historyMax:], "\n") + "\n"
+	if os.WriteFile(tmp, []byte(keep), 0o644) == nil {
+		_ = os.Rename(tmp, p)
 	}
-	bw := bufio.NewWriter(w)
-	for _, l := range keep {
-		_, _ = bw.WriteString(l + "\n")
-	}
-	_ = bw.Flush()
-	_ = w.Close()
-	_ = os.Rename(tmp, p)
 }

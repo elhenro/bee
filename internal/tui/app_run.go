@@ -19,22 +19,12 @@ import (
 // option). A non-empty seed auto-submits one turn on startup (skill dispatch
 // into the TUI). Blocks until the program exits.
 func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registry, km KeyMap, app *Approver, asker *Asker, seed string) error {
-	cwd := ""
-	modelName := ""
-	scope := ""
-	lvl := caveman.Default
+	var cwd, modelName, scope string
 	if eng != nil {
-		cwd = eng.Cwd
-		modelName = eng.Cfg.DefaultModel
-		scope = eng.Cfg.Sandbox.Scope
+		cwd, modelName, scope = eng.Cwd, eng.Cfg.DefaultModel, eng.Cfg.Sandbox.Scope
 	}
-	m := NewModel(eng, cwd, modelName, scope, lvl)
-	if app != nil {
-		m = m.WithApprover(app)
-	}
-	if asker != nil {
-		m = m.WithAsker(asker)
-	}
+	m := NewModel(eng, cwd, modelName, scope, caveman.Default)
+	m.approver, m.asker = app, asker
 	if reg != nil {
 		m = m.WithCommands(reg)
 	}
@@ -43,116 +33,14 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 	if eng != nil && eng.Skills != nil {
 		m = m.WithSkills(eng.Skills)
 	}
-	m = m.WithKeyMap(km)
+	m.keys = km
+	m.approval = NewApprovalModel(*m.styles, km)
 	// intro: cfg.ShowBanner gates the non-blocking startup animation;
-	// BEE_BANNER picks the variant (handled inside WithIntro/introFrames).
-	if eng != nil && eng.Cfg.ShowBanner {
-		m = m.WithIntro(ParseIntroStyle(os.Getenv("BEE_BANNER")))
+	// BEE_BANNER picks the variant, BEE_NO_INTRO=1 disables it.
+	if eng != nil && eng.Cfg.ShowBanner && os.Getenv("BEE_NO_INTRO") != "1" {
+		m.introStyle, m.introActive = ParseIntroStyle(os.Getenv("BEE_BANNER")), true
 	}
-	if eng != nil {
-		m = m.WithShowBanner(eng.Cfg.ShowBanner).WithShowLoader(eng.Cfg.ShowLoader).
-			WithShowLoaderIn(eng.Cfg.ShowLoaderIn).
-			WithShowLoaderOut(eng.Cfg.ShowLoaderOut).
-			WithShowLoaderRate(eng.Cfg.ShowLoaderRate)
-	} else {
-		m = m.WithShowBanner(true).WithShowLoader(true).
-			WithShowLoaderIn(true).WithShowLoaderOut(true).WithShowLoaderRate(false)
-	}
-	// verbose: env wins over cfg (CLI/env path); cfg persists across launches.
-	verbose := os.Getenv("BEE_VERBOSE") != ""
-	if !verbose && eng != nil {
-		verbose = eng.Cfg.Verbose
-	}
-	if verbose {
-		m = m.WithVerbose(true)
-	}
-	// show-thoughts: cfg-driven; default true even when eng is nil (tests).
-	if eng != nil {
-		m = m.WithShowThoughts(eng.Cfg.ShowThoughts)
-	} else {
-		m = m.WithShowThoughts(true)
-	}
-	// show-nudges: cfg-driven; default false hides loop recovery turns.
-	if eng != nil {
-		m = m.WithShowNudges(eng.Cfg.ShowNudges)
-	}
-	// show-recap: cfg-driven; default false (no side call).
-	if eng != nil {
-		m = m.WithShowRecap(eng.Cfg.ShowRecap)
-	}
-	// compact: env wins over cfg; cfg persists across launches.
-	compact := os.Getenv("BEE_COMPACT") != ""
-	if !compact && eng != nil {
-		compact = eng.Cfg.Compact
-	}
-	if compact {
-		m = m.WithCompact(true)
-	}
-	// show-context-bar: cfg-driven; default false (hex glyph carries fill).
-	if eng != nil {
-		m = m.WithShowContextBar(eng.Cfg.ShowContextBar)
-	}
-	if eng != nil {
-		m = m.WithShowCallDetail(eng.Cfg.ShowCallDetail)
-	}
-	// highlight: cfg-driven; default true. Skip default-call when eng is nil
-	// so tests stay on the ctor default already set to true.
-	if eng != nil {
-		m = m.WithHighlight(eng.Cfg.Highlight)
-	}
-	// shell-bang-silent: cfg-driven; default true so `!cmd` runs locally
-	// without LLM forwarding. Skip when eng nil to keep test defaults.
-	if eng != nil {
-		m = m.WithShellBangSilent(eng.Cfg.ShellBangSilent)
-	}
-	// top-bar chrome: cfg-driven; default true preserves the original row.
-	if eng != nil {
-		m = m.WithShowBee(eng.Cfg.ShowBee).
-			WithShowContextPct(eng.Cfg.ShowContextPct).
-			WithShowModel(eng.Cfg.ShowModel).
-			WithShowCwd(eng.Cfg.ShowCwd).
-			WithShowEffort(eng.Cfg.ShowEffort).
-			WithShowTurnTimer(eng.Cfg.ShowTurnTimer).
-			WithShowGitBranch(eng.Cfg.ShowGitBranch).
-			WithShowTotalTokens(eng.Cfg.ShowTotalTokens).
-			WithStatusLine(eng.Cfg.TUI.StatusLine).
-			WithOuterPadLR(eng.Cfg.OuterPadLR).
-			WithLoader(eng.Cfg.TUI.Loader)
-	}
-	// hand the engine's stream channel to the model so deltas land in the
-	// bubbletea Update loop instead of corrupting the alt-screen.
-	if eng != nil && eng.StreamCh != nil {
-		m = m.WithStreamCh(eng.StreamCh)
-	}
-	if eng != nil && eng.ThinkCh != nil {
-		m = m.WithThinkCh(eng.ThinkCh)
-	}
-	if eng != nil && eng.ProgressCh != nil {
-		m = m.WithProgressCh(eng.ProgressCh)
-	}
-	if eng != nil && eng.LiveMsgCh != nil {
-		m = m.WithLiveMsgCh(eng.LiveMsgCh)
-	}
-	if eng != nil && eng.WarnCh != nil {
-		m = m.WithWarnCh(eng.WarnCh)
-	}
-	if eng != nil {
-		wc := eng.Cfg.Watchdog
-		if os.Getenv("BEE_WATCHDOG_OFF") != "" {
-			wc.Enabled = false
-		}
-		m = m.WithWatchdog(wc.Enabled, wc.Stall(), wc.Resumes())
-	}
-	if eng != nil && eng.Costs != nil {
-		m = m.WithCostTracker(eng.Costs)
-	}
-	// resume: seed scrollback from prior session
-	if eng != nil && len(eng.InitialMessages) > 0 {
-		m = m.WithInitialMessages(eng.InitialMessages)
-	}
-	if seed != "" {
-		m = m.WithSeedPrompt(seed)
-	}
+	m = m.seedFromEngine(eng).WithSeedPrompt(seed)
 	// first-run walkthrough: show the welcome gate on a fresh interactive start
 	// (not a skill dispatch, not a resume). Deferred past the intro when it
 	// plays (activated from onIntroTick); BEE_NO_TUTORIAL suppresses it.
@@ -201,6 +89,45 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 	return err
 }
 
+// seedFromEngine mirrors the engine config, channels and cost tracker onto the
+// model's display toggles. Without an engine (tests) the model keeps its
+// constructor defaults, with the banner and loader figures on. Verbose and
+// compact also come from the environment.
+func (m Model) seedFromEngine(eng *loop.Engine) Model {
+	m.verbose = os.Getenv("BEE_VERBOSE") != ""
+	m.compact = os.Getenv("BEE_COMPACT") != ""
+	if eng == nil {
+		m.showBanner, m.showLoader, m.showLoaderIn, m.showLoaderOut = true, true, true, true
+		m.syncStream()
+		return m
+	}
+	c := eng.Cfg
+	m.verbose = m.verbose || c.Verbose
+	m.compact = m.compact || c.Compact
+	m.showBanner, m.showLoader = c.ShowBanner, c.ShowLoader
+	m.showLoaderIn, m.showLoaderOut, m.showLoaderRate = c.ShowLoaderIn, c.ShowLoaderOut, c.ShowLoaderRate
+	m.showThoughts, m.showNudges, m.showRecap = c.ShowThoughts, c.ShowNudges, c.ShowRecap
+	m.showContextBar, m.showCallDetail = c.ShowContextBar, c.ShowCallDetail
+	m.highlight, m.shellBangSilent = c.Highlight, c.ShellBangSilent
+	// top-bar chrome
+	m.showBee, m.showContextPct, m.showModel, m.showCwd = c.ShowBee, c.ShowContextPct, c.ShowModel, c.ShowCwd
+	m.showEffort, m.showTurnTimer, m.showGitBranch, m.showTotalTokens = c.ShowEffort, c.ShowTurnTimer, c.ShowGitBranch, c.ShowTotalTokens
+	m.loader = c.TUI.Loader
+	m = m.WithStatusLine(c.TUI.StatusLine).WithOuterPadLR(c.OuterPadLR)
+	// hand the engine's channels to the model so deltas land in the bubbletea
+	// Update loop instead of corrupting the alt-screen.
+	m.streamCh, m.thinkCh, m.progressCh, m.liveMsgCh, m.warnCh = eng.StreamCh, eng.ThinkCh, eng.ProgressCh, eng.LiveMsgCh, eng.WarnCh
+	m.costs = eng.Costs
+	wc := c.Watchdog
+	if os.Getenv("BEE_WATCHDOG_OFF") != "" {
+		wc.Enabled = false
+	}
+	m.watchdogEnabled, m.watchdogStall, m.watchdogMaxResumes = wc.Enabled, wc.Stall(), wc.Resumes()
+	m.syncStream()
+	// resume: seed scrollback from prior session
+	return m.WithInitialMessages(eng.InitialMessages)
+}
+
 // currentLeafID returns the id of the last message in scrollback, or "" if empty.
 func (m *Model) currentLeafID() string {
 	if len(m.messages) == 0 {
@@ -218,8 +145,6 @@ func cycleRole(role string) string {
 		return string(loop.RoleScout)
 	case loop.RoleScout:
 		return string(loop.RoleQueen)
-	case loop.RoleQueen:
-		return string(loop.RoleWorker)
 	default:
 		return string(loop.RoleWorker)
 	}

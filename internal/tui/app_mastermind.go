@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -92,7 +93,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		workerCount = 3
 	}
 
-	triageOn := planner != nil && planner.Cfg.MastermindTriage
+	triageOn := planner.Cfg.MastermindTriage
 
 	return func() tea.Msg {
 		defer close(done)
@@ -100,10 +101,8 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 			<-prevDone // wait for a prior (possibly esc'd) run to fully return
 		}
 		toggles.apply(planner)
+		// non-blocking: a send on a nil channel falls through to default
 		notify := func(s string) {
-			if warn == nil {
-				return
-			}
 			select {
 			case warn <- s:
 			default:
@@ -136,18 +135,13 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 			}
 			mu.Lock()
 			idN++
-			msg := types.Message{
-				ID:      fmt.Sprintf("mm-%d", idN),
-				Role:    types.RoleAssistant,
-				Content: []types.ContentBlock{{Type: types.BlockText, Text: text}},
-			}
+			msg := assistantText(text)
+			msg.ID = fmt.Sprintf("mm-%d", idN)
 			streamed = append(streamed, msg)
 			mu.Unlock()
-			if live != nil {
-				select {
-				case live <- msg:
-				default: // dropped sends reappear via the final turnDoneMsg replace
-				}
+			select {
+			case live <- msg:
+			default: // dropped sends reappear via the final turnDoneMsg replace
 			}
 		}
 
@@ -172,10 +166,15 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		// tools stripped — it still has bash (needed for `git diff`) and the
 		// read/search tools, but an accidental edit/write/apply_patch call fails
 		// rather than mutating the tree during what should be observation only.
+		stripWrites := func(eng *loop.Engine, extra ...string) {
+			if eng.Tools != nil {
+				eng.Tools = eng.Tools.Without(append([]string{"write", "edit", "apply_patch", "hashline_edit", "knowledge_write"}, extra...)...)
+			}
+		}
 		spawnObserver := func(label string) (*loop.Engine, *session.Rollout, error) {
 			eng, sess, err := spawn(label, planner.Cfg.Swarm.Reviewer)
-			if err == nil && eng.Tools != nil {
-				eng.Tools = eng.Tools.Without("write", "edit", "apply_patch", "hashline_edit", "knowledge_write")
+			if err == nil {
+				stripWrites(eng)
 			}
 			return eng, sess, err
 		}
@@ -219,9 +218,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 			mu.Unlock()
 
 			if st.Role.ReadOnly() {
-				if eng.Tools != nil {
-					eng.Tools = eng.Tools.Without("write", "edit", "apply_patch", "hashline_edit", "knowledge_write", "bash")
-				}
+				stripWrites(eng, "bash")
 				return eng, nil, nil
 			}
 
@@ -263,12 +260,9 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		// reviewer engine serves all three via the queen's round-robin
 		// (q.Reviewers[i%len]). Spawn MastermindReviewers engines (default 1) to
 		// keep the per-turn engine count down without changing review behavior.
-		reviewerCount := planner.Cfg.MastermindReviewers
-		if reviewerCount < 1 {
-			reviewerCount = 1
-		}
+		reviewerCount := max(planner.Cfg.MastermindReviewers, 1)
 		reviewers := make([]hive.Runner, 0, reviewerCount)
-		for i := 0; i < reviewerCount; i++ {
+		for i := range reviewerCount {
 			rev, revSess, rerr := spawnObserver(fmt.Sprintf("reviewer-%d", i))
 			if rerr != nil {
 				return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: reviewer %d: %w", i, rerr)}
@@ -355,7 +349,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		}
 
 		mu.Lock()
-		out := append(append([]types.Message(nil), prior...), streamed...)
+		out := slices.Concat(prior, streamed)
 		mu.Unlock()
 		return turnDoneMsg{gen: gen, result: loop.RunResult{Messages: out, FinalText: final}, err: runErr}
 	}

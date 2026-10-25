@@ -2,10 +2,10 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/goal"
@@ -73,7 +73,7 @@ func (m Model) handleGoal(args []string) (tea.Model, tea.Cmd) {
 		m.messages = append(m.messages, ephemeral("(/goal can only be set while idle, esc stops the running turn first)"))
 		return m, m.flush()
 	}
-	cond := joinArgs(args)
+	cond := strings.Join(args, " ")
 	m.goal.Set(cond, currentCumTokens(m), time.Now())
 	m.goalGen++
 	return m.submit(cond)
@@ -82,23 +82,8 @@ func (m Model) handleGoal(args []string) (tea.Model, tea.Cmd) {
 // goalText appends an assistant message and flushes, mirroring runSlash text
 // output.
 func (m Model) goalText(text string) (tea.Model, tea.Cmd) {
-	m.messages = append(m.messages, types.Message{
-		Role:    types.RoleAssistant,
-		Content: []types.ContentBlock{{Type: types.BlockText, Text: text}},
-	})
+	m.messages = append(m.messages, assistantText(text))
 	return m, m.flush()
-}
-
-// joinArgs joins args with single spaces.
-func joinArgs(args []string) string {
-	out := ""
-	for i, a := range args {
-		if i > 0 {
-			out += " "
-		}
-		out += a
-	}
-	return out
 }
 
 // goalEvalCmd returns a cmd that asks a fast model whether the condition is
@@ -129,10 +114,7 @@ func (m Model) maybeStartGoalEval() (Model, tea.Cmd) {
 	if exceeded, reason := m.goal.CapsExceeded(currentCumTokens(m)); exceeded {
 		m.goal.Clear()
 		m.goalGen++
-		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: goal.StoppedPrefix + reason + ")"}},
-		})
+		m.messages = append(m.messages, assistantText(goal.StoppedPrefix+reason+")"))
 		return m, m.flush()
 	}
 	m.goalGen++
@@ -150,33 +132,23 @@ func (m Model) onGoalEvalDone(msg goalEvalDoneMsg) (tea.Model, tea.Cmd) {
 		// stop on error to avoid a runaway loop against a flaky side model.
 		m.goal.Clear()
 		m.goalGen++
-		line := lipgloss.NewStyle().Foreground(fgOyster).Italic(true).
-			Render("goal: eval error (" + msg.err.Error() + "), stopped")
-		return m, m.scroll.print(line)
+		return m, m.scroll.print(dimItalic.Render("goal: eval error (" + msg.err.Error() + "), stopped"))
 	}
 	if msg.v.Met {
 		m.goal.Clear()
 		m.goalGen++
-		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: goal.AchievedPrefix + msg.v.Reason}},
-		})
+		m.messages = append(m.messages, assistantText(goal.AchievedPrefix+msg.v.Reason))
 		return m, m.flush()
 	}
 	if m.goal.Replies.Observe(lastAssistantText(m.messages)) {
 		reason := goal.StalledReason(m.goal.Replies.Count())
 		m.goal.Clear()
 		m.goalGen++
-		m.messages = append(m.messages, types.Message{
-			Role:    types.RoleAssistant,
-			Content: []types.ContentBlock{{Type: types.BlockText, Text: goal.StoppedPrefix + reason + ")"}},
-		})
+		m.messages = append(m.messages, assistantText(goal.StoppedPrefix+reason+")"))
 		return m, m.flush()
 	}
 	cond := m.goal.Condition
-	notice := lipgloss.NewStyle().Foreground(fgOyster).Italic(true).
-		Render("goal not met (" + msg.v.Reason + ") — continuing")
-	flushed := m.scroll.print(notice)
+	flushed := m.scroll.print(dimItalic.Render("goal not met (" + msg.v.Reason + ") — continuing"))
 	nm, subCmd := m.submit(goal.Continuation(cond, msg.v.Reason))
 	return nm, tea.Batch(flushed, subCmd)
 }
