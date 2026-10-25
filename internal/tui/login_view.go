@@ -15,7 +15,7 @@ func (p *LoginPane) View(width, height int) string {
 		return ""
 	}
 	if p.inputting {
-		return p.viewInput(width, height)
+		return p.viewInput(width)
 	}
 	title := paneTitle("⬢ Login")
 
@@ -51,7 +51,7 @@ func (p *LoginPane) View(width, height int) string {
 }
 
 // viewInput renders the api-key entry sub-mode.
-func (p *LoginPane) viewInput(width, height int) string {
+func (p *LoginPane) viewInput(width int) string {
 	title := paneTitle("⬢ Login · " + p.inputFor)
 	var b strings.Builder
 	b.WriteString(title)

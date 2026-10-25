@@ -17,19 +17,11 @@ import (
 // AgentView is the multi-bee management pane (Left arrow / Ctrl+H).
 // List + peek + inline reply. Refreshes every tick so live bg bees update.
 type AgentView struct {
-	rows     []AgentRow
+	rows     []bgreg.Status
 	selected int
 	reply    textinput.Model
 	err      string
 	visible  bool
-}
-
-type AgentRow struct {
-	SessionID    string
-	State        bgreg.State
-	Task         string
-	LastResponse string
-	Updated      time.Time
 }
 
 type AttachSessionMsg struct{ ID string }
@@ -44,10 +36,10 @@ func NewAgentView() *AgentView {
 	return &AgentView{reply: ti}
 }
 
-func (a *AgentView) Open()            { a.visible = true; a.reply.Focus(); a.Refresh() }
-func (a *AgentView) Close()           { a.visible = false; a.reply.Blur() }
-func (a *AgentView) IsOpen() bool     { return a.visible }
-func (a *AgentView) Rows() []AgentRow { return a.rows }
+func (a *AgentView) Open()                { a.visible = true; a.reply.Focus(); a.Refresh() }
+func (a *AgentView) Close()               { a.visible = false; a.reply.Blur() }
+func (a *AgentView) IsOpen() bool         { return a.visible }
+func (a *AgentView) Rows() []bgreg.Status { return a.rows }
 
 func (a *AgentView) Refresh() {
 	statuses, err := bgreg.List()
@@ -58,16 +50,7 @@ func (a *AgentView) Refresh() {
 	a.err = ""
 	// a reply to an agent whose process already exited has nobody to read it
 	agents.WakeWaiting(statuses)
-	a.rows = a.rows[:0]
-	for _, s := range statuses {
-		a.rows = append(a.rows, AgentRow{
-			SessionID:    s.SessionID,
-			State:        s.State,
-			Task:         s.Task,
-			LastResponse: s.LastResponse,
-			Updated:      s.UpdatedAt,
-		})
-	}
+	a.rows = statuses
 	if a.selected >= len(a.rows) {
 		a.selected = 0
 	}
@@ -160,7 +143,7 @@ func (a *AgentView) Render(width, height int) string {
 				marker,
 				fmt.Sprintf("%-40s", truncateRunes(r.Task, 40)),
 				stateLabel(r.State),
-				humanAgeShort(r.Updated),
+				humanAgeShort(r.UpdatedAt),
 				shortName(r.SessionID),
 			))
 		}

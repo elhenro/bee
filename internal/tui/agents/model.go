@@ -174,18 +174,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m = m.refresh()
+		cmd := tickCmd()
 		if m.picker != nil && m.picker.Active() {
-			newP, cmd := m.picker.Update(msg)
-			m.picker = newP
-			if m.exitReq {
-				return m, tea.Quit
-			}
-			return m, tea.Batch(tickCmd(), cmd)
+			var pc tea.Cmd
+			m.picker, pc = m.picker.Update(msg)
+			cmd = tea.Batch(cmd, pc)
 		}
 		if m.exitReq {
 			return m, tea.Quit
 		}
-		return m, tickCmd()
+		return m, cmd
 
 	case refreshMsg:
 		m = m.refresh()
@@ -226,8 +224,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if m.picker != nil && m.picker.Active() {
-			newP, cmd := m.picker.Update(msg)
-			m.picker = newP
+			var cmd tea.Cmd
+			m.picker, cmd = m.picker.Update(msg)
 			return m, cmd
 		}
 		// settings pane claims keys while open; everything else flows through.

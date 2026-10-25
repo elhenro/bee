@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -23,10 +22,6 @@ type modelItem struct {
 	id      string
 	display string
 	desc    string
-}
-
-func defaultLister(ctx context.Context, name string, cfg config.ProviderConfig) ([]llm.Model, error) {
-	return llm.ListModels(ctx, name, cfg)
 }
 
 // FuzzyAll runs fuzzy.Find on a pool, or returns pool-order matches when the

@@ -102,7 +102,7 @@ func NewPicker(cfg config.Config) *Picker {
 	return &Picker{
 		cfg:              cfg,
 		styles:           DefaultStyles(),
-		lister:           defaultLister,
+		lister:           llm.ListModels,
 		focus:            colProviders,
 		providers:        buildProviderList(cfg),
 		modelsByProvider: map[string][]modelItem{},
