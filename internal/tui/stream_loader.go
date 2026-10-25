@@ -3,8 +3,8 @@ package tui
 import (
 	"math/rand"
 	"os"
+	"slices"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -13,7 +13,8 @@ import (
 // row: one spinner line with elapsed time, token figures and the interrupt
 // hint (see RenderSpinner). Every other value pins a braille animation
 // (BEE_LOADER=<name>): a single painter, the phased pipeline that evolves
-// the longer the wait runs, or the token-stream strip.
+// the longer the wait runs, or the token-stream strip. Pulse..WaggleRun follow
+// the order of brailleNamedPainters, which painterFor and the "random" pick index.
 type LoaderStyle int
 
 const (
@@ -46,96 +47,73 @@ const (
 	LoaderStyleQueen                        // queen + 4 attendants procession
 	LoaderStyleDrip                         // fat honey droplet + accumulating pool
 	LoaderStyleMarathon                     // bees racing toward finish line
+	LoaderStyleWaggleRun                    // all bees running left→right, waggle wobble
 	LoaderStylePhased                       // pulse → swarm → orbit → ripple → starfield, by wait time
 	LoaderStyleStrip                        // particle token stream + live in/out readout
-	LoaderStyleWaggleRun                    // all bees running left→right, waggle wobble
 )
 
-// ParseLoaderStyle maps BEE_LOADER values to a style. Unset / unknown → the
-// busy-row spinner. Legacy aliases (swarm/comb/dance/drip) map to their
-// nearest braille equivalent so old configs keep working.
-func ParseLoaderStyle(s string) LoaderStyle {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "default", "spinner", "auto":
-		return LoaderStyleDefault
-	case "phased", "braille":
-		return LoaderStylePhased
-	case "strip", "stream", "tokens":
-		return LoaderStyleStrip
-	case "swarm", "bee", "bees":
-		return LoaderStyleSwarm
-	case "pulse", "bee-flap":
-		return LoaderStylePulse
-	case "wave", "comb": // comb is a legacy alias from the old ASCII era
-		return LoaderStyleWave
-	case "comet", "trail":
-		return LoaderStyleComet
-	case "hex", "hexagon":
-		return LoaderStyleHex
-	case "ripple", "rings":
-		return LoaderStyleRipple
-	case "rain", "drip", "honey": // drip/honey are legacy aliases
-		return LoaderStyleRain
-	case "orbit", "dance", "waggle": // dance/waggle are legacy aliases
-		return LoaderStyleOrbit
-	case "breath", "breathe":
-		return LoaderStyleBreath
-	case "stars", "starfield", "cosmic":
-		return LoaderStyleStars
-	case "forage", "hive", "foraging":
-		return LoaderStyleForage
-	case "figure8", "fig8", "lemniscate":
-		return LoaderStyleFigure8
-	case "vortex", "spin", "tornado":
-		return LoaderStyleVortex
-	case "gust", "wind", "breeze":
-		return LoaderStyleGust
-	case "scatter", "alarm", "disperse":
-		return LoaderStyleScatter
-	case "flock", "cluster", "boids":
-		return LoaderStyleFlock
-	case "dna", "helix", "double-helix":
-		return LoaderStyleDNA
-	case "matrix", "cascade", "rain2":
-		return LoaderStyleMatrix
-	case "heartbeat", "ekg", "pulse-line":
-		return LoaderStyleHeartbeat
-	case "lightning", "bolt", "strike":
-		return LoaderStyleLightning
-	case "snake", "serpent", "chase":
-		return LoaderStyleSnake
-	case "fireworks", "burst", "explosion":
-		return LoaderStyleFireworks
-	case "drunk", "tipsy", "fermented":
-		return LoaderStyleDrunk
-	case "jar", "trapped", "stuck":
-		return LoaderStyleJar
-	case "conga", "line", "party":
-		return LoaderStyleConga
-	case "queen", "royal", "procession":
-		return LoaderStyleQueen
-	case "drip2", "droplet", "honey-drop":
-		return LoaderStyleDrip
-	case "marathon", "race", "finish":
-		return LoaderStyleMarathon
-	case "wagglerun", "run", "directed":
-		return LoaderStyleWaggleRun
-	case "random", "rand", "?":
-		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		return LoaderStyle(1 + r.Intn(len(brailleNamedPainters)))
-	default:
-		return LoaderStyleDefault
-	}
+// spellings besides a painter's own name that BEE_LOADER accepts; swarm/comb/
+// dance/drip and a few more are legacy aliases that map to their nearest
+// braille equivalent so old configs keep working
+var loaderAliases = map[LoaderStyle]string{
+	LoaderStyleDefault:   "default spinner auto",
+	LoaderStylePhased:    "phased braille",
+	LoaderStyleStrip:     "strip stream tokens",
+	LoaderStylePulse:     "bee-flap",
+	LoaderStyleSwarm:     "bee bees",
+	LoaderStyleWave:      "comb",
+	LoaderStyleComet:     "trail",
+	LoaderStyleHex:       "hexagon",
+	LoaderStyleRipple:    "rings",
+	LoaderStyleRain:      "drip honey",
+	LoaderStyleOrbit:     "dance waggle",
+	LoaderStyleBreath:    "breathe",
+	LoaderStyleStars:     "starfield cosmic",
+	LoaderStyleForage:    "hive foraging",
+	LoaderStyleFigure8:   "fig8 lemniscate",
+	LoaderStyleVortex:    "spin tornado",
+	LoaderStyleGust:      "wind breeze",
+	LoaderStyleScatter:   "alarm disperse",
+	LoaderStyleFlock:     "cluster boids",
+	LoaderStyleDNA:       "helix double-helix",
+	LoaderStyleMatrix:    "cascade rain2",
+	LoaderStyleHeartbeat: "ekg pulse-line",
+	LoaderStyleLightning: "bolt strike",
+	LoaderStyleSnake:     "serpent chase",
+	LoaderStyleFireworks: "burst explosion",
+	LoaderStyleDrunk:     "tipsy fermented",
+	LoaderStyleJar:       "trapped stuck",
+	LoaderStyleConga:     "line party",
+	LoaderStyleQueen:     "royal procession",
+	LoaderStyleDrip:      "droplet honey-drop",
+	LoaderStyleMarathon:  "race finish",
+	LoaderStyleWaggleRun: "run directed",
 }
 
-// envLoaderStyle reads BEE_LOADER lazily so tests can override per-call by
-// setting the env var before NewStreamRenderer. Indirected for clarity.
-func envLoaderStyle() string { return os.Getenv("BEE_LOADER") }
+// ParseLoaderStyle maps BEE_LOADER values to a style: a painter name, an
+// alias or "random". Unset / unknown → the busy-row spinner.
+func ParseLoaderStyle(s string) LoaderStyle {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "random" || s == "rand" || s == "?" {
+		return LoaderStyle(1 + rand.Intn(len(brailleNamedPainters)))
+	}
+	for i, p := range brailleNamedPainters {
+		if p.name == s {
+			return LoaderStyle(i + 1)
+		}
+	}
+	for style, names := range loaderAliases {
+		if slices.Contains(strings.Fields(names), s) {
+			return style
+		}
+	}
+	return LoaderStyleDefault
+}
 
 // SetLoader applies the configured loader name (tui.loader); BEE_LOADER, when
 // set, wins so a one-off launch can still try another style.
 func (r *StreamRenderer) SetLoader(name string) {
-	if env := envLoaderStyle(); env != "" {
+	if env := os.Getenv("BEE_LOADER"); env != "" {
 		name = env
 	}
 	r.loaderStyle = ParseLoaderStyle(name)
@@ -151,10 +129,7 @@ func (r *StreamRenderer) SetLoader(name string) {
 // LoaderStyleSwarm full-width loader, just shrunk to caret size.
 // pulseStyle alternates color so motion is visible on dim terminals.
 func (r *StreamRenderer) animatedCaret(frame int) string {
-	nf := frame
-	if nf < 0 {
-		nf = -nf
-	}
+	nf := max(frame, -frame)
 	return r.pulseStyle(nf).Render(renderBrailleCaretSwarm(nf))
 }
 
@@ -183,27 +158,18 @@ func (r *StreamRenderer) loaderCells() int {
 	if !r.compact {
 		prefix++ // outer gutter
 	}
-	cells := r.width - prefix
-	if cells < brailleLoaderMinCells {
-		cells = brailleLoaderMinCells
-	}
-	return cells
+	return max(r.width-prefix, brailleLoaderMinCells)
 }
 
 // renderLoader draws the streaming-wait animation. The default style is the
 // token-stream strip (particle stream + live in/out readout); named styles
 // are braille painters. Output is always single-row, ~r.width chars wide.
 func (r *StreamRenderer) renderLoader(frame int) string {
-	nf := frame
-	if nf < 0 {
-		nf = -nf
-	}
+	nf := max(frame, -frame)
 	if r.isStripLoader() {
 		return r.tokenStripInner(nf)
 	}
-	cells := r.loaderCells()
-	painter := r.painterFor(nf)
-	art := painter(nf, cells)
+	art := r.painterFor(nf)(nf, r.loaderCells())
 	return r.pulseStyle(nf).Render(art)
 }
 
@@ -243,22 +209,15 @@ func (r *StreamRenderer) tokenStripInner(nf int) string {
 		streamCells = brailleLoaderMinCells
 	}
 
-	stats := r.loaderStats
+	tail := ""
+	if readout != "" {
+		tail = "  " + r.styles.Dim.Render(readout)
+	}
 	if !r.showLoader {
 		// motion suppressed — static marker + figures, numbers still live.
-		marker := r.styles.RoleBee.Render("⬢")
-		if readout == "" {
-			return marker
-		}
-		return marker + "  " + r.styles.Dim.Render(readout)
+		return r.styles.RoleBee.Render("⬢") + tail
 	}
-
-	art := renderTokenStream(stats, nf, streamCells)
-	body := r.pulseStyle(nf).Render(art)
-	if readout == "" {
-		return body
-	}
-	return body + "  " + r.styles.Dim.Render(readout)
+	return r.pulseStyle(nf).Render(renderTokenStream(r.loaderStats, nf, streamCells)) + tail
 }
 
 // RenderTokenStrip returns the persistent token strip for the active turn,
@@ -269,11 +228,7 @@ func (r *StreamRenderer) RenderTokenStrip(frame int) string {
 	if !r.isStripLoader() {
 		return ""
 	}
-	nf := frame
-	if nf < 0 {
-		nf = -nf
-	}
-	inner := r.tokenStripInner(nf)
+	inner := r.tokenStripInner(max(frame, -frame))
 	if r.compact {
 		return inner
 	}
@@ -284,68 +239,10 @@ func (r *StreamRenderer) RenderTokenStrip(frame int) string {
 // default style returns the phase-appropriate painter for the current
 // frame; named styles return their pinned painter.
 func (r *StreamRenderer) painterFor(nf int) func(frame, cells int) string {
-	switch r.loaderStyle {
-	case LoaderStylePulse:
-		return renderBraillePulse
-	case LoaderStyleSwarm:
-		return renderBrailleSwarm
-	case LoaderStyleWave:
-		return renderBrailleWave
-	case LoaderStyleComet:
-		return renderBrailleComet
-	case LoaderStyleHex:
-		return renderBrailleHex
-	case LoaderStyleRipple:
-		return renderBrailleRipple
-	case LoaderStyleRain:
-		return renderBrailleRain
-	case LoaderStyleOrbit:
-		return renderBrailleOrbit
-	case LoaderStyleBreath:
-		return renderBrailleBreath
-	case LoaderStyleStars:
-		return renderBrailleStarfield
-	case LoaderStyleForage:
-		return renderBrailleForage
-	case LoaderStyleFigure8:
-		return renderBrailleFigure8
-	case LoaderStyleVortex:
-		return renderBrailleVortex
-	case LoaderStyleGust:
-		return renderBrailleGust
-	case LoaderStyleScatter:
-		return renderBrailleScatter
-	case LoaderStyleFlock:
-		return renderBrailleFlock
-	case LoaderStyleDNA:
-		return renderBrailleDNA
-	case LoaderStyleMatrix:
-		return renderBrailleMatrix
-	case LoaderStyleHeartbeat:
-		return renderBrailleHeartbeat
-	case LoaderStyleLightning:
-		return renderBrailleLightning
-	case LoaderStyleSnake:
-		return renderBrailleSnake
-	case LoaderStyleFireworks:
-		return renderBrailleFireworks
-	case LoaderStyleDrunk:
-		return renderBrailleDrunk
-	case LoaderStyleJar:
-		return renderBrailleJar
-	case LoaderStyleConga:
-		return renderBrailleConga
-	case LoaderStyleQueen:
-		return renderBrailleQueen
-	case LoaderStyleDrip:
-		return renderBrailleDrip
-	case LoaderStyleMarathon:
-		return renderBrailleMarathon
-	case LoaderStyleWaggleRun:
-		return renderBrailleWaggleRun
-	default:
-		return braillePhaseFor(nf)
+	if i := int(r.loaderStyle) - 1; i >= 0 && i < len(brailleNamedPainters) {
+		return brailleNamedPainters[i].fn
 	}
+	return braillePhaseFor(nf)
 }
 
 // compactPainters lists the three /compact swarm animations. One is
@@ -362,18 +259,11 @@ var compactPainters = []func(frame, cells int) string{
 // "generating" loaders so memory-being-squeezed reads as live bees, not
 // a static bar. The variant is rolled on frame 0 per run.
 func (r *StreamRenderer) RenderCompacting(frame int) string {
-	nf := frame
-	if nf < 0 {
-		nf = -nf
-	}
+	nf := max(frame, -frame)
 	if nf == 0 {
 		r.compactingVariant = rand.Intn(len(compactPainters))
 	}
-	if r.compactingVariant < 0 || r.compactingVariant >= len(compactPainters) {
-		r.compactingVariant = 0
-	}
-	cells := r.loaderCells()
-	art := compactPainters[r.compactingVariant](nf, cells)
+	art := compactPainters[r.compactingVariant](nf, r.loaderCells())
 	body := r.styles.RoleBee.Render("⬢") + " " + r.pulseStyle(nf).Render(art)
 	if r.compact {
 		return body

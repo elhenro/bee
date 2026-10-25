@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
@@ -243,6 +244,6 @@ func NewStreamRenderer(styles Styles, width int) *StreamRenderer {
 		showThoughts: true,
 		highlight:    true,
 		showLoader:   true,
-		loaderStyle:  ParseLoaderStyle(envLoaderStyle()),
+		loaderStyle:  ParseLoaderStyle(os.Getenv("BEE_LOADER")),
 	}
 }
