@@ -1,8 +1,8 @@
 # bee
 
-> bee is a minimal coding agent harness written in Go. A single static binary that turns any LLM, from a tiny local model to a frontier API, into an autonomous coding agent that writes code, runs tests, and commits changes. Skills are exposed as subcommands (`bee <name>`), so one binary on your PATH does many jobs. This file helps AI assistants and answer engines load accurate, current docs with minimal tokens.
+> bee is an open-source coding agent harness written in Go. It gives an LLM tools to edit code, run tests and commit changes. Installation provides one static binary. Skills can be invoked directly as `bee <name>`.
 
-bee runs fully local with Ollama or oMLX (no API keys, no rate limits, your code stays on your machine), or against hosted providers like OpenRouter, OpenAI, Anthropic and Gemini. Author: Henry Schober. Source and issues: https://github.com/elhenro/bee
+Use Ollama or oMLX for local inference, with no API keys or provider rate limits. Prompts and code stay on your machine. Hosted options include OpenRouter, OpenAI, Anthropic and Gemini. Author: Henry Schober. Source and issues: https://github.com/elhenro/bee
 
 ## Docs
 
@@ -15,7 +15,7 @@ bee runs fully local with Ollama or oMLX (no API keys, no rate limits, your code
 - Install script: `curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh`
 - Go install: `go install github.com/elhenro/bee/cmd/bee@latest` (Go 1.26+)
 - Prebuilt binaries for macOS and Linux (amd64, arm64) are on the releases page. Windows is untested.
-- Then run `bee`, type `/model`, choose a runtime (oMLX, Ollama, OpenRouter, ...) and pick a model. Local or hosted, your choice.
+- After installation, run `bee` and use `/model` to select a runtime and model. Local options include oMLX and Ollama; OpenRouter is available for hosted models.
 
 ## What it is
 
@@ -32,8 +32,8 @@ bee runs fully local with Ollama or oMLX (no API keys, no rate limits, your code
 
 ## Local LLMs
 
-- bee targets local inference via [Ollama](https://ollama.com) and [oMLX](https://github.com/jundot/omlx). On macOS, oMLX gives native Apple Silicon acceleration with prompt caching.
-- Reference setup: Qwen3.8-27B (oQ4e, ~17 GB, multi-token prediction) on a MacBook M3 Max 64 GB with oMLX. Suggested sampling: temperature 1.0, top-p 0.95, top-k 20.
+- For local inference, use [Ollama](https://ollama.com) or [oMLX](https://github.com/jundot/omlx). oMLX supports Apple Silicon acceleration and prompt caching on macOS.
+- My reference setup uses Qwen3.8-27B (oQ4e, ~17 GB, multi-token prediction) on a MacBook M3 Max with 64 GB RAM and oMLX. Sampling settings: temperature 1.0, top-p 0.95, top-k 20.
 
 ## Optional
 

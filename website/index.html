@@ -85,7 +85,7 @@
     <div class="wrap">
       <p class="eyebrow"><span class="hex-dot"></span>Open source coding agent · Pure Go · MIT</p>
       <h1 id="top">Tiny but <em>mighty</em>.</h1>
-      <p class="lede">bee is a coding agent harness in a single Go binary. It writes code, runs your tests and commits, on a 4k-context local model or a frontier API. Same workflow, your choice.</p>
+      <p class="lede">bee is a coding agent harness shipped as one Go binary. Give it a task and it can edit code, run tests and commit changes. Use a 4k-context model on your machine or connect a hosted API. The workflow stays the same.</p>
       <div class="cta">
         <div class="cmd">
           <span class="prompt">$</span>
@@ -119,26 +119,26 @@
       <div class="head">
         <span class="kicker">Why bee</span>
         <h2 id="why-h">Three ideas, <em>one binary</em>.</h2>
-        <p>Built for the small end of the model range, without giving up the big end.</p>
+        <p>The same tools work with small local models and larger hosted models.</p>
       </div>
       <div class="grid three">
         <article class="card">
           <div class="hex">4k</div>
           <h3>Tiny-context friendly</h3>
-          <p>A token-budgeted system prompt, tool docs and tool output, with lazy top-k memory. There are no profiles: every model gets the same defaults, and lowering a few budgets in your config fits a 4k-context Ollama model. When the window fills, bee compacts the history.</p>
+          <p>bee limits the tokens spent on its system prompt, tool docs, tool output and memory. Memories are loaded only when relevant. There are no model profiles to manage; for a 4k-context Ollama model, lower a few budgets in your config. Long sessions compact older history.</p>
         </article>
         <article class="card">
           <div class="hex">&gt;_</div>
           <h3>Skills are subcommands</h3>
-          <p>Drop a markdown file in <code>~/.bee/skills</code> and run it as <code>bee &lt;name&gt;</code>. One binary on your PATH, no shell shims, from any directory in any shell.</p>
+          <p>Put a markdown file in <code>~/.bee/skills</code>, then invoke it with <code>bee &lt;name&gt;</code>. It works from any directory and shell. bee remains the only executable you need on your PATH.</p>
         </article>
         <article class="card">
           <div class="hex">fn</div>
           <h3>Skills are agent endpoints</h3>
-          <p>Skills come as a prompt, a command or a recipe. A command skill is also a tool the model can call mid-task. A recipe runs its shell and tool steps in Go, so only the steps that need a model spend tokens.</p>
+          <p>A skill can contain a prompt, an executable command or a multi-step recipe. Executable skills are available to the model as tools during a task. Recipes handle shell and tool steps in Go; the model is called only for steps that need one.</p>
         </article>
       </div>
-      <p class="note">Plus loop detection, nudges for models that stall, and a sandbox with approval gates for risky commands.</p>
+      <p class="note">Also included: loop detection, recovery nudges when a model stalls, sandboxing and approval prompts for risky commands.</p>
     </div>
   </section>
 
@@ -147,33 +147,33 @@
       <div class="head">
         <span class="kicker">The colony</span>
         <h2 id="colony-h">More than <em>one bee</em>.</h2>
-        <p>Roles, a hive and an overnight loop live in the same binary. None of it is required.</p>
+        <p>The binary also includes agent roles, parallel workers and an unattended overnight mode. Use them when you need them.</p>
       </div>
       <div class="grid three">
         <article class="card small">
           <h3><span class="hex-dot"></span>Three roles</h3>
-          <p><code>worker</code> does the job, <code>scout</code> researches read-only with web search, <code>queen</code> splits a big task over a hive. Cycle them with shift+tab.</p>
+          <p><code>worker</code> edits files and runs commands. <code>scout</code> handles read-only research, including web search. <code>queen</code> divides larger tasks among hive workers. Press shift+tab to switch roles.</p>
         </article>
         <article class="card small">
           <h3><span class="hex-dot"></span>A hive that stays aligned</h3>
-          <p>Workers share a pheromone card (the goal, the plan and one status row per sibling) instead of chatting. A worker that dies leaves a death report, not a bare error.</p>
+          <p>Each worker receives a pheromone card with the shared goal, plan and status of the other workers. If a worker stops unexpectedly, its report includes context about the work already done.</p>
         </article>
         <article class="card small">
           <h3><span class="hex-dot"></span>Parallel agents</h3>
-          <p><code>bee agents</code> gives every task its own git worktree. Finished branches are rebased, run through your verify gate and fast-forwarded onto main.</p>
+          <p><code>bee agents</code> runs each task in a separate git worktree. When a task finishes, bee rebases its branch, runs your verify gate and fast-forwards main.</p>
         </article>
         <article class="card small">
           <h3><span class="hex-dot"></span>Overnight loop</h3>
-          <p><code>bee zzz</code> makes one small change per iteration, then commits or rolls back. Wake up to a branch of small, revertable commits.</p>
+          <p><code>bee zzz</code> works in small iterations. Each iteration ends in a commit or rollback, leaving a branch that is easy to inspect and revert.</p>
           <div class="legend" aria-label="Ledger symbols"><span>🌼 committed</span><span>🍃 noop</span><span>🥀 reset</span><span>💥 failed</span></div>
         </article>
         <article class="card small">
           <h3><span class="hex-dot"></span>Procedure memory</h3>
-          <p>When bee repeats the same read-only route, it crystallizes it into a runnable shortcut called a waggle. Fewer round trips, which matters most for small local models.</p>
+          <p>bee notices repeated read-only tool sequences and saves them as runnable shortcuts called waggles. Replaying a route avoids extra model round trips, which is especially useful with small local models.</p>
         </article>
         <article class="card small">
           <h3><span class="hex-dot"></span>Review aids</h3>
-          <p><code>bee explain</code> lists what each request changed and why. <code>bee quiz</code> makes you guess the reason first. Learn the codebase while the agent works in it.</p>
+          <p>Use <code>bee explain</code> to review the files changed by each request and their recorded reasons. <code>bee quiz</code> hides a reason until you make a guess. Both help you follow the agent's work and learn the codebase.</p>
         </article>
       </div>
     </div>
@@ -184,7 +184,7 @@
       <div class="head">
         <span class="kicker">Screens</span>
         <h2 id="screens-h">See it <em>work</em>.</h2>
-        <p>Captures of the current terminal UI, from real sessions.</p>
+        <p>Screenshots from the current terminal UI and real coding sessions.</p>
       </div>
       <div data-gallery>
         <div class="tabs" role="tablist" aria-label="Screenshots">
@@ -197,19 +197,19 @@
         <div class="panels">
           <figure class="panel active" role="tabpanel" id="panel-done" aria-labelledby="tab-done">
             <div class="stage"><div class="window"><img src="/assets/shot-done.webp" width="1838" height="1438" alt="bee after fixing a failing test: a red test run, a one-line diff in green and red, a passing test run, the answer and a change summary" decoding="async"></div></div>
-            <figcaption><strong>A task, start to finish.</strong> bee runs the tests, reads the code, patches one line, runs the tests again and lists what changed. Every call is a card, every edit is a diff.</figcaption>
+            <figcaption><strong>A task, start to finish.</strong> bee runs the tests, reads the code, changes one line and runs the tests again. Tool calls appear as cards; edits appear as diffs. The final response includes a change summary.</figcaption>
           </figure>
           <figure class="panel" role="tabpanel" id="panel-work" aria-labelledby="tab-work">
             <div class="stage"><div class="window"><img src="/assets/shot-work.webp" width="1838" height="1438" alt="bee mid-task with a one-line diff on screen and a spinner reading Foraging with live token counts" loading="lazy" decoding="async"></div></div>
-            <figcaption><strong>Watch it work.</strong> A live spinner with token counts. Press <code>esc</code> to interrupt at any moment.</figcaption>
+            <figcaption><strong>Watch it work.</strong> Token counts update while bee works. Press <code>esc</code> whenever you want to interrupt.</figcaption>
           </figure>
           <figure class="panel" role="tabpanel" id="panel-models" aria-labelledby="tab-models">
             <div class="stage"><div class="window"><img src="/assets/shot-models.webp" width="1838" height="1208" alt="The model picker listing local Qwen models served by oMLX" loading="lazy" decoding="async"></div></div>
-            <figcaption><strong>Any model on your machine.</strong> Press <code>ctrl+p</code>, pick a provider, then a model. bee asks your local server what it has.</figcaption>
+            <figcaption><strong>Any model on your machine.</strong> Open <code>ctrl+p</code>, choose a provider, then choose one of the models reported by your local server.</figcaption>
           </figure>
           <figure class="panel" role="tabpanel" id="panel-skills" aria-labelledby="tab-skills">
             <div class="stage"><div class="window"><img src="/assets/shot-skills.webp" width="1838" height="1208" alt="The slash menu listing commands and skills together" loading="lazy" decoding="async"></div></div>
-            <figcaption><strong>Commands and skills in one list.</strong> Type <code>/</code> for commands. Skills are markdown files in <code>~/.bee/skills</code> and also run as <code>bee &lt;name&gt;</code>.</figcaption>
+            <figcaption><strong>Commands and skills in one list.</strong> Type <code>/</code> to open the command list. Skills live in <code>~/.bee/skills</code> and can also be invoked directly with <code>bee &lt;name&gt;</code>.</figcaption>
           </figure>
           <figure class="panel" role="tabpanel" id="panel-light" aria-labelledby="tab-light">
             <div class="stage"><div class="window"><img src="/assets/shot-light.webp" width="1838" height="1438" alt="The same task in a light terminal theme" loading="lazy" decoding="async"></div></div>
@@ -246,13 +246,13 @@
         <li>
           <div>
             <h3>Pick a model</h3>
-            <p>Run <code>bee</code>, type <code>/model</code>, choose a runtime (oMLX, Ollama, LM Studio, OpenRouter) and a model. Local or hosted, your choice.</p>
+            <p>Start <code>bee</code>, open <code>/model</code>, then select a runtime and model. Local options include oMLX, Ollama and LM Studio; hosted providers include OpenRouter.</p>
           </div>
         </li>
         <li>
           <div>
             <h3>Hand it a job</h3>
-            <p>Talk to it in the terminal UI, or run it headless. Everything else is a subcommand.</p>
+            <p>Use the interactive terminal UI or <code>bee run</code> for headless jobs. Additional workflows are available as subcommands.</p>
 <pre class="term"><span class="p">$</span> <b>bee</b> criticize plan.md            <span class="c"># a skill is a subcommand</span>
 <span class="p">$</span> <b>bee</b> run "lint cmd/"              <span class="c"># headless, pipeable</span>
 <span class="p">$</span> <b>bee</b> swarm "migrate auth to jwt"  <span class="c"># queen plans, workers build</span>
@@ -273,8 +273,8 @@
           <span class="kicker">Local first</span>
           <h2 id="models-h">Made for <em>local models</em>.</h2>
         </div>
-        <p>bee works well with <a href="https://ollama.com">Ollama</a> and <a href="https://github.com/jundot/omlx">oMLX</a>, so you keep control. <strong>No API keys, no rate limits, your code stays on your machine.</strong></p>
-        <p>On macOS, oMLX adds native Apple Silicon acceleration with prompt caching, which keeps things fast and memory-efficient. For models that only read text, bee can route images through a small local vision model.</p>
+        <p>bee connects to <a href="https://ollama.com">Ollama</a> and <a href="https://github.com/jundot/omlx">oMLX</a> for local inference. You do not need an API key or hosted account, and there are no provider rate limits. <strong>Your prompts and code stay on your machine.</strong></p>
+        <p>On macOS, oMLX uses Apple Silicon acceleration and prompt caching to improve speed and memory efficiency. If your coding model accepts text only, bee can send images to a separate local vision model.</p>
         <ul class="pills" aria-label="Supported runtimes">
           <li><a href="https://github.com/jundot/omlx">oMLX</a></li>
           <li><a href="https://ollama.com">Ollama</a></li>
@@ -284,7 +284,7 @@
       </div>
       <div class="rig">
         <h3>My setup</h3>
-        <p>MacBook M3 Max, 64 GB, serving through oMLX with multi-token prediction on. Qwen3.8-27B is the reference model. Sampling: temperature 1.0, top-p 0.95, top-k 20.</p>
+        <p>I use a MacBook M3 Max with 64 GB RAM. oMLX serves the models with multi-token prediction enabled, and Qwen3.8-27B is my reference. Sampling settings: temperature 1.0, top-p 0.95, top-k 20.</p>
         <table class="table">
           <thead><tr><th>Models I run</th><th>Size</th></tr></thead>
           <tbody>
@@ -306,43 +306,43 @@
       <div class="faq">
         <details>
           <summary>What is bee?</summary>
-          <p>bee is a minimal coding agent harness written in Go. It is a single static binary that turns any LLM into an autonomous agent which writes code, runs tests, and commits changes. There is no runtime to install and no daemon, just one executable on your PATH.</p>
+          <p>bee is an open-source coding agent harness written in Go. It gives an LLM tools to edit code, run tests and commit changes. Install one static executable; no language runtime or background daemon is required.</p>
         </details>
         <details>
           <summary>How do I install bee?</summary>
-          <p>Run <code>curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh</code>, or <code>go install github.com/elhenro/bee/cmd/bee@latest</code> if you have Go. Then run <code>bee</code>, type <code>/model</code>, choose a runtime such as oMLX, Ollama, or OpenRouter, and pick a model.</p>
+          <p>Run <code>curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh</code>. If you have Go, use <code>go install github.com/elhenro/bee/cmd/bee@latest</code> instead. After installation, start <code>bee</code> and use <code>/model</code> to select a runtime and model. Local options include oMLX and Ollama; OpenRouter is available for hosted models.</p>
         </details>
         <details>
           <summary>Can bee run fully local and offline?</summary>
-          <p>Yes. bee runs against local models through Ollama or oMLX, so there are no API keys, no rate limits, and your prompts and code stay on your machine. bee does check GitHub for updates once an hour, which you can switch off with <code>update_check = "off"</code>. On macOS, oMLX adds native Apple Silicon acceleration with prompt caching for fast, memory-efficient inference.</p>
+          <p>Connect bee to Ollama or oMLX and your prompts and code stay on your machine. No API key is required, and there are no provider rate limits. By default, bee checks GitHub for updates once per hour. Set <code>update_check = "off"</code> to disable that check. On macOS, oMLX provides Apple Silicon acceleration and prompt caching.</p>
         </details>
         <details>
           <summary>What hardware do I need to run bee locally?</summary>
-          <p>It scales to your machine. A MacBook M3 Max with 64 GB of RAM runs a 17 GB Qwen3.8-27B or a 22 GB 35B-A3B model with room to spare. Smaller models such as MiMo-V2.6 9B at 7 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start.</p>
+          <p>That depends on the model. On a MacBook M3 Max with 64 GB RAM, I run a 17 GB Qwen3.8-27B and a 22 GB 35B-A3B model. A 7 GB model such as MiMo-V2.6 9B needs much less memory. A modern laptop with 16 to 32 GB RAM is a reasonable place to start with smaller models.</p>
         </details>
         <details>
           <summary>Which models work well with bee?</summary>
-          <p>bee works from tiny local models to frontier APIs. The reference model is Qwen3.8-27B (oQ4e, with multi-token prediction) on oMLX; Ornith-1.5-35B-A3B and MiMo-V2.6 9B also run well here. For models that only read text, bee can route images through a small local vision model.</p>
+          <p>My local reference is Qwen3.8-27B (oQ4e, with multi-token prediction) on oMLX. I also run Ornith-1.5-35B-A3B and MiMo-V2.6 9B. bee supports hosted frontier APIs too. Text-only coding models can be paired with a small local vision model for image input.</p>
         </details>
         <details>
           <summary>What are bee skills?</summary>
-          <p>Skills are extra capabilities exposed as subcommands. You invoke them as <code>bee &lt;name&gt;</code>, so one binary on your PATH covers many jobs instead of a directory of separate scripts. This keeps installation to a single file while letting bee grow new abilities.</p>
+          <p>A skill is a markdown-defined capability you can run as <code>bee &lt;name&gt;</code>. You can add skills without putting more executables on your PATH or installing shell shims. Skills can provide prompts, commands or multi-step workflows.</p>
         </details>
         <details>
           <summary>Does bee work with hosted providers like OpenRouter?</summary>
-          <p>Yes. Besides local Ollama, oMLX and LM Studio, bee talks to OpenRouter, OpenAI, Anthropic and Gemini, signs in to a ChatGPT account over OAuth, and works with any OpenAI-compatible endpoint through a few lines of config. Switch at any time with the <code>/model</code> command, so you can mix local and cloud models.</p>
+          <p>bee supports OpenRouter, OpenAI, Anthropic and Gemini, plus any OpenAI-compatible endpoint configured in a few lines. It can also sign in to a ChatGPT account using OAuth. Use <code>/model</code> to move between local and hosted models.</p>
         </details>
         <details>
           <summary>Can bee run many agents at once, or overnight?</summary>
-          <p>Yes. <code>bee agents</code> starts each task in its own git worktree and merges finished branches back once the verify gate passes. <code>bee swarm</code> and <code>bee fan</code> spread one task over several bees, and <code>bee zzz</code> runs an overnight loop that makes one small change per iteration and commits or rolls back, so you wake up to small, revertable commits.</p>
+          <p><code>bee agents</code> isolates each task in its own git worktree and merges it after the verify gate passes. <code>bee swarm</code> and <code>bee fan</code> distribute work across several agents. For unattended work, <code>bee zzz</code> makes small changes and commits or rolls back after each iteration.</p>
         </details>
         <details>
           <summary>Does bee help me understand what it changed?</summary>
-          <p>Yes. bee asks the model for a one-line reason with every file change and shows it under the edit. <code>bee explain</code> lists what each request changed and why, and <code>bee quiz</code> makes you guess the reason before it shows you.</p>
+          <p>bee asks the model to record a one-line reason for every file change and shows it beside the edit. <code>bee explain</code> reviews changes by request, while <code>bee quiz</code> asks you to predict the reason before revealing it.</p>
         </details>
         <details>
           <summary>Is bee free and open source?</summary>
-          <p>Yes. bee is free and open source under the MIT license, with the full source, issues, and releases on GitHub at github.com/elhenro/bee. It is pure Go and ships as a single static binary for macOS and Linux (amd64 and arm64). Windows is untested.</p>
+          <p>bee is MIT-licensed, with source code, issues and releases at github.com/elhenro/bee. Releases provide pure-Go static binaries for macOS and Linux on amd64 and arm64. Windows is currently untested.</p>
         </details>
       </div>
     </div>
@@ -399,7 +399,7 @@
       "@type": ["SoftwareApplication", "SoftwareSourceCode"],
       "@id": "https://bee.hnr.bz/#software",
       "name": "bee",
-      "description": "A minimal coding agent harness written in Go. Turns any LLM, from a tiny local model to a frontier API, into an autonomous coding agent that writes code, runs tests, and commits changes. Skills are exposed as subcommands. Runs fully local with Ollama or oMLX, or against hosted providers like OpenRouter.",
+      "description": "An open-source coding agent harness written in Go. It gives an LLM tools to edit code, run tests and commit changes. Skills can be invoked as subcommands. bee supports local inference through Ollama and oMLX, as well as hosted providers such as OpenRouter.",
       "url": "https://bee.hnr.bz/",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux",
@@ -423,16 +423,16 @@
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    { "@type": "Question", "name": "What is bee?", "acceptedAnswer": { "@type": "Answer", "text": "bee is a minimal coding agent harness written in Go. It is a single static binary that turns any LLM into an autonomous agent which writes code, runs tests, and commits changes. There is no runtime to install and no daemon, just one executable on your PATH." } },
-    { "@type": "Question", "name": "How do I install bee?", "acceptedAnswer": { "@type": "Answer", "text": "Run curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh, or go install github.com/elhenro/bee/cmd/bee@latest if you have Go. Then run bee, type /model, choose a runtime such as oMLX, Ollama, or OpenRouter, and pick a model." } },
-    { "@type": "Question", "name": "Can bee run fully local and offline?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee runs against local models through Ollama or oMLX, so there are no API keys, no rate limits, and your prompts and code stay on your machine. bee does check GitHub for updates once an hour, which you can switch off with update_check = \"off\". On macOS, oMLX adds native Apple Silicon acceleration with prompt caching for fast, memory-efficient inference." } },
-    { "@type": "Question", "name": "What hardware do I need to run bee locally?", "acceptedAnswer": { "@type": "Answer", "text": "It scales to your machine. A MacBook M3 Max with 64 GB of RAM runs a 17 GB Qwen3.8-27B or a 22 GB 35B-A3B model with room to spare. Smaller models such as MiMo-V2.6 9B at 7 GB run on far less, so a modern laptop with 16 to 32 GB is enough to start." } },
-    { "@type": "Question", "name": "Which models work well with bee?", "acceptedAnswer": { "@type": "Answer", "text": "bee works from tiny local models to frontier APIs. The reference model is Qwen3.8-27B (oQ4e, with multi-token prediction) on oMLX; Ornith-1.5-35B-A3B and MiMo-V2.6 9B also run well here. For models that only read text, bee can route images through a small local vision model." } },
-    { "@type": "Question", "name": "What are bee skills?", "acceptedAnswer": { "@type": "Answer", "text": "Skills are extra capabilities exposed as subcommands. You invoke them as bee <name>, so one binary on your PATH covers many jobs instead of a directory of separate scripts. This keeps installation to a single file while letting bee grow new abilities." } },
-    { "@type": "Question", "name": "Does bee work with hosted providers like OpenRouter?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Besides local Ollama, oMLX and LM Studio, bee talks to OpenRouter, OpenAI, Anthropic and Gemini, signs in to a ChatGPT account over OAuth, and works with any OpenAI-compatible endpoint through a few lines of config. Switch at any time with the /model command, so you can mix local and cloud models." } },
-    { "@type": "Question", "name": "Can bee run many agents at once, or overnight?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee agents starts each task in its own git worktree and merges finished branches back once the verify gate passes. bee swarm and bee fan spread one task over several bees, and bee zzz runs an overnight loop that makes one small change per iteration and commits or rolls back, so you wake up to small, revertable commits." } },
-    { "@type": "Question", "name": "Does bee help me understand what it changed?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee asks the model for a one-line reason with every file change and shows it under the edit. bee explain lists what each request changed and why, and bee quiz makes you guess the reason before it shows you." } },
-    { "@type": "Question", "name": "Is bee free and open source?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. bee is free and open source under the MIT license, with the full source, issues, and releases on GitHub at github.com/elhenro/bee. It is pure Go and ships as a single static binary for macOS and Linux (amd64 and arm64). Windows is untested." } }
+    { "@type": "Question", "name": "What is bee?", "acceptedAnswer": { "@type": "Answer", "text": "bee is an open-source coding agent harness written in Go. It gives an LLM tools to edit code, run tests and commit changes. Install one static executable; no language runtime or background daemon is required." } },
+    { "@type": "Question", "name": "How do I install bee?", "acceptedAnswer": { "@type": "Answer", "text": "Run curl -fsSL https://raw.githubusercontent.com/elhenro/bee/main/install.sh | sh. If you have Go, use go install github.com/elhenro/bee/cmd/bee@latest instead. After installation, start bee and use /model to select a runtime and model. Local options include oMLX and Ollama; OpenRouter is available for hosted models." } },
+    { "@type": "Question", "name": "Can bee run fully local and offline?", "acceptedAnswer": { "@type": "Answer", "text": "Connect bee to Ollama or oMLX and your prompts and code stay on your machine. No API key is required, and there are no provider rate limits. By default, bee checks GitHub for updates once per hour. Set update_check = \"off\" to disable that check. On macOS, oMLX provides Apple Silicon acceleration and prompt caching." } },
+    { "@type": "Question", "name": "What hardware do I need to run bee locally?", "acceptedAnswer": { "@type": "Answer", "text": "That depends on the model. On a MacBook M3 Max with 64 GB RAM, I run a 17 GB Qwen3.8-27B and a 22 GB 35B-A3B model. A 7 GB model such as MiMo-V2.6 9B needs much less memory. A modern laptop with 16 to 32 GB RAM is a reasonable place to start with smaller models." } },
+    { "@type": "Question", "name": "Which models work well with bee?", "acceptedAnswer": { "@type": "Answer", "text": "My local reference is Qwen3.8-27B (oQ4e, with multi-token prediction) on oMLX. I also run Ornith-1.5-35B-A3B and MiMo-V2.6 9B. bee supports hosted frontier APIs too. Text-only coding models can be paired with a small local vision model for image input." } },
+    { "@type": "Question", "name": "What are bee skills?", "acceptedAnswer": { "@type": "Answer", "text": "A skill is a markdown-defined capability you can run as bee <name>. You can add skills without putting more executables on your PATH or installing shell shims. Skills can provide prompts, commands or multi-step workflows." } },
+    { "@type": "Question", "name": "Does bee work with hosted providers like OpenRouter?", "acceptedAnswer": { "@type": "Answer", "text": "bee supports OpenRouter, OpenAI, Anthropic and Gemini, plus any OpenAI-compatible endpoint configured in a few lines. It can also sign in to a ChatGPT account using OAuth. Use /model to move between local and hosted models." } },
+    { "@type": "Question", "name": "Can bee run many agents at once, or overnight?", "acceptedAnswer": { "@type": "Answer", "text": "bee agents isolates each task in its own git worktree and merges it after the verify gate passes. bee swarm and bee fan distribute work across several agents. For unattended work, bee zzz makes small changes and commits or rolls back after each iteration." } },
+    { "@type": "Question", "name": "Does bee help me understand what it changed?", "acceptedAnswer": { "@type": "Answer", "text": "bee asks the model to record a one-line reason for every file change and shows it beside the edit. bee explain reviews changes by request, while bee quiz asks you to predict the reason before revealing it." } },
+    { "@type": "Question", "name": "Is bee free and open source?", "acceptedAnswer": { "@type": "Answer", "text": "bee is MIT-licensed, with source code, issues and releases at github.com/elhenro/bee. Releases provide pure-Go static binaries for macOS and Linux on amd64 and arm64. Windows is currently untested." } }
   ]
 }
 </script>
