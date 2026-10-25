@@ -49,10 +49,7 @@ func effectiveStallTimeout() time.Duration {
 // only flush headers with the first token (slow prefill on a long prompt) are
 // alive, not stalled. A disabled watchdog leaves the wait to the ctx.
 func newStreamingClient() *http.Client {
-	headerWait := effectiveStallTimeout()
-	if headerWait < 0 {
-		headerWait = 0
-	}
+	headerWait := max(effectiveStallTimeout(), 0)
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,

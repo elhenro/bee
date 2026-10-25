@@ -199,17 +199,18 @@ func (a *ToolCallAccumulator) finalizeCall(p *partialCall) FinalizedCall {
 	args := map[string]any{}
 	var rawArgs, parseErr string
 	if len(rawBytes) > 0 {
-		if err := json.Unmarshal(rawBytes, &args); err != nil {
-			repaired, ok := repairToolArgs(rawBytes, !a.truncated)
-			if !ok {
-				rawArgs = string(p.Args)
-				parseErr = fmt.Sprintf("decode tool args for %s: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
-				args = map[string]any{}
-			} else if err := json.Unmarshal(repaired, &args); err != nil {
-				rawArgs = string(p.Args)
-				parseErr = fmt.Sprintf("decode tool args for %s after repair: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
-				args = map[string]any{}
+		err := json.Unmarshal(rawBytes, &args)
+		stage := ""
+		if err != nil {
+			if repaired, ok := repairToolArgs(rawBytes, !a.truncated); ok {
+				stage = " after repair"
+				err = json.Unmarshal(repaired, &args)
 			}
+		}
+		if err != nil {
+			rawArgs = string(p.Args)
+			parseErr = fmt.Sprintf("decode tool args for %s%s: %v (raw=%q)", p.Name, stage, err, truncForErr(p.Args))
+			args = map[string]any{}
 		}
 	}
 	StripMarkupInValues(args)

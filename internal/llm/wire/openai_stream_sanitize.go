@@ -45,17 +45,12 @@ func SanitizeToolName(raw string) string {
 	s = modelMarkupRe.ReplaceAllString(s, "")
 	s = bareDSMLRe.ReplaceAllString(s, "")
 	s = strings.TrimLeft(s, "\"' \t\r\n")
-	end := 0
-	for end < len(s) {
-		c := s[end]
-		isIdent := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') || c == '_' || c == '-'
-		if !isIdent {
-			break
-		}
-		end++
+	if end := strings.IndexFunc(s, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-')
+	}); end >= 0 {
+		s = s[:end]
 	}
-	return s[:end]
+	return s
 }
 
 // StripMarkupBytes removes DSML / stray closing tags from a raw byte slice
