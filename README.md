@@ -80,7 +80,7 @@ I've used claude code, codex, hermes, opencode, openclaw and pi. Each nails some
 2. **Skills are `bee <name>` subcommands.** Write a markdown file, get a command. No shell shims. `bee criticize plan.md` just works, from any directory, in any shell.
 3. **Skills are agent endpoints.** A prompt, an external command, an MCP server, or an HTTP endpoint. All four are equally callable tools the model can invoke mid-task. Plug a personal-life agent in as a sub-agent (bundled `hermes.md` is a template). No IPC dance.
 
-**It just works.** bee nudges models toward useful output, detects and breaks loops before they waste tokens, and handles the boring plumbing so you don't have to.
+**It just works.** bee nudges models toward useful output, breaks loops before they waste tokens, and handles the plumbing.
 
 ## Local models
 
@@ -115,11 +115,11 @@ Three roles control how the agent thinks and acts. Cycle with `shift+tab` in the
 
 Worker is the default workhorse. Scout is for "tell me what to do" before you commit. Queen for big multi-step tasks that benefit from parallel execution.
 
-Hive workers stay aligned the way a colony does, through shared state rather than chatter. Every worker carries a pheromone card in its prompt: the goal verbatim, the plan, and one status row per sibling, refreshed each turn as siblings finish. The card is mirrored to `~/.bee/sessions/hive/<id>.pheromone.md` so you can watch a run from another terminal; `bee swarm`, `bee fan` and the TUI queen all write one. Each worker also signs an exit contract: it is disposable, and only its `## report` block (status, did, left, next) survives to the queen. A worker that dies mid-task leaves a death report distilled from its transcript instead of a bare error.
+Hive workers stay aligned through shared state, not communication. Every worker carries a pheromone card in its prompt: the goal verbatim, the plan, and one status row per sibling, refreshed each turn as siblings finish. The card is mirrored to `~/.bee/sessions/hive/<id>.pheromone.md` so you can watch a run from another terminal; `bee swarm`, `bee fan` and the TUI queen all write one. Each worker also signs an exit contract: it is disposable, and only its `## report` block (status, did, left, next) survives to the queen. A worker that dies mid-task leaves a death report distilled from its transcript instead of a bare error.
 
 ## Handoff
 
-When a small model gets stuck, bee can hand off the task to a bigger model. Call `bee handoff` to generate a rescue brief. The original goal, a terse summary of what was tried, where it got stuck, and the last few turns verbatim. The bigger model takes over and finishes the job without re-reading confused history.
+When a small model gets stuck, bee can hand off the task to a bigger model. Call `bee handoff` to generate a rescue brief. The original goal, a terse summary of what was tried, where it got stuck, and the last few turns verbatim. The bigger model takes over and finishes the job without re-reading the stuck history.
 
 ## Subcommands
 
@@ -143,7 +143,7 @@ $ bee remote-control                # LAN web relay for remote control
 
 ## Procedure memory (waggle)
 
-bee watches its own read-only tool use (read, search, glob, ls) and, when it repeats the same route, crystallizes it into a runnable shortcut called a *waggle*. Next time that route comes up bee replays the known steps directly instead of paying for the same round-trips again. This matters most for small local models, where re-deriving a workflow from scratch is most of the cost.
+bee watches its own read-only tool use (read, search, glob, ls) and, when it repeats the same route, crystallizes it into a runnable shortcut called a *waggle*. Next time that route comes up bee replays the known steps directly instead of paying for the same round-trips again. This matters most for small local models, where re-deriving a workflow from scratch is the biggest cost.
 
 It runs automatically and stores routes under `~/.bee/waggle/`. Inspect and curate the library:
 
@@ -204,7 +204,7 @@ Disable:
 
 ## Overnight loop: `bee zzz`
 
-Hand bee an objective and a budget, walk away, wake up to a branch full of small individually-revertable commits. Each iteration runs one focused change and either commits or `git reset --hard` rolls back on failure. The working tree never stays dirty. A live TUI shows the iteration ledger (🐝 foraging · 🌼 committed · 🍃 noop · 🥀 reset · 💥 failed), token cost, and a sleeping bee at the bottom. Type to nudge the run mid-flight; `/stop` exits gracefully after the current iteration, `/abort` cancels immediately.
+Give bee an objective and a budget, then check back: you get a branch of small individually-revertable commits. Each iteration runs one focused change and either commits or `git reset --hard` rolls back on failure. The working tree never stays dirty. A live TUI shows the iteration ledger (🐝 foraging · 🌼 committed · 🍃 noop · 🥀 reset · 💥 failed), token cost, and a sleeping bee at the bottom. Type to nudge the run mid-flight; `/stop` exits gracefully after the current iteration, `/abort` cancels immediately.
 
     bee zzz "tighten error messages across internal/tools" --max-iterations 30
     bee zzz --list                       # past runs
