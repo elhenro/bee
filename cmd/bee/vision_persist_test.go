@@ -11,6 +11,7 @@ import (
 func TestPersistVisionModel_KeepsOtherKeysAndRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	t.Setenv("BEE_CONFIG", path)
+	t.Setenv("OPENROUTER_API_KEY", "sk-test") // load rejects the default provider without its key, ci has none
 	seed := "default_model = 'qwen2.5-coder-7b'\n\n[vision]\nmodel = 'llava'\nendpoint = 'http://localhost:1234/v1'\n"
 	if err := os.WriteFile(path, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)

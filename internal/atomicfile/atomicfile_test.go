@@ -3,6 +3,7 @@ package atomicfile
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -22,7 +23,8 @@ func TestWriteCreatesAndReplaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// windows reports 0666 for every writable file
+	if info.Mode().Perm() != 0o600 && runtime.GOOS != "windows" {
 		t.Errorf("perm = %v, want 0600", info.Mode().Perm())
 	}
 	if ents, _ := os.ReadDir(dir); len(ents) != 1 {

@@ -83,6 +83,7 @@ func (p *pathEcho) Run(_ context.Context, in map[string]any) (tools.Result, erro
 func TestWrapExpandsHomeForInnerTool(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads this one on windows
 	inner := &pathEcho{}
 	g := New(home, approval.Static{Verdict: approval.AllowOnce}, nil)
 	if _, err := g.Wrap(inner).Run(context.Background(), map[string]any{"path": "~/a.md"}); err != nil {

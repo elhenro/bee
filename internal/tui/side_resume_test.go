@@ -29,6 +29,11 @@ func TestOpenSession_SeedsContextFill(t *testing.T) {
 	costs := cost.New()
 	costs.Record("p", "m", 5000, 100) // the previous conversation's fill
 	eng := &loop.Engine{Costs: costs}
+	t.Cleanup(func() {
+		if eng.Sessions != nil {
+			_ = eng.Sessions.Close() // windows cannot delete the open rollout under TempDir
+		}
+	})
 	m := NewModel(eng, "/tmp/work", "m", "", caveman.Default)
 	if err := m.side().OpenSession("sess-a"); err != nil {
 		t.Fatal(err)

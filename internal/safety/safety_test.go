@@ -1,6 +1,7 @@
 package safety
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -89,6 +90,9 @@ func TestCheckReadable_Allows(t *testing.T) {
 }
 
 func TestCheckWritable_BlocksSystemDirs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("forbidden write prefixes are posix system dirs")
+	}
 	if err := CheckWritable("/etc/passwd"); err == nil {
 		t.Fatal("write to /etc/passwd should be refused")
 	}

@@ -43,8 +43,9 @@ func New(cwd string, app approval.Approver, seed []string) *Gate {
 func (g *Gate) granted(dir string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	sep := string(filepath.Separator)
 	for _, d := range g.dirs {
-		if dir == d || strings.HasPrefix(dir, strings.TrimSuffix(d, "/")+"/") {
+		if dir == d || strings.HasPrefix(dir, strings.TrimSuffix(d, sep)+sep) {
 			return true
 		}
 	}

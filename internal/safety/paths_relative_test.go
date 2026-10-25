@@ -2,6 +2,7 @@ package safety
 
 import (
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -35,6 +36,9 @@ func TestCheckReadable_RelativeProtectedDirs(t *testing.T) {
 }
 
 func TestCheckWritable_RelativeSystemDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("forbidden write prefixes are posix system dirs")
+	}
 	prev, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

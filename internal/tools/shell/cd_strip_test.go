@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -124,6 +125,9 @@ func TestStripRedundantCd_DynamicTargetKept(t *testing.T) {
 }
 
 func TestRun_CwdOverrideKeepsCd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git-bash eats backslashes in the cd target and pwd prints a posix path")
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
