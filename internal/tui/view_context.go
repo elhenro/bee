@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -134,20 +135,16 @@ func (m Model) renderContextBar() string {
 // tokensHuman formats a token count compactly: 1234 → "1.2k", 1_500_000 → "1.5M".
 // Sub-1000 stays bare. One decimal point until 100, none above.
 func tokensHuman(n int) string {
+	div, unit := 1000.0, "k"
 	switch {
 	case n < 1000:
-		return fmt.Sprintf("%d", n)
-	case n < 1_000_000:
-		v := float64(n) / 1000
-		if v < 10 {
-			return fmt.Sprintf("%.1fk", v)
-		}
-		return fmt.Sprintf("%dk", int(v+0.5))
-	default:
-		v := float64(n) / 1_000_000
-		if v < 10 {
-			return fmt.Sprintf("%.1fM", v)
-		}
-		return fmt.Sprintf("%dM", int(v+0.5))
+		return strconv.Itoa(n)
+	case n >= 1_000_000:
+		div, unit = 1_000_000, "M"
 	}
+	v := float64(n) / div
+	if v < 10 {
+		return fmt.Sprintf("%.1f%s", v, unit)
+	}
+	return fmt.Sprintf("%d%s", int(v+0.5), unit)
 }

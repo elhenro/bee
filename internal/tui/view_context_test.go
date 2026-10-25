@@ -149,3 +149,15 @@ func TestRenderContextBar_ZeroWidthIsEmpty(t *testing.T) {
 		t.Errorf("zero width: got %q, want empty", got)
 	}
 }
+
+func TestTokensHuman(t *testing.T) {
+	cases := map[int]string{
+		0: "0", 999: "999", 1000: "1.0k", 1234: "1.2k", 9999: "10.0k", 10000: "10k",
+		12345: "12k", 999999: "1000k", 1_000_000: "1.0M", 1_500_000: "1.5M", 12_000_000: "12M",
+	}
+	for in, want := range cases {
+		if got := tokensHuman(in); got != want {
+			t.Errorf("tokensHuman(%d) = %q, want %q", in, got, want)
+		}
+	}
+}
