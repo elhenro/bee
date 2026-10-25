@@ -12,7 +12,9 @@ package commands
 
 import (
 	"context"
-	"sort"
+	"maps"
+	"slices"
+	"strings"
 	"sync"
 )
 
@@ -267,11 +269,13 @@ type Registry struct {
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry { return &Registry{m: map[string]Command{}} }
 
-// Register adds or overwrites a command by name.
-func (r *Registry) Register(c Command) {
+// Register adds or overwrites commands by name.
+func (r *Registry) Register(cs ...Command) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.m[c.Name] = c
+	for _, c := range cs {
+		r.m[c.Name] = c
+	}
 }
 
 // Get returns the command and whether it exists.
@@ -286,10 +290,7 @@ func (r *Registry) Get(name string) (Command, bool) {
 func (r *Registry) List() []Command {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]Command, 0, len(r.m))
-	for _, c := range r.m {
-		out = append(out, c)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	out := slices.Collect(maps.Values(r.m))
+	slices.SortFunc(out, func(a, b Command) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }

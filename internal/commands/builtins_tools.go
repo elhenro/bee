@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -11,10 +12,7 @@ func registerTools(r *Registry) {
 		Name:           "tools",
 		Description:    "toggle / add tools — /tools, /tools add NAME CMD..., /tools rm NAME",
 		AllowDuringRun: true,
-		Run: func(_ context.Context, args []string, s Side) (string, error) {
-			if s == nil {
-				return "", nil
-			}
+		Run: withSide(func(_ context.Context, args []string, s Side) (string, error) {
 			if len(args) == 0 {
 				if err := s.OpenToolsPane(); err == nil {
 					return "", nil
@@ -22,7 +20,7 @@ func registerTools(r *Registry) {
 				return renderToolsStatus(s.ListTools()), nil
 			}
 			return applyToolsArg(args, s)
-		},
+		}),
 	})
 }
 
@@ -34,9 +32,7 @@ func renderToolsStatus(list []ToolInfo) string {
 	}
 	width := 0
 	for _, t := range list {
-		if len(t.Name) > width {
-			width = len(t.Name)
-		}
+		width = max(width, len(t.Name))
 	}
 	var b strings.Builder
 	b.WriteString("tools:\n")
@@ -49,15 +45,9 @@ func renderToolsStatus(list []ToolInfo) string {
 		if t.UserDefined {
 			src = "user   "
 		}
-		b.WriteString("  ")
-		b.WriteString(marker)
-		b.WriteString("  ")
-		b.WriteString(padRight(t.Name, width))
-		b.WriteString("  ")
-		b.WriteString(src)
+		fmt.Fprintf(&b, "  %s  %s  %s", marker, padRight(t.Name, width), src)
 		if t.Description != "" {
-			b.WriteString("  ")
-			b.WriteString(t.Description)
+			b.WriteString("  " + t.Description)
 		}
 		b.WriteByte('\n')
 	}
@@ -68,35 +58,34 @@ func renderToolsStatus(list []ToolInfo) string {
 	return b.String()
 }
 
+// setToolDisabled flips one tool and reports its new state.
+func setToolDisabled(s Side, name string, disabled bool) (string, error) {
+	if err := s.SetToolDisabled(name, disabled); err != nil {
+		return "", err
+	}
+	if disabled {
+		return name + ": disabled", nil
+	}
+	return name + ": enabled", nil
+}
+
 // applyToolsArg dispatches the headless subcommands.
 func applyToolsArg(args []string, s Side) (string, error) {
 	sub := strings.ToLower(args[0])
 	switch sub {
 	case "list", "ls", "status":
 		return renderToolsStatus(s.ListTools()), nil
-	case "enable":
+	case "enable", "disable":
 		if len(args) < 2 {
-			return "usage: /tools enable NAME", nil
+			return "usage: /tools " + sub + " NAME", nil
 		}
-		if err := s.SetToolDisabled(args[1], false); err != nil {
-			return "", err
-		}
-		return args[1] + ": enabled", nil
-	case "disable":
-		if len(args) < 2 {
-			return "usage: /tools disable NAME", nil
-		}
-		if err := s.SetToolDisabled(args[1], true); err != nil {
-			return "", err
-		}
-		return args[1] + ": disabled", nil
+		return setToolDisabled(s, args[1], sub == "disable")
 	case "add":
 		if len(args) < 3 {
 			return "usage: /tools add NAME CMD [-- description]", nil
 		}
 		name := args[1]
-		rest := strings.Join(args[2:], " ")
-		cmdStr, desc := splitToolDescription(rest)
+		cmdStr, desc := splitToolDescription(strings.Join(args[2:], " "))
 		if err := s.AddUserTool(name, cmdStr, desc); err != nil {
 			return "", err
 		}
@@ -113,13 +102,7 @@ func applyToolsArg(args []string, s Side) (string, error) {
 	// bare `/tools NAME` toggles. Treat as flip — disabled→enabled and vice versa.
 	for _, t := range s.ListTools() {
 		if t.Name == args[0] {
-			if err := s.SetToolDisabled(args[0], !t.Disabled); err != nil {
-				return "", err
-			}
-			if t.Disabled {
-				return args[0] + ": enabled", nil
-			}
-			return args[0] + ": disabled", nil
+			return setToolDisabled(s, args[0], !t.Disabled)
 		}
 	}
 	return "unknown subcommand or tool " + quote(args[0]) + " (want: enable | disable | add | rm | <name>)", nil
@@ -129,9 +112,6 @@ func applyToolsArg(args []string, s Side) (string, error) {
 // command (left side) and description (right side). The separator is " -- "
 // surrounded by spaces; if absent, the whole string is the command.
 func splitToolDescription(s string) (string, string) {
-	const sep = " -- "
-	if i := strings.Index(s, sep); i >= 0 {
-		return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+len(sep):])
-	}
-	return strings.TrimSpace(s), ""
+	cmd, desc, _ := strings.Cut(s, " -- ")
+	return strings.TrimSpace(cmd), strings.TrimSpace(desc)
 }

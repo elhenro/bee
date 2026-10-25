@@ -51,6 +51,16 @@ func TestBrowserCommand_BadArg(t *testing.T) {
 	}
 }
 
+func TestBrowserCommand_NilSide(t *testing.T) {
+	r := NewRegistry()
+	registerBrowser(r)
+	cmd, _ := r.Get("browser")
+	out, err := cmd.Run(context.Background(), []string{"on"}, nil)
+	if err != nil || out != "" {
+		t.Errorf("nil side must be a no-op, got %q %v", out, err)
+	}
+}
+
 type browserFakeSide struct {
 	fakeSide // embed the existing test fake to satisfy all Side methods
 	lastOn   bool

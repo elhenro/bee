@@ -2,8 +2,10 @@ package commands
 
 import (
 	"context"
-	"fmt"
+	"errors"
 )
+
+const browserUsage = "usage: /browser on | /browser off"
 
 // registerBrowser wires /browser, a live session-only toggle for the native
 // browser tools. `/browser on` registers them, `/browser off` removes them,
@@ -14,16 +16,16 @@ func registerBrowser(r *Registry) {
 		Description: "toggle native browser tools for this session (/browser on|off)",
 		Run: func(_ context.Context, args []string, s Side) (string, error) {
 			if len(args) == 0 {
-				return "usage: /browser on | /browser off", nil
+				return browserUsage, nil
 			}
-			switch args[0] {
-			case "on", "enable":
-				return s.SetBrowserEnabled(true)
-			case "off", "disable":
-				return s.SetBrowserEnabled(false)
-			default:
-				return "", fmt.Errorf("usage: /browser on | /browser off")
+			on := args[0] == "on" || args[0] == "enable"
+			if !on && args[0] != "off" && args[0] != "disable" {
+				return "", errors.New(browserUsage)
 			}
+			if s == nil {
+				return "", nil
+			}
+			return s.SetBrowserEnabled(on)
 		},
 	})
 }

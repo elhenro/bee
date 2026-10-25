@@ -1,7 +1,5 @@
 package commands
 
-import "context"
-
 // InitPrompt is the user-turn body /init submits. The TUI (app_slash.go)
 // special-cases /init to feed this to the engine so the model scans the repo
 // with its own file/shell tools and writes AGENTS.md. Run here is the
@@ -26,11 +24,6 @@ Keep it concise and factual — every command must be one you verified exists. I
 // special-cased in the TUI (app_slash.go), which submits InitPrompt as a user
 // turn; this Run is the generic/headless fallback.
 func registerInit(r *Registry) {
-	r.Register(Command{
-		Name:        "init",
-		Description: "scan the project and write an AGENTS.md file",
-		Run: func(_ context.Context, _ []string, _ Side) (string, error) {
-			return "init scans the project and writes AGENTS.md; run it from the TUI", nil
-		},
-	})
+	r.Register(textCmd("init", "scan the project and write an AGENTS.md file", false,
+		"init scans the project and writes AGENTS.md; run it from the TUI"))
 }
