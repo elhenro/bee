@@ -20,8 +20,7 @@ func runWaggle(args []string) {
 	proj, errP := waggle.ProjectStore(cwd)
 	user, errU := waggle.UserStore()
 	if errP != nil || errU != nil {
-		fmt.Fprintf(os.Stderr, "bee waggle: %v %v\n", errP, errU)
-		os.Exit(1)
+		exitf(1, "bee waggle: %v %v", errP, errU)
 	}
 	switch sub {
 	case "ls":
@@ -36,8 +35,7 @@ func runWaggle(args []string) {
 		fmt.Printf("waggle gc: removed %d project, %d user; pruned %d stale; demoted %d diverging; promoted %d to user\n",
 			r.RemovedProj+r.PrunedProj, r.RemovedUser+r.PrunedUser, r.PrunedProj+r.PrunedUser, r.Demoted, r.Promoted)
 	default:
-		fmt.Fprintf(os.Stderr, "bee waggle: unknown subcommand %q (want ls|gc)\n", sub)
-		os.Exit(2)
+		exitf(2, "bee waggle: unknown subcommand %q (want ls|gc)", sub)
 	}
 }
 

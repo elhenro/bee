@@ -27,7 +27,7 @@ import (
 	"github.com/elhenro/bee/internal/worktree"
 )
 
-// runSwarm is invoked from main.go via swarm(args).
+// runSwarm is the entry point wired into main.go.
 func runSwarm(args []string) {
 	fs := flag.NewFlagSet("swarm", flag.ContinueOnError)
 	nWorkers := fs.Int("workers", 4, "number of worker bees")
@@ -36,56 +36,35 @@ func runSwarm(args []string) {
 	isolated := fs.Bool("isolated", false, "give each worker its own git worktree (avoids write races)")
 	triage := fs.Bool("triage", true, "skip the hive on small/clear tasks (one streaming turn instead of plan+workers+review)")
 	noTriage := fs.Bool("no-triage", false, "force the full hive even when triage says simple")
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
+	parseFlags(fs, args)
 	if *nWorkers < 1 {
-		fmt.Fprintln(os.Stderr, "bee swarm: --workers must be ≥1")
-		os.Exit(2)
+		exitf(2, "bee swarm: --workers must be ≥1")
 	}
 
 	task, err := resolveUserMessage(fs.Args(), os.Stdin)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee swarm: %v\n", err)
-		os.Exit(2)
+		exitf(2, "bee swarm: %v", err)
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		if os.Getenv("BEE_TEST_PROVIDER") == "stub" {
-			cfg = config.Defaults()
-		} else {
-			fmt.Fprintf(os.Stderr, "bee swarm: config: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee swarm: provider: %v\n", err)
-		os.Exit(1)
-	}
+	cfg := mustConfig("bee swarm", "", "", "")
+	prov := mustProvider("bee swarm", cfg)
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
 	plannerReg, err := buildTools(cwd, cfg, prov, storeDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee swarm: tools: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee swarm: tools: %v", err)
 	}
-	skillReg := skills.NewRegistry()
-	_ = skillReg.Load(skills.BaseDir())
+	skillReg := newSkillRegistry()
 
 	// planner: larger model if user supplied one
 	plannerCfg := cfg
 	if *plannerModel != "" {
 		plannerCfg.DefaultModel = *plannerModel
 	}
-	planner, plannerSess, err := newEngine(prov, plannerReg, skillReg, plannerCfg, cwd, io.Discard, "planner")
+	planner, plannerSess, err := newEngine(prov, plannerReg, skillReg, plannerCfg, cwd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee swarm: planner session: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee swarm: planner session: %v", err)
 	}
 	defer plannerSess.Close()
 
@@ -138,8 +117,7 @@ func runSwarm(args []string) {
 			if *isolated {
 				wt, err := worktree.Create(cwd, fmt.Sprintf("swarm-w%d", i))
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "bee swarm: worker %d worktree: %v\n", i, err)
-					return 1
+					return failf(1, "bee swarm: worker %d worktree: %v", i, err)
 				}
 				worktrees = append(worktrees, wt)
 				workerCwd = wt.Path
@@ -147,15 +125,13 @@ func runSwarm(args []string) {
 				// write, edit_diff) target the isolated tree instead of cwd.
 				reg, err := buildTools(workerCwd, workerCfg, workerProv, storeDir)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "bee swarm: worker %d tools: %v\n", i, err)
-					return 1
+					return failf(1, "bee swarm: worker %d tools: %v", i, err)
 				}
 				workerReg = reg
 			}
-			eng, sess, err := newEngine(workerProv, workerReg, skillReg, workerCfg, workerCwd, io.Discard, fmt.Sprintf("worker-%d", i))
+			eng, sess, err := newEngine(workerProv, workerReg, skillReg, workerCfg, workerCwd)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "bee swarm: worker %d session: %v\n", i, err)
-				return 1
+				return failf(1, "bee swarm: worker %d session: %v", i, err)
 			}
 			workers = append(workers, eng)
 			closers = append(closers, sess)
@@ -191,23 +167,15 @@ func runSwarm(args []string) {
 	}
 }
 
-// newEngine builds a loop.Engine + its session rollout. Returns the rollout
-// so the caller can Close it at end of program.
-func newEngine(
-	prov llm.Provider,
-	reg *tools.Registry,
-	skillReg *skills.Registry,
-	cfg config.Config,
-	cwd string,
-	stdout io.Writer,
-	label string,
-) (*loop.Engine, *session.Rollout, error) {
-	sessID := uuid.NewString()
-	roll, err := session.Open(sessID)
+// newEngine builds a fresh loop.Engine with its own session rollout, which the
+// caller must Close. Each bee gets isolated state, the point of fan-out. Memory
+// is skipped to keep fan-out cheap, and stdout is discarded: the caller renders
+// the merged transcript at the end.
+func newEngine(prov llm.Provider, reg *tools.Registry, skillReg *skills.Registry, cfg config.Config, cwd string) (*loop.Engine, *session.Rollout, error) {
+	roll, err := session.Open(uuid.NewString())
 	if err != nil {
 		return nil, nil, err
 	}
-	_ = label // session id is the canonical handle; label is debug-only
 	eng := &loop.Engine{
 		Provider: prov,
 		Tools:    reg,
@@ -215,7 +183,7 @@ func newEngine(
 		Cfg:      cfg,
 		Cwd:      cwd,
 		Sessions: roll,
-		Stdout:   stdout,
+		Stdout:   io.Discard,
 	}
 	return eng, roll, nil
 }

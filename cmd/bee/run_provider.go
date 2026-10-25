@@ -7,12 +7,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"golang.org/x/term"
 
+	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/llm/mockprov"
@@ -37,40 +39,89 @@ func resolveUserMessage(positional []string, stdin io.Reader) (string, error) {
 	return s, nil
 }
 
-// resolveSafe maps the --safe shorthand to a sandbox scope. An explicit
-// --sandbox always wins; --safe only applies when no scope was given.
-func resolveSafe(sandboxScope string, safe bool) string {
-	if sandboxScope == "" && safe {
+// resolveSafe maps --sandbox/--safe to a sandbox scope: an explicit --sandbox
+// wins, then --safe means workspace-write, else def. Unattended surfaces (zzz,
+// spawned agents) pass "workspace-write" as def so they confine by default.
+func resolveSafe(sandboxScope string, safe bool, def string) string {
+	switch {
+	case sandboxScope != "":
+		return sandboxScope
+	case safe:
 		return "workspace-write"
-	}
-	return sandboxScope
-}
-
-// resolveSafeDefault is resolveSafe but falls back to def when the user gave
-// neither --sandbox nor --safe. Unattended surfaces (zzz, spawned agents) pass
-// "workspace-write" so they confine by default; an explicit --sandbox (incl.
-// danger-full-access) or --safe still wins.
-func resolveSafeDefault(sandboxScope string, safe bool, def string) string {
-	if s := resolveSafe(sandboxScope, safe); s != "" {
-		return s
 	}
 	return def
 }
 
-// applyOverrides patches an already-loaded cfg. Provider/model here do not
-// re-resolve the API key or profile: callers that can should pass the flags
-// to config.LoadWith instead (this still covers the test-mode Defaults()
-// fallback and sandbox scope).
-func applyOverrides(cfg *config.Config, model, provName, sandboxScope string) {
+// loadConfig loads config with the provider/model flags resolved up front (so
+// the right API key and profile apply), then pins the model, provider and
+// sandbox scope. A test provider falls back to defaults so a missing key
+// cannot break offline smoke runs.
+func loadConfig(model, provider, sandboxScope string) (config.Config, error) {
+	cfg, err := config.LoadWith(config.Overrides{Provider: provider, Model: model})
+	if err != nil {
+		if os.Getenv("BEE_TEST_PROVIDER") == "" {
+			return cfg, err
+		}
+		cfg = config.Defaults()
+	}
 	if model != "" {
 		cfg.DefaultModel = model
 	}
-	if provName != "" {
-		cfg.DefaultProvider = provName
+	if provider != "" {
+		cfg.DefaultProvider = provider
 	}
 	if sandboxScope != "" {
 		cfg.Sandbox.Scope = sandboxScope
 	}
+	return cfg, nil
+}
+
+// mustConfig is loadConfig for a CLI entry point: a failure prints
+// "<cmd>: config: ..." and exits 1.
+func mustConfig(cmd, model, provider, sandboxScope string) config.Config {
+	cfg, err := loadConfig(model, provider, sandboxScope)
+	if err != nil {
+		exitf(1, "%s: config: %v", cmd, err)
+	}
+	return cfg
+}
+
+// mustProvider is buildProvider for a CLI entry point: a failure prints
+// "<cmd>: provider: ..." and exits 1.
+func mustProvider(cmd string, cfg config.Config) llm.Provider {
+	prov, err := buildProvider(cfg)
+	if err != nil {
+		exitf(1, "%s: provider: %v", cmd, err)
+	}
+	return prov
+}
+
+// applyThinkingCaveman applies --thinking, --effort (alias; the global flag
+// lands in BEE_EFFORT as the lowest-priority source) and --caveman (global
+// flag in BEE_CAVEMAN likewise). The caveman level is validated so a typo
+// fails fast instead of silently falling back to the profile default.
+func applyThinkingCaveman(cfg *config.Config, thinking, effort, cavemanLvl string) error {
+	if effort == "" {
+		effort = os.Getenv("BEE_EFFORT")
+	}
+	if thinking == "" {
+		thinking = effort
+	}
+	if thinking != "" {
+		cfg.Thinking = string(llm.ParseThinking(thinking))
+	}
+	if cavemanLvl == "" {
+		cavemanLvl = os.Getenv("BEE_CAVEMAN")
+	}
+	if cavemanLvl == "" {
+		return nil
+	}
+	lvl, err := caveman.ParseLevel(cavemanLvl)
+	if err != nil {
+		return err
+	}
+	cfg.Caveman = string(lvl)
+	return nil
 }
 
 // localContextProbeTimeout bounds the one-time startup probe of a local
@@ -186,4 +237,30 @@ func buildProviderInner(cfg config.Config) (llm.Provider, error) {
 	default:
 		return nil, fmt.Errorf("wire_api %q not supported yet", prov.WireAPI)
 	}
+}
+
+// prewarmLocalContext learns the active local model's context window before
+// the first turn so contextBudget and the tiny-profile scaling start from
+// reality. Synchronous on purpose: a closed port fails fast on dial and a
+// running server answers well under a second.
+func prewarmLocalContext(cfg config.Config) {
+	pc, ok := cfg.Providers[cfg.DefaultProvider]
+	if !ok || pc.BaseURL == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), localContextProbeTimeout)
+	defer cancel()
+
+	// /api/show first: its num_ctx is what the runtime really allocates.
+	// servers without it (omlx, lm-studio, vllm) 404 here, which is not a failure.
+	if n, err := llm.ProbeOllamaContext(ctx, http.DefaultClient, pc.BaseURL, cfg.DefaultModel); err == nil && n > 0 {
+		llm.RememberContextLength(cfg.DefaultModel, n)
+		return
+	}
+	// those servers advertise the window on /models (context_length,
+	// max_model_len) or /models/status, which ProbeContextLength reads.
+	if llm.ProbeContextLength(ctx, cfg.DefaultProvider, pc, cfg.DefaultModel) > 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "bee: context window unknown for %s; using fallback budget\n", cfg.DefaultModel)
 }

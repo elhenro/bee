@@ -11,13 +11,14 @@
 package main
 
 import (
-	"errors"
+	"cmp"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,8 +61,7 @@ func parseBgArgs(args []string) (string, bgOpts, error) {
 func runBg(args []string) {
 	msg, opts, err := parseBgArgs(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg: %v\n", err)
-		os.Exit(2)
+		exitf(2, "bee bg: %v", err)
 	}
 
 	if opts.List {
@@ -83,14 +83,12 @@ func runBg(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: bee bg [--skill <name>] [--logfile <path>] <message>")
 		fmt.Fprintln(os.Stderr, "       bee bg --list")
 		fmt.Fprintln(os.Stderr, "       bee bg --tail <session-id>")
-		fmt.Fprintln(os.Stderr, "       bee bg --kill <session-id>")
-		os.Exit(2)
+		exitf(2, "       bee bg --kill <session-id>")
 	}
 
 	self, err := os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg: resolve self: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg: resolve self: %v", err)
 	}
 
 	sessID := uuid.NewString()
@@ -99,16 +97,14 @@ func runBg(args []string) {
 	if logPath == "" {
 		p, err := bghive.EnsureLogDir(sessID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee bg: log dir: %v\n", err)
-			os.Exit(1)
+			exitf(1, "bee bg: log dir: %v", err)
 		}
 		logPath = p
 	}
 
 	logF, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg: open log: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg: open log: %v", err)
 	}
 	defer logF.Close()
 
@@ -127,8 +123,7 @@ func runBg(args []string) {
 	detach(cmd)
 
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg: start: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg: start: %v", err)
 	}
 	pid := cmd.Process.Pid
 
@@ -149,47 +144,30 @@ func runBg(args []string) {
 func listBg() {
 	sessions, err := session.List()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --list: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --list: %v", err)
 	}
 
 	logs, err := listBgLogs()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --list: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --list: %v", err)
 	}
 	if len(logs) == 0 {
 		fmt.Println("no background bees")
 		return
 	}
 
-	logSet := make(map[string]bool)
-	for _, id := range logs {
-		logSet[id] = true
-	}
-
 	fmt.Printf("%-12s %-8s %-10s %s\n", "SESSION", "PID", "AGE", "PREVIEW")
 	for _, s := range sessions {
-		if !logSet[s.ID] {
+		if !slices.Contains(logs, s.ID) {
 			continue
 		}
 		preview, _ := session.FirstUserText(s.ID)
-		if len(preview) > 50 {
-			preview = preview[:47] + "..."
-		}
-		if preview == "" {
-			preview = "(no preview)"
-		}
 		pid, _ := bghive.ReadPid(s.ID)
 		pidStr := "-"
 		if pid > 0 {
 			pidStr = strconv.Itoa(pid)
 		}
-		sid := s.ID
-		if len(sid) > 12 {
-			sid = sid[:12]
-		}
-		fmt.Printf("%-12s %-8s %-10s %s\n", sid, pidStr, humanAge(s.Created), preview)
+		fmt.Printf("%-12s %-8s %-10s %s\n", s.ID[:min(len(s.ID), 12)], pidStr, humanAge(s.Created), cmp.Or(ellipsize(preview, 50), "(no preview)"))
 	}
 }
 
@@ -197,41 +175,29 @@ func listBg() {
 func tailBg(id string) {
 	logPath, err := bghive.LogPath(id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --tail: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --tail: %v", err)
 	}
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "bee bg --tail: no log for session %s\n", id)
-		os.Exit(1)
+		exitf(1, "bee bg --tail: no log for session %s", id)
 	}
 
 	f, err := os.Open(logPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --tail: open log: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --tail: open log: %v", err)
 	}
 	defer f.Close()
 
 	// seek to end and tail
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		fmt.Fprintf(os.Stderr, "bee bg --tail: seek: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee bg --tail: seek: %v", err)
 	}
 
-	buf := make([]byte, 4096)
 	for {
-		n, err := f.Read(buf)
-		if n > 0 {
-			os.Stdout.Write(buf[:n])
+		// io.Copy stops at EOF without error: poll again for new log output
+		if _, err := io.Copy(os.Stdout, f); err != nil {
+			exitf(1, "bee bg --tail: read: %v", err)
 		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "bee bg --tail: read: %v\n", err)
-			os.Exit(1)
-		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

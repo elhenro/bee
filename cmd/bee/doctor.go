@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"slices"
 	"time"
 )
 
@@ -45,34 +46,22 @@ type report struct {
 func runDoctor(args []string) {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "emit a single JSON record instead of a table")
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
+	parseFlags(fs, args)
 
 	rep := report{Version: version, OS: runtime.GOOS, Arch: runtime.GOARCH}
-	rep.Checks = append(rep.Checks, checkBeeBinary())
-	rep.Checks = append(rep.Checks, checkBeeHome())
-	rep.Checks = append(rep.Checks, checkSkillsDir())
-	rep.Checks = append(rep.Checks, checkSessionsDir())
-	rep.Checks = append(rep.Checks, checkKnowledgeStore())
-	rep.Checks = append(rep.Checks, checkSandboxHelper())
+	rep.Checks = []check{checkBeeBinary(), checkBeeHome(), checkSkillsDir(), checkSessionsDir(), checkKnowledgeStore(), checkSandboxHelper()}
 	cfgChecks, cfg := checkConfigLoaded()
-	rep.Checks = append(rep.Checks, cfgChecks...)
-	rep.Checks = append(rep.Checks, checkOllama(cfg)...)
-	rep.Checks = append(rep.Checks, checkLocalServers(cfg)...)
+	rep.Checks = slices.Concat(rep.Checks, cfgChecks, checkOllama(cfg), checkLocalServers(cfg))
 
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(rep); err != nil {
-			fmt.Fprintln(os.Stderr, "bee doctor: encode:", err)
-			os.Exit(1)
+			exitf(1, "bee doctor: encode: %v", err)
 		}
-		os.Exit(exitCodeFor(rep.Checks))
+	} else {
+		printTable(rep)
 	}
-
-	printTable(rep)
 	os.Exit(exitCodeFor(rep.Checks))
 }
 

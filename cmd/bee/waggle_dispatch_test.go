@@ -23,16 +23,7 @@ func TestBeeWaggleDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := filepath.Join(tmp, "bee"+exeSuffix())
-	{
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("go build: %v", err)
-		}
-	}
+	bin := buildBee(t)
 	home := filepath.Join(tmp, "home")
 	work := filepath.Join(tmp, "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {

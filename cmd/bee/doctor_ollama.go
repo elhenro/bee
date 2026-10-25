@@ -8,12 +8,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 )
+
+// ollamaModel is one /api/tags entry.
+type ollamaModel struct {
+	Name  string `json:"name"`
+	Model string `json:"model"`
+}
 
 // checkOllama only runs when ollama is the active provider. Daemon down +
 // model-not-pulled are WARN — bee should still work with other providers
@@ -23,9 +30,12 @@ func checkOllama(cfg config.Config) []check {
 	if cfg.DefaultProvider != "ollama" {
 		return nil
 	}
+	res := func(status, detail, remedy string) []check {
+		return []check{{Name: "ollama", Status: status, Detail: detail, Remedy: remedy}}
+	}
 	p, ok := cfg.Providers["ollama"]
 	if !ok {
-		return []check{{Name: "ollama", Status: "warn", Detail: "provider config missing"}}
+		return res("warn", "provider config missing", "")
 	}
 
 	base := llm.OllamaBaseURL(p.BaseURL)
@@ -34,43 +44,29 @@ func checkOllama(cfg config.Config) []check {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/tags", nil)
 	if err != nil {
-		return []check{{Name: "ollama", Status: "warn", Detail: "build request: " + err.Error()}}
+		return res("warn", "build request: "+err.Error(), "")
 	}
 	resp, err := doctorHTTPClient.Do(req)
 	if err != nil {
-		return []check{{
-			Name:   "ollama",
-			Status: "warn",
-			Detail: "daemon not responding at " + base,
-			Remedy: "start ollama (`ollama serve`) or remove ollama as default provider",
-		}}
+		return res("warn", "daemon not responding at "+base, "start ollama (`ollama serve`) or remove ollama as default provider")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return []check{{
-			Name:   "ollama",
-			Status: "warn",
-			Detail: fmt.Sprintf("daemon returned %d at %s/api/tags", resp.StatusCode, base),
-		}}
+		return res("warn", fmt.Sprintf("daemon returned %d at %s/api/tags", resp.StatusCode, base), "")
 	}
 
 	var tags struct {
-		Models []struct {
-			Name  string `json:"name"`
-			Model string `json:"model"`
-		} `json:"models"`
+		Models []ollamaModel `json:"models"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		return []check{{Name: "ollama", Status: "warn", Detail: "decode tags: " + err.Error()}}
+		return res("warn", "decode tags: "+err.Error(), "")
 	}
 
-	if !hasOllamaModel(tags.Models, cfg.DefaultModel) {
-		return []check{{
-			Name:   "ollama",
-			Status: "warn",
-			Detail: fmt.Sprintf("model %s not pulled", cfg.DefaultModel),
-			Remedy: "ollama pull " + cfg.DefaultModel,
-		}}
+	pulled := slices.ContainsFunc(tags.Models, func(m ollamaModel) bool {
+		return m.Name == cfg.DefaultModel || m.Model == cfg.DefaultModel
+	})
+	if !pulled {
+		return res("warn", fmt.Sprintf("model %s not pulled", cfg.DefaultModel), "ollama pull "+cfg.DefaultModel)
 	}
 
 	// model present — probe num_ctx for the OK detail and warm the cache so
@@ -80,17 +76,9 @@ func checkOllama(cfg config.Config) []check {
 	n, _ := llm.ProbeOllamaContext(pctx, doctorHTTPClient, p.BaseURL, cfg.DefaultModel)
 	if n > 0 {
 		llm.RememberContextLength(cfg.DefaultModel, n)
-		return []check{{
-			Name:   "ollama",
-			Status: "ok",
-			Detail: fmt.Sprintf("model pulled, num_ctx=%d", n),
-		}}
+		return res("ok", fmt.Sprintf("model pulled, num_ctx=%d", n), "")
 	}
-	return []check{{
-		Name:   "ollama",
-		Status: "ok",
-		Detail: "model pulled (num_ctx unknown)",
-	}}
+	return res("ok", "model pulled (num_ctx unknown)", "")
 }
 
 // checkLocalServers surfaces a running local inference server (ollama / omlx)
@@ -103,11 +91,13 @@ func checkLocalServers(cfg config.Config) []check {
 		return nil
 	}
 	var out []check
-	if c, ok := probeOllamaInfo(cfg); ok {
-		out = append(out, c)
+	ollama := llm.OllamaBaseURL(localProviderBase(cfg, "ollama", "http://localhost:11434/v1"))
+	if names, ok := probeModelNames(ollama + "/api/tags"); ok {
+		out = append(out, localServerInfo("ollama", ollama, names))
 	}
-	if c, ok := probeOpenAIModelsInfo("omlx", localProviderBase(cfg, "omlx", "http://localhost:8000/v1")); ok {
-		out = append(out, c)
+	omlx := localProviderBase(cfg, "omlx", "http://localhost:8000/v1")
+	if names, ok := probeModelNames(strings.TrimRight(omlx, "/") + "/models"); ok {
+		out = append(out, localServerInfo("omlx", omlx, names))
 	}
 	return out
 }
@@ -121,77 +111,52 @@ func localProviderBase(cfg config.Config, name, def string) string {
 	return def
 }
 
-// probeOllamaInfo does a quick /api/tags fetch and reports an info check when
-// ollama answers. ok=false on any failure (server down) so doctor stays quiet.
-func probeOllamaInfo(cfg config.Config) (check, bool) {
-	base := llm.OllamaBaseURL(localProviderBase(cfg, "ollama", "http://localhost:11434/v1"))
+// probeModelNames does a quick GET and returns the model names the server
+// lists, in either the ollama (models[].name) or OpenAI-compatible (data[].id)
+// shape. ok=false on any failure (server down) so doctor stays quiet.
+func probeModelNames(url string) ([]string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/tags", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return check{}, false
+		return nil, false
 	}
 	resp, err := doctorHTTPClient.Do(req)
 	if err != nil {
-		return check{}, false
+		return nil, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return check{}, false
+		return nil, false
 	}
-	var tags struct {
+	var body struct {
 		Models []struct {
 			Name string `json:"name"`
 		} `json:"models"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		return check{}, false
-	}
-	names := make([]string, 0, len(tags.Models))
-	for _, m := range tags.Models {
-		names = append(names, m.Name)
-	}
-	return check{
-		Name:   "ollama",
-		Status: "info",
-		Detail: fmt.Sprintf("running at %s with %d model(s)%s — set default_provider=ollama for zero-config local", base, len(names), sampleNames(names)),
-	}, true
-}
-
-// probeOpenAIModelsInfo does a quick /models fetch (OpenAI-compatible) and
-// reports an info check when the server answers.
-func probeOpenAIModelsInfo(name, base string) (check, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/models", nil)
-	if err != nil {
-		return check{}, false
-	}
-	resp, err := doctorHTTPClient.Do(req)
-	if err != nil {
-		return check{}, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return check{}, false
-	}
-	var body struct {
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return check{}, false
+	if json.NewDecoder(resp.Body).Decode(&body) != nil {
+		return nil, false
 	}
-	names := make([]string, 0, len(body.Data))
+	var names []string
+	for _, m := range body.Models {
+		names = append(names, m.Name)
+	}
 	for _, m := range body.Data {
 		names = append(names, m.ID)
 	}
+	return names, true
+}
+
+// localServerInfo is the info check for a running local server.
+func localServerInfo(name, base string, names []string) check {
 	return check{
 		Name:   name,
 		Status: "info",
 		Detail: fmt.Sprintf("running at %s with %d model(s)%s — set default_provider=%s for zero-config local", base, len(names), sampleNames(names), name),
-	}, true
+	}
 }
 
 // sampleNames renders up to the first three model names as " (a, b, c)" for
@@ -200,21 +165,5 @@ func sampleNames(names []string) string {
 	if len(names) == 0 {
 		return ""
 	}
-	n := names
-	if len(n) > 3 {
-		n = n[:3]
-	}
-	return " (" + strings.Join(n, ", ") + ")"
-}
-
-func hasOllamaModel(models []struct {
-	Name  string `json:"name"`
-	Model string `json:"model"`
-}, want string) bool {
-	for _, m := range models {
-		if m.Name == want || m.Model == want {
-			return true
-		}
-	}
-	return false
+	return " (" + strings.Join(names[:min(len(names), 3)], ", ") + ")"
 }

@@ -35,18 +35,15 @@ func runBench(args []string) {
 
 	tasks, err := bench.LoadTasks(*suite)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "bench:", err)
-		os.Exit(1)
+		exitf(1, "bench: %v", err)
 	}
 	if len(tasks) == 0 {
-		fmt.Fprintln(os.Stderr, "bench: no tasks in", *suite)
-		os.Exit(1)
+		exitf(1, "bench: no tasks in %s", *suite)
 	}
 
 	self, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "bench: locate self:", err)
-		os.Exit(1)
+		exitf(1, "bench: locate self: %v", err)
 	}
 
 	opt := bench.Options{
@@ -62,34 +59,30 @@ func runBench(args []string) {
 		Progress:   os.Stderr,
 	}
 	if strings.TrimSpace(*weightsCSV) != "" {
-		if w, ok := parseWeights(*weightsCSV); ok {
-			opt.Weights = w
-		} else {
+		w, ok := parseWeights(*weightsCSV)
+		if !ok {
 			// a typo'd weights string would otherwise silently score against the
 			// default blend — fatal so a tuning loop can't misattribute the delta.
-			fmt.Fprintf(os.Stderr, "bench: bad -weights %q (want success,format,efficiency e.g. 0.6,0.25,0.15)\n", *weightsCSV)
-			os.Exit(1)
+			exitf(1, "bench: bad -weights %q (want success,format,efficiency e.g. 0.6,0.25,0.15)", *weightsCSV)
 		}
+		opt.Weights = w
 	}
 
 	ctx := context.Background()
 	res, err := bench.RunSuite(ctx, tasks, opt)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "bench:", err)
-		os.Exit(1)
+		exitf(1, "bench: %v", err)
 	}
 
 	// held-out slice runs after the main suite and is reported separately so a
 	// tuning loop never optimizes against it.
 	if err := bench.AttachHoldout(ctx, &res, *holdout, opt); err != nil {
-		fmt.Fprintln(os.Stderr, "bench: holdout:", err)
-		os.Exit(1)
+		exitf(1, "bench: holdout: %v", err)
 	}
 
 	path, err := bench.WriteJSON(res, *out)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "bench: write results:", err)
-		os.Exit(1)
+		exitf(1, "bench: write results: %v", err)
 	}
 
 	// append a ledger row for every run so the full bench history is auditable

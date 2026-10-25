@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -37,10 +38,8 @@ func PersistAllowlistEntry(key string) error {
 	}
 	sb, _ := root["sandbox"].(map[string]any)
 	existing, _ := sb["command_allowlist"].([]any)
-	for _, e := range existing {
-		if s, ok := e.(string); ok && s == key {
-			return nil // already present
-		}
+	if hasString(existing, key) {
+		return nil // already present
 	}
 
 	if out, ok := insertAllowlistEntry(string(data), key); ok && allowlistContains(out, key) {
@@ -119,12 +118,11 @@ func allowlistContains(text, key string) bool {
 	}
 	sb, _ := root["sandbox"].(map[string]any)
 	list, _ := sb["command_allowlist"].([]any)
-	for _, e := range list {
-		if s, ok := e.(string); ok && s == key {
-			return true
-		}
-	}
-	return false
+	return hasString(list, key)
+}
+
+func hasString(list []any, key string) bool {
+	return slices.ContainsFunc(list, func(e any) bool { s, ok := e.(string); return ok && s == key })
 }
 
 func quoteTOML(s string) string {
@@ -163,4 +161,40 @@ func atomicWriteApproval(path string, out []byte) error {
 		return fmt.Errorf("rename: %w", err)
 	}
 	return nil
+}
+
+// persistVisionModel records the user's answer to "does this model accept
+// images?" as [vision.models] "<model>" = <bool> in config.toml, keeping every
+// other key. Missing file is created.
+func persistVisionModel(model string, hasVision bool) error {
+	if model == "" {
+		return nil
+	}
+	path := config.ConfigPath()
+	root := map[string]any{}
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	if len(data) > 0 {
+		if err := toml.Unmarshal(data, &root); err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+	}
+	vis, _ := root["vision"].(map[string]any)
+	if vis == nil {
+		vis = map[string]any{}
+	}
+	models, _ := vis["models"].(map[string]any)
+	if models == nil {
+		models = map[string]any{}
+	}
+	models[model] = hasVision
+	vis["models"] = models
+	root["vision"] = vis
+	out, err := toml.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("marshal toml: %w", err)
+	}
+	return atomicWriteApproval(path, out)
 }

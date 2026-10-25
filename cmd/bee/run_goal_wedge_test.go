@@ -27,8 +27,8 @@ func TestIsWedgedTurn(t *testing.T) {
 		{"nil", nil, false},
 	}
 	for _, c := range cases {
-		if got := isWedgedTurn(c.err); got != c.want {
-			t.Errorf("%s: isWedgedTurn = %v, want %v", c.name, got, c.want)
+		if got := loop.IsWedge(c.err); got != c.want {
+			t.Errorf("%s: IsWedge = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

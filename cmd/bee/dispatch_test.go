@@ -18,16 +18,7 @@ func TestBeeSkillDispatch(t *testing.T) {
 		t.Skip("skip dispatcher e2e under -short")
 	}
 	tmp := t.TempDir()
-	bin := filepath.Join(tmp, "bee"+exeSuffix())
-	{
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("go build: %v", err)
-		}
-	}
+	bin := buildBee(t)
 
 	home := filepath.Join(tmp, "home")
 	skillsDir := filepath.Join(home, "skills")

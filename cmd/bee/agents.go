@@ -11,27 +11,22 @@ import (
 	"github.com/elhenro/bee/internal/zzz"
 )
 
-// runAgents is the entry point wired into main.go's reservedSubcommands.
-func runAgents(args []string) {
-	_ = args // no flags yet
-
+// runAgents is the entry point wired into main.go; it takes no flags yet.
+func runAgents() {
 	cwd, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee agents: cwd: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee agents: cwd: %v", err)
 	}
 	repoRoot, err := zzz.RepoRoot(cwd)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "bee agents: not inside a git repository — agents need a git worktree to operate on.")
-		os.Exit(1)
+		exitf(1, "bee agents: not inside a git repository — agents need a git worktree to operate on.")
 	}
 
 	// loop: overview → attach (bee back) → overview → ... until ctrl+c at overview
 	for {
 		res, err := tuiagents.RunOverview(repoRoot)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee agents: %v\n", err)
-			os.Exit(1)
+			exitf(1, "bee agents: %v", err)
 		}
 		if res.AttachID == "" {
 			return // clean quit

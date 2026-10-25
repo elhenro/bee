@@ -3,19 +3,17 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
-	"github.com/muesli/termenv"
 
 	"github.com/elhenro/bee/internal/approval"
+	"github.com/elhenro/bee/internal/beehome"
 	"github.com/elhenro/bee/internal/commands"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
@@ -25,88 +23,15 @@ import (
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
-	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/tools/skillexec"
 	"github.com/elhenro/bee/internal/tui"
 	"github.com/elhenro/bee/internal/types"
 )
 
-// runTUI wires the full engine the same way runHeadlessReal does, then
+// runTUI wires the full engine the same way runHeadless does, then
 // hands control to internal/tui. Returns once the program exits.
 func runTUI() { runTUIWithSession("", "") }
-
-// detectDarkBg picks lipgloss bg mode.
-//   - BEE_THEME=light|dark forces it
-//   - else COLORFGBG=<fg>;<bg> — bg<7 = dark (xterm-ish convention)
-//   - else OSC 11 query via termenv (runs BEFORE bubbletea grabs stdin
-//     so the terminal reply is consumed cleanly)
-//   - else default dark
-func detectDarkBg() bool {
-	if t := strings.ToLower(strings.TrimSpace(os.Getenv("BEE_THEME"))); t != "" {
-		return t != "light"
-	}
-	if v := os.Getenv("COLORFGBG"); v != "" {
-		parts := strings.Split(v, ";")
-		if n, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
-			return n < 7
-		}
-	}
-	// termenv.HasDarkBackground sends OSC 11 and reads the reply. Safe here
-	// because we're called before tea.NewProgram puts stdin in raw mode.
-	// Falls back to true on any error (no TTY, query timeout, etc.).
-	return termenv.HasDarkBackground()
-}
-
-func stripAgentPreambleMessages(msgs []types.Message) []types.Message {
-	if len(msgs) == 0 || os.Getenv("BEE_AGENT_WORKTREE") == "1" {
-		return msgs
-	}
-	out := make([]types.Message, len(msgs))
-	copy(out, msgs)
-	for i, msg := range out {
-		if msg.Role != types.RoleUser {
-			continue
-		}
-		changed := false
-		blocks := make([]types.ContentBlock, len(msg.Content))
-		copy(blocks, msg.Content)
-		for j, block := range blocks {
-			if block.Type != types.BlockText {
-				continue
-			}
-			cleaned, ok := stripAgentPreambleText(block.Text)
-			if !ok {
-				continue
-			}
-			blocks[j].Text = cleaned
-			changed = true
-		}
-		if changed {
-			out[i].Content = blocks
-		}
-	}
-	return out
-}
-
-func stripAgentPreambleText(s string) (string, bool) {
-	markers := []string{"\n\nTask:\n", "\r\n\r\nTask:\r\n"}
-	for _, marker := range markers {
-		idx := strings.Index(s, marker)
-		if idx < 0 {
-			continue
-		}
-		prefix := s[:idx]
-		if !strings.Contains(prefix, "You are running unattended as one of many parallel") {
-			continue
-		}
-		if !strings.Contains(prefix, "DONE: <one-line summary>") {
-			continue
-		}
-		return strings.TrimLeft(s[idx+len(marker):], " \t\r\n"), true
-	}
-	return s, false
-}
 
 // runTUIWithSession is runTUI plus an optional pre-existing session id and an
 // optional seed prompt. resumeID reopens a prior rollout in append mode and
@@ -128,15 +53,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		}
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		if os.Getenv("BEE_TEST_PROVIDER") == "stub" {
-			cfg = config.Defaults()
-		} else {
-			fmt.Fprintf(os.Stderr, "bee: config: %v\n", err)
-			os.Exit(1)
-		}
-	}
+	cfg := mustConfig("bee", "", "", "")
 	// global --caveman flag (stripped in main) lands here via env; pre-validated
 	// in stripCavemanFlag, so no re-parse. Overrides profile via ApplyProfile's
 	// non-auto branch.
@@ -150,11 +67,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		cfg.Thinking = v
 	}
 
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee: provider: %v\n", err)
-		os.Exit(1)
-	}
+	prov := mustProvider("bee", cfg)
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
@@ -167,17 +80,20 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	// running turn. closed on exit so no process outlives bee.
 	jm := jobs.New()
 	defer jm.Close()
-	reg, err := buildToolsAsker(cwd, cfg, prov, storeDir, app, tuiAsker, withJobs(jm))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee: tools: %v\n", err)
-		os.Exit(1)
-	}
-
 	ensureFirstRun()
-	skillReg := skills.NewRegistry()
-	_ = skillReg.Load(skills.BaseDir())
-	// exec-kind skills (including waggles) become model-callable tools.
-	skillexec.RegisterExecSkills(reg, skillReg.List(), execSandbox(cfg, cwd)...)
+	skillReg := newSkillRegistry()
+	toolsFor := func(wcwd string, c config.Config, p llm.Provider, opts ...buildOpt) (*tools.Registry, error) {
+		r, err := buildToolsAsker(wcwd, c, p, storeDir, app, tuiAsker, opts...)
+		if err == nil {
+			// exec-kind skills (including waggles) become model-callable tools.
+			skillexec.RegisterExecSkills(r, skillReg.List(), execSandbox(c, wcwd)...)
+		}
+		return r, err
+	}
+	reg, err := toolsFor(cwd, cfg, prov, withJobs(jm))
+	if err != nil {
+		exitf(1, "bee: tools: %v", err)
+	}
 
 	// pre-warm the live model catalogue for the active provider so the
 	// context-fill indicator works for any model the API knows about,
@@ -191,14 +107,10 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		}()
 	}
 
-	sessID := resumeID
-	if sessID == "" {
-		sessID = uuid.NewString()
-	}
+	sessID := cmp.Or(resumeID, uuid.NewString())
 	roll, err := session.Open(sessID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee: session: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee: session: %v", err)
 	}
 	defer roll.Close()
 
@@ -206,31 +118,10 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	if resumeID != "" {
 		ms, rerr := session.ReadResume(resumeID)
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "bee: read session %s: %v\n", resumeID, rerr)
-			os.Exit(1)
+			exitf(1, "bee: read session %s: %v", resumeID, rerr)
 		}
 		prior = stripAgentPreambleMessages(ms)
 	}
-	// stream channel routes text deltas from the engine through bubbletea
-	// instead of letting them write to os.Stdout (which would corrupt the
-	// alt-screen). Buffered so brief consumer hiccups don't drop deltas.
-	// sized so a fast provider can outrun a busy Update cycle without the
-	// engine's non-blocking send dropping deltas; the pump batch-drains.
-	streamCh := make(chan string, 512)
-	// thinkCh routes reasoning deltas from the engine through bubbletea so
-	// chain-of-thought renders live above the answer instead of arriving
-	// in one batch after streaming ends. Same buffer size as streamCh — a
-	// reasoning model can emit deltas just as fast as text.
-	thinkCh := make(chan string, 512)
-	// progressCh routes withheld-output char counts from buffered tool-call
-	// modes so the loader's ↓ figure moves even when no text deltas flow.
-	progressCh := make(chan int, 512)
-	// liveMsgCh surfaces each assistant/tool message as the loop appends it,
-	// so tool_use / tool_result cards render mid-Run instead of only at
-	// turnDoneMsg. Buffered to avoid stalling the loop during tool bursts.
-	liveMsgCh := make(chan types.Message, 32)
-	warnCh := make(chan string, 8)
-	costs := cost.New()
 	eng := &loop.Engine{
 		Provider:    prov,
 		Tools:       reg,
@@ -245,14 +136,28 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		Stdout:      os.Stdout,
 		// buffered so a quick burst of Enter-steers from the TUI doesn't
 		// block; loop drains one per iteration anyway.
-		SteerCh:         make(chan string, 4),
-		Jobs:            jm,
-		StreamCh:        streamCh,
-		ThinkCh:         thinkCh,
-		ProgressCh:      progressCh,
-		LiveMsgCh:       liveMsgCh,
-		WarnCh:          warnCh,
-		Costs:           costs,
+		SteerCh: make(chan string, 4),
+		Jobs:    jm,
+		// stream channel routes text deltas from the engine through bubbletea
+		// instead of letting them write to os.Stdout (which would corrupt the
+		// alt-screen). Buffered so brief consumer hiccups don't drop deltas.
+		// sized so a fast provider can outrun a busy Update cycle without the
+		// engine's non-blocking send dropping deltas; the pump batch-drains.
+		StreamCh: make(chan string, 512),
+		// ThinkCh routes reasoning deltas from the engine through bubbletea so
+		// chain-of-thought renders live above the answer instead of arriving
+		// in one batch after streaming ends. Same buffer size as StreamCh — a
+		// reasoning model can emit deltas just as fast as text.
+		ThinkCh: make(chan string, 512),
+		// ProgressCh routes withheld-output char counts from buffered tool-call
+		// modes so the loader's ↓ figure moves even when no text deltas flow.
+		ProgressCh: make(chan int, 512),
+		// LiveMsgCh surfaces each assistant/tool message as the loop appends it,
+		// so tool_use / tool_result cards render mid-Run instead of only at
+		// turnDoneMsg. Buffered to avoid stalling the loop during tool bursts.
+		LiveMsgCh:       make(chan types.Message, 32),
+		WarnCh:          make(chan string, 8),
+		Costs:           cost.New(),
 		InitialMessages: prior,
 		VisionAsker:     herdr.WrapAsker(tuiAsker),
 		PersistVision:   persistVisionModel,
@@ -268,11 +173,10 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		if err != nil {
 			return err
 		}
-		newReg, err := buildToolsAsker(cwd, e.Cfg, newProv, storeDir, app, tuiAsker, withJobs(jm))
+		newReg, err := toolsFor(cwd, e.Cfg, newProv, withJobs(jm))
 		if err != nil {
 			return err
 		}
-		skillexec.RegisterExecSkills(newReg, skillReg.List(), execSandbox(e.Cfg, cwd)...)
 		e.Provider = newProv
 		e.Memory = newKnowledgeAdapter(newProv, e.Cfg)
 		e.Tools = newReg
@@ -287,12 +191,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	// engine at its own git worktree so file tools target the worktree instead
 	// of the shared cwd. Same builder as Rebuild, just parameterized on path.
 	eng.ToolsForCwd = func(wcwd string) (*tools.Registry, error) {
-		r, err := buildToolsAsker(wcwd, eng.Cfg, eng.Provider, storeDir, app, tuiAsker)
-		if err != nil {
-			return nil, err
-		}
-		skillexec.RegisterExecSkills(r, skillReg.List(), execSandbox(eng.Cfg, wcwd)...)
-		return r, nil
+		return toolsFor(wcwd, eng.Cfg, eng.Provider)
 	}
 
 	// Startup intro animation is non-blocking: tui.RunWithCommandsAndKeyMap
@@ -306,12 +205,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	commands.RegisterBuiltins(cmdReg)
 
 	// load ~/.bee/keybindings.json overrides on top of defaults
-	beeHome := os.Getenv("BEE_HOME")
-	if beeHome == "" {
-		if h, err := os.UserHomeDir(); err == nil {
-			beeHome = filepath.Join(h, ".bee")
-		}
-	}
+	beeHome, _ := beehome.Dir()
 	km := tui.LoadKeyMap(beeHome)
 
 	// resume: if the seeded history is still over the compaction threshold,

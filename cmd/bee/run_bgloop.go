@@ -18,12 +18,19 @@ import (
 	"github.com/elhenro/bee/internal/zzz"
 )
 
+// putStatus stamps s with state, last response and the current time, writes the
+// sidecar and returns the stamped status.
+func putStatus(s bgreg.Status, state bgreg.State, resp string) bgreg.Status {
+	s.State, s.LastResponse, s.UpdatedAt = state, resp, time.Now().UTC()
+	_ = bgreg.Write(s)
+	return s
+}
+
 // runBgLoop persists the engine across turns: write status sidecar on every
 // boundary, run a turn, write awaiting status with the assistant's final
 // text, then poll the inbox for follow-up messages. Exits on ctx cancel.
 func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) error {
 	agentMode := os.Getenv("BEE_AGENT_WORKTREE") == "1"
-	branch := os.Getenv("BEE_AGENT_BRANCH")
 	repoRoot := os.Getenv("BEE_AGENT_REPO_ROOT")
 
 	// inherit prior status fields (worktree/branch/provider/etc.) written by
@@ -61,7 +68,7 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		base.HandinSHA = existing.HandinSHA
 	}
 	if agentMode && base.Branch == "" {
-		base.Branch = branch
+		base.Branch = os.Getenv("BEE_AGENT_BRANCH")
 	}
 	if agentMode && base.MergeState == "" {
 		base.MergeState = bgreg.MergeStateUnmerged
@@ -78,10 +85,7 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 	}
 	hadCommit := false
 	for {
-		s := base
-		s.State = bgreg.StateActive
-		s.UpdatedAt = time.Now().UTC()
-		_ = bgreg.Write(s)
+		s := putStatus(base, bgreg.StateActive, "")
 
 		// token snapshot before turn so we can compute deltas
 		var beforeIn, beforeOut int
@@ -96,10 +100,7 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 				writeStopped(s)
 				return nil
 			}
-			s.State = bgreg.StateFailed
-			s.LastResponse = err.Error()
-			s.UpdatedAt = time.Now().UTC()
-			_ = bgreg.Write(s)
+			putStatus(s, bgreg.StateFailed, err.Error())
 			return err
 		}
 
@@ -113,7 +114,6 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		// agents mode: auto-commit any dirty tree from this turn. Surface
 		// failures loudly — a silent miss here corrupts merger state (agent
 		// signals DONE on a branch with no commit).
-		var committedSHA string
 		if agentMode && repoRoot != "" {
 			clean, ierr := zzz.IsClean(eng.Cwd)
 			if ierr != nil {
@@ -124,15 +124,12 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 					return failAgentCommit(base, "git add: "+cerr.Error())
 				}
 				commitMsg := zzz.CommitMessageFrom(res.FinalText, 1, base.InputTokens, base.OutputTokens)
-				sha, cerr := zzz.Commit(eng.Cwd, commitMsg, false, false)
-				if cerr != nil {
+				if _, cerr := zzz.Commit(eng.Cwd, commitMsg, false, false); cerr != nil {
 					return failAgentCommit(base, "git commit: "+cerr.Error())
 				}
-				committedSHA = sha
 				hadCommit = true
 			}
 		}
-		_ = committedSHA
 
 		// classify final text via shared sentinel package. Legacy bg
 		// sessions (non-agent mode) ignore sentinels and just sit awaiting.
@@ -150,7 +147,6 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 			switch kind {
 			case sentinel.KindDone:
 				s = base
-				s.State = bgreg.StateDone
 				// zero-change run has nothing to merge — skip the unmerged limbo
 				// and tear down the worktree+branch right away.
 				// a DONE is the agent's handin: proof of life resets the
@@ -170,31 +166,21 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 				} else {
 					s.MergeState = bgreg.MergeStateMerged
 					s.FinishedAt = time.Now().UTC()
-					if agentMode && repoRoot != "" && base.WorktreePath != "" {
+					if repoRoot != "" && base.WorktreePath != "" {
 						_ = zzz.WorktreeRemove(repoRoot, base.WorktreePath, true)
 						s.WorktreePath = ""
 					}
 				}
-				s.LastResponse = final
-				s.UpdatedAt = time.Now().UTC()
-				_ = bgreg.Write(s)
 				// exit loop — the merger goroutine in the TUI picks it up
+				putStatus(s, bgreg.StateDone, final)
 				return nil
 			case sentinel.KindBlocked:
-				s = base
-				s.State = bgreg.StateFailed
-				s.LastResponse = final
-				s.UpdatedAt = time.Now().UTC()
-				_ = bgreg.Write(s)
+				putStatus(base, bgreg.StateFailed, final)
 				return nil
 			}
 		}
 
-		s = base
-		s.State = bgreg.StateAwaiting
-		s.LastResponse = final
-		s.UpdatedAt = time.Now().UTC()
-		_ = bgreg.Write(s)
+		s = putStatus(base, bgreg.StateAwaiting, final)
 
 		next, err := waitForInbox(ctx, sessID)
 		if err != nil {
@@ -215,9 +201,7 @@ func writeStopped(s bgreg.Status) {
 	if _, err := bgreg.Read(s.SessionID); errors.Is(err, os.ErrNotExist) {
 		return
 	}
-	s.State = bgreg.StateDone
-	s.UpdatedAt = time.Now().UTC()
-	_ = bgreg.Write(s)
+	putStatus(s, bgreg.StateDone, s.LastResponse)
 }
 
 // maxLoadHold caps how long an agent waits on load. Agents are separate
@@ -230,11 +214,7 @@ const maxLoadHold = 10 * time.Minute
 func holdForLoad(ctx context.Context, ratio float64, base bgreg.Status) {
 	deadline := time.Now().Add(maxLoadHold)
 	_ = sysload.Wait(ctx, ratio, func(perCore float64) {
-		s := base
-		s.State = bgreg.StateActive
-		s.LastResponse = fmt.Sprintf("waiting: load %.1f per core is above %.1f", perCore, ratio)
-		s.UpdatedAt = time.Now().UTC()
-		_ = bgreg.Write(s)
+		putStatus(base, bgreg.StateActive, fmt.Sprintf("waiting: load %.1f per core is above %.1f", perCore, ratio))
 	}, func() bool { return time.Now().After(deadline) })
 }
 
@@ -242,12 +222,7 @@ func holdForLoad(ctx context.Context, ratio float64, base bgreg.Status) {
 // finalize the worktree state. The merger keys off MergeStateUnmerged + DONE,
 // so a silent commit miss would surface a corrupt branch downstream.
 func failAgentCommit(base bgreg.Status, reason string) error {
-	s := base
-	s.State = bgreg.StateFailed
-	s.LastResponse = "commit failed: " + reason
-	s.UpdatedAt = time.Now().UTC()
-	_ = bgreg.Write(s)
-	return errors.New(s.LastResponse)
+	return errors.New(putStatus(base, bgreg.StateFailed, "commit failed: "+reason).LastResponse)
 }
 
 // pendingInbox takes whatever is in the inbox right now without waiting.

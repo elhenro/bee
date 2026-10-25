@@ -6,8 +6,8 @@
 package main
 
 import (
+	"cmp"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,25 +20,28 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/elhenro/bee/internal/approval"
-	"github.com/elhenro/bee/internal/caveman"
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/herdr"
 	"github.com/elhenro/bee/internal/jsonmode"
 	"github.com/elhenro/bee/internal/knowledge"
-	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
-	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/skills/bundled"
 	"github.com/elhenro/bee/internal/tools/skillexec"
 )
 
-// runHeadlessReal is the actual headless implementation. main.go calls
-// it via the runHeadless alias.
-func runHeadlessReal(args []string) {
+// runHeadless is the headless implementation behind `bee run`. Cleanup is
+// deferred inside headlessRun, so a non-zero code exits only after it ran.
+func runHeadless(args []string) {
+	if code := headlessRun(args); code != 0 {
+		os.Exit(code)
+	}
+}
+
+func headlessRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	headless := fs.Bool("headless", true, "run without TUI (default true)")
+	fs.Bool("headless", true, "run without TUI (default true)")
 	model := fs.String("model", "", "override config default_model")
 	providerName := fs.String("provider", "", "override config default_provider")
 	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|workspace-write-net|danger-full-access)")
@@ -57,11 +60,7 @@ func runHeadlessReal(args []string) {
 	yes := fs.Bool("yes", false, "auto-approve any dangerous shell command without prompting (still blocks hardline-refused commands)")
 	yolo := fs.Bool("yolo", false, "alias for --yes: auto-approve dangerous commands")
 	browserOn := fs.Bool("browser", false, "enable native browser tools (open/snapshot/click/type/console) for this run")
-	fs.SetOutput(os.Stderr)
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
-	_ = headless // single-path for now
+	parseFlags(fs, args)
 	if *verbose {
 		_ = os.Setenv("BEE_VERBOSE", "1")
 	}
@@ -70,38 +69,21 @@ func runHeadlessReal(args []string) {
 	if *writeFilter != "" {
 		re, err := regexp.Compile(*writeFilter)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee run: bad --write-path-re: %v\n", err)
-			os.Exit(2)
+			exitf(2, "bee run: bad --write-path-re: %v", err)
 		}
 		writeRe = re
 	}
 
-	var userMsg string
-	if len(fs.Args()) > 0 {
-		userMsg = strings.Join(fs.Args(), " ")
-	} else if *skillName != "" {
-		// skill body drives the turn; stdin would block on tty.
-		userMsg = ""
-	} else {
+	userMsg := strings.Join(fs.Args(), " ")
+	// a skill body drives the turn; stdin would block on tty.
+	if len(fs.Args()) == 0 && *skillName == "" {
 		var err error
-		userMsg, err = resolveUserMessage(nil, os.Stdin)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee run: %v\n", err)
-			os.Exit(2)
+		if userMsg, err = resolveUserMessage(nil, os.Stdin); err != nil {
+			exitf(2, "bee run: %v", err)
 		}
 	}
 
-	cfg, err := config.LoadWith(config.Overrides{Provider: *providerName, Model: *model})
-	if err != nil {
-		// in test mode we synthesize a stub config so missing API keys
-		// don't break the smoke test.
-		if os.Getenv("BEE_TEST_PROVIDER") != "" {
-			cfg = config.Defaults()
-		} else {
-			fmt.Fprintf(os.Stderr, "bee run: config: %v\n", err)
-			os.Exit(1)
-		}
-	}
+	cfg := mustConfig("bee run", *model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
 	// scripted provider needs deterministic Stream-call count: pin worker role
 	// (no per-turn classifier side-query fires — classifier was removed) and
 	// disable compaction + memory selection. tests script exactly the calls
@@ -111,50 +93,15 @@ func runHeadlessReal(args []string) {
 		cfg.Compaction.Enabled = false
 		cfg.Memory.Enabled = false
 	}
-	applyOverrides(&cfg, *model, *providerName, resolveSafe(*sandboxScope, *safe))
-	// --effort is an alias for --thinking. Global `bee --effort` (stripped
-	// in main.go) lands in BEE_EFFORT and is consumed here as the lowest-
-	// priority source; explicit subcommand flags override env.
-	effortVal := *effort
-	if effortVal == "" {
-		effortVal = os.Getenv("BEE_EFFORT")
+	if err := applyThinkingCaveman(&cfg, *thinking, *effort, *cavemanLvl); err != nil {
+		exitf(2, "bee run: %v", err)
 	}
-	if *thinking == "" && effortVal != "" {
-		*thinking = effortVal
-	}
-	if *thinking != "" {
-		cfg.Thinking = string(llm.ParseThinking(*thinking))
-	}
-	cavemanArg := *cavemanLvl
-	if cavemanArg == "" {
-		cavemanArg = os.Getenv("BEE_CAVEMAN") // global --caveman flag
-	}
-	if cavemanArg != "" {
-		// validate so a typo fails fast instead of silently falling back to
-		// profile default in ApplyProfile.
-		lvl, err := caveman.ParseLevel(cavemanArg)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "bee run: %v\n", err)
-			os.Exit(2)
-		}
-		cfg.Caveman = string(lvl)
-	}
-	if *extraTools != "" {
-		for _, p := range strings.Split(*extraTools, ",") {
-			if p = strings.TrimSpace(p); p != "" {
-				cfg.ExtraTools = append(cfg.ExtraTools, p)
-			}
-		}
-	}
+	cfg.ExtraTools = append(cfg.ExtraTools, splitCSV(*extraTools)...)
 	if *browserOn {
 		cfg.Browser.Enabled = true
 	}
 
-	prov, err := buildProvider(cfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee run: provider: %v\n", err)
-		os.Exit(1)
-	}
+	prov := mustProvider("bee run", cfg)
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
@@ -165,85 +112,34 @@ func runHeadlessReal(args []string) {
 	// background commands, only for a run shape that waits for them (see awaitJobs)
 	jm := headlessJobs(*bgLoop, *skillName, userMsg)
 	defer jm.Close()
-	var jobOpts []buildOpt
-	if jm != nil {
-		jobOpts = append(jobOpts, withJobs(jm))
-	}
-	var reg *tools.Registry
-	if writeRe != nil {
-		reg, err = buildToolsFilteredWithApprover(cwd, cfg, writeRe, prov, storeDir, app, jobOpts...)
-	} else {
-		reg, err = buildToolsWithApprover(cwd, cfg, prov, storeDir, app, jobOpts...)
-	}
+	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app, withJobs(jm), withWriteFilter(writeRe))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee run: tools: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee run: tools: %v", err)
 	}
 	ensureFirstRun()
-	skillReg := skills.NewRegistry()
-	_ = skillReg.Load(skills.BaseDir()) // best-effort
+	skillReg := newSkillRegistry()
 	// exec-kind skills (including waggles) become model-callable tools. Done
 	// before the --allowed-tools filter so the allowlist governs them too.
 	skillexec.RegisterExecSkills(reg, skillReg.List(), execSandbox(cfg, cwd)...)
 
 	if *allowedTools != "" {
 		if reg, err = filterTools(reg, *allowedTools); err != nil {
-			fmt.Fprintf(os.Stderr, "bee run: %v\n", err)
-			os.Exit(2)
+			exitf(2, "bee run: %v", err)
 		}
 	}
 
 	var recipeSkill *skills.Skill
 	if *skillName != "" {
-		s, ok := skillReg.Get(*skillName)
-		if !ok {
-			s, ok = waggleSkill(*skillName)
-		}
-		if !ok {
-			fmt.Fprintf(os.Stderr, "bee run: unknown skill %q\n", *skillName)
-			os.Exit(2)
-		}
-		switch {
-		case s.Kind == skills.KindRecipe && s.Runtime:
-			// runtime recipe: executed in Go once the engine exists; the
-			// positional args feed its templates rather than a user message.
-			recipeSkill = &s
-		case (s.Kind == skills.KindPrompt || s.Kind == skills.KindRecipe) && s.Body != "":
-			// prompt-kind: prepend body to user message. a legacy recipe is
-			// handled the same way (recipeBuild folds the steps into Body).
-			// exec-kind skills are registered as callable tools above.
-			if userMsg == "" {
-				userMsg = s.Body
-			} else {
-				userMsg = s.Body + "\n\nInput: " + userMsg
-			}
-		}
+		recipeSkill, userMsg = resolveRunSkill(skillReg, *skillName, userMsg)
 	}
 
-	sessID := *sessionID
-	if sessID == "" {
-		sessID = uuid.NewString()
-	}
+	sessID := cmp.Or(*sessionID, uuid.NewString())
 	roll, err := session.Open(sessID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bee run: session: %v\n", err)
-		os.Exit(1)
+		exitf(1, "bee run: session: %v", err)
 	}
 	defer roll.Close()
 	defer herdr.Close()
-	// os.Exit skips defers: every exit below goes through exit so the session
-	// file closes and pending AllowAlways grants reach disk first.
-	exit := func(code int) {
-		jm.Close()
-		roll.Close()
-		herdr.Close()
-		if c, ok := app.(*approval.Cache); ok {
-			c.Flush()
-		}
-		os.Exit(code)
-	}
-
-	memStore := newKnowledgeAdapter(prov, cfg)
 
 	// the queen hive only runs in the TUI; headless falls back to a single
 	// worker turn rather than locking up. note it so the behavior isn't silent.
@@ -257,7 +153,7 @@ func runHeadlessReal(args []string) {
 		Skills:      skillReg,
 		Waggle:      waggleManager(cfg, cwd),
 		Replay:      waggleReplayer(cfg, cwd),
-		Memory:      memStore,
+		Memory:      newKnowledgeAdapter(prov, cfg),
 		Sessions:    roll,
 		HostSession: true,
 		Cfg:         cfg,
@@ -266,7 +162,6 @@ func runHeadlessReal(args []string) {
 		Costs:       cost.New(),
 		Jobs:        jm,
 	}
-
 	if *jsonOut {
 		eng.JSONEmitter = jsonmode.New(os.Stdout)
 		// text deltas already routed through emitter; suppress raw writes.
@@ -274,21 +169,21 @@ func runHeadlessReal(args []string) {
 	}
 
 	if recipeSkill != nil {
-		if code := runRecipeHeadless(eng, *recipeSkill, fs.Args()); code != 0 {
-			exit(code)
-		}
-		return
+		return runRecipeHeadless(eng, *recipeSkill, fs.Args())
 	}
+
+	// signal parent so Ctrl-C surfaces as a clean context.Canceled (the
+	// watchdog never resumes a user abort) rather than killing the process.
+	parent, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	if *bgLoop {
 		// long-lived bg path: signal-cancellable ctx, no timeout.
-		bgCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		if err := runBgLoop(bgCtx, eng, sessID, userMsg); err != nil {
+		if err := runBgLoop(parent, eng, sessID, userMsg); err != nil {
 			fmt.Fprintf(os.Stderr, "bee run: bg-loop: %v\n", err)
-			exit(1)
+			return 1
 		}
-		return
+		return 0
 	}
 
 	// headless /goal: a "/goal <condition>" message drives an auto-loop instead
@@ -297,60 +192,16 @@ func runHeadlessReal(args []string) {
 	if cond, isGoal := parseGoalMessage(userMsg); isGoal {
 		if cond == "" {
 			fmt.Fprintln(os.Stderr, "bee: /goal needs a condition in headless mode")
-			exit(0)
+			return 0
 		}
-		goalCtx, goalStop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer goalStop()
-		if code := runGoalHeadless(goalCtx, eng, cfg, sessID, cond); code != 0 {
-			exit(code)
-		}
-		return
+		return runGoalHeadless(parent, eng, cfg, sessID, cond)
 	}
 
-	// signal parent so Ctrl-C surfaces as a clean context.Canceled (the
-	// watchdog never resumes a user abort) rather than killing the process.
-	parent, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	// bounded auto-resume: a turn that stops on a recoverable condition
-	// (timeout, dropped stream, transient wedge, max-iter) is re-triggered with
-	// a continuation instead of giving up — capped at MaxResumes so a hopeless
-	// spiral can't burn forever. Disabled => exactly one attempt (old behavior).
-	msg := userMsg
-	var res loop.RunResult
-	for attempt := 0; ; attempt++ {
-		runCtx, cancel := turnContext(parent, cfg.Watchdog)
-		res, err = eng.Run(runCtx, msg)
-		cancel()
-
-		if !cfg.Watchdog.Enabled {
-			break
-		}
-		d := loop.ClassifyResume(err, res)
-		if !d.Resume || attempt >= cfg.Watchdog.Resumes() {
-			break
-		}
-		fmt.Fprintf(os.Stderr, "bee: turn stopped (%s), auto-resuming %d/%d…\n",
-			d.Reason, attempt+1, cfg.Watchdog.Resumes())
-		// carry context into the next attempt, minus any tool_use left dangling
-		// by the aborted dispatch (replaying those is a wire error). for
-		// provider-reject the broken tool_use is usually preceded by a long
-		// text preamble that drove the model into the wedge — drop the whole
-		// trailing assistant message so the next attempt doesn't re-derive
-		// the same broken approach. other resume reasons keep the text
-		// (it's useful context for a fresh turn).
-		if d.Reason == "provider-reject" {
-			eng.InitialMessages = loop.StripBrokenToolCall(res.Messages)
-		} else {
-			eng.InitialMessages = loop.StripDanglingToolUse(res.Messages)
-		}
-		msg = d.Continuation
-	}
-
+	res, err := runWithResume(parent, eng, userMsg)
 	// background jobs outlive the turn that started them: keep going until they
 	// have all reported back and the model has had its say on each
 	if err == nil && eng.Jobs != nil {
-		res, err = awaitJobs(parent, eng, cfg, res, *jsonOut)
+		err = awaitJobs(parent, eng, res, *jsonOut)
 	}
 
 	if err != nil {
@@ -360,48 +211,54 @@ func runHeadlessReal(args []string) {
 			fmt.Fprintf(os.Stderr, "\nbee run: %v\n", err)
 		}
 		fmt.Fprintf(os.Stderr, "bee back %s\n", sessID)
-		// two-strike → distinct exit code so wrappers (zzz, swarm, CI) can
-		// tell "the model wedged on a repeat" apart from generic failures.
-		if errors.Is(err, loop.ErrTwoStrike) {
-			exit(7)
-		}
-		// per-tool failure cap → same wedge family as two-strike but
-		// triggered by N failures on the same tool name regardless of args.
-		if errors.Is(err, loop.ErrPerToolFailureCap) {
-			exit(7)
-		}
-		// format-strike → model wedged emitting malformed envelopes the
-		// parser can't recognize. distinct from two-strike (which is about
-		// tool errors) — signals "switch model or rephrase prompt".
-		if errors.Is(err, loop.ErrFormatStrike) {
-			exit(7)
-		}
-		// repetition loop → model wedged emitting the same text until cut.
-		// same wedge family — signals "switch model or rephrase prompt".
-		if errors.Is(err, loop.ErrRepeatStream) {
-			exit(7)
-		}
-		// empty-output loop → model returned whitespace-only turns. same wedge
-		// family — signals "switch model" (often a broken thinking template).
-		if errors.Is(err, loop.ErrEmptyCompletion) {
-			exit(7)
-		}
-		// max-iterations after resumes exhausted → same wedge family: the run
-		// kept needing more rounds than the cap allows.
-		if errors.Is(err, loop.ErrMaxIterations) {
-			exit(7)
-		}
-		// escalate → another distinct code so the user/CI knows the model
-		// asked for help rather than crashed.
-		if errors.Is(err, loop.ErrEscalate) {
-			exit(8)
-		}
-		exit(1)
+		return exitCodeForErr(err)
 	}
-	_ = res
 	if !*jsonOut {
 		// trailing newline so prompts don't merge with assistant output
 		fmt.Fprintln(os.Stdout)
 	}
 	fmt.Fprintf(os.Stderr, "bee back %s\n", sessID)
+	return 0
+}
+
+// newSkillRegistry loads the installed skills, best-effort.
+func newSkillRegistry() *skills.Registry {
+	reg := skills.NewRegistry()
+	_ = reg.Load(skills.BaseDir())
+	return reg
+}
+
+// resolveRunSkill looks up the --skill name (registry, then waggle stores). A
+// runtime recipe is returned for execution in Go once the engine exists, and
+// the positional args feed its templates rather than a user message. A
+// prompt-kind skill, or a legacy recipe (recipeBuild folds its steps into
+// Body), is prepended to the user message. Exec-kind skills are registered as
+// callable tools by the caller. An unknown name exits 2.
+func resolveRunSkill(reg *skills.Registry, name, userMsg string) (*skills.Skill, string) {
+	s, ok := reg.Get(name)
+	if !ok {
+		s, ok = waggleSkill(name)
+	}
+	if !ok {
+		exitf(2, "bee run: unknown skill %q", name)
+	}
+	switch {
+	case s.Kind == skills.KindRecipe && s.Runtime:
+		return &s, userMsg
+	case (s.Kind == skills.KindPrompt || s.Kind == skills.KindRecipe) && s.Body != "":
+		if userMsg == "" {
+			return nil, s.Body
+		}
+		return nil, s.Body + "\n\nInput: " + userMsg
+	}
+	return nil, userMsg
+}
+
+// ensureFirstRun is best-effort. Called from `bee run` and TUI startup.
+// Silent on success, never fatal: a broken HOME shouldn't block the agent.
+// WriteDefaults is idempotent and preserves user edits (existing files are
+// never overwritten), so calling it every start back-fills any bundled
+// skills added since the user's last seed.
+func ensureFirstRun() {
+	_, _ = bundled.WriteDefaults(skills.BaseDir())
 }

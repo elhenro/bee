@@ -4,9 +4,9 @@
 package main
 
 import (
-	"container/list"
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,21 +19,22 @@ import (
 // tagLRUCap bounds entries in the phase-2 tag-extract LRU.
 const tagLRUCap = 64
 
-// tagLRUEntry pairs the normalized key with the extracted tags so list
-// elements are self-describing on eviction.
-type tagLRUEntry struct {
-	key  string
-	tags []string
-}
-
-var (
-	tagLRUMu    sync.Mutex
-	tagLRUList  = list.New()
-	tagLRUIndex = map[string]*list.Element{}
-)
+var tagLRU = struct {
+	sync.Mutex
+	tags  map[string][]string
+	order []string // least recently used first
+}{tags: map[string][]string{}}
 
 func tagLRUKey(query string) string {
 	return strings.ToLower(strings.TrimSpace(query))
+}
+
+// tagLRUTouch moves key to the most-recent end. The caller holds the lock.
+func tagLRUTouch(key string) {
+	if i := slices.Index(tagLRU.order, key); i >= 0 {
+		tagLRU.order = slices.Delete(tagLRU.order, i, i+1)
+	}
+	tagLRU.order = append(tagLRU.order, key)
 }
 
 func tagLRUGet(query string) ([]string, bool) {
@@ -41,16 +42,13 @@ func tagLRUGet(query string) ([]string, bool) {
 	if key == "" {
 		return nil, false
 	}
-	tagLRUMu.Lock()
-	defer tagLRUMu.Unlock()
-	el, ok := tagLRUIndex[key]
-	if !ok {
-		return nil, false
+	tagLRU.Lock()
+	defer tagLRU.Unlock()
+	tags, ok := tagLRU.tags[key]
+	if ok {
+		tagLRUTouch(key)
 	}
-	tagLRUList.MoveToFront(el)
-	entry := el.Value.(tagLRUEntry)
-	out := append([]string(nil), entry.tags...)
-	return out, true
+	return slices.Clone(tags), ok
 }
 
 func tagLRUPut(query string, tags []string) {
@@ -58,22 +56,13 @@ func tagLRUPut(query string, tags []string) {
 	if key == "" {
 		return
 	}
-	tagLRUMu.Lock()
-	defer tagLRUMu.Unlock()
-	if el, ok := tagLRUIndex[key]; ok {
-		el.Value = tagLRUEntry{key: key, tags: append([]string(nil), tags...)}
-		tagLRUList.MoveToFront(el)
-		return
-	}
-	el := tagLRUList.PushFront(tagLRUEntry{key: key, tags: append([]string(nil), tags...)})
-	tagLRUIndex[key] = el
-	for tagLRUList.Len() > tagLRUCap {
-		back := tagLRUList.Back()
-		if back == nil {
-			break
-		}
-		tagLRUList.Remove(back)
-		delete(tagLRUIndex, back.Value.(tagLRUEntry).key)
+	tagLRU.Lock()
+	defer tagLRU.Unlock()
+	tagLRU.tags[key] = slices.Clone(tags)
+	tagLRUTouch(key)
+	if len(tagLRU.order) > tagLRUCap {
+		delete(tagLRU.tags, tagLRU.order[0])
+		tagLRU.order = tagLRU.order[1:]
 	}
 }
 
