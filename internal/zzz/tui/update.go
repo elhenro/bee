@@ -47,6 +47,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rows[len(m.rows)-1].tokens = m.tokens
 		}
 		return m, m.box.Wait()
+	case commitsMsg:
+		if n := len(m.rows); n > 0 {
+			m.rows[n-1].status = "committed"
+		}
+		return m, m.box.Wait()
 	case logMsg:
 		v.text = cleanLogText(v.text)
 		m.log = append(m.log, v)

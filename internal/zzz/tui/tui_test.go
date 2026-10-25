@@ -135,3 +135,18 @@ func TestModelViewRendersBee(t *testing.T) {
 		t.Errorf("view missing sleeping bee glyph: %q", out)
 	}
 }
+
+// a committed iteration must leave the "running" state in the timeline.
+func TestCommitMarksRowCommitted(t *testing.T) {
+	m := New(&zzz.Run{ID: "test", Branch: "zzz/test"}, zzz.Config{})
+	m.SetIter(1, 5)
+	m.SetPhase("commit")
+	m.IncCommits()
+	for i := 0; i < 3; i++ {
+		u, _ := m.Update(<-m.box.C)
+		m = u.(*Model)
+	}
+	if len(m.rows) != 1 || m.rows[0].status != "committed" {
+		t.Fatalf("rows = %+v, want one committed row", m.rows)
+	}
+}

@@ -19,6 +19,9 @@ type phaseMsg string
 
 type tokensMsg zzz.TokenStat
 
+// commitsMsg marks the running iteration committed.
+type commitsMsg struct{}
+
 type logMsg struct {
 	level string // "info" | "warn" | "err"
 	text  string

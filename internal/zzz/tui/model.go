@@ -82,7 +82,7 @@ func (m *Model) Steer() <-chan zzz.Steer { return m.steer }
 func (m *Model) SetIter(n, max int)        { m.box.Send(iterMsg{n: n, max: max}) }
 func (m *Model) SetPhase(p string)         { m.box.Send(phaseMsg(p)) }
 func (m *Model) SetTokens(t zzz.TokenStat) { m.box.Send(tokensMsg(t)) }
-func (m *Model) IncCommits()               {} // the panels show no commit count
+func (m *Model) IncCommits()               { m.box.Send(commitsMsg{}) }
 func (m *Model) Println(msg string)        { m.box.Send(logMsg{level: uikit.LevelFor(msg), text: msg}) }
 func (m *Model) RenderSummary(r *zzz.Run)  {} // finalPanel() shows the summary
 
