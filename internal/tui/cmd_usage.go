@@ -2,10 +2,13 @@ package tui
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/elhenro/bee/internal/beehome"
 )
 
 // cmdUsage tracks how often each slash command / skill is invoked so the
@@ -18,20 +21,9 @@ type cmdUsage struct {
 	path   string
 }
 
-func cmdUsagePath() string {
-	home := os.Getenv("BEE_HOME")
-	if home == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		home = filepath.Join(h, ".bee")
-	}
-	return filepath.Join(home, "cmd_usage.json")
-}
-
 func loadCmdUsage() *cmdUsage {
-	u := &cmdUsage{counts: map[string]int{}, path: cmdUsagePath()}
+	path, _ := beehome.Join("cmd_usage.json")
+	u := &cmdUsage{counts: map[string]int{}, path: path}
 	if u.path == "" {
 		return u
 	}
@@ -61,10 +53,7 @@ func (u *cmdUsage) bump(name string) {
 	}
 	u.mu.Lock()
 	u.counts[name]++
-	snapshot := make(map[string]int, len(u.counts))
-	for k, v := range u.counts {
-		snapshot[k] = v
-	}
+	snapshot := maps.Clone(u.counts)
 	path := u.path
 	u.mu.Unlock()
 	if path == "" {

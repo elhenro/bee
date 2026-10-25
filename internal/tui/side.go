@@ -48,6 +48,18 @@ func (s *tuiSide) armPane(pane string, built func(*Model) bool, set func(*Model)
 	return nil
 }
 
+// resetView drops transient stream state so the next flush reprints the
+// (swapped) transcript from the top.
+func (m *Model) resetView() {
+	m.partial = ""
+	m.streamFlushed = ""
+	m.streamFenceOpen = false
+	m.pendingFlushedPrefix = ""
+	m.lastErr = ""
+	m.state = StateIdle
+	m.printedCount = 0
+}
+
 // rebuildEngine reruns the engine's rebuild hook, if any, so a changed
 // provider, tool set or model takes effect on the next turn.
 func rebuildEngine(e *loop.Engine, what string) error {
@@ -209,16 +221,10 @@ func (s *tuiSide) OpenSession(id string) error {
 		s.m.eng.Costs.Reset()
 		s.m.eng.Costs.SetEstimatedInput(prompt.EstimateTokens(messagesText(prior)))
 	}
-	s.m.partial = ""
-	s.m.streamFlushed = ""
-	s.m.streamFenceOpen = false
-	s.m.pendingFlushedPrefix = ""
-	s.m.lastErr = ""
-	s.m.state = StateIdle
-	// Reset printedCount so flush() will emit the resumed transcript into
-	// terminal scrollback. The slash-command caller (runSlash) calls flush
-	// after Run() returns.
-	s.m.printedCount = 0
+	// resets printedCount so flush() emits the resumed transcript into terminal
+	// scrollback. The slash-command caller (runSlash) calls flush after Run()
+	// returns.
+	s.m.resetView()
 	return nil
 }
 
@@ -285,13 +291,7 @@ func (s *tuiSide) NewSession() error {
 		return errEngineBusy
 	}
 	s.m.messages = nil
-	s.m.partial = ""
-	s.m.streamFlushed = ""
-	s.m.streamFenceOpen = false
-	s.m.pendingFlushedPrefix = ""
-	s.m.lastErr = ""
-	s.m.state = StateIdle
-	s.m.printedCount = 0
+	s.m.resetView()
 	if s.m.eng != nil {
 		if s.m.eng.Sessions != nil {
 			_ = s.m.eng.Sessions.Close()
@@ -363,13 +363,7 @@ func (s *tuiSide) ForkSession(fromMsgID string) error {
 	_ = s.m.eng.Sessions.Close()
 	s.m.eng.Sessions = newR
 	s.m.messages = nil
-	s.m.partial = ""
-	s.m.streamFlushed = ""
-	s.m.streamFenceOpen = false
-	s.m.pendingFlushedPrefix = ""
-	s.m.lastErr = ""
-	s.m.state = StateIdle
-	s.m.printedCount = 0
+	s.m.resetView()
 	return nil
 }
 
