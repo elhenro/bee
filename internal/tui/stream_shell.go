@@ -40,32 +40,21 @@ func formatInlineShell(cmd, output string, isErr bool) string {
 // parseInlineShell extracts cmd, output, and exit-status from a message body
 // produced by formatInlineShell. Returns ok=false if the text doesn't match.
 func parseInlineShell(text string) (cmd, output string, isErr, ok bool) {
-	if !strings.HasPrefix(text, inlineShellPrefix) {
+	rest, ok := strings.CutPrefix(text, inlineShellPrefix)
+	if !ok {
 		return "", "", false, false
 	}
-	rest := text[len(inlineShellPrefix):]
-	closeIdx := strings.Index(rest, "]\n")
-	if closeIdx < 0 {
+	exitStr, body, ok := strings.Cut(rest, "]\n")
+	if !ok {
 		return "", "", false, false
 	}
-	exitStr := rest[:closeIdx]
-	body := rest[closeIdx+2:]
 	// expect first body line to be "$ <cmd>"
-	nl := strings.IndexByte(body, '\n')
-	var cmdLine string
-	if nl < 0 {
-		cmdLine = body
-		output = ""
-	} else {
-		cmdLine = body[:nl]
-		output = body[nl+1:]
-	}
-	if !strings.HasPrefix(cmdLine, "$ ") {
+	cmdLine, output, _ := strings.Cut(body, "\n")
+	cmd, ok = strings.CutPrefix(cmdLine, "$ ")
+	if !ok {
 		return "", "", false, false
 	}
-	cmd = cmdLine[2:]
-	isErr = exitStr != "0"
-	return cmd, output, isErr, true
+	return cmd, output, exitStr != "0", true
 }
 
 // renderInlineShell styles an inline shell record:

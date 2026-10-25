@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -61,10 +62,7 @@ func (u *cmdUsage) bump(name string) {
 	}
 	u.mu.Lock()
 	u.counts[name]++
-	snapshot := make(map[string]int, len(u.counts))
-	for k, v := range u.counts {
-		snapshot[k] = v
-	}
+	snapshot := maps.Clone(u.counts)
 	path := u.path
 	u.mu.Unlock()
 	if path == "" {

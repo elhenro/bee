@@ -27,21 +27,16 @@ func (r *StreamRenderer) renderEscalate(u types.ToolUse) string {
 		return head + "\n"
 	}
 	rail := r.styles.WarnRail.Render("▎")
-	width := r.width - 2
-	if width < 20 {
-		width = 20
-	}
+	width := max(r.width-2, 20)
 	out := []string{head}
 	for _, ln := range wrapHanging(reason, width) {
 		out = append(out, rail+" "+r.styles.Warn.Render(ln))
 	}
 	if next = strings.TrimSpace(next); next != "" {
-		first := true
-		for _, ln := range wrapHanging(next, width-2) {
+		for i, ln := range wrapHanging(next, width-2) {
 			arrow := "  "
-			if first {
+			if i == 0 {
 				arrow = r.styles.Dim.Render("→ ")
-				first = false
 			}
 			out = append(out, rail+" "+arrow+r.styles.Dim.Render(ln))
 		}
@@ -54,20 +49,18 @@ func (r *StreamRenderer) renderEscalate(u types.ToolUse) string {
 // (tool name already says "bash", so `command:` prefix would be redundant)
 // with cwd folded in as a compact `· <cwd>` suffix when set.
 func summarizeToolArgs(toolName string, in map[string]any, budget int) string {
+	var s string
+	var ok bool
 	switch toolName {
 	case "search":
-		if s, ok := summarizeSearch(in, budget); ok {
-			return s
-		}
+		s, ok = summarizeSearch(in, budget)
 	case "glob":
-		if s, ok := summarizeGlob(in, budget); ok {
-			return s
-		}
+		s, ok = summarizeGlob(in, budget)
+	case "bash":
+		s, ok = summarizeBash(in, budget)
 	}
-	if toolName == "bash" {
-		if s, ok := summarizeBash(in, budget); ok {
-			return s
-		}
+	if ok {
+		return s
 	}
 	return summarizeArgs(in, budget)
 }
@@ -99,27 +92,27 @@ func summarizeSearch(in map[string]any, budget int) (string, bool) {
 	if !ok || pat == "" {
 		return "", false
 	}
-	out := pat
-	if p, ok := in["path"].(string); ok && narrowsScope(p) {
-		out += "  · " + shortenPath(p)
-	}
-	if g, ok := in["glob"].(string); ok && g != "" {
+	out := pat + scopeSuffix(in)
+	if g, _ := in["glob"].(string); g != "" {
 		out += "  · *." + g
 	}
-	if c, ok := in["context"]; ok {
-		if n, _ := c.(float64); n > 0 {
-			out += fmt.Sprintf("  · ctx %d", int(n))
-		}
+	if n, _ := in["context"].(float64); n > 0 {
+		out += fmt.Sprintf("  · ctx %d", int(n))
 	}
-	if co, ok := in["count_only"].(bool); ok && co {
+	if co, _ := in["count_only"].(bool); co {
 		out += "  · count"
 	}
 	return truncateRunes(out, budget), true
 }
 
-// the workspace root is the default scope, so naming it adds only noise
-func narrowsScope(path string) bool {
-	return path != "" && path != "." && path != "./"
+// `  · <path>` when the call narrows the search; the workspace root is the
+// default scope, so naming it adds only noise
+func scopeSuffix(in map[string]any) string {
+	p, _ := in["path"].(string)
+	if p == "" || p == "." || p == "./" {
+		return ""
+	}
+	return "  · " + shortenPath(p)
 }
 
 // summarizeGlob renders a glob tool call with the filename pattern leading.
@@ -134,9 +127,5 @@ func summarizeGlob(in map[string]any, budget int) (string, bool) {
 	if name == "" {
 		return "", false
 	}
-	out := name
-	if p, ok := in["path"].(string); ok && narrowsScope(p) {
-		out += "  · " + shortenPath(p)
-	}
-	return truncateRunes(out, budget), true
+	return truncateRunes(name+scopeSuffix(in), budget), true
 }

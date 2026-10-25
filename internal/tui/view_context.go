@@ -30,11 +30,7 @@ func liveBudget(termH int, parts ...string) int {
 	// between mid and the rest. Final "\n" between blocks costs 1 row each.
 	separators := nonEmpty // mid + nonEmpty parts → nonEmpty separators
 	// reserve 1 row for the cursor / inline-render safety margin.
-	budget := termH - chrome - separators - 1
-	if budget < 1 {
-		return 1
-	}
-	return budget
+	return max(termH-chrome-separators-1, 1)
 }
 
 // contextPct returns the fraction of the active model's context window used
@@ -100,23 +96,18 @@ func (m Model) renderContextHex() string {
 	}
 	fg, bold := contextTier(pct, known)
 	style := lipgloss.NewStyle().Foreground(fg).Bold(bold)
-	var out string
+	var chips []string
 	if m.showBee {
-		out = style.Render(glyphBee)
+		chips = append(chips, style.Render(glyphBee))
 	}
 	if m.showContextPct {
 		label := "?"
 		if known {
 			label = fmt.Sprintf("%d%%", min(999, int(pct*100+0.5)))
 		}
-		chip := style.Render(label)
-		if out != "" {
-			out += " " + chip
-		} else {
-			out = chip
-		}
+		chips = append(chips, style.Render(label))
 	}
-	return out
+	return strings.Join(chips, " ")
 }
 
 // the bottom hairline as a gauge: `━` fills from the left in the chip's

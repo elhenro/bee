@@ -164,12 +164,11 @@ const gitBranchTTL = 5 * time.Second
 func gitBranch(cwd string) string {
 	now := time.Now()
 	gitBranchMu.Lock()
-	if e, ok := gitBranchCache[cwd]; ok && now.Sub(e.at) < gitBranchTTL {
-		br := e.branch
-		gitBranchMu.Unlock()
-		return br
-	}
+	e, ok := gitBranchCache[cwd]
 	gitBranchMu.Unlock()
+	if ok && now.Sub(e.at) < gitBranchTTL {
+		return e.branch
+	}
 	br := gitBranchUncached(cwd)
 	gitBranchMu.Lock()
 	gitBranchCache[cwd] = gitBranchEntry{branch: br, at: now}

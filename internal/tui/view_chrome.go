@@ -53,9 +53,6 @@ func formatElapsed(d time.Duration) string {
 	if d <= 0 {
 		return "0.0s"
 	}
-	if d < time.Second {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
 	if d < 10*time.Second {
 		return fmt.Sprintf("%.1fs", d.Seconds())
 	}

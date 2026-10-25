@@ -5,19 +5,12 @@ import "strconv"
 // windowRange picks the rows [start,end) of an n-row list that fit maxRows
 // (floor 3), keeping sel in view and roughly centred.
 func windowRange(n, sel, maxRows int) rowRange {
-	if maxRows < 3 {
-		maxRows = 3
-	}
+	maxRows = max(maxRows, 3)
 	if n <= maxRows {
 		return rowRange{0, n}
 	}
-	start := max(sel-maxRows/2, 0)
-	end := start + maxRows
-	if end > n {
-		end = n
-		start = end - maxRows
-	}
-	return rowRange{start, end}
+	start := min(max(sel-maxRows/2, 0), n-maxRows)
+	return rowRange{start, start + maxRows}
 }
 
 // paneRows is the row budget for a list inside a pane that spends chrome rows
