@@ -2,10 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/elhenro/bee/internal/tools/read"
@@ -269,48 +267,4 @@ func (r *StreamRenderer) resultBody(use types.ToolUse, haveUse bool, res types.T
 		}
 	}
 	return hang(strings.Join(rows, "\n"), r.connector(), strings.Repeat(" ", resultIndent))
-}
-
-var searchHit = regexp.MustCompile(`^(\S+?:\d+:)(.*)$`)
-
-// `path:line:` stays subtle, the matched text steps up to the secondary tone
-func (r *StreamRenderer) searchRow(ln string) string {
-	m := searchHit.FindStringSubmatch(ln)
-	if m == nil {
-		return r.styles.ToolPrev.Render(ln)
-	}
-	return r.styles.ToolPrev.Render(m[1]) + lipgloss.NewStyle().Foreground(fgSmoke).Render(m[2])
-}
-
-// the one-row digest a file read collapses to
-func readSummary(lines, bytes int) string {
-	s := fmt.Sprintf("%d lines", lines)
-	if lines == 1 {
-		s = "1 line"
-	}
-	if bytes >= 1000 {
-		s += " " + glyphSep + " " + humanBytes(bytes)
-	}
-	return s
-}
-
-// per-row highlighter for verbose reads (nil otherwise), lexer from the path
-func (r *StreamRenderer) readHighlighter(use types.ToolUse, haveUse bool, res types.ToolResult) func(string) string {
-	if !r.verbose || !r.highlight || res.IsError || !haveUse || use.Name != "read" {
-		return nil
-	}
-	path, _ := use.Input["path"].(string)
-	if path == "" {
-		return nil
-	}
-	return func(s string) string { return r.hl(s, path) }
-}
-
-// file-mutation tools whose call card carries a diff
-func isEditTool(name string) bool {
-	switch name {
-	case "edit", "hashline_edit", "apply_patch", "write":
-		return true
-	}
-	return false
 }

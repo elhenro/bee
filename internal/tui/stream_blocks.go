@@ -137,9 +137,6 @@ func (r *StreamRenderer) thoughtBlock(s, label string) string {
 // wrapped, styled reasoning rows; nil when there is no visible text
 func (r *StreamRenderer) thoughtRows(s string) []string {
 	clean := expandTabs(ansi.Strip(strings.TrimRight(s, "\n")))
-	if clean == "" {
-		return nil
-	}
 	var rows []string
 	for _, ln := range strings.Split(clean, "\n") {
 		ln = sanitizeControl(ln)

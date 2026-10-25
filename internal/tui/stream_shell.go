@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/elhenro/bee/internal/types"
@@ -67,8 +66,7 @@ func parseInlineShell(text string) (cmd, output string, isErr, ok bool) {
 // The honey prompt reads at a glance as "this came from !cmd / !!cmd" rather
 // than blending into regular prose.
 func (r *StreamRenderer) renderInlineShell(cmd, output string, isErr bool) string {
-	honey := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
-	header := honey.Render("$ " + cmd) // single styled span keeps coloring contiguous
+	header := StyleActive.Render("$ " + cmd) // single styled span keeps coloring contiguous
 	clean := expandTabs(ansi.Strip(strings.TrimRight(output, "\n")))
 	if clean == "" {
 		return header

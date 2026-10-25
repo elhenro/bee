@@ -111,10 +111,7 @@ func (m Model) renderStreamingParts(maxRows int) []string {
 		return append(parts, m.renderLegacyLoader(visible, maxRows))
 	}
 
-	pending := ""
-	if len(m.pendingTools) > 0 {
-		pending = m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame)
-	}
+	pending := m.stream.RenderPendingTools(m.pendingTools, m.loaderFrame)
 	if text := m.stream.RenderStreaming(visible, m.loaderFrame); text != "" {
 		if clip := maxRows - m.busyRows() - thinkRows; maxRows > 0 && clip > 0 {
 			text = m.stream.ClipStreamingTail(text, clip)

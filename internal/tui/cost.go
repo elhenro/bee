@@ -111,10 +111,7 @@ func (c *CostPane) View(width, height int) string {
 	if c == nil || !c.open {
 		return ""
 	}
-	title := lipgloss.NewStyle().
-		Foreground(accentHoney).
-		Bold(true).
-		Render("⬢ Cost monitor")
+	title := StyleActive.Render("⬢ Cost monitor")
 
 	if c.tracker == nil {
 		return boxModal(title+"\n\n"+StyleLabel.Render("(no tracker wired)"), width)
@@ -141,7 +138,7 @@ func (c *CostPane) View(width, height int) string {
 
 // renderFilterChips shows which dimension is active and the selected value.
 func (c *CostPane) renderFilterChips() string {
-	chipOn := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
+	chipOn := StyleActive
 	chipOff := lipgloss.NewStyle().Foreground(fgOyster)
 	chip := func(label string, on bool) string {
 		if on {
@@ -160,7 +157,7 @@ func (c *CostPane) renderFilterChips() string {
 
 // renderTotals draws the headline summary line.
 func (c *CostPane) renderTotals(s cost.Summary) string {
-	usd := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).Render(formatUSD(s.USD))
+	usd := StyleActive.Render(formatUSD(s.USD))
 	rest := lipgloss.NewStyle().Foreground(fgSmoke).Render(
 		fmt.Sprintf("  %d calls  ·  in %s  ·  out %s", s.Calls, humanTokens(s.Input), humanTokens(s.Output)),
 	)

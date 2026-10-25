@@ -92,7 +92,7 @@ func (u *UsagePane) View(width, height int) string {
 	if u == nil || !u.open {
 		return ""
 	}
-	title := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).Render("⬢ Usage overview")
+	title := StyleActive.Render("⬢ Usage overview")
 	inner := width - 6
 
 	var b strings.Builder

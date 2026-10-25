@@ -37,11 +37,8 @@ func markdownStyle(dark bool) ansi.StyleConfig {
 		t = mdDark
 	}
 	prim := func(color string) ansi.StylePrimitive { return ansi.StylePrimitive{Color: sp(color)} }
-	boldPrim := func(color string) ansi.StylePrimitive {
-		return ansi.StylePrimitive{Color: sp(color), Bold: bp(true)}
-	}
 	heading := func(color string) ansi.StyleBlock {
-		return ansi.StyleBlock{StylePrimitive: boldPrim(color)}
+		return ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(color), Bold: bp(true)}}
 	}
 	return ansi.StyleConfig{
 		Document:  ansi.StyleBlock{StylePrimitive: prim(t.body)},

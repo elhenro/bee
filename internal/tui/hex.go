@@ -46,24 +46,20 @@ func HexRow(states []BeeState, names []string, width int) string {
 	return out
 }
 
-type cellLook struct {
-	glyph string
-	style lipgloss.Style
-}
-
-var cellLooks = map[BeeState]cellLook{
-	Active: {HexFilled, StyleActive}, Awaiting: {HexFilled, StyleAwaiting},
-	Idle: {HexHollow, StyleIdle}, Done: {HexHollow, StyleDone},
-	Failed: {HexFilled, StyleFailed},
-}
-
 func renderCell(st BeeState, name string) string {
-	look := cellLooks[st]
-	if look.glyph == "" {
-		look = cellLooks[Active]
+	style, glyph := StyleActive, HexFilled
+	switch st {
+	case Awaiting:
+		style = StyleAwaiting
+	case Idle:
+		style, glyph = StyleIdle, HexHollow
+	case Done:
+		style, glyph = StyleDone, HexHollow
+	case Failed:
+		style = StyleFailed
 	}
-	if name == "" {
-		return look.style.Render(look.glyph)
+	if name != "" {
+		glyph += " " + name
 	}
-	return look.style.Render(look.glyph + " " + name)
+	return style.Render(glyph)
 }

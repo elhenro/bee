@@ -13,7 +13,7 @@ import (
 
 // renderWindowTabs shows the time-window selector with the active one boxed.
 func renderWindowTabs(active int) string {
-	on := lipgloss.NewStyle().Foreground(accentHoney).Bold(true)
+	on := StyleActive
 	off := lipgloss.NewStyle().Foreground(fgOyster)
 	parts := make([]string, 0, len(winLabels))
 	for i, lbl := range winLabels {
@@ -28,8 +28,7 @@ func renderWindowTabs(active int) string {
 
 // renderUsageHeadline draws the summary line: total tokens, cost, calls, window.
 func renderUsageHeadline(s cost.Summary, label string) string {
-	tok := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).
-		Render(humanTokens(s.Input+s.Output) + " tokens")
+	tok := StyleActive.Render(humanTokens(s.Input+s.Output) + " tokens")
 	rest := lipgloss.NewStyle().Foreground(fgSmoke).
 		Render(fmt.Sprintf("  ·  %s  ·  %d calls", formatUSD(s.USD), s.Calls))
 	win := lipgloss.NewStyle().Foreground(fgOyster).Render("  (" + label + ")")
@@ -121,7 +120,7 @@ func renderModelRows(m map[string]cost.Summary, inner int) string {
 func renderUsageFallback(t *cost.Tracker, inner int) string {
 	var b strings.Builder
 	if li, lo := cost.LifetimeTotals(); li+lo > 0 {
-		head := lipgloss.NewStyle().Foreground(accentHoney).Bold(true).
+		head := StyleActive.
 			Render(humanTokens(int(li+lo)) + " tokens")
 		sub := lipgloss.NewStyle().Foreground(fgSmoke).
 			Render(fmt.Sprintf("  ·  in %s  out %s  (lifetime)", humanTokens(int(li)), humanTokens(int(lo))))
