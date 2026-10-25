@@ -139,3 +139,19 @@ func TestOutputStripsTerminalEscapes(t *testing.T) {
 		}
 	}
 }
+
+// a session that was opened and quit holds no messages: every aid says nothing
+func TestEmptySessionIsQuiet(t *testing.T) {
+	if w := Walkthrough(nil, ""); w != "" {
+		t.Fatalf("walkthrough = %q", w)
+	}
+	if c := Cards(nil, "", 5); len(c) != 0 {
+		t.Fatalf("cards = %+v", c)
+	}
+	if s := ChangeMap(context.Background(), t.TempDir(), nil); s != "" {
+		t.Fatalf("change map = %q", s)
+	}
+	if LastTurn([]types.Message{}) != nil {
+		t.Fatal("last turn of nothing should be nil")
+	}
+}

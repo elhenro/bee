@@ -24,6 +24,9 @@ var patchPath = regexp.MustCompile(`(?m)^\+\+\+ (?:b/)?(\S+)`)
 // turns splits msgs at each real user request; whatever precedes the first
 // request is a turn of its own.
 func turns(msgs []types.Message) [][]types.Message {
+	if len(msgs) == 0 {
+		return nil
+	}
 	var out [][]types.Message
 	start := 0
 	for i, m := range msgs {
@@ -38,6 +41,9 @@ func turns(msgs []types.Message) [][]types.Message {
 // LastTurn is the messages since the latest real user request.
 func LastTurn(msgs []types.Message) []types.Message {
 	ts := turns(msgs)
+	if len(ts) == 0 {
+		return nil
+	}
 	return ts[len(ts)-1]
 }
 
