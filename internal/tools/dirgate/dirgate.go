@@ -7,13 +7,13 @@ package dirgate
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/elhenro/bee/internal/approval"
-	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
 )
 
@@ -86,8 +86,6 @@ type gated struct {
 // "path" lookup untouched, and an empty path means the working directory.
 func (g *Gate) Wrap(t tools.Tool) tools.Tool { return gated{t, g} }
 
-func (w gated) Spec() llm.ToolSpec { return w.Tool.Spec() }
-
 func (w gated) Run(ctx context.Context, in map[string]any) (tools.Result, error) {
 	if p, _ := in["path"].(string); p != "" {
 		if msg := w.g.Check(ctx, p); msg != "" {
@@ -95,12 +93,8 @@ func (w gated) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}
 		// inner tools stat the path as given, so hand them the expanded form
 		if ex := tools.ExpandHome(p); ex != p {
-			cp := make(map[string]any, len(in))
-			for k, v := range in {
-				cp[k] = v
-			}
-			cp["path"] = ex
-			in = cp
+			in = maps.Clone(in)
+			in["path"] = ex
 		}
 	}
 	return w.Tool.Run(ctx, in)

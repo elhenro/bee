@@ -28,20 +28,16 @@ const (
 	dirEntriesDefault = 1000
 )
 
-// cacheEntry marks a read already served this session, keyed by file identity
-// + slice. Presence drives the soft "unchanged since your earlier read" note;
-// key includes mtime+size so any edit invalidates the entry naturally.
-type cacheEntry struct {
-	key string
-}
-
 // Tool is the read tool. Holds a per-tool (= per-Engine, in practice) cache
 // so repeated reads of unchanged files within one session return a stub
 // instead of replaying the body. defaultLines/maxLines override the package
 // defaults; zero falls back to the package constants.
 type Tool struct {
-	mu           sync.Mutex
-	cache        map[string]*cacheEntry
+	mu sync.Mutex
+	// reads already served this session, keyed by file identity + slice. Presence
+	// drives the soft "unchanged since your earlier read" note; the key includes
+	// mtime+size so any edit invalidates the entry naturally.
+	cache        map[string]struct{}
 	defaultLines int
 	maxLines     int
 	confine      bool // when true, apply CheckReadable secret-path blocking
@@ -63,7 +59,7 @@ func NewWithLimits(def, max int, confine bool) tools.Tool {
 	if max <= 0 {
 		max = maxLimit
 	}
-	return &Tool{cache: make(map[string]*cacheEntry), defaultLines: def, maxLines: max, confine: confine}
+	return &Tool{cache: make(map[string]struct{}), defaultLines: def, maxLines: max, confine: confine}
 }
 
 // Spec advertises the tool to the model. defaultLines/maxLines values are
@@ -71,14 +67,7 @@ func NewWithLimits(def, max int, confine bool) tools.Tool {
 // actual ceiling (was hardcoded "Default 2000" — wrong for tiny, which
 // caps at 500 with default 100).
 func (t *Tool) Spec() llm.ToolSpec {
-	defLines := t.defaultLines
-	if defLines <= 0 {
-		defLines = defaultLimit
-	}
-	maxLines := t.maxLines
-	if maxLines <= 0 {
-		maxLines = maxLimit
-	}
+	defLines, maxLines := t.lineCaps()
 	limitDesc := fmt.Sprintf("Max lines to return (file only). Default %d. Pass an explicit value up to %d to read more in one call instead of multiple offset-paged reads.", defLines, maxLines)
 	return llm.ToolSpec{
 		Name: toolName,
@@ -114,6 +103,19 @@ func (t *Tool) Spec() llm.ToolSpec {
 			"required": []string{"path"},
 		},
 	}
+}
+
+// lineCaps returns the default and max line limits, falling back to the
+// package constants for a zero-valued tool.
+func (t *Tool) lineCaps() (def, maxLines int) {
+	def, maxLines = t.defaultLines, t.maxLines
+	if def <= 0 {
+		def = defaultLimit
+	}
+	if maxLines <= 0 {
+		maxLines = maxLimit
+	}
+	return def, maxLines
 }
 
 // Run dispatches to file or directory handling.
@@ -154,33 +156,11 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		return res, nil
 	}
 
-	defLines := t.defaultLines
-	if defLines <= 0 {
-		defLines = defaultLimit
-	}
-	maxLines := t.maxLines
-	if maxLines <= 0 {
-		maxLines = maxLimit
-	}
-	offset := tools.IntArg(input, "offset", 1)
-	limit := tools.IntArg(input, "limit", defLines)
-	tail := tools.IntArg(input, "tail", 0)
-	if offset < 1 {
-		offset = 1
-	}
-	if limit < 1 {
-		limit = 1
-	}
-	if limit > maxLines {
-		limit = maxLines
-	}
-	if tail < 0 {
-		tail = 0
-	}
-	if tail > maxTail {
-		tail = maxTail
-	}
-	hashline := boolArg(input, "hashline", false)
+	defLines, maxLines := t.lineCaps()
+	offset := max(tools.IntArg(input, "offset", 1), 1)
+	limit := min(max(tools.IntArg(input, "limit", defLines), 1), maxLines)
+	tail := min(max(tools.IntArg(input, "tail", 0), 0), maxTail)
+	hashline, _ := input["hashline"].(bool)
 
 	// cache key: identity (path+mtime+size) + slice (offset+limit+tail+hashline).
 	// any edit bumps mtime/size and invalidates the entry.
@@ -213,7 +193,7 @@ func (t *Tool) seenBefore(key string) bool {
 	if _, ok := t.cache[key]; ok {
 		return true
 	}
-	t.cache[key] = &cacheEntry{key: key}
+	t.cache[key] = struct{}{}
 	return false
 }
 
@@ -249,7 +229,7 @@ func (t *Tool) dirEntryCap() int {
 	return dirEntriesDefault
 }
 
-func listDir(path string, max int) (string, error) {
+func listDir(path string, limit int) (string, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return "", fmt.Errorf("readdir %s: %w", path, err)
@@ -272,9 +252,9 @@ func listDir(path string, max int) (string, error) {
 		return names[i] < names[j]
 	})
 	truncated := 0
-	if max > 0 && len(names) > max {
-		truncated = len(names) - max
-		names = names[:max]
+	if limit > 0 && len(names) > limit {
+		truncated = len(names) - limit
+		names = names[:limit]
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s:\n", filepath.Clean(path))
@@ -307,15 +287,4 @@ func isBinary(buf []byte) bool {
 		}
 	}
 	return nonText*100/len(buf) > 30
-}
-
-func boolArg(input map[string]any, key string, def bool) bool {
-	v, ok := input[key]
-	if !ok {
-		return def
-	}
-	if b, ok := v.(bool); ok {
-		return b
-	}
-	return def
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -35,12 +36,7 @@ type Tool struct {
 // New binds the tool to the given stores (typically project + user). nil stores
 // are ignored. Returns nil when no store is provided.
 func New(stores ...*waggle.Store) *Tool {
-	var keep []*waggle.Store
-	for _, s := range stores {
-		if s != nil {
-			keep = append(keep, s)
-		}
-	}
+	keep := slices.DeleteFunc(slices.Clone(stores), func(s *waggle.Store) bool { return s == nil })
 	if len(keep) == 0 {
 		return nil
 	}
@@ -94,15 +90,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 // non-empty and free of path separators or dots, so name+".md" can only resolve
 // inside the store directory.
 func validWaggleName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for _, r := range name {
-		if r == '/' || r == '\\' || r == '.' {
-			return false
-		}
-	}
-	return true
+	return name != "" && !strings.ContainsAny(name, `/\.`)
 }
 
 // list renders the library across stores, ranked by estimated tokens saved.

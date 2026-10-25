@@ -55,10 +55,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// model to the gated bash tool. (Mined waggles are read-only and never trip
 	// this; it blocks a planted skill/waggle that launders a dangerous command.)
 	if key, desc, hit := safety.DetectDangerous(t.command); hit {
-		return tools.Result{
-			Content: fmt.Sprintf("refused: this skill/waggle needs approval (%s: %s); run the command via the bash tool, which prompts.", key, desc),
-			IsError: true,
-		}, nil
+		return tools.Result{Content: fmt.Sprintf("refused: this skill/waggle needs approval (%s: %s); run the command via the bash tool, which prompts.", key, desc), IsError: true}, nil
 	}
 	return t.inner.Run(ctx, input)
 }

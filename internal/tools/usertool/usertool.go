@@ -81,7 +81,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	if raw, present := input["args"]; present {
 		switch v := raw.(type) {
 		case string:
-			parsed, err := splitArgs(v)
+			parsed, err := SplitArgs(v)
 			if err != nil {
 				return tools.Result{Content: fmt.Sprintf("args parse error: %v", err), IsError: true}, nil
 			}
@@ -108,32 +108,16 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// backgrounded children and a lingering one cannot hold Wait open.
 	tools.GroupKill(cmd, 2*time.Second)
 	err := cmd.Run()
-	output := buf.String()
-	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+	if tools.PipeHeldOpen(cmd, err) {
 		err = nil // exited cleanly; only a leftover child held the pipe
 	}
-	switch {
-	case errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
-		return tools.Result{Content: fmt.Sprintf("timeout after %s\n%s", defaultTimeout, output), IsError: true}, nil
-	case ctx.Err() != nil:
-		return tools.Result{Content: ctx.Err().Error(), IsError: true}, ctx.Err()
-	case err != nil:
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return tools.Result{Content: fmt.Sprintf("exit %d\n%s", exitErr.ExitCode(), output), IsError: true}, nil
-		}
-		return tools.Result{Content: fmt.Sprintf("exec error: %v\n%s", err, output), IsError: true}, nil
-	}
-	return tools.Result{Content: output}, nil
+	return tools.CommandResult(ctx, runCtx, err, buf.String(), defaultTimeout)
 }
 
-// SplitArgs is splitArgs for callers that vet the fields before running.
-func SplitArgs(s string) ([]string, error) { return splitArgs(s) }
-
-// splitArgs parses a POSIX-ish argument string into fields, honoring
+// SplitArgs parses a POSIX-ish argument string into fields, honoring
 // single quotes, double quotes, and backslash escapes. It does NOT
 // expand variables or globs; values are treated as literal data.
-func splitArgs(s string) ([]string, error) {
+func SplitArgs(s string) ([]string, error) {
 	var (
 		out      []string
 		cur      strings.Builder
@@ -148,55 +132,42 @@ func splitArgs(s string) ([]string, error) {
 			hasField = false
 		}
 	}
+	// opening a quote sets hasField, so "" yields an empty field and quoted
+	// content needs no further marking
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
 		case inSingle:
 			if c == '\'' {
 				inSingle = false
-				continue
-			}
-			cur.WriteByte(c)
-			hasField = true
-		case inDouble:
-			if c == '\\' && i+1 < len(s) {
-				next := s[i+1]
-				if next == '"' || next == '\\' || next == '$' || next == '`' || next == '\n' {
-					cur.WriteByte(next)
-					i++
-					hasField = true
-					continue
-				}
+			} else {
 				cur.WriteByte(c)
-				hasField = true
-				continue
 			}
-			if c == '"' {
+		case inDouble:
+			switch {
+			case c == '\\' && i+1 < len(s) && strings.IndexByte("\"\\$`\n", s[i+1]) >= 0:
+				i++
+				cur.WriteByte(s[i])
+			case c == '"':
 				inDouble = false
-				continue
-			}
-			cur.WriteByte(c)
-			hasField = true
-		default:
-			switch c {
-			case ' ', '\t', '\n':
-				flush()
-			case '\'':
-				inSingle = true
-				hasField = true
-			case '"':
-				inDouble = true
-				hasField = true
-			case '\\':
-				if i+1 < len(s) {
-					cur.WriteByte(s[i+1])
-					i++
-					hasField = true
-				}
 			default:
 				cur.WriteByte(c)
+			}
+		case c == ' ' || c == '\t' || c == '\n':
+			flush()
+		case c == '\'':
+			inSingle, hasField = true, true
+		case c == '"':
+			inDouble, hasField = true, true
+		case c == '\\':
+			if i+1 < len(s) {
+				i++
+				cur.WriteByte(s[i])
 				hasField = true
 			}
+		default:
+			cur.WriteByte(c)
+			hasField = true
 		}
 	}
 	if inSingle || inDouble {

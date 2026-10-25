@@ -2,6 +2,7 @@ package hashline_edit
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -45,19 +46,17 @@ func parseEdits(raw []any) ([]edit, error) {
 }
 
 func parsePos(pos string) (int, string, error) {
+	bad := fmt.Errorf("bad pos %q; want <lineNumber>#<3-char-tag>", pos)
+	// the first '#' must sit 4 chars from the end, leaving a 3-char tag
 	hash := strings.IndexByte(pos, '#')
 	if hash <= 0 || hash != len(pos)-4 {
-		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<3-char-tag>", pos)
+		return 0, "", bad
 	}
 	ln, err := strconv.Atoi(pos[:hash])
 	if err != nil || ln < 1 {
-		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<3-char-tag>", pos)
+		return 0, "", bad
 	}
-	tag := pos[hash+1:]
-	if len(tag) != 3 {
-		return 0, "", fmt.Errorf("bad pos %q; want <lineNumber>#<3-char-tag>", pos)
-	}
-	return ln, tag, nil
+	return ln, pos[hash+1:], nil
 }
 
 func validateEdits(edits []edit, lines []string) error {
@@ -89,17 +88,11 @@ func applyOne(lines []string, e edit) []string {
 	switch e.op {
 	case "replace":
 		// splice: drop the target line, insert replacement lines in its place.
-		head := append([]string{}, lines[:idx]...)
-		tail := append([]string{}, lines[idx+1:]...)
-		return append(append(head, e.lines...), tail...)
+		return slices.Replace(lines, idx, idx+1, e.lines...)
 	case "prepend":
-		head := append([]string{}, lines[:idx]...)
-		tail := append([]string{}, lines[idx:]...)
-		return append(append(head, e.lines...), tail...)
+		return slices.Insert(lines, idx, e.lines...)
 	case "append":
-		head := append([]string{}, lines[:idx+1]...)
-		tail := append([]string{}, lines[idx+1:]...)
-		return append(append(head, e.lines...), tail...)
+		return slices.Insert(lines, idx+1, e.lines...)
 	}
 	return lines
 }

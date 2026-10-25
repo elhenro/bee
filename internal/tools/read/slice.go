@@ -64,19 +64,13 @@ func readTail(f *os.File, path string, tail int, hashline bool) (string, error) 
 	if total == 0 {
 		return "(empty file)", nil
 	}
-	first := total - tail + 1
-	if first < 1 {
-		first = 1
-	}
-	var b strings.Builder
+	first := max(total-tail+1, 1)
+	count := min(tail, total)
 	start := 0
 	if total >= tail {
 		start = total % tail
 	}
-	count := tail
-	if total < tail {
-		count = total
-	}
+	var b strings.Builder
 	for i := 0; i < count; i++ {
 		writeLine(&b, ring[(start+i)%tail], first+i, hashline)
 	}

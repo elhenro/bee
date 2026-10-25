@@ -49,17 +49,6 @@ func (b *CapBuffer) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// Dropped reports how many bytes were discarded from the middle.
-func (b *CapBuffer) Dropped() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	d := b.dropped
-	if over := len(b.tail) - b.tailMax; over > 0 {
-		d += over
-	}
-	return d
-}
-
 // String returns head, an omission marker when anything was dropped, and tail.
 func (b *CapBuffer) String() string {
 	b.mu.Lock()

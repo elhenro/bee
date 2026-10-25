@@ -38,15 +38,9 @@ func (t *Tool) runBackground(input map[string]any, cmdStr, displayCmd, note stri
 	if t.opts.Jobs == nil {
 		return tools.Result{Content: "background jobs are not available here; run it in the foreground", IsError: true}
 	}
-	timeout := backgroundTimeout
-	if v, ok := input["timeout_seconds"]; ok {
-		secs, err := toInt(v)
-		if err != nil {
-			return tools.Result{Content: fmt.Sprintf("bad timeout_seconds: %v", err), IsError: true}
-		}
-		if secs > 0 {
-			timeout = time.Duration(secs) * time.Second
-		}
+	timeout, err := timeoutArg(input, backgroundTimeout)
+	if err != nil {
+		return tools.Result{Content: err.Error(), IsError: true}
 	}
 	cwd, _ := input["cwd"].(string)
 	shellBin, finalCmd := t.buildInvocation(cmdStr)
@@ -64,18 +58,9 @@ func (t *Tool) runBackground(input map[string]any, cmdStr, displayCmd, note stri
 	}
 	msg := fmt.Sprintf("started job %d in the background: %s\n"+
 		"its output arrives as a new message when it exits (timeout %s). keep working or end your turn; "+
-		"do not sleep or poll. job tool: list, output, kill.", id, oneLine(displayCmd), timeout)
+		"do not sleep or poll. job tool: list, output, kill.", id, tools.OneLine(displayCmd, 160), timeout)
 	if note != "" {
 		msg = note + "\n" + msg
 	}
 	return tools.Result{Content: msg}
-}
-
-// oneLine flattens a multi-line command into a short status line.
-func oneLine(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > 160 {
-		return string(r[:160]) + "…"
-	}
-	return s
 }

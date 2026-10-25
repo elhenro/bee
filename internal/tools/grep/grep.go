@@ -109,59 +109,17 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if err != nil {
 		return tools.Result{Content: "bad regex: " + err.Error(), IsError: true}, nil
 	}
-	root, _ := in["path"].(string)
-	if root == "" {
-		root = t.root
-	}
-	// confined scope (non-empty t.root): contain the search to the workspace
-	// root so a model path can't escape it (e.g. path:~/.ssh) and exfiltrate
-	// file contents. danger-full-access (empty t.root): search anywhere,
-	// defaulting to cwd.
-	if t.root != "" {
-		absRoot, _, rootAbs, ok := tools.ResolveInRoot(t.root, root)
-		if !ok {
-			return tools.Result{Content: fmt.Sprintf("path %q escapes workspace root %q", root, rootAbs), IsError: true}, nil
-		}
-		root = absRoot
-	} else {
-		if root == "" {
-			if wd, err := os.Getwd(); err == nil {
-				root = wd
-			}
-		}
-		if a, err := filepath.Abs(root); err == nil {
-			root = a
-		}
+	reqPath, _ := in["path"].(string)
+	root, err := tools.ResolveSearchRoot(t.root, reqPath)
+	if err != nil {
+		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
 	glob, _ := in["glob"].(string)
-	ctxLines := tools.IntArg(in, "context", 0)
-	if ctxLines < 0 {
-		ctxLines = 0
-	}
-	if ctxLines > 5 {
-		ctxLines = 5
-	}
+	ctxLines := min(max(tools.IntArg(in, "context", 0), 0), 5)
 	countOnly, _ := in["count_only"].(bool)
 
 	var out []string
-	count := 0
-	walkErr := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if d.IsDir() {
-			name := d.Name()
-			// .claude holds agent state (worktrees with duplicate code) — skip
-			// or counts/searches double-count every file.
-			// never skip the requested root itself, only dirs below it
-			if p != root && (name == ".git" || name == "node_modules" || name == "vendor" || name == "testdata" || name == ".claude") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	err = tools.WalkFiles(ctx, root, func(p string) error {
 		if glob != "" && !matchGlob(glob, p) {
 			return nil
 		}
@@ -184,62 +142,49 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 			return nil
 		}
 		rel := tools.RelTo(root, p)
-		if countOnly {
-			n := countMatches(f, re)
+		switch {
+		case countOnly:
+			n := 0
+			eachLine(f, func(_ int, line []byte) bool {
+				if re.Match(line) {
+					n++
+				}
+				return true
+			})
 			if n > 0 {
 				out = append(out, fmt.Sprintf("%s:%d", rel, n))
-				count++
-				if count >= t.max {
-					return filepath.SkipAll
-				}
 			}
-			return nil
-		}
-		if ctxLines == 0 {
-			sc := bufio.NewScanner(f)
-			sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
-			ln := 0
-			for sc.Scan() {
-				ln++
-				line := sc.Text()
-				if re.MatchString(line) {
-					if count >= t.max {
-						return filepath.SkipAll
-					}
+		case ctxLines == 0:
+			eachLine(f, func(ln int, line []byte) bool {
+				if re.Match(line) {
 					out = append(out, fmt.Sprintf("%s:%d:%s", rel, ln, line))
-					count++
 				}
-			}
-			return nil
+				return len(out) < t.max
+			})
+		default:
+			out = append(out, scanWithContext(f, re, rel, ctxLines, t.max-len(out))...)
 		}
-		emitted := scanWithContext(f, re, rel, ctxLines, t.max-count)
-		out = append(out, emitted...)
-		count += len(emitted)
-		if count >= t.max {
+		if len(out) >= t.max {
 			return filepath.SkipAll
 		}
 		return nil
 	})
-	if walkErr != nil && walkErr != filepath.SkipAll {
-		return tools.Result{Content: walkErr.Error(), IsError: true}, nil
+	if err != nil {
+		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
-	if len(out) == 0 {
-		return tools.Result{Content: "no matches"}, nil
-	}
-	return tools.Result{Content: strings.Join(out, "\n")}, nil
+	return tools.LinesResult(out), nil
 }
 
-// countMatches returns the number of matching lines in f.
-func countMatches(f *os.File, re *regexp.Regexp) int {
+// eachLine calls fn with every line of f and its 1-based number until fn
+// returns false. A scan error just ends the file.
+func eachLine(f *os.File, fn func(n int, line []byte) bool) {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	n := 0
-	for sc.Scan() {
-		if re.Match(sc.Bytes()) {
-			n++
+	for n := 1; sc.Scan(); n++ {
+		if !fn(n, sc.Bytes()) {
+			return
 		}
 	}
-	return n
 }
 
 // scanWithContext emits up to budget result strings with ctxN surrounding
@@ -249,27 +194,18 @@ func scanWithContext(f *os.File, re *regexp.Regexp, path string, ctxN, budget in
 	if budget <= 0 {
 		return nil
 	}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	var lines []string
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
+	eachLine(f, func(_ int, line []byte) bool {
+		lines = append(lines, string(line))
+		return true
+	})
 	emitted := make(map[int]bool, 16)
 	var out []string
 	for i, line := range lines {
 		if !re.MatchString(line) {
 			continue
 		}
-		start := i - ctxN
-		if start < 0 {
-			start = 0
-		}
-		end := i + ctxN
-		if end >= len(lines) {
-			end = len(lines) - 1
-		}
-		for j := start; j <= end; j++ {
+		for j := max(i-ctxN, 0); j <= min(i+ctxN, len(lines)-1); j++ {
 			if emitted[j] {
 				continue
 			}

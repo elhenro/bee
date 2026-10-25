@@ -1,99 +1,15 @@
 package web_fetch
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
-	"sync"
+	"slices"
 	"time"
-
-	"golang.org/x/net/html"
 )
-
-// CacheEntry stores fetched content with metadata
-type CacheEntry struct {
-	Bytes       int
-	Code        int
-	CodeText    string
-	ContentType string
-	Content     string
-	ExpiresAt   time.Time
-}
-
-// Cache implements a simple LRU cache with TTL
-type Cache struct {
-	mu     sync.RWMutex
-	items  map[string]*CacheEntry
-	order  []string
-	maxLen int
-	ttl    time.Duration
-}
-
-// NewCache creates a new cache with the given TTL and max length
-func NewCache(ttl time.Duration, maxLen int) *Cache {
-	return &Cache{
-		items:  make(map[string]*CacheEntry),
-		order:  make([]string, 0),
-		maxLen: maxLen,
-		ttl:    ttl,
-	}
-}
-
-// Get retrieves an entry from the cache
-func (c *Cache) Get(key string) (*CacheEntry, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	entry, exists := c.items[key]
-	if !exists {
-		return nil, false
-	}
-
-	// Check if entry has expired
-	if time.Now().After(entry.ExpiresAt) {
-		return nil, false
-	}
-
-	return entry, true
-}
-
-// Set adds an entry to the cache
-func (c *Cache) Set(key string, entry *CacheEntry) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// If key already exists, update it
-	if _, exists := c.items[key]; exists {
-		c.items[key] = entry
-		return
-	}
-
-	// If cache is full, remove the oldest entry
-	if len(c.order) >= c.maxLen {
-		oldest := c.order[0]
-		delete(c.items, oldest)
-		c.order = c.order[1:]
-	}
-
-	c.items[key] = entry
-	c.order = append(c.order, key)
-}
-
-// Clear removes all entries from the cache
-func (c *Cache) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.items = make(map[string]*CacheEntry)
-	c.order = make([]string, 0)
-}
-
-var cache = NewCache(15*time.Minute, 50) // 15min TTL, 50-entry LRU
 
 // DomainPolicy controls which domains are allowed/blocked
 type DomainPolicy struct {
@@ -102,37 +18,19 @@ type DomainPolicy struct {
 }
 
 // IsAllowed checks if a domain is allowed based on the policy. Matching is
-// case-insensitive and ignores a trailing root dot.
+// case-insensitive and ignores a trailing root dot. The block list wins; an
+// empty allow list allows everything not blocked.
 func (p *DomainPolicy) IsAllowed(domain string) bool {
 	domain = normHost(domain)
-	// If block list is not empty, check it first
-	for _, blocked := range p.Block {
-		if hostMatches(domain, blocked) {
-			return false
-		}
-	}
-
-	// If allow list is not empty, check it
-	if len(p.Allow) > 0 {
-		for _, allowed := range p.Allow {
-			if hostMatches(domain, allowed) {
-				return true
-			}
-		}
+	matches := func(entry string) bool { return hostMatches(domain, entry) }
+	if slices.ContainsFunc(p.Block, matches) {
 		return false
 	}
-
-	// If no allow list, allow all (unless blocked)
-	return true
+	return len(p.Allow) == 0 || slices.ContainsFunc(p.Allow, matches)
 }
 
 // DefaultDomainPolicy returns a default policy that allows all domains
-func DefaultDomainPolicy() *DomainPolicy {
-	return &DomainPolicy{
-		Allow: nil,
-		Block: nil,
-	}
-}
+func DefaultDomainPolicy() *DomainPolicy { return &DomainPolicy{} }
 
 // FetchResult contains the result of a web fetch operation
 type FetchResult struct {
@@ -148,16 +46,25 @@ type FetchResult struct {
 // MaxContentLen caps body read at 2x this value via io.LimitReader.
 const MaxContentLen = 50000
 
-// FetchURL fetches content from a URL and converts it to markdown. confined
-// enables the SSRF guard (reject loopback/private/metadata hosts); under
-// danger-full-access it is false and any reachable host is allowed.
-func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult, error) {
-	start := time.Now()
+// result renders the entry as a FetchResult for rawURL.
+func (e *CacheEntry) result(rawURL string, start time.Time) *FetchResult {
+	return &FetchResult{
+		URL:         rawURL,
+		Code:        e.Code,
+		CodeText:    e.CodeText,
+		ContentType: e.ContentType,
+		Bytes:       e.Bytes,
+		Markdown:    e.Content,
+		DurationMs:  time.Since(start).Milliseconds(),
+	}
+}
 
-	// Parse and validate URL
+// vetURL rejects URLs the fetcher must not request: non-web schemes, hosts
+// the policy blocks and, when confined, hosts resolving to internal addresses.
+func vetURL(rawURL string, policy *DomainPolicy, confined bool) error {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid URL: %w", err)
+		return fmt.Errorf("invalid URL: %w", err)
 	}
 
 	// Only http/https. Reject file://, ftp://, gopher://, data:// etc — these
@@ -167,13 +74,13 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 	switch parsedURL.Scheme {
 	case "http", "https":
 	default:
-		return nil, fmt.Errorf("unsupported URL scheme %q: only http and https allowed", parsedURL.Scheme)
+		return fmt.Errorf("unsupported URL scheme %q: only http and https allowed", parsedURL.Scheme)
 	}
 
 	// Fast hostname blocklist pre-check (user allow/block lists, both scopes)
 	host := parsedURL.Hostname()
 	if policy != nil && !policy.IsAllowed(host) {
-		return nil, fmt.Errorf("domain %s is not allowed", host)
+		return fmt.Errorf("domain %s is not allowed", host)
 	}
 
 	// SSRF guard (confined scope only): reject hosts that resolve to private/
@@ -182,69 +89,21 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 	if confined {
 		addrs, err := net.LookupIP(host)
 		if err != nil {
-			return nil, fmt.Errorf("DNS lookup failed for %s: %w", host, err)
+			return fmt.Errorf("DNS lookup failed for %s: %w", host, err)
 		}
 		for _, ip := range addrs {
 			if isBlockedIP(ip) {
-				return nil, fmt.Errorf("host %s resolves to blocked IP %s", host, ip)
+				return fmt.Errorf("host %s resolves to blocked IP %s", host, ip)
 			}
 		}
 	}
+	return nil
+}
 
-	// Check cache
-	if entry, exists := cache.Get(rawURL); exists {
-		return &FetchResult{
-			URL:         rawURL,
-			Code:        entry.Code,
-			CodeText:    entry.CodeText,
-			ContentType: entry.ContentType,
-			Bytes:       entry.Bytes,
-			Markdown:    entry.Content,
-			DurationMs:  time.Since(start).Milliseconds(),
-		}, nil
-	}
-
-	// default dialer. Under a confined scope, wrap it in a guard that validates
-	// the connection IP on EVERY dial (initial request and each redirect hop)
-	// and pins the connection to the validated address. This closes two SSRF
-	// bypasses the one-shot pre-check above can't: a redirect to a private/
-	// metadata host, and DNS rebinding (validate-then-reconnect re-resolution) —
-	// the connection only ever lands on an IP we just checked. danger-full-access
-	// uses the plain dialer so localhost/LAN is reachable.
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	dialContext := dialer.DialContext
-	if confined {
-		dialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			h, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			ips, err := net.DefaultResolver.LookupIPAddr(ctx, h)
-			if err != nil {
-				return nil, err
-			}
-			for _, ip := range ips {
-				if isBlockedIP(ip.IP) {
-					return nil, fmt.Errorf("refused: %s resolves to blocked IP %s", h, ip.IP)
-				}
-			}
-			var lastErr error
-			for _, ip := range ips {
-				conn, derr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
-				if derr == nil {
-					return conn, nil
-				}
-				lastErr = derr
-			}
-			if lastErr == nil {
-				lastErr = fmt.Errorf("no usable address for %s", h)
-			}
-			return nil, lastErr
-		}
-	}
-
-	// Build HTTP client with timeout, redirect cap, and per-hop host re-check.
-	client := &http.Client{
+// newClient builds the HTTP client: timeout, redirect cap, per-hop policy
+// re-check and the scope-dependent dialer.
+func newClient(policy *DomainPolicy, confined bool) *http.Client {
+	return &http.Client{
 		Timeout: 20 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
@@ -259,7 +118,7 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 		},
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           dialContext,
+			DialContext:           dialContext(confined),
 			ForceAttemptHTTP2:     true,
 			MaxIdleConns:          100,
 			IdleConnTimeout:       90 * time.Second,
@@ -267,17 +126,28 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
 	}
+}
+
+// FetchURL fetches content from a URL and converts it to markdown. confined
+// enables the SSRF guard (reject loopback/private/metadata hosts); under
+// danger-full-access it is false and any reachable host is allowed.
+func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult, error) {
+	start := time.Now()
+	if err := vetURL(rawURL, policy, confined); err != nil {
+		return nil, err
+	}
+	if entry, exists := cache.Get(rawURL); exists {
+		return entry.result(rawURL, start), nil
+	}
 
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
-	// Set headers
 	req.Header.Set("User-Agent", "bee/0.1 (+https://github.com/elhenro/bee)")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
-	resp, err := client.Do(req)
+	resp, err := newClient(policy, confined).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -295,234 +165,59 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 		return nil, fmt.Errorf("failed to convert HTML to markdown: %w", err)
 	}
 
-	// Create cache entry
 	entry := &CacheEntry{
 		Bytes:       len(body),
 		Code:        resp.StatusCode,
 		CodeText:    resp.Status,
 		ContentType: resp.Header.Get("Content-Type"),
 		Content:     markdown,
-		ExpiresAt:   time.Now().Add(15 * time.Minute),
+		ExpiresAt:   time.Now().Add(cache.ttl),
 	}
 
 	// only successes are cached: a transient 5xx/429 must not stick for 15 minutes
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		cache.Set(rawURL, entry)
 	}
-
-	return &FetchResult{
-		URL:         rawURL,
-		Code:        resp.StatusCode,
-		CodeText:    resp.Status,
-		ContentType: resp.Header.Get("Content-Type"),
-		Bytes:       len(body),
-		Markdown:    markdown,
-		DurationMs:  time.Since(start).Milliseconds(),
-	}, nil
+	return entry.result(rawURL, start), nil
 }
 
-// htmlToMarkdown converts HTML content to markdown
-func htmlToMarkdown(htmlContent []byte) (string, error) {
-	doc, err := html.Parse(bytes.NewReader(htmlContent))
-	if err != nil {
-		return "", fmt.Errorf("failed to parse HTML: %w", err)
+// dialContext is the transport dialer. Under a confined scope it validates the
+// connection IP on EVERY dial (initial request and each redirect hop) and pins
+// the connection to the validated address. This closes two SSRF bypasses the
+// one-shot pre-check in FetchURL can't: a redirect to a private/metadata host,
+// and DNS rebinding (validate-then-reconnect re-resolution) — the connection
+// only ever lands on an IP we just checked. danger-full-access uses the plain
+// dialer so localhost/LAN is reachable.
+func dialContext(confined bool) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	if !confined {
+		return dialer.DialContext
 	}
-
-	var buf bytes.Buffer
-	// Start from the body element (skip html/head wrappers)
-	body := findBody(doc)
-	if body != nil {
-		for c := body.FirstChild; c != nil; c = c.NextSibling {
-			renderNode(c, &buf)
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		h, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
 		}
-	}
-
-	// Clean up excessive whitespace while preserving markdown structure
-	result := normalizeMarkdown(buf.String())
-	return result, nil
-}
-
-// findBody finds the body element in the HTML document
-func findBody(n *html.Node) *html.Node {
-	if n.Type == html.ElementNode && n.Data == "body" {
-		return n
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if found := findBody(c); found != nil {
-			return found
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, h)
+		if err != nil {
+			return nil, err
 		}
-	}
-	return nil
-}
-
-// renderNode renders a single HTML node to markdown
-func renderNode(n *html.Node, w io.Writer) {
-	// Skip script and style tags
-	if n.Type == html.ElementNode && (n.Data == "script" || n.Data == "style") {
-		return
-	}
-
-	// Handle text nodes
-	if n.Type == html.TextNode {
-		text := strings.TrimSpace(n.Data)
-		if text != "" {
-			io.WriteString(w, text)
-		} else if strings.ContainsAny(n.Data, " \t\n\r") {
-			// Preserve single space for whitespace-only text nodes (e.g., between inline elements)
-			io.WriteString(w, " ")
+		for _, ip := range ips {
+			if isBlockedIP(ip.IP) {
+				return nil, fmt.Errorf("refused: %s resolves to blocked IP %s", h, ip.IP)
+			}
 		}
-		return
-	}
-
-	// Handle element nodes
-	if n.Type == html.ElementNode {
-		// Render children first
-		var childrenContent bytes.Buffer
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			renderNode(c, &childrenContent)
+		var lastErr error
+		for _, ip := range ips {
+			conn, derr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+			if derr == nil {
+				return conn, nil
+			}
+			lastErr = derr
 		}
-		childText := childrenContent.String()
-
-		switch n.Data {
-		case "h1":
-			io.WriteString(w, "\n\n# ")
-			io.WriteString(w, childText)
-		case "h2":
-			io.WriteString(w, "\n\n## ")
-			io.WriteString(w, childText)
-		case "h3":
-			io.WriteString(w, "\n\n### ")
-			io.WriteString(w, childText)
-		case "h4":
-			io.WriteString(w, "\n\n#### ")
-			io.WriteString(w, childText)
-		case "h5":
-			io.WriteString(w, "\n\n##### ")
-			io.WriteString(w, childText)
-		case "h6":
-			io.WriteString(w, "\n\n###### ")
-			io.WriteString(w, childText)
-		case "p":
-			io.WriteString(w, "\n\n")
-			io.WriteString(w, childText)
-		case "br":
-			io.WriteString(w, "\n")
-		case "strong", "b":
-			io.WriteString(w, "**")
-			io.WriteString(w, childText)
-			io.WriteString(w, "**")
-		case "em", "i":
-			io.WriteString(w, "*")
-			io.WriteString(w, childText)
-			io.WriteString(w, "*")
-		case "a":
-			href := getAttr(n, "href")
-			if href != "" {
-				io.WriteString(w, "[")
-				io.WriteString(w, childText)
-				io.WriteString(w, "](")
-				io.WriteString(w, href)
-				io.WriteString(w, ")")
-			} else {
-				io.WriteString(w, childText)
-			}
-		case "ul":
-			// ul renders its children (li items)
-			io.WriteString(w, "\n\n")
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				renderNode(c, w)
-			}
-		case "ol":
-			// ol renders its children (li items)
-			io.WriteString(w, "\n\n")
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				renderNode(c, w)
-			}
-		case "li":
-			io.WriteString(w, "\n- ")
-			io.WriteString(w, childText)
-		case "blockquote":
-			io.WriteString(w, "\n\n> ")
-			io.WriteString(w, childText)
-		case "pre":
-			// Check if child is code element
-			var codeText string
-			var hasCodeChild bool
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if c.Type == html.ElementNode && c.Data == "code" {
-					hasCodeChild = true
-					// Extract text content from code element
-					for cc := c.FirstChild; cc != nil; cc = cc.NextSibling {
-						if cc.Type == html.TextNode {
-							codeText += cc.Data
-						}
-					}
-					break
-				}
-			}
-			if hasCodeChild {
-				io.WriteString(w, "\n\n```")
-				io.WriteString(w, codeText)
-				io.WriteString(w, "```\n\n")
-			} else {
-				io.WriteString(w, "\n\n```")
-				io.WriteString(w, childText)
-				io.WriteString(w, "```\n\n")
-			}
-		case "code":
-			// code inside pre is handled by pre; standalone code gets backticks
-			// Check if parent is pre by looking for pre in ancestor chain
-			io.WriteString(w, "`")
-			io.WriteString(w, childText)
-			io.WriteString(w, "`")
-		case "img":
-			alt := getAttr(n, "alt")
-			src := getAttr(n, "src")
-			if alt != "" {
-				io.WriteString(w, "![")
-				io.WriteString(w, alt)
-				io.WriteString(w, "](")
-				io.WriteString(w, src)
-				io.WriteString(w, ")")
-			}
-		default:
-			// For other elements, just render children
-			io.WriteString(w, childText)
+		if lastErr == nil {
+			lastErr = fmt.Errorf("no usable address for %s", h)
 		}
+		return nil, lastErr
 	}
-}
-
-// getAttr returns the value of an attribute from a node
-func getAttr(n *html.Node, key string) string {
-	for _, attr := range n.Attr {
-		if attr.Key == key {
-			return attr.Val
-		}
-	}
-	return ""
-}
-
-// normalizeMarkdown collapses excessive whitespace while preserving markdown structure
-func normalizeMarkdown(s string) string {
-	// Trim leading/trailing whitespace
-	s = strings.TrimSpace(s)
-
-	// Collapse multiple blank lines to at most one blank line
-	// A blank line is two consecutive newlines
-	var buf bytes.Buffer
-	runes := []rune(s)
-	consecutiveNewlines := 0
-	for i := 0; i < len(runes); i++ {
-		if runes[i] == '\n' {
-			consecutiveNewlines++
-			if consecutiveNewlines <= 2 {
-				buf.WriteRune(runes[i])
-			}
-			// Skip additional newlines beyond 2
-		} else {
-			consecutiveNewlines = 0
-			buf.WriteRune(runes[i])
-		}
-	}
-	return buf.String()
 }

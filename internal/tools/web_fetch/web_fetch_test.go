@@ -184,15 +184,6 @@ func TestCache(t *testing.T) {
 	if ok {
 		t.Error("cache hit for expired entry")
 	}
-
-	// Test clear
-	c.Set("https://keep.com", entry)
-	c.Clear()
-
-	_, ok = c.Get("https://keep.com")
-	if ok {
-		t.Error("cache hit after clear")
-	}
 }
 
 func TestFetchURL(t *testing.T) {

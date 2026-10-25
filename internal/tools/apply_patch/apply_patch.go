@@ -75,17 +75,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		return tools.Result{Content: "missing or empty 'patch' field", IsError: true}, nil
 	}
 
-	files, _, err := gitdiff.Parse(strings.NewReader(patchStr))
-	if err != nil && isHunkCountErr(err) {
-		// LLMs frequently miscount hunk headers (`@@ -a,b +c,d @@`).
-		// recompute counts from the body and retry once.
-		repaired := repairHunkCounts(patchStr)
-		if repaired != patchStr {
-			if f2, _, err2 := gitdiff.Parse(strings.NewReader(repaired)); err2 == nil {
-				files, err = f2, nil
-			}
-		}
-	}
+	files, err := parsePatch(patchStr)
 	if err != nil {
 		hint := "parse error: " + err.Error() + "\n" +
 			"hunk header or line prefix malformed. for small in-file edits, prefer edit_diff " +
@@ -108,31 +98,9 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		}
 	}
 
-	// under a confined scope, contain every patch target to the workspace root
-	// and reject sensitive targets BEFORE touching disk. stripDiffPrefix passes
-	// absolute paths through and never strips "..", so without this a header like
-	// `+++ b/../../.ssh/authorized_keys` would write outside the tree. Rewrite
-	// each name to its absolute form so plan/commit stay consistent. In danger-
-	// full-access (empty root) ResolveMaybe is a passthrough and CheckWritable is
-	// skipped — patch anywhere.
-	shown := map[string]string{} // resolved target -> path as given, for the summary
-	for _, f := range files {
-		for _, np := range []*string{&f.OldName, &f.NewName} {
-			name := *np
-			if name == "" || name == "/dev/null" {
-				continue
-			}
-			abs, _, rootAbs, ok := tools.ResolveMaybe(t.root, name)
-			if !ok {
-				return tools.Result{Content: fmt.Sprintf("patch path %q escapes workspace root %q; refused (no files changed)", name, rootAbs), IsError: true}, nil
-			}
-			target, msg := tools.CheckWriteTarget(t.root, abs, t.pathRe)
-			if msg != "" {
-				return tools.Result{Content: msg + " (no files changed)", IsError: true}, nil
-			}
-			shown[target] = abs
-			*np = target
-		}
+	shown, msg := t.contain(files)
+	if msg != "" {
+		return tools.Result{Content: msg, IsError: true}, nil
 	}
 
 	// plan all changes in memory first; commit only once every file validates,
@@ -148,10 +116,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		}
 		c, err := ov.plan(f)
 		if err != nil {
-			return tools.Result{
-				Content: fmt.Sprintf("apply failed for %s: %v (no files changed)", fileLabel(f), err),
-				IsError: true,
-			}, nil
+			return tools.Result{Content: fmt.Sprintf("apply failed for %s: %v (no files changed)", fileLabel(f), err), IsError: true}, nil
 		}
 		if orig, ok := shown[c.path]; ok {
 			c.path = orig
@@ -160,33 +125,66 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		changes = append(changes, c)
 	}
 	if path, n, total, err := ov.commit(); err != nil {
-		return tools.Result{
-			Content: fmt.Sprintf("apply failed writing %s: %v (%d/%d already written)", path, err, n, total),
-			IsError: true,
-		}, nil
+		return tools.Result{Content: fmt.Sprintf("apply failed writing %s: %v (%d/%d already written)", path, err, n, total), IsError: true}, nil
 	}
 
 	return tools.Result{Content: summarize(changes)}, nil
 }
 
-type lineKind int
-
-const (
-	lineAdded lineKind = iota
-	lineRemoved
-)
-
-func countLines(f *gitdiff.File, kind lineKind) int {
-	n := 0
-	for _, frag := range f.TextFragments {
-		switch kind {
-		case lineAdded:
-			n += int(frag.LinesAdded)
-		case lineRemoved:
-			n += int(frag.LinesDeleted)
+// parsePatch parses a unified diff. LLMs frequently miscount hunk headers
+// (`@@ -a,b +c,d @@`), so a count error is retried once with the counts
+// recomputed from the body.
+func parsePatch(patch string) ([]*gitdiff.File, error) {
+	files, _, err := gitdiff.Parse(strings.NewReader(patch))
+	if err != nil && isHunkCountErr(err) {
+		if repaired := repairHunkCounts(patch); repaired != patch {
+			if f2, _, err2 := gitdiff.Parse(strings.NewReader(repaired)); err2 == nil {
+				return f2, nil
+			}
 		}
 	}
-	return n
+	return files, err
+}
+
+// contain, under a confined scope, contains every patch target to the
+// workspace root and rejects sensitive targets BEFORE touching disk.
+// stripDiffPrefix passes absolute paths through and never strips "..", so
+// without this a header like `+++ b/../../.ssh/authorized_keys` would write
+// outside the tree. Each name is rewritten to its absolute form so plan/commit
+// stay consistent. In danger-full-access (empty root) ResolveMaybe is a
+// passthrough and CheckWritable is skipped, so patches land anywhere. shown
+// maps each resolved target to the path as given, for the summary; msg is
+// non-empty when a target is refused.
+func (t *Tool) contain(files []*gitdiff.File) (shown map[string]string, msg string) {
+	shown = map[string]string{}
+	for _, f := range files {
+		for _, np := range []*string{&f.OldName, &f.NewName} {
+			name := *np
+			if name == "" || name == "/dev/null" {
+				continue
+			}
+			abs, _, rootAbs, ok := tools.ResolveMaybe(t.root, name)
+			if !ok {
+				return nil, fmt.Sprintf("patch path %q escapes workspace root %q; refused (no files changed)", name, rootAbs)
+			}
+			target, denied := tools.CheckWriteTarget(t.root, abs, t.pathRe)
+			if denied != "" {
+				return nil, denied + " (no files changed)"
+			}
+			shown[target] = abs
+			*np = target
+		}
+	}
+	return shown, ""
+}
+
+// lineCounts totals the added and removed lines across a file's hunks.
+func lineCounts(f *gitdiff.File) (added, removed int) {
+	for _, frag := range f.TextFragments {
+		added += int(frag.LinesAdded)
+		removed += int(frag.LinesDeleted)
+	}
+	return added, removed
 }
 
 func fileLabel(f *gitdiff.File) string {

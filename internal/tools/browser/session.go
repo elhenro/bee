@@ -27,7 +27,6 @@ type Session struct {
 	confined   bool // when true, restrict navigation to public http/https hosts
 
 	mu        sync.Mutex
-	allocCtx  context.Context
 	allocStop context.CancelFunc
 	ctx       context.Context
 	ctxStop   context.CancelFunc
@@ -52,8 +51,9 @@ func (s *Session) ensure() error {
 		chromedp.ExecPath(s.chromePath),
 		chromedp.Flag("headless", s.headless),
 	)
-	s.allocCtx, s.allocStop = chromedp.NewExecAllocator(context.Background(), opts...)
-	s.ctx, s.ctxStop = chromedp.NewContext(s.allocCtx)
+	var allocCtx context.Context
+	allocCtx, s.allocStop = chromedp.NewExecAllocator(context.Background(), opts...)
+	s.ctx, s.ctxStop = chromedp.NewContext(allocCtx)
 	// force the browser process to spin up now so launch errors surface here.
 	if err := chromedp.Run(s.ctx); err != nil {
 		s.allocStop()
