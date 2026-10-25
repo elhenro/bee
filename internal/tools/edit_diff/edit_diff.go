@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm"
@@ -164,14 +165,7 @@ func nearMissLine(src, old string) (int, bool) {
 	for i := range want {
 		want[i] = strings.TrimSpace(strings.ReplaceAll(want[i], "\r", ""))
 	}
-	nonBlank := false
-	for _, w := range want {
-		if w != "" {
-			nonBlank = true
-			break
-		}
-	}
-	if !nonBlank {
+	if !slices.ContainsFunc(want, func(w string) bool { return w != "" }) {
 		return 0, false
 	}
 	lines := strings.Split(src, "\n")
@@ -240,18 +234,9 @@ func echo(path, out string, spans [][2]int, replaced, total int) string {
 			break
 		}
 		startLine := 1 + strings.Count(out[:sp[0]], "\n")
-		endLine := 1 + strings.Count(out[:sp[1]], "\n")
-		if endLine > len(lines) {
-			endLine = len(lines)
-		}
-		from := startLine - ctxLines
-		if from < 1 {
-			from = 1
-		}
-		to := endLine + ctxLines
-		if to > len(lines) {
-			to = len(lines)
-		}
+		endLine := min(1+strings.Count(out[:sp[1]], "\n"), len(lines))
+		from := max(startLine-ctxLines, 1)
+		to := min(endLine+ctxLines, len(lines))
 		fmt.Fprintf(&b, "\n# region %d → lines %d-%d\n", i+1, startLine, endLine)
 		for ln := from; ln <= to; ln++ {
 			fmt.Fprintf(&b, "%6d#%s │ %s\n", ln, apply_patch.Tag(lines[ln-1], ln), lines[ln-1])

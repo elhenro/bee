@@ -58,18 +58,9 @@ func (t *Tool) runBackground(input map[string]any, cmdStr, displayCmd, note stri
 	}
 	msg := fmt.Sprintf("started job %d in the background: %s\n"+
 		"its output arrives as a new message when it exits (timeout %s). keep working or end your turn; "+
-		"do not sleep or poll. job tool: list, output, kill.", id, oneLine(displayCmd), timeout)
+		"do not sleep or poll. job tool: list, output, kill.", id, tools.OneLine(displayCmd, 160), timeout)
 	if note != "" {
 		msg = note + "\n" + msg
 	}
 	return tools.Result{Content: msg}
-}
-
-// oneLine flattens a multi-line command into a short status line.
-func oneLine(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > 160 {
-		return string(r[:160]) + "…"
-	}
-	return s
 }

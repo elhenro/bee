@@ -248,3 +248,13 @@ func TruncateHeadTailWithLimit(toolName, content string, limitTokens int, tailCh
 	trailer := fmt.Sprintf("\n...\n(skipped %d chars; kept first %d chars of %d and last %d; use limit/offset on read or grep to see middle)\n...", skipped, len(head), total, len(tail))
 	return head + trailer + tail, true
 }
+
+// OneLine flattens s onto a single line and caps it at maxRunes runes with an
+// ellipsis, for status lines.
+func OneLine(s string, maxRunes int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > maxRunes {
+		return string(r[:maxRunes]) + "…"
+	}
+	return s
+}

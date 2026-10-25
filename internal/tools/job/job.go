@@ -71,7 +71,7 @@ func (t *Tool) list() string {
 	}
 	lines := make([]string, len(all))
 	for i, j := range all {
-		lines[i] = fmt.Sprintf("#%d %s %s  %s", j.ID, status(j), round(j.Elapsed()), oneLine(j.Label))
+		lines[i] = fmt.Sprintf("#%d %s %s  %s", j.ID, status(j), round(j.Elapsed()), tools.OneLine(j.Label, 120))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -81,7 +81,7 @@ func (t *Tool) output(id int) tools.Result {
 	if !ok {
 		return tools.Result{Content: fmt.Sprintf("no job %d", id), IsError: true}
 	}
-	head := fmt.Sprintf("job %d %s after %s: %s", j.ID, status(j), round(j.Elapsed()), oneLine(j.Label))
+	head := fmt.Sprintf("job %d %s after %s: %s", j.ID, status(j), round(j.Elapsed()), tools.OneLine(j.Label, 120))
 	if j.Output == "" {
 		return tools.Result{Content: head + "\n(no output yet)"}
 	}
@@ -108,14 +108,6 @@ func round(d time.Duration) time.Duration {
 		return d.Round(100 * time.Millisecond)
 	}
 	return d.Round(time.Second)
-}
-
-func oneLine(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > 120 {
-		return string(r[:120]) + "…"
-	}
-	return s
 }
 
 // jobID accepts the shapes a model sends for an integer: json number, int, or

@@ -156,19 +156,20 @@ func runOpen(ctx context.Context, s *Session, in map[string]any) tools.Result {
 	if err := s.run(ctx, chromedp.Navigate(url), chromedp.Title(&title)); err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}
 	}
+	return snapshotResult(ctx, s, fmt.Sprintf("title: %s\n\n", title))
+}
+
+// snapshotResult reports a fresh snapshot after prefix.
+func snapshotResult(ctx context.Context, s *Session, prefix string) tools.Result {
 	snap, err := s.snapshot(ctx)
 	if err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}
 	}
-	return tools.Result{Content: fmt.Sprintf("title: %s\n\n%s", title, snap)}
+	return tools.Result{Content: prefix + snap}
 }
 
 func runSnapshot(ctx context.Context, s *Session, _ map[string]any) tools.Result {
-	snap, err := s.snapshot(ctx)
-	if err != nil {
-		return tools.Result{Content: err.Error(), IsError: true}
-	}
-	return tools.Result{Content: snap}
+	return snapshotResult(ctx, s, "")
 }
 
 func runConsole(_ context.Context, s *Session, _ map[string]any) tools.Result {
@@ -191,11 +192,7 @@ func runClick(ctx context.Context, s *Session, in map[string]any) tools.Result {
 	if err := s.run(ctx, chromedp.Click(refSelector(ref), chromedp.ByQuery)); err != nil {
 		return tools.Result{Content: fmt.Sprintf("click %s failed: %v", ref, err), IsError: true}
 	}
-	snap, err := s.snapshot(ctx)
-	if err != nil {
-		return tools.Result{Content: err.Error(), IsError: true}
-	}
-	return tools.Result{Content: snap}
+	return snapshotResult(ctx, s, "")
 }
 
 func runType(ctx context.Context, s *Session, in map[string]any) tools.Result {
@@ -207,11 +204,7 @@ func runType(ctx context.Context, s *Session, in map[string]any) tools.Result {
 	if err := s.run(ctx, chromedp.SendKeys(refSelector(ref), text, chromedp.ByQuery)); err != nil {
 		return tools.Result{Content: fmt.Sprintf("type into %s failed: %v", ref, err), IsError: true}
 	}
-	snap, err := s.snapshot(ctx)
-	if err != nil {
-		return tools.Result{Content: err.Error(), IsError: true}
-	}
-	return tools.Result{Content: snap}
+	return snapshotResult(ctx, s, "")
 }
 
 func screenshotRunner(vc visionClient) func(context.Context, *Session, map[string]any) tools.Result {

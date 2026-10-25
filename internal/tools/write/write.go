@@ -74,10 +74,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	// guard: small models sometimes drop a unified diff into content,
 	// destroying the file. detect canonical patch headers and redirect.
 	if isDiffContent(content) {
-		return tools.Result{
-			Content: "refusing to write — content looks like a unified diff, not file contents. Use the `edit` tool to apply a targeted change, or pass the full final file as raw text to `write` (no diff markers). `write` overwrites the whole file verbatim.",
-			IsError: true,
-		}, nil
+		return tools.Result{Content: "refusing to write — content looks like a unified diff, not file contents. Use the `edit` tool to apply a targeted change, or pass the full final file as raw text to `write` (no diff markers). `write` overwrites the whole file verbatim.", IsError: true}, nil
 	}
 
 	// ResolveMaybe contains the write to the workspace root only under a confined

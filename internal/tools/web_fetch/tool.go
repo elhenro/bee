@@ -25,12 +25,11 @@ type Config struct {
 // DefaultConfig returns the default configuration
 func DefaultConfig() Config {
 	return Config{
-		Enabled:      true,
-		AllowDomains: nil, // nil = allow all
-		// SSRF (loopback/private/metadata) is handled by the scope-gated
-		// isBlockedIP guard in FetchURL, which covers more than these literals
-		// would; keeping them here would block localhost even in danger mode.
-		BlockDomains:  nil,
+		Enabled: true,
+		// nil allow/block lists = allow all. SSRF (loopback/private/metadata) is
+		// handled by the scope-gated isBlockedIP guard in FetchURL, which covers
+		// more than block literals would; listing them here would block localhost
+		// even in danger mode.
 		MaxContentLen: 50000,
 	}
 }
@@ -45,7 +44,6 @@ func New(cfg Config) (tools.Tool, error) {
 	if !cfg.Enabled {
 		return nil, fmt.Errorf("web_fetch tool is disabled")
 	}
-
 	return &Tool{config: cfg}, nil
 }
 
@@ -73,26 +71,17 @@ func (t *Tool) Spec() llm.ToolSpec {
 func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, error) {
 	rawURL, ok := input["url"].(string)
 	if !ok || rawURL == "" {
-		return tools.Result{
-			Content: "Error: 'url' parameter is required",
-			IsError: true,
-		}, nil
+		return tools.Result{Content: "Error: 'url' parameter is required", IsError: true}, nil
 	}
 
 	// Build domain policy
-	policy := &DomainPolicy{
-		Allow: t.config.AllowDomains,
-		Block: t.config.BlockDomains,
-	}
+	policy := &DomainPolicy{Allow: t.config.AllowDomains, Block: t.config.BlockDomains}
 
 	// Fetch the URL. Confined drives the SSRF guard: on under a confined scope,
 	// off under danger-full-access (localhost/LAN reachable, same as shell curl).
 	result, err := FetchURL(rawURL, policy, t.config.Confined)
 	if err != nil {
-		return tools.Result{
-			Content: fmt.Sprintf("Error fetching URL: %v", err),
-			IsError: true,
-		}, nil
+		return tools.Result{Content: fmt.Sprintf("Error fetching URL: %v", err), IsError: true}, nil
 	}
 
 	// Truncate if too long, backing off to a rune boundary so the cut never
@@ -107,17 +96,6 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 
 	// Format result
 	output := fmt.Sprintf("URL: %s\nStatus: %d %s\nContent-Type: %s\nSize: %d bytes\nDuration: %dms\n\n%s",
-		result.URL,
-		result.Code,
-		result.CodeText,
-		result.ContentType,
-		result.Bytes,
-		result.DurationMs,
-		result.Markdown,
-	)
-
-	return tools.Result{
-		Content: output,
-		IsError: false,
-	}, nil
+		result.URL, result.Code, result.CodeText, result.ContentType, result.Bytes, result.DurationMs, result.Markdown)
+	return tools.Result{Content: output}, nil
 }

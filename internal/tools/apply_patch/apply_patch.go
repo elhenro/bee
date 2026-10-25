@@ -116,10 +116,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		}
 		c, err := ov.plan(f)
 		if err != nil {
-			return tools.Result{
-				Content: fmt.Sprintf("apply failed for %s: %v (no files changed)", fileLabel(f), err),
-				IsError: true,
-			}, nil
+			return tools.Result{Content: fmt.Sprintf("apply failed for %s: %v (no files changed)", fileLabel(f), err), IsError: true}, nil
 		}
 		if orig, ok := shown[c.path]; ok {
 			c.path = orig
@@ -128,10 +125,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 		changes = append(changes, c)
 	}
 	if path, n, total, err := ov.commit(); err != nil {
-		return tools.Result{
-			Content: fmt.Sprintf("apply failed writing %s: %v (%d/%d already written)", path, err, n, total),
-			IsError: true,
-		}, nil
+		return tools.Result{Content: fmt.Sprintf("apply failed writing %s: %v (%d/%d already written)", path, err, n, total), IsError: true}, nil
 	}
 
 	return tools.Result{Content: summarize(changes)}, nil
