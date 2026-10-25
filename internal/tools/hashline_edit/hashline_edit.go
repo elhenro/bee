@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -141,68 +142,13 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	if err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
-	// preserve trailing newline behavior: split keeps the empty tail entry.
-	hadTrailing := strings.HasSuffix(string(data), "\n")
-	body := string(data)
-	if hadTrailing {
-		body = strings.TrimSuffix(body, "\n")
-	}
-	// dominant CRLF files edit as plain lines and are written back with CRLF,
-	// so an edit never leaves bare LF endings in the file.
-	crlf := strings.Count(string(data), "\r\n")*2 > strings.Count(string(data), "\n")
-	eol := "\n"
-	if crlf {
-		eol = "\r\n"
-	}
-	lines := strings.Split(body, "\n")
-	if crlf {
-		for i, l := range lines {
-			lines[i] = strings.TrimSuffix(l, "\r")
-		}
-	}
-	// special case: empty file → no lines to anchor against.
-	if body == "" {
-		lines = nil
-	}
+	lines, eol := splitLines(string(data))
 
 	if err := validateEdits(edits, lines); err != nil {
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
 
-	// compute each edit's post-apply line range BEFORE mutating, walking in
-	// ascending-original-line order with a running shift. Each edit shifts
-	// lines below it by `delta` (net add/remove). Edits above are unaffected.
-	type span struct {
-		origLine int // pre-edit 1-based line for labelling
-		newFrom  int // post-edit 1-based first line of the edit's content
-		newTo    int // post-edit 1-based last line; < newFrom means deletion
-		op       string
-	}
-	ascending := make([]edit, len(edits))
-	copy(ascending, edits)
-	sort.SliceStable(ascending, func(i, j int) bool { return ascending[i].line < ascending[j].line })
-	spans := make([]span, 0, len(ascending))
-	shift := 0
-	for _, e := range ascending {
-		newLine := e.line + shift
-		var newFrom, newTo, delta int
-		switch e.op {
-		case "replace":
-			newFrom = newLine
-			newTo = newLine + len(e.lines) - 1
-			delta = len(e.lines) - 1 // -1 for the line we removed
-		case "prepend":
-			newFrom = newLine
-			newTo = newLine + len(e.lines) - 1
-			delta = len(e.lines)
-		case "append":
-			newFrom = newLine + 1
-			newTo = newLine + len(e.lines)
-			delta = len(e.lines)
-		}
-		spans = append(spans, span{origLine: e.line, newFrom: newFrom, newTo: newTo, op: e.op})
-		shift += delta
-	}
+	spans := editSpans(edits)
 
 	// bottom-up: highest line number first so earlier indices stay valid.
 	sort.SliceStable(edits, func(i, j int) bool { return edits[i].line > edits[j].line })
@@ -213,7 +159,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 	out := strings.Join(lines, eol)
 	// keep the original trailing-newline convention; an empty file that gained
 	// content still ends in a newline.
-	if (hadTrailing || len(data) == 0) && out != "" && !strings.HasSuffix(out, "\n") {
+	if (len(data) == 0 || data[len(data)-1] == '\n') && out != "" && !strings.HasSuffix(out, "\n") {
 		out += eol
 	}
 
@@ -223,35 +169,83 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		}
 	}
 
-	// echo: for each edit emit fresh anchors covering the new range + 2 lines
-	// of context, so a follow-up edit doesn't need a re-read.
-	var b strings.Builder
 	verb := "applied"
 	if dryRun {
 		verb = "dry-run"
 	}
-	fmt.Fprintf(&b, "%s %d edit(s) to %s\n", verb, len(edits), path)
+	return tools.Result{Content: fmt.Sprintf("%s %d edit(s) to %s\n%s", verb, len(edits), path, echo(spans, lines))}, nil
+}
+
+// splitLines splits file content into lines plus the line ending to join them
+// back with. A trailing newline yields no empty tail entry and an empty file no
+// lines. Dominant CRLF files edit as plain lines and are written back with CRLF,
+// so an edit never leaves bare LF endings in the file.
+func splitLines(text string) (lines []string, eol string) {
+	body := strings.TrimSuffix(text, "\n")
+	eol = "\n"
+	crlf := strings.Count(text, "\r\n")*2 > strings.Count(text, "\n")
+	if crlf {
+		eol = "\r\n"
+	}
+	if body == "" {
+		return nil, eol
+	}
+	lines = strings.Split(body, "\n")
+	if crlf {
+		for i, l := range lines {
+			lines[i] = strings.TrimSuffix(l, "\r")
+		}
+	}
+	return lines, eol
+}
+
+// span is where one edit lands after the batch applies.
+type span struct {
+	origLine int // pre-edit 1-based line for labelling
+	newFrom  int // post-edit 1-based first line of the edit's content
+	newTo    int // post-edit 1-based last line; < newFrom means deletion
+	op       string
+}
+
+// editSpans computes each edit's post-apply line range BEFORE mutating,
+// walking in ascending-original-line order with a running shift. Each edit
+// shifts lines below it by its net add/remove; edits above are unaffected.
+func editSpans(edits []edit) []span {
+	ascending := slices.Clone(edits)
+	sort.SliceStable(ascending, func(i, j int) bool { return ascending[i].line < ascending[j].line })
+	spans := make([]span, 0, len(ascending))
+	shift := 0
+	for _, e := range ascending {
+		newFrom, delta := e.line+shift, len(e.lines)
+		switch e.op {
+		case "replace":
+			delta-- // the replaced line is removed
+		case "append":
+			newFrom++
+		}
+		spans = append(spans, span{origLine: e.line, newFrom: newFrom, newTo: newFrom + len(e.lines) - 1, op: e.op})
+		shift += delta
+	}
+	return spans
+}
+
+// echo emits fresh anchors covering each edit's new range + 2 lines of
+// context, so a follow-up edit doesn't need a re-read.
+func echo(spans []span, lines []string) string {
+	var b strings.Builder
 	const ctxLines = 2
 	for _, s := range spans {
 		// deletion (newTo < newFrom): anchor surrounding lines instead.
-		anchorFrom := s.newFrom
-		anchorTo := s.newTo
+		anchorFrom, anchorTo := s.newFrom, s.newTo
 		if anchorTo < anchorFrom {
-			anchorFrom = s.newFrom - 1
-			anchorTo = s.newFrom
+			anchorFrom, anchorTo = s.newFrom-1, s.newFrom
 		}
-		from := anchorFrom - ctxLines
-		if from < 1 {
-			from = 1
-		}
-		to := anchorTo + ctxLines
-		if to > len(lines) {
-			to = len(lines)
-		}
+		from := max(anchorFrom-ctxLines, 1)
+		to := min(anchorTo+ctxLines, len(lines))
 		fmt.Fprintf(&b, "\n# %s @ orig line %d → new lines %d-%d\n", s.op, s.origLine, s.newFrom, s.newTo)
 		for ln := from; ln <= to; ln++ {
 			fmt.Fprintf(&b, "%6d#%s │ %s\n", ln, apply_patch.Tag(lines[ln-1], ln), lines[ln-1])
 		}
 	}
-	return tools.Result{Content: strings.TrimRight(b.String(), "\n")}, nil
+	return strings.TrimRight(b.String(), "\n")
 }

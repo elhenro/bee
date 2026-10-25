@@ -62,7 +62,7 @@ func (o *overlay) plan(f *gitdiff.File) (fileChange, error) {
 	if f.IsBinary {
 		return fileChange{}, errors.New("binary patches not supported")
 	}
-	added, removed := countLines(f, lineAdded), countLines(f, lineRemoved)
+	added, removed := lineCounts(f)
 	switch {
 	case f.IsDelete:
 		if f.OldName == "" {

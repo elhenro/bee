@@ -73,10 +73,7 @@ func stripDiffPrefix(p string) string {
 	if p == "" || p == "/dev/null" || filepath.IsAbs(p) {
 		return p
 	}
-	switch {
-	case strings.HasPrefix(p, "a/"):
-		return p[2:]
-	case strings.HasPrefix(p, "b/"):
+	if strings.HasPrefix(p, "a/") || strings.HasPrefix(p, "b/") {
 		return p[2:]
 	}
 	return p

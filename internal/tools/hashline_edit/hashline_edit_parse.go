@@ -2,6 +2,7 @@ package hashline_edit
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -89,17 +90,11 @@ func applyOne(lines []string, e edit) []string {
 	switch e.op {
 	case "replace":
 		// splice: drop the target line, insert replacement lines in its place.
-		head := append([]string{}, lines[:idx]...)
-		tail := append([]string{}, lines[idx+1:]...)
-		return append(append(head, e.lines...), tail...)
+		return slices.Replace(lines, idx, idx+1, e.lines...)
 	case "prepend":
-		head := append([]string{}, lines[:idx]...)
-		tail := append([]string{}, lines[idx:]...)
-		return append(append(head, e.lines...), tail...)
+		return slices.Insert(lines, idx, e.lines...)
 	case "append":
-		head := append([]string{}, lines[:idx+1]...)
-		tail := append([]string{}, lines[idx+1:]...)
-		return append(append(head, e.lines...), tail...)
+		return slices.Insert(lines, idx+1, e.lines...)
 	}
 	return lines
 }
