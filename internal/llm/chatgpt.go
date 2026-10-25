@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"net/http"
 	"sync"
@@ -37,14 +38,8 @@ type ChatGPTProvider struct {
 
 // NewChatGPT builds a provider.
 func NewChatGPT(cfg ChatGPTConfig) *ChatGPTProvider {
-	if cfg.Name == "" {
-		cfg.Name = "chatgpt"
-	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = newStreamingClient()
-	}
-	return &ChatGPTProvider{cfg: cfg, client: client}
+	cfg.Name = cmp.Or(cfg.Name, "chatgpt")
+	return &ChatGPTProvider{cfg: cfg, client: cmp.Or(cfg.HTTPClient, newStreamingClient())}
 }
 
 // Name returns the configured display name.

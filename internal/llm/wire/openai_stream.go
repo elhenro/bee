@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -81,7 +82,7 @@ type StreamUsage struct {
 // ParseChunk decodes one SSE `data:` JSON line. The literal "[DONE]" marker
 // returns (nil, true, nil) — caller should treat that as the terminator.
 func ParseChunk(data []byte) (*StreamChunk, bool, error) {
-	trimmed := trimSpace(data)
+	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
 		return nil, false, nil
 	}
@@ -93,18 +94,6 @@ func ParseChunk(data []byte) (*StreamChunk, bool, error) {
 		return nil, false, fmt.Errorf("decode chunk: %w", err)
 	}
 	return &c, false, nil
-}
-
-func trimSpace(b []byte) []byte {
-	start := 0
-	for start < len(b) && (b[start] == ' ' || b[start] == '\t' || b[start] == '\r' || b[start] == '\n') {
-		start++
-	}
-	end := len(b)
-	for end > start && (b[end-1] == ' ' || b[end-1] == '\t' || b[end-1] == '\r' || b[end-1] == '\n') {
-		end--
-	}
-	return b[start:end]
 }
 
 // ToolCallAccumulator threads partial tool-call deltas across chunks. Each
@@ -210,17 +199,18 @@ func (a *ToolCallAccumulator) finalizeCall(p *partialCall) FinalizedCall {
 	args := map[string]any{}
 	var rawArgs, parseErr string
 	if len(rawBytes) > 0 {
-		if err := json.Unmarshal(rawBytes, &args); err != nil {
-			repaired, ok := repairToolArgs(rawBytes, !a.truncated)
-			if !ok {
-				rawArgs = string(p.Args)
-				parseErr = fmt.Sprintf("decode tool args for %s: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
-				args = map[string]any{}
-			} else if err := json.Unmarshal(repaired, &args); err != nil {
-				rawArgs = string(p.Args)
-				parseErr = fmt.Sprintf("decode tool args for %s after repair: %v (raw=%q)", p.Name, err, truncForErr(p.Args))
-				args = map[string]any{}
+		err := json.Unmarshal(rawBytes, &args)
+		stage := ""
+		if err != nil {
+			if repaired, ok := repairToolArgs(rawBytes, !a.truncated); ok {
+				stage = " after repair"
+				err = json.Unmarshal(repaired, &args)
 			}
+		}
+		if err != nil {
+			rawArgs = string(p.Args)
+			parseErr = fmt.Sprintf("decode tool args for %s%s: %v (raw=%q)", p.Name, stage, err, truncForErr(p.Args))
+			args = map[string]any{}
 		}
 	}
 	StripMarkupInValues(args)

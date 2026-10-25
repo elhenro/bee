@@ -1,8 +1,7 @@
 package llm
 
 import (
-	"bufio"
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/elhenro/bee/internal/llm/wire"
 	"github.com/elhenro/bee/internal/types"
-	"github.com/google/uuid"
 )
 
 // GeminiConfig configures the native Gemini provider. BaseURL defaults to
@@ -36,15 +34,11 @@ type GeminiProvider struct {
 // NewGemini builds a provider. APIKey is read from GEMINI_API_KEY env when
 // the config field is blank, mirroring how callers wire other providers.
 func NewGemini(cfg GeminiConfig) *GeminiProvider {
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
-	}
+	cfg.BaseURL = cmp.Or(cfg.BaseURL, "https://generativelanguage.googleapis.com/v1beta")
 	if cfg.APIKey == "" {
-		cfg.APIKey = envGeminiKey()
+		cfg.APIKey = os.Getenv("GEMINI_API_KEY")
 	}
-	if cfg.HTTPClient == nil {
-		cfg.HTTPClient = newStreamingClient()
-	}
+	cfg.HTTPClient = cmp.Or(cfg.HTTPClient, newStreamingClient())
 	return &GeminiProvider{cfg: cfg, client: cfg.HTTPClient}
 }
 
@@ -62,20 +56,14 @@ func (p *GeminiProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/models/" + req.Model + ":streamGenerateContent?alt=sse"
-	resp, err := postWithRetry(ctx, p.client, "gemini", func() (*http.Request, error) {
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Accept", "text/event-stream")
+	resp, err := postJSON(ctx, p.client, "gemini", url, body, func(r *http.Request) {
+		setJSONHeaders(r, true)
 		// key via header, never the URL query: a *url.Error from a transport failure
 		// embeds the full URL (Go redacts userinfo, not query params), which would
 		// leak the key into error output and transcripts.
 		if p.cfg.APIKey != "" {
-			httpReq.Header.Set("x-goog-api-key", p.cfg.APIKey)
+			r.Header.Set("x-goog-api-key", p.cfg.APIKey)
 		}
-		return httpReq, nil
 	})
 	if err != nil {
 		return nil, err
@@ -99,98 +87,45 @@ func (p *GeminiProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 	defer resp.Body.Close()
 	defer close(out)
 
-	bumpActivity, stalled, cancelWatchdog := streamWatchdog(ctx, resp.Body)
-	defer cancelWatchdog()
-
-	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(make([]byte, 64*1024), sseMaxLine)
-
 	stopReason := ""
 	var usage *Usage
-
-	for sc.Scan() {
-		bumpActivity()
-		select {
-		case <-ctx.Done():
-			out <- Event{Type: EventError, Err: ctx.Err()}
-			return
-		case <-stalled:
-			out <- Event{Type: EventError, Err: fmt.Errorf("gemini stream stalled: no data for %s (try a different model)", effectiveStallTimeout())}
-			return
-		default:
+	if !readSSE(ctx, resp, p.Name(), effectiveStallTimeout(), out, func(payload []byte, _ func()) error {
+		if string(payload) == "[DONE]" {
+			return errSSEDone
 		}
-
-		line := sc.Text()
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
-		}
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if payload == "" {
-			continue
-		}
-		if payload == "[DONE]" {
-			break
-		}
-
 		var chunk wire.GeminiStreamChunk
-		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			// non-fatal: log via error event for visibility but keep stream alive
-			// would mask other content; better to fail loudly here.
-			out <- Event{Type: EventError, Err: fmt.Errorf("decode chunk: %w", err)}
-			return
+		if err := json.Unmarshal(payload, &chunk); err != nil {
+			// fail loudly: skipping a chunk would hide content
+			return fmt.Errorf("decode chunk: %w", err)
 		}
-
 		for _, cand := range chunk.Candidates {
 			for _, part := range cand.Content.Parts {
 				if part.Text != "" {
-					out <- Event{Type: EventTextDelta, Delta: part.Text}
+					if err := send(ctx, out, Event{Type: EventTextDelta, Delta: part.Text}); err != nil {
+						return err
+					}
 				}
-				if part.FunctionCall != nil {
-					out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-						ID:        "call_" + uuid.NewString(),
-						Name:      part.FunctionCall.Name,
-						Input:     part.FunctionCall.Args,
-						Signature: part.ThoughtSignature,
-					}}
+				if fc := part.FunctionCall; fc != nil {
+					ev := newToolUse("", fc.Name, fc.Args)
+					ev.ToolUse.Signature = part.ThoughtSignature
+					if err := send(ctx, out, ev); err != nil {
+						return err
+					}
 				}
 			}
-			if cand.FinishReason != "" {
-				stopReason = cand.FinishReason
-			}
+			stopReason = cmp.Or(cand.FinishReason, stopReason)
 		}
-		if chunk.UsageMetadata != nil {
+		if m := chunk.UsageMetadata; m != nil {
 			usage = &Usage{
-				InputTokens:  chunk.UsageMetadata.PromptTokenCount,
-				OutputTokens: chunk.UsageMetadata.CandidatesTokenCount + chunk.UsageMetadata.ThoughtsTokenCount,
+				InputTokens:  m.PromptTokenCount,
+				OutputTokens: m.CandidatesTokenCount + m.ThoughtsTokenCount,
 			}
 		}
-	}
-
-	if err := sc.Err(); err != nil {
-		// the watchdog closes the body, which surfaces here as a read error;
-		// report the stall instead of the cryptic close
-		select {
-		case <-stalled:
-			emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("gemini stream stalled: no data for %s (try a different model)", effectiveStallTimeout())})
-			return
-		default:
-		}
-		if ctx.Err() != nil {
-			out <- Event{Type: EventError, Err: ctx.Err()}
-			return
-		}
-		out <- Event{Type: EventError, Err: sseScanError(err)}
+		return nil
+	}) {
 		return
 	}
-
-	done := Event{Type: EventDone, StopReason: stopReason}
-	if usage != nil {
-		done.Usage = usage
-	}
-	out <- done
+	emit(ctx, out, Event{Type: EventDone, StopReason: stopReason, Usage: usage})
 }
 
 // buildGeminiRequest translates bee's Request into Gemini's wire shape.
@@ -279,27 +214,20 @@ func buildGeminiRequest(req Request) wire.GeminiRequest {
 		out.Tools = []wire.GeminiTool{{FunctionDeclarations: decls}}
 	}
 
+	gen := map[string]any{}
 	// gemini 2.5 family supports thinkingConfig.thinkingBudget. omit when off.
 	if b := geminiThinkingBudget(req.Model, ThinkingBudget(req.Thinking)); b > 0 {
-		if out.GenerationConfig == nil {
-			out.GenerationConfig = map[string]any{}
-		}
-		out.GenerationConfig["thinkingConfig"] = map[string]any{"thinkingBudget": b}
+		gen["thinkingConfig"] = map[string]any{"thinkingBudget": b}
 	}
-
 	if req.MaxTokens > 0 {
-		if out.GenerationConfig == nil {
-			out.GenerationConfig = map[string]any{}
-		}
-		out.GenerationConfig["maxOutputTokens"] = req.MaxTokens
+		gen["maxOutputTokens"] = req.MaxTokens
 	}
 	if req.Temperature != 0 {
-		if out.GenerationConfig == nil {
-			out.GenerationConfig = map[string]any{}
-		}
-		out.GenerationConfig["temperature"] = req.Temperature
+		gen["temperature"] = req.Temperature
 	}
-
+	if len(gen) > 0 {
+		out.GenerationConfig = gen
+	}
 	return out
 }
 
@@ -320,14 +248,8 @@ func geminiThinkingBudget(model string, b int) int {
 // System never appears here — it's handled via systemInstruction. Tool-role
 // messages carry functionResponse parts and ride as user role.
 func geminiRole(r types.Role) string {
-	switch r {
-	case types.RoleUser, types.RoleTool:
-		return "user"
-	case types.RoleAssistant:
+	if r == types.RoleAssistant {
 		return "model"
 	}
 	return "user"
 }
-
-// envGeminiKey returns the API key from env if the config didn't set it.
-func envGeminiKey() string { return os.Getenv("GEMINI_API_KEY") }

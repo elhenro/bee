@@ -3,11 +3,10 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
-
-	"github.com/elhenro/bee/internal/types"
-	"github.com/google/uuid"
 )
 
 // TextModeProvider wraps an inner Provider to bypass the native tool_calls
@@ -74,16 +73,9 @@ func (p *TextModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 	// every turn — KV-cache prefix hits depend on the request body being
 	// byte-stable for a fixed prompt.
 	if len(req.Stop) == 0 {
-		names := make([]string, 0, len(known))
-		for name := range known {
-			names = append(names, name)
-		}
-		sortStable(names)
-		for _, name := range names {
+		names := slices.Sorted(maps.Keys(known))
+		for _, name := range names[:min(4, len(names))] {
 			req.Stop = append(req.Stop, "</"+name+">")
-			if len(req.Stop) >= 4 {
-				break
-			}
 		}
 	}
 
@@ -108,91 +100,68 @@ func (p *TextModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 // stream instead of doing it all at EventDone.
 func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<- Event, known map[string]bool, canonical map[string]string, kinds map[string]map[string]string) {
 	defer close(out)
-	// an early return must not strand the inner producer on a full channel
-	defer func() {
-		go func() {
-			for range in {
-			}
-		}()
-	}()
 	var buf strings.Builder
 	think := thinkSplitter{inCall: func(answer string) bool { return openCallPending(answer, known) }}
-	var done Event
-	gotDone := false
+	emitThought := func(thought string) {
+		if thought != "" {
+			emit(ctx, out, Event{Type: EventThinkingDelta, Delta: thought})
+		}
+	}
 	// dedup: qwen3 / hermes models occasionally re-emit the same call twice
 	// in one turn (training artifact when the chat template echoes the
 	// envelope into both the assistant message AND a trailing tool_calls
 	// field). Fingerprint = name + canonicalized args JSON. Dispatch once
 	// per stream; later identical calls dropped.
 	seen := map[string]bool{}
-	dispatch := func(c parsedCall) bool {
+	dispatch := func(c parsedCall) {
 		c.Input = coerceArgs(c.Input, kinds[strings.ToLower(c.Name)])
 		fp := callFingerprint(c)
 		if seen[fp] {
-			return false
+			return
 		}
 		seen[fp] = true
-		emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-			ID:    "call_" + uuid.NewString(),
-			Name:  c.Name,
-			Input: c.Input,
-		}})
-		return true
+		emit(ctx, out, newToolUse("", c.Name, c.Input))
 	}
-	for ev := range in {
-		switch ev.Type {
-		case EventTextDelta:
-			// inline <think> blocks are reasoning: forward them as thinking
-			// so a call quoted inside a thought is never dispatched.
-			answer, thought := think.feed(ev.Delta)
-			if thought != "" {
-				emit(ctx, out, Event{Type: EventThinkingDelta, Delta: thought})
+	done, ok := relayInner(ctx, in, out, func(ev Event) {
+		// inline <think> blocks are reasoning: forward them as thinking
+		// so a call quoted inside a thought is never dispatched.
+		answer, thought := think.feed(ev.Delta)
+		emitThought(thought)
+		buf.WriteString(answer)
+		// withheld content still counts as generation progress.
+		emit(ctx, out, Event{Type: EventProgress, N: len(ev.Delta)})
+		// only attempt early dispatch when a closing tag for ANY known
+		// tool is present — cheap substring scan, avoids invoking the
+		// full regex extractor on every token.
+		if hasAnyCloseTag(buf.String(), known) {
+			early, remaining := extractIncremental(buf.String(), known, canonical)
+			for _, c := range early {
+				dispatch(c)
 			}
-			buf.WriteString(answer)
-			// withheld content still counts as generation progress.
-			emit(ctx, out, Event{Type: EventProgress, N: len(ev.Delta)})
-			// only attempt early dispatch when a closing tag for ANY known
-			// tool is present — cheap substring scan, avoids invoking the
-			// full regex extractor on every token.
-			if hasAnyCloseTag(buf.String(), known) {
-				early, remaining := extractIncremental(buf.String(), known, canonical)
-				for _, c := range early {
-					dispatch(c)
-				}
-				if len(early) > 0 {
-					buf.Reset()
-					buf.WriteString(remaining)
-				}
+			if len(early) > 0 {
+				buf.Reset()
+				buf.WriteString(remaining)
 			}
-		case EventThinkingDelta:
-			emit(ctx, out, ev)
-		case EventToolUse:
-			// inner provider also emits native tool_use (e.g. when the model
-			// surprises us). pass through verbatim so we don't drop signal.
-			// dedup against parsed calls too — if the model duplicates via
-			// both channels, only the first wins.
-			if ev.ToolUse != nil {
-				fp := callFingerprint(parsedCall{Name: ev.ToolUse.Name, Input: ev.ToolUse.Input})
-				if seen[fp] {
-					continue
-				}
-				seen[fp] = true
-			}
-			emit(ctx, out, ev)
-		case EventDone:
-			done = ev
-			gotDone = true
-		case EventError:
-			emit(ctx, out, ev)
-			return
-		default:
-			emit(ctx, out, ev)
 		}
+	}, func(ev Event) {
+		// inner provider also emits native tool_use (e.g. when the model
+		// surprises us). pass through verbatim so we don't drop signal.
+		// dedup against parsed calls too — if the model duplicates via
+		// both channels, only the first wins.
+		if ev.ToolUse != nil {
+			fp := callFingerprint(parsedCall{Name: ev.ToolUse.Name, Input: ev.ToolUse.Input})
+			if seen[fp] {
+				return
+			}
+			seen[fp] = true
+		}
+		emit(ctx, out, ev)
+	})
+	if !ok {
+		return
 	}
 	answer, thought := think.flush()
-	if thought != "" {
-		emit(ctx, out, Event{Type: EventThinkingDelta, Delta: thought})
-	}
+	emitThought(thought)
 	buf.WriteString(answer)
 	text := buf.String()
 	// snapshot pre-normalization for the nudge detector: normalization
@@ -226,14 +195,10 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 	// just falls through as prose and the agent appears to hang.
 	if len(seen) == 0 {
 		if name, snippet, ok := detectMalformedEnvelope(rawText); ok {
-			emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-				ID:   "call_" + uuid.NewString(),
-				Name: name,
-				Input: map[string]any{
-					"_parse_error": "tool-call envelope detected but could not be parsed. emit ONE canonical block: `<NAME>{\"arg\":\"val\"}</NAME>` — replace NAME with the actual tool name. no markdown fences, no stray angle brackets.",
-					"_raw_args":    snippet,
-				},
-			}})
+			emit(ctx, out, newToolUse("", name, map[string]any{
+				"_parse_error": "tool-call envelope detected but could not be parsed. emit ONE canonical block: `<NAME>{\"arg\":\"val\"}</NAME>` — replace NAME with the actual tool name. no markdown fences, no stray angle brackets.",
+				"_raw_args":    snippet,
+			}))
 			// suppress the malformed prose so it doesn't leak into the
 			// user-facing transcript on top of the nudge.
 			cleaned = ""
@@ -242,11 +207,7 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 	if cleaned != "" {
 		emit(ctx, out, Event{Type: EventTextDelta, Delta: cleaned})
 	}
-	if gotDone {
-		emit(ctx, out, done)
-	} else {
-		emit(ctx, out, Event{Type: EventDone, StopReason: "stop"})
-	}
+	emit(ctx, out, done)
 }
 
 // envelope marker regexes for detectMalformedEnvelope. Anchored on strong
@@ -283,217 +244,8 @@ func detectMalformedEnvelope(s string) (name, snippet string, ok bool) {
 
 // callFingerprint canonicalizes a parsed tool call for dedup. Uses
 // json.Marshal on args (Go sorts map keys when marshaling), so semantically
-// identical args with reordered keys collide as expected. Falls back to
-// fmt-format on marshal error.
+// identical args with reordered keys collide as expected.
 func callFingerprint(c parsedCall) string {
-	buf, err := json.Marshal(c.Input)
-	if err != nil {
-		return c.Name + "|<unmarshalable>"
-	}
+	buf, _ := json.Marshal(c.Input)
 	return c.Name + "|" + string(buf)
-}
-
-// hasAnyCloseTag is a cheap substring scan: returns true when s contains a
-// closing tag for any known tool. Cheaper than firing the regex extractor
-// on every token-sized delta.
-func hasAnyCloseTag(s string, known map[string]bool) bool {
-	if len(s) == 0 || len(known) == 0 {
-		return false
-	}
-	for name := range known {
-		if strings.Contains(s, "</"+name+">") {
-			return true
-		}
-	}
-	return false
-}
-
-// extractIncremental runs the hermes normalizer + tool extractors on the
-// current buffer and returns (early-dispatched calls, remaining buf). The
-// remaining buffer is what comes AFTER the last successful close tag — text
-// past that point hasn't been parsed yet and stays for the next delta cycle.
-//
-// Conservative: when no closed tag is found, returns (nil, buf unchanged)
-// so the caller knows nothing was consumed.
-func extractIncremental(s string, known map[string]bool, canonical map[string]string) ([]parsedCall, string) {
-	// find the last close tag position. anything past it is partial and
-	// must stay in the buffer.
-	lastClose := -1
-	for name := range known {
-		tag := "</" + name + ">"
-		if idx := strings.LastIndex(s, tag); idx >= 0 {
-			end := idx + len(tag)
-			if end > lastClose {
-				lastClose = end
-			}
-		}
-	}
-	// close tags inside another call's JSON string must not trigger dispatch:
-	// when a known call is open, only fully closed calls count
-	if end, sawOpen := completeCallsEnd(s, known); sawOpen {
-		lastClose = end
-	}
-	if lastClose <= 0 {
-		return nil, s
-	}
-	head := s[:lastClose]
-	tail := s[lastClose:]
-	normalized := normalizeHermesEnvelopes(head, known)
-	calls, cleaned := extractToolCalls(normalized, known, canonical)
-	if len(calls) == 0 {
-		return nil, s
-	}
-	// preserve surrounding prose: cleaned is `head` with tool tags removed,
-	// tail is the not-yet-parsed text past the last close. EventDone's final
-	// extractToolCalls pass will see `cleaned + tail` — no closed tags
-	// remain in cleaned (extractor already consumed them), so it falls
-	// through as plain text in the final EventTextDelta.
-	remaining := cleaned
-	if tail != "" {
-		if remaining != "" {
-			remaining += " "
-		}
-		remaining += tail
-	}
-	return calls, remaining
-}
-
-// mergeSystem appends the injected block to an existing system prompt with a
-// blank line between. Empty system → injection only.
-func mergeSystem(sys, inj string) string {
-	sys = strings.TrimRight(sys, "\n")
-	if sys == "" {
-		return inj
-	}
-	return sys + "\n\n" + inj
-}
-
-// buildToolInstruction renders the text-mode tool advertisement. Order is
-// preserved from req.Tools so callers can prioritize. Parameter names + types
-// from each tool's JSON Schema are surfaced so the model emits the right keys
-// instead of guessing (qwen3 used to invent `{"args":{"cmd":"..."}}` here).
-func buildToolInstruction(tools []ToolSpec, extra string) string {
-	var b strings.Builder
-	b.WriteString("## Tools (text format)\n")
-	b.WriteString("Call a tool by emitting EXACTLY one XML block per call. The tag NAME is the tool's name verbatim (e.g. <bash>, <edit>, <write>) — NOT the literal string \"tool_name\":\n")
-	b.WriteString("<TOOLNAME>{\"arg\":\"value\"}</TOOLNAME>\n\n")
-	b.WriteString("Args must use EXACT parameter names from each tool's signature below.\n")
-	b.WriteString("DO NOT invent keys like `args`/`cmd`/`input` — use the schema names verbatim.\n")
-	b.WriteString("Accepted alternative shapes (parsed as fallback):\n")
-	b.WriteString("- bare JSON: `{\"name\":\"tool\",\"arguments\":{...}}`\n")
-	b.WriteString("- hermes wrapper: `<tool_call>{\"name\":\"tool\",\"arguments\":{...}}</tool_call>`\n")
-	b.WriteString("- hermes xml: `<tool_call><function=NAME><parameter=KEY>VALUE</parameter></function></tool_call>`\n")
-	b.WriteString("  (qwen3 / hermes chat-template native — use if your training prefers it)\n\n")
-	b.WriteString("Do NOT wrap commands in markdown fences (```bash ... ```) — fences are NOT parsed as tool calls.\n\n")
-	b.WriteString("Available tools:\n")
-	for _, t := range tools {
-		desc := t.PromptSnippet
-		if desc == "" {
-			desc = firstSentence(t.Description)
-		}
-		b.WriteString("- ")
-		b.WriteString(t.Name)
-		if sig := renderSchemaSig(t.Schema); sig != "" {
-			b.WriteString(sig)
-		}
-		b.WriteString(": ")
-		b.WriteString(desc)
-		b.WriteString("\n")
-	}
-	b.WriteString("\nEmit ONLY the XML, nothing else when calling a tool. No prose before or after the tag.\n")
-	// 1-shot exemplar: 3B-active MoEs (qwen3-a3b, etc.) lock onto literal
-	// shapes more reliably than abstract spec. Anchor on the most common
-	// tool name (bash) so the template imprints — saves a re-try on first call.
-	b.WriteString("\nExample (verbatim shape — match exactly):\n")
-	b.WriteString("<bash>{\"command\":\"ls -la\"}</bash>\n")
-	if extra != "" {
-		b.WriteString("\n")
-		b.WriteString(extra)
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-// renderSchemaSig turns a JSON Schema object into a compact param signature.
-// e.g. `(command:string, [timeout_seconds:integer], [cwd:string])`.
-// Required params first, optional in `[brackets]`. Returns "" for empty/no
-// properties so tools without schema fall back to bare `- name: desc`.
-func renderSchemaSig(schema map[string]any) string {
-	if len(schema) == 0 {
-		return ""
-	}
-	props, _ := schema["properties"].(map[string]any)
-	if len(props) == 0 {
-		return ""
-	}
-	required := map[string]bool{}
-	if rs, ok := schema["required"].([]any); ok {
-		for _, r := range rs {
-			if s, ok := r.(string); ok {
-				required[s] = true
-			}
-		}
-	} else if rs, ok := schema["required"].([]string); ok {
-		for _, s := range rs {
-			required[s] = true
-		}
-	}
-	var req, opt []string
-	for name, raw := range props {
-		typ := "any"
-		if m, ok := raw.(map[string]any); ok {
-			if t, ok := m["type"].(string); ok && t != "" {
-				typ = t
-			}
-		}
-		entry := name + ":" + typ
-		if required[name] {
-			req = append(req, entry)
-		} else {
-			opt = append(opt, "["+entry+"]")
-		}
-	}
-	sortStable(req)
-	sortStable(opt)
-	all := append(req, opt...)
-	if len(all) == 0 {
-		return ""
-	}
-	return "(" + strings.Join(all, ", ") + ")"
-}
-
-// sortStable: minimal alphabetic sort without pulling in sort just for a tiny
-// list of param names. Keeps `command` before `cwd` deterministically across
-// runs so transcripts diff cleanly.
-func sortStable(ss []string) {
-	for i := 1; i < len(ss); i++ {
-		for j := i; j > 0 && ss[j-1] > ss[j]; j-- {
-			ss[j-1], ss[j] = ss[j], ss[j-1]
-		}
-	}
-}
-
-// firstSentence picks a short lead from a tool's description so the advert
-// stays narrow. Prefers the first newline; otherwise cuts at a period that
-// is followed by whitespace so URLs (`https://example.com/foo`) and version
-// strings (`v1.2.3`) don't get sliced mid-token. Returns the full string
-// when neither marker is found.
-func firstSentence(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	if i := strings.IndexByte(s, '\n'); i > 0 {
-		return strings.TrimSpace(s[:i])
-	}
-	for i := 0; i < len(s)-1; i++ {
-		if s[i] != '.' {
-			continue
-		}
-		switch s[i+1] {
-		case ' ', '\t':
-			return strings.TrimSpace(s[:i])
-		}
-	}
-	return s
 }

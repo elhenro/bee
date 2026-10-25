@@ -74,19 +74,15 @@ func BuildResponsesRequest(model, system string, messages []types.Message, tools
 		Model:        model,
 		Instructions: system,
 		Stream:       stream,
-	}
-	if maxTokens > 0 {
-		req.MaxOutput = maxTokens
+		MaxOutput:    max(maxTokens, 0),
+		Store:        new(false),
 	}
 	if temperature != 0 {
-		t := temperature
-		req.Temperature = &t
+		req.Temperature = new(temperature)
 	}
 	if reasoningEffort != "" {
 		req.Reasoning = &ResponsesReason{Effort: reasoningEffort}
 	}
-	storeFalse := false
-	req.Store = &storeFalse
 
 	for _, m := range messages {
 		req.Input = append(req.Input, translateResponsesMessage(m)...)
@@ -155,10 +151,7 @@ func splitResponsesUser(blocks []types.ContentBlock) []ResponsesItem {
 			if b.Result == nil {
 				continue
 			}
-			content := b.Result.Content
-			if b.Result.IsError {
-				content = "ERROR: " + content
-			}
+			content := toolResultText(b.Result)
 			// responses api requires non-empty output on function_call_output;
 			// empty string gets dropped by omitempty and returns 400
 			if content == "" {

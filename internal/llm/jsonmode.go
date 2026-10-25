@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-
-	"github.com/elhenro/bee/internal/types"
-	"github.com/google/uuid"
 )
 
 // JSONModeProvider wraps an inner Provider to route tool calls through
@@ -62,37 +59,18 @@ func (p *JSONModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 // still see what the model tried.
 func (p *JSONModeProvider) relay(ctx context.Context, in <-chan Event, out chan<- Event) {
 	defer close(out)
-	// an early return must not strand the inner producer on a full channel
-	defer func() {
-		go func() {
-			for range in {
-			}
-		}()
-	}()
 	var buf strings.Builder
-	var done Event
-	gotDone := false
-	for ev := range in {
-		switch ev.Type {
-		case EventTextDelta:
-			buf.WriteString(ev.Delta)
-			// withheld content still counts as generation progress.
-			emit(ctx, out, Event{Type: EventProgress, N: len(ev.Delta)})
-		case EventThinkingDelta:
-			emit(ctx, out, ev)
-		case EventToolUse:
-			// inner provider emitted a native call despite Tools being nil
-			// (model surprise). pass through so signal isn't dropped.
-			emit(ctx, out, ev)
-		case EventDone:
-			done = ev
-			gotDone = true
-		case EventError:
-			emit(ctx, out, ev)
-			return
-		default:
-			emit(ctx, out, ev)
-		}
+	done, ok := relayInner(ctx, in, out, func(ev Event) {
+		buf.WriteString(ev.Delta)
+		// withheld content still counts as generation progress.
+		emit(ctx, out, Event{Type: EventProgress, N: len(ev.Delta)})
+	}, func(ev Event) {
+		// inner provider emitted a native call despite Tools being nil
+		// (model surprise). pass through so signal isn't dropped.
+		emit(ctx, out, ev)
+	})
+	if !ok {
+		return
 	}
 	if name, args, say, ok := parseEnvelope(buf.String()); ok {
 		// say first so the status note precedes the tool card in transcripts.
@@ -100,11 +78,7 @@ func (p *JSONModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 			emit(ctx, out, Event{Type: EventTextDelta, Delta: say})
 		}
 		if name != "" {
-			emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-				ID:    "call_" + uuid.NewString(),
-				Name:  name,
-				Input: args,
-			}})
+			emit(ctx, out, newToolUse("", name, args))
 		}
 	} else if text := strings.TrimSpace(buf.String()); text != "" {
 		// parse failed. if the text looks like an attempted envelope (a server
@@ -113,23 +87,15 @@ func (p *JSONModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 		// fix — parity with textmode, instead of leaking broken JSON as prose
 		// and stalling the turn.
 		if looksLikeJSONEnvelope(text) {
-			emit(ctx, out, Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-				ID:   "call_" + uuid.NewString(),
-				Name: "_parse_error",
-				Input: map[string]any{
-					"_parse_error": "your JSON envelope could not be parsed. emit EXACTLY one object: {\"tool\":\"<name>\",\"args\":{...}} to act, or {\"done\":\"...\"} to finish. no prose, no markdown fences.",
-					"_raw_args":    truncateForNudge(text),
-				},
-			}})
+			emit(ctx, out, newToolUse("", "_parse_error", map[string]any{
+				"_parse_error": "your JSON envelope could not be parsed. emit EXACTLY one object: {\"tool\":\"<name>\",\"args\":{...}} to act, or {\"done\":\"...\"} to finish. no prose, no markdown fences.",
+				"_raw_args":    truncateForNudge(text),
+			}))
 		} else {
 			emit(ctx, out, Event{Type: EventTextDelta, Delta: text})
 		}
 	}
-	if gotDone {
-		emit(ctx, out, done)
-	} else {
-		emit(ctx, out, Event{Type: EventDone, StopReason: "stop"})
-	}
+	emit(ctx, out, done)
 }
 
 // parseEnvelope decodes the first JSON object in s and maps it to the union
@@ -274,20 +240,7 @@ func buildJSONInstruction(tools []ToolSpec) string {
 	b.WriteString("Never announce what you are about to do. Either do it now ({\"tool\":...}) or finish ({\"done\":...}).\n")
 	b.WriteString("Work happens ONLY through tool calls. Claiming a change without a tool call does not make it.\n\n")
 	b.WriteString("Available tools:\n")
-	for _, t := range tools {
-		desc := t.PromptSnippet
-		if desc == "" {
-			desc = firstSentence(t.Description)
-		}
-		b.WriteString("- ")
-		b.WriteString(t.Name)
-		if sig := renderSchemaSig(t.Schema); sig != "" {
-			b.WriteString(sig)
-		}
-		b.WriteString(": ")
-		b.WriteString(desc)
-		b.WriteString("\n")
-	}
+	b.WriteString(toolList(tools))
 	b.WriteString("\nMulti-step task: call a tool every turn until done, then finish with {\"done\":...}. No prose outside the JSON object.\n")
 	return b.String()
 }

@@ -1,13 +1,14 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -67,6 +68,41 @@ func resolveProviderKey(name string, cfg config.ProviderConfig) string {
 	return key
 }
 
+// bearerHeader is the Authorization header for the provider's key, nil when it
+// has none.
+func bearerHeader(name string, cfg config.ProviderConfig) map[string]string {
+	if key := resolveProviderKey(name, cfg); key != "" {
+		return map[string]string{"Authorization": "Bearer " + key}
+	}
+	return nil
+}
+
+// getJSON GETs url with the models client and decodes the JSON body into v. A
+// status >= 400 is an error carrying the start of the body.
+func getJSON(ctx context.Context, url string, headers map[string]string, v any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	for k, val := range headers {
+		req.Header.Set(k, val)
+	}
+	resp, err := modelsHTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("get %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, raw)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(v); err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+	return nil
+}
+
 // ListModels returns the model catalogue for the given provider. The
 // anthropic wire is short-circuited only for the real Anthropic provider —
 // third parties that copy the wire shape (MiniMax and friends) usually DO
@@ -76,19 +112,28 @@ func ListModels(ctx context.Context, name string, cfg config.ProviderConfig) ([]
 	if cached, ok := lookupCache(name); ok {
 		return cached, nil
 	}
+	models, err := loadCatalogue(ctx, name, cfg)
+	if err != nil {
+		return nil, err
+	}
+	storeCache(name, models)
+	return models, nil
+}
 
+// fallbackOrEmpty is the curated list for name, never nil.
+func fallbackOrEmpty(name string) []Model {
+	if fb := hardcodedFallback(name); fb != nil {
+		return fb
+	}
+	return []Model{}
+}
+
+func loadCatalogue(ctx context.Context, name string, cfg config.ProviderConfig) ([]Model, error) {
 	if isAnthropicWire(cfg.WireAPI) && name == "anthropic" {
-		models := hardcodedModels("anthropic")
-		storeCache(name, models)
-		return models, nil
+		return anthropicModels(), nil
 	}
 	if strings.TrimSpace(cfg.BaseURL) == "" {
-		if fb := hardcodedFallback(name); fb != nil {
-			storeCache(name, fb)
-			return fb, nil
-		}
-		storeCache(name, []Model{})
-		return []Model{}, nil
+		return fallbackOrEmpty(name), nil
 	}
 	// Responses-wire backends. chatgpt.com exposes a plan-filtered list at
 	// /backend-api/codex/models?client_version=X — query it live so users see
@@ -101,16 +146,10 @@ func ListModels(ctx context.Context, name string, cfg config.ProviderConfig) ([]
 				acct = cfg.OAuth.AccountIDHeader
 			}
 			if live, err := FetchChatGPTModels(ctx, cfg.BaseURL, acct); err == nil && len(live) > 0 {
-				storeCache(name, live)
 				return live, nil
 			}
 		}
-		models := hardcodedFallback(name)
-		if models == nil {
-			models = []Model{}
-		}
-		storeCache(name, models)
-		return models, nil
+		return fallbackOrEmpty(name), nil
 	}
 
 	models, err := fetchModels(ctx, name, cfg)
@@ -118,47 +157,22 @@ func ListModels(ctx context.Context, name string, cfg config.ProviderConfig) ([]
 		// fallback: if upstream rejects the call but the provider name maps
 		// to a known wire family, still surface a usable list.
 		if fb := hardcodedFallback(name); fb != nil {
-			storeCache(name, fb)
 			return fb, nil
 		}
 		return nil, err
 	}
 	enrichContextLengths(ctx, name, cfg, models)
-	storeCache(name, models)
 	return models, nil
 }
 
 // enrichContextLengths fills missing ContextLength values by probing the
 // non-standard /models/status endpoint. omlx 0.3.x reports per-model
 // max_context_window there even though plain /v1/models follows the stock
-// OpenAI shape (no context_length field). Errors and non-200s are swallowed
-// — this is best-effort enrichment, not a hard requirement.
+// chat-completions shape (no context_length field). Errors are swallowed;
+// this is best-effort enrichment, not a hard requirement.
 func enrichContextLengths(ctx context.Context, name string, cfg config.ProviderConfig, models []Model) {
-	needs := false
-	for _, m := range models {
-		if m.ContextLength == 0 {
-			needs = true
-			break
-		}
-	}
-	if !needs || strings.TrimSpace(cfg.BaseURL) == "" {
-		return
-	}
-	url := strings.TrimRight(cfg.BaseURL, "/") + "/models/status"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return
-	}
-	req.Header.Set("Accept", "application/json")
-	if key := resolveProviderKey(name, cfg); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-	resp, err := modelsHTTPClient.Do(req)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	missing := slices.ContainsFunc(models, func(m Model) bool { return m.ContextLength == 0 })
+	if !missing || strings.TrimSpace(cfg.BaseURL) == "" {
 		return
 	}
 	var body struct {
@@ -168,28 +182,18 @@ func enrichContextLengths(ctx context.Context, name string, cfg config.ProviderC
 			MaxTokens        int    `json:"max_tokens"`
 		} `json:"models"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
+	if getJSON(ctx, strings.TrimRight(cfg.BaseURL, "/")+"/models/status", bearerHeader(name, cfg), &body) != nil {
 		return
 	}
-	idx := map[string]int{}
+	window := map[string]int{}
 	for _, s := range body.Models {
-		n := s.MaxContextWindow
-		if n == 0 {
-			n = s.MaxTokens
+		if n := cmp.Or(s.MaxContextWindow, s.MaxTokens); n > 0 {
+			window[s.ID] = n
 		}
-		if n > 0 {
-			idx[s.ID] = n
-		}
-	}
-	if len(idx) == 0 {
-		return
 	}
 	for i := range models {
-		if models[i].ContextLength > 0 {
-			continue
-		}
-		if n, ok := idx[models[i].ID]; ok {
-			models[i].ContextLength = n
+		if models[i].ContextLength == 0 {
+			models[i].ContextLength = window[models[i].ID]
 		}
 	}
 }
@@ -198,25 +202,6 @@ func enrichContextLengths(ctx context.Context, name string, cfg config.ProviderC
 // env var (cfg.EnvKey) first, then ~/.bee/auth/<name>.key (enrolled via
 // /login). Same resolution order config.Load uses for the runtime APIKey.
 func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([]Model, error) {
-	url := strings.TrimRight(cfg.BaseURL, "/") + "/models"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	if key := resolveProviderKey(name, cfg); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-	resp, err := modelsHTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(raw))
-	}
-
 	var body struct {
 		Data []struct {
 			ID   string `json:"id"`
@@ -233,36 +218,24 @@ func fetchModels(ctx context.Context, name string, cfg config.ProviderConfig) ([
 			} `json:"architecture"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
+	if err := getJSON(ctx, strings.TrimRight(cfg.BaseURL, "/")+"/models", bearerHeader(name, cfg), &body); err != nil {
+		return nil, err
 	}
 
 	models := make([]Model, 0, len(body.Data))
 	for _, m := range body.Data {
-		name := m.Name
-		if name == "" {
-			name = m.DisplayName
-		}
-		if name == "" {
-			name = m.ID
-		}
-		// omlx advertises the window as max_model_len on the stock /v1/models
-		// shape (no context_length field). Fall back to it so detection works
-		// without the secondary /models/status probe.
-		ctxLen := m.ContextLength
-		if ctxLen == 0 {
-			ctxLen = m.MaxModelLen
-		}
 		models = append(models, Model{
-			ID:            m.ID,
-			Name:          name,
-			ContextLength: ctxLen,
-			Pricing:       formatPricing(m.Pricing),
-
+			ID:   m.ID,
+			Name: cmp.Or(m.Name, m.DisplayName, m.ID),
+			// omlx advertises the window as max_model_len on the stock /v1/models
+			// shape (no context_length field). Fall back to it so detection works
+			// without the secondary /models/status probe.
+			ContextLength:   cmp.Or(m.ContextLength, m.MaxModelLen),
+			Pricing:         formatPricing(m.Pricing),
 			InputModalities: m.Architecture.InputModalities,
 		})
 	}
-	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	slices.SortFunc(models, func(a, b Model) int { return cmp.Compare(a.ID, b.ID) })
 	return models, nil
 }
 
@@ -281,4 +254,4 @@ func formatPricing(p any) string {
 	return fmt.Sprintf("in:%s out:%s", in, out)
 }
 
-// hardcodedModels + hardcodedFallback live in models_hardcoded.go.
+// hardcodedFallback + anthropicModels live in models_hardcoded.go.

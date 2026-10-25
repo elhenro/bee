@@ -63,12 +63,11 @@ type AnthropicContentBlockStart struct {
 // AnthropicStreamMessage is the body of `message_start` (carries initial
 // usage with cache stats) and `message_stop` (sometimes empty).
 type AnthropicStreamMessage struct {
-	ID           string          `json:"id,omitempty"`
-	Model        string          `json:"model,omitempty"`
-	Role         string          `json:"role,omitempty"`
-	StopReason   string          `json:"stop_reason,omitempty"`
-	StopSequence string          `json:"stop_sequence,omitempty"`
-	Usage        *AnthropicUsage `json:"usage,omitempty"`
+	ID         string          `json:"id,omitempty"`
+	Model      string          `json:"model,omitempty"`
+	Role       string          `json:"role,omitempty"`
+	StopReason string          `json:"stop_reason,omitempty"`
+	Usage      *AnthropicUsage `json:"usage,omitempty"`
 }
 
 // AnthropicUsage is the token-accounting block.

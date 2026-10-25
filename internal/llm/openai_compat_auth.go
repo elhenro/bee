@@ -9,12 +9,7 @@ import (
 )
 
 func (p *OpenAICompatProvider) applyHeaders(r *http.Request, streaming bool) {
-	r.Header.Set("Content-Type", "application/json")
-	if streaming {
-		r.Header.Set("Accept", "text/event-stream")
-	} else {
-		r.Header.Set("Accept", "application/json")
-	}
+	setJSONHeaders(r, streaming)
 	r.Header.Set("HTTP-Referer", "https://github.com/elhenro/bee")
 	r.Header.Set("X-Title", "bee")
 	// Auth resolution order:
@@ -38,22 +33,31 @@ func (p *OpenAICompatProvider) applyHeaders(r *http.Request, streaming bool) {
 	}
 }
 
-// loadAuthBearer returns the access_token saved by /login for provider, or
-// "" if no token file exists or it's unreadable. Expired tokens are still
-// returned (the API will respond 401 and the user re-runs /login).
-func loadAuthBearer(provider string) string {
+// loadAuthToken returns the OAuth token saved by /login for provider, or nil
+// if no token file exists or it's unreadable.
+func loadAuthToken(provider string) *auth.Token {
 	if provider == "" {
-		return ""
+		return nil
 	}
 	dir, err := beehome.Join("auth")
 	if err != nil {
-		return ""
+		return nil
 	}
 	tok, err := auth.LoadToken(dir, provider)
-	if err != nil || tok == nil {
-		return ""
+	if err != nil {
+		return nil
 	}
-	return tok.AccessToken
+	return tok
+}
+
+// loadAuthBearer returns the access_token saved by /login for provider, or
+// "" if there is none. Expired tokens are still returned (the API will respond
+// 401 and the user re-runs /login).
+func loadAuthBearer(provider string) string {
+	if tok := loadAuthToken(provider); tok != nil {
+		return tok.AccessToken
+	}
+	return ""
 }
 
 // loadAuthAPIKey returns the static api key saved by /login (the api-key

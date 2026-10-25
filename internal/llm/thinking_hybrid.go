@@ -1,6 +1,9 @@
 package llm
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // IsQwen3HybridThinking reports whether modelID names a Qwen3 model that
 // supports the `/think` `/no_think` system-prompt toggle. Unlike the
@@ -19,24 +22,14 @@ import "strings"
 // suffix AND not a coder variant. Matches sparse-MoE (a3b, a7b) and flagship
 // (qwen3-235b) families.
 func IsQwen3HybridThinking(modelID string) bool {
-	if modelID == "" {
-		return false
-	}
-	id := strings.ToLower(modelID)
-	if idx := strings.LastIndex(id, "/"); idx >= 0 {
-		id = id[idx+1:]
-	}
-	hasFamily := strings.Contains(id, "qwen3") || strings.Contains(id, "qwen-3")
-	if !hasFamily {
+	id := modelTail(strings.ToLower(modelID))
+	if !strings.Contains(id, "qwen3") && !strings.Contains(id, "qwen-3") {
 		return false
 	}
 	// non-thinking or already-explicit-thinking variant — no toggle needed.
-	for _, exclude := range []string{"qwq", "thinking", "reasoner", "coder"} {
-		if strings.Contains(id, exclude) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc([]string{"qwq", "thinking", "reasoner", "coder"}, func(s string) bool {
+		return strings.Contains(id, s)
+	})
 }
 
 // ThinkingApplies reports whether modelID uses a reasoning/thinking mechanism

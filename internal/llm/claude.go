@@ -5,18 +5,15 @@
 package llm
 
 import (
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm/wire"
-	"github.com/elhenro/bee/internal/types"
-	"github.com/google/uuid"
 )
 
 // claudeAPIVersion is the required `anthropic-version` header value.
@@ -49,17 +46,9 @@ type ClaudeProvider struct {
 
 // NewClaude builds a provider.
 func NewClaude(cfg ClaudeConfig) *ClaudeProvider {
-	if cfg.Name == "" {
-		cfg.Name = "claude"
-	}
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://api.anthropic.com/v1"
-	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = newStreamingClient()
-	}
-	return &ClaudeProvider{cfg: cfg, client: client}
+	cfg.Name = cmp.Or(cfg.Name, "claude")
+	cfg.BaseURL = cmp.Or(cfg.BaseURL, "https://api.anthropic.com/v1")
+	return &ClaudeProvider{cfg: cfg, client: cmp.Or(cfg.HTTPClient, newStreamingClient())}
 }
 
 // Name returns the configured display name.
@@ -71,32 +60,18 @@ func (p *ClaudeProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	if err != nil {
 		return nil, err
 	}
-	tools := p.toolAdverts(req)
 	out := make(chan Event, 16)
 	if req.Stream {
-		go p.streamLoop(ctx, resp, out, tools)
+		go p.streamLoop(ctx, resp, out)
 	} else {
-		go p.nonStreamLoop(resp, out, tools)
+		go p.nonStreamLoop(resp, out)
 	}
 	return out, nil
 }
 
-// toolAdverts is the per-call set of advertised tools the wire builder + the
-// stream parser both need.
-func (p *ClaudeProvider) toolAdverts(req Request) []wire.ToolAdvert {
-	tools := make([]wire.ToolAdvert, 0, len(req.Tools))
-	for _, t := range req.Tools {
-		tools = append(tools, wire.ToolAdvert{
-			Name: t.Name, Description: t.Description, Schema: t.Schema,
-		})
-	}
-	return tools
-}
-
 func (p *ClaudeProvider) do(ctx context.Context, req Request) (*http.Response, error) {
-	tools := p.toolAdverts(req)
 	body, err := json.Marshal(wire.BuildAnthropicMessagesRequest(
-		req.Model, req.System, req.SystemDynamic, req.Messages, tools,
+		req.Model, req.System, req.SystemDynamic, req.Messages, toolAdverts(req.Tools),
 		req.MaxTokens, req.Temperature, req.Stream,
 		ThinkingBudget(req.Thinking),
 	))
@@ -105,32 +80,18 @@ func (p *ClaudeProvider) do(ctx context.Context, req Request) (*http.Response, e
 	}
 
 	url := strings.TrimRight(p.cfg.BaseURL, "/") + "/messages"
-	resp, err := postWithRetry(ctx, p.client, p.cfg.Name, func() (*http.Request, error) {
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		p.applyHeaders(httpReq, req.Stream)
-		return httpReq, nil
-	})
+	resp, err := postJSON(ctx, p.client, p.cfg.Name, url, body, func(r *http.Request) { p.applyHeaders(r, req.Stream) })
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("provider %s status %d: %s", p.cfg.Name, resp.StatusCode, string(raw))
+	if err := checkStatus(resp, p.cfg.Name); err != nil {
+		return nil, err
 	}
 	return resp, nil
 }
 
 func (p *ClaudeProvider) applyHeaders(r *http.Request, streaming bool) {
-	r.Header.Set("Content-Type", "application/json")
-	if streaming {
-		r.Header.Set("Accept", "text/event-stream")
-	} else {
-		r.Header.Set("Accept", "application/json")
-	}
+	setJSONHeaders(r, streaming)
 	r.Header.Set("anthropic-version", claudeAPIVersion)
 	r.Header.Set("User-Agent", claudeUserAgent)
 	// env first, then the key stored by /login (same order as config load)
@@ -147,10 +108,9 @@ func (p *ClaudeProvider) applyHeaders(r *http.Request, streaming bool) {
 // nonStreamLoop decodes a single Messages response and emits the equivalent
 // events. Used when req.Stream is false (rare for interactive use, common
 // for one-shot scripts).
-func (p *ClaudeProvider) nonStreamLoop(resp *http.Response, out chan<- Event, tools []wire.ToolAdvert) {
+func (p *ClaudeProvider) nonStreamLoop(resp *http.Response, out chan<- Event) {
 	defer resp.Body.Close()
 	defer close(out)
-	_ = tools // reserved for future tool-name validation
 
 	var body struct {
 		Content []struct {
@@ -174,28 +134,11 @@ func (p *ClaudeProvider) nonStreamLoop(resp *http.Response, out chan<- Event, to
 				out <- Event{Type: EventTextDelta, Delta: c.Text}
 			}
 		case "tool_use":
-			id := c.ID
-			if id == "" {
-				id = "call_" + uuid.NewString()
+			if c.Input == nil {
+				c.Input = map[string]any{}
 			}
-			input := c.Input
-			if input == nil {
-				input = map[string]any{}
-			}
-			out <- Event{Type: EventToolUse, ToolUse: &types.ToolUse{
-				ID: id, Name: c.Name, Input: input,
-			}}
+			out <- newToolUse(c.ID, c.Name, c.Input)
 		}
 	}
-	done := Event{Type: EventDone, StopReason: body.StopReason}
-	if body.Usage != nil {
-		// fold cached tokens into InputTokens, same as the stream path: without
-		// this the auto-compact budget check undercounts once caching kicks in.
-		done.Usage = &Usage{
-			InputTokens:  body.Usage.InputTokens + body.Usage.CacheReadInputTokens + body.Usage.CacheCreationInputTokens,
-			OutputTokens: body.Usage.OutputTokens,
-			CachedTokens: body.Usage.CacheReadInputTokens,
-		}
-	}
-	out <- done
+	out <- Event{Type: EventDone, StopReason: body.StopReason, Usage: anthropicUsage(body.Usage)}
 }

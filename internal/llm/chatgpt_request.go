@@ -1,11 +1,9 @@
 package llm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -14,20 +12,7 @@ import (
 
 // do POSTs the request, transparently refreshing the token once on 401.
 func (p *ChatGPTProvider) do(ctx context.Context, req Request, isRetry bool) (*http.Response, error) {
-	tools := make([]wire.ToolAdvert, 0, len(req.Tools))
-	for _, t := range req.Tools {
-		tools = append(tools, wire.ToolAdvert{
-			Name: t.Name, Description: t.Description, Schema: t.Schema,
-		})
-	}
-	effort := ""
-	if req.Thinking != "" && req.Thinking != ThinkingOff {
-		effort = string(req.Thinking)
-		if req.Thinking == ThinkingMax {
-			effort = string(ThinkingHigh)
-		}
-	}
-	body, err := json.Marshal(wire.BuildResponsesRequest(req.Model, req.System, req.Messages, tools, req.MaxTokens, req.Temperature, req.Stream, effort))
+	body, err := json.Marshal(wire.BuildResponsesRequest(req.Model, req.System, req.Messages, toolAdverts(req.Tools), req.MaxTokens, req.Temperature, req.Stream, reasoningEffort(req.Thinking)))
 	if err != nil {
 		return nil, fmt.Errorf("marshal responses request: %w", err)
 	}
@@ -36,14 +21,9 @@ func (p *ChatGPTProvider) do(ctx context.Context, req Request, isRetry bool) (*h
 	// bearer the last attempt carried, so a refresh after 401 can tell
 	// whether another caller already rotated the token.
 	var sentBearer string
-	resp, err := postWithRetry(ctx, p.client, p.cfg.Name, func() (*http.Request, error) {
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		p.applyHeaders(httpReq, req.Stream)
-		sentBearer = strings.TrimPrefix(httpReq.Header.Get("Authorization"), "Bearer ")
-		return httpReq, nil
+	resp, err := postJSON(ctx, p.client, p.cfg.Name, url, body, func(r *http.Request) {
+		p.applyHeaders(r, req.Stream)
+		sentBearer = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	})
 	if err != nil {
 		return nil, err
@@ -56,21 +36,14 @@ func (p *ChatGPTProvider) do(ctx context.Context, req Request, isRetry bool) (*h
 		// fall through with a clean error message
 		return nil, fmt.Errorf("provider %s: 401 unauthorized and refresh failed; run /login %s", p.cfg.Name, p.cfg.Name)
 	}
-	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("provider %s status %d: %s", p.cfg.Name, resp.StatusCode, string(raw))
+	if err := checkStatus(resp, p.cfg.Name); err != nil {
+		return nil, err
 	}
 	return resp, nil
 }
 
 func (p *ChatGPTProvider) applyHeaders(r *http.Request, streaming bool) {
-	r.Header.Set("Content-Type", "application/json")
-	if streaming {
-		r.Header.Set("Accept", "text/event-stream")
-	} else {
-		r.Header.Set("Accept", "application/json")
-	}
+	setJSONHeaders(r, streaming)
 	r.Header.Set("User-Agent", "bee/0.1 (+https://github.com/elhenro/bee)")
 	r.Header.Set("OpenAI-Beta", "responses=v1")
 	// chatgpt.com codex backend filters models by originator; without this

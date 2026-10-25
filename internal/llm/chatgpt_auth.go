@@ -51,19 +51,3 @@ func (p *ChatGPTProvider) refresh(ctx context.Context, stale string) (bool, erro
 	}
 	return true, nil
 }
-
-// loadAuthToken is the full-token variant of loadAuthBearer in openai_compat.go.
-func loadAuthToken(provider string) *auth.Token {
-	if provider == "" {
-		return nil
-	}
-	dir, err := beehome.Join("auth")
-	if err != nil {
-		return nil
-	}
-	tok, err := auth.LoadToken(dir, provider)
-	if err != nil {
-		return nil
-	}
-	return tok
-}

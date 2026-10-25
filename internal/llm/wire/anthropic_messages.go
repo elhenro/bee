@@ -12,137 +12,50 @@
 package wire
 
 import (
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
 )
 
-// AnthropicMessagesRequest is the request body for POST /v1/messages.
-type AnthropicMessagesRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	Messages  []AnthropicMessage `json:"messages"`
-	// System accepts either a string or an array of {type:text,text}. We use
-	// the array form so future caching/multi-block work doesn't require a
-	// schema change.
-	System      []AnthropicSysBlock `json:"system,omitempty"`
-	Tools       []AnthropicTool     `json:"tools,omitempty"`
-	Temperature *float64            `json:"temperature,omitempty"`
-	Stream      bool                `json:"stream,omitempty"`
-	Thinking    *AnthropicThinking  `json:"thinking,omitempty"`
-}
-
-// AnthropicSysBlock is one entry of the top-level system array.
-type AnthropicSysBlock struct {
-	Type         string             `json:"type"`
-	Text         string             `json:"text"`
-	CacheControl *AnthropicCacheCtl `json:"cache_control,omitempty"`
-}
-
-// AnthropicCacheCtl marks a block as a prompt-cache breakpoint.
-type AnthropicCacheCtl struct {
-	Type string `json:"type"`
-}
-
-// AnthropicThinking is the extended-thinking knob.
-// type=enabled with budget_tokens for older thinking models;
-// type=adaptive (no budget) for Opus 4.6+ / Sonnet 4.6+ where the model picks.
-type AnthropicThinking struct {
-	Type         string `json:"type"`
-	BudgetTokens int    `json:"budget_tokens,omitempty"`
-}
-
-// AnthropicMessage is one user/assistant turn. Content is always the typed
-// array form (string shorthand is omitted to keep tool_use round-trips clean).
-type AnthropicMessage struct {
-	Role    string                 `json:"role"`
-	Content []AnthropicContentPart `json:"content"`
-}
-
-// AnthropicContentPart is one block inside a message: text | image |
-// tool_use | tool_result | thinking.
-type AnthropicContentPart struct {
-	Type string `json:"type"`
-	// text
-	Text string `json:"text,omitempty"`
-	// image
-	Source *AnthropicImageSource `json:"source,omitempty"`
-	// tool_use
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
-	// any, not a map: omitempty drops an empty map, and tool_use requires input
-	Input any `json:"input,omitempty"`
-	// thinking
-	Thinking  *string `json:"thinking,omitempty"`
-	Signature string  `json:"signature,omitempty"`
-	// tool_result
-	ToolUseID string                 `json:"tool_use_id,omitempty"`
-	IsError   bool                   `json:"is_error,omitempty"`
-	Content   []AnthropicContentPart `json:"content,omitempty"`
-	// CacheControl marks this block as a prompt-cache breakpoint. Placed on the
-	// last block of recent turns so the conversation prefix caches across turns.
-	CacheControl *AnthropicCacheCtl `json:"cache_control,omitempty"`
-}
-
-// AnthropicImageSource is the base64-payload image envelope.
-type AnthropicImageSource struct {
-	Type      string `json:"type"`
-	MediaType string `json:"media_type"`
-	Data      string `json:"data"`
-}
-
-// AnthropicTool advertises a function tool.
-type AnthropicTool struct {
-	Name         string             `json:"name"`
-	Description  string             `json:"description,omitempty"`
-	InputSchema  map[string]any     `json:"input_schema"`
-	CacheControl *AnthropicCacheCtl `json:"cache_control,omitempty"`
-}
-
 // BuildAnthropicMessagesRequest converts the internal Request shape into the
 // Messages-API body. API-key only — no identity header injection, no tool
-// renaming, no ephemeral caching.
+// renaming. Ephemeral cache breakpoints go on the static system prefix, the
+// last tool and the tail of the history.
 func BuildAnthropicMessagesRequest(model, system, systemDynamic string, messages []types.Message, tools []ToolAdvert, maxTokens int, temperature float64, stream bool, thinkingBudget int) AnthropicMessagesRequest {
 	req := AnthropicMessagesRequest{
 		Model:     model,
 		MaxTokens: anthropicMaxTokens(model, maxTokens),
 		Stream:    stream,
 	}
+	cached := func() *AnthropicCacheCtl { return &AnthropicCacheCtl{Type: "ephemeral"} }
 	if system != "" {
 		// Split off the volatile memory tail (systemDynamic) so the cache
 		// breakpoint sits on the STATIC prefix — it then stays cached even when
 		// memory changes turn over turn. When systemDynamic isn't a suffix
 		// (empty, or a Qwen3 hint was appended after it), fall back to caching
 		// the whole system as one block — byte-identical to prior behavior.
-		if systemDynamic != "" && systemDynamic != system && strings.HasSuffix(system, systemDynamic) {
-			static := strings.TrimSuffix(system, systemDynamic)
-			req.System = append(req.System,
-				AnthropicSysBlock{Type: "text", Text: static, CacheControl: &AnthropicCacheCtl{Type: "ephemeral"}},
-				AnthropicSysBlock{Type: "text", Text: systemDynamic},
-			)
+		if static, ok := splitDynamic(system, systemDynamic); ok {
+			req.System = []AnthropicSysBlock{
+				{Type: "text", Text: static, CacheControl: cached()},
+				{Type: "text", Text: systemDynamic},
+			}
 		} else {
-			req.System = append(req.System, AnthropicSysBlock{
-				Type:         "text",
-				Text:         system,
-				CacheControl: &AnthropicCacheCtl{Type: "ephemeral"},
-			})
+			req.System = []AnthropicSysBlock{{Type: "text", Text: system, CacheControl: cached()}}
 		}
 	}
 
-	thinkingActive := false
 	if thinkingBudget > 0 {
 		if isAdaptiveThinkingModel(model) {
 			req.Thinking = &AnthropicThinking{Type: "adaptive"}
-			thinkingActive = true
 		} else if b := clampThinkingBudget(thinkingBudget, req.MaxTokens); b > 0 {
 			req.Thinking = &AnthropicThinking{Type: "enabled", BudgetTokens: b}
-			thinkingActive = true
 		}
 	}
 	// Anthropic rejects requests that set both temperature and thinking.
-	if temperature != 0 && !thinkingActive {
-		t := temperature
-		req.Temperature = &t
+	if temperature != 0 && req.Thinking == nil {
+		req.Temperature = new(temperature)
 	}
 
 	for _, t := range tools {
@@ -154,7 +67,7 @@ func BuildAnthropicMessagesRequest(model, system, systemDynamic string, messages
 	}
 	// cache breakpoint on the last tool covers the whole tools block
 	if n := len(req.Tools); n > 0 {
-		req.Tools[n-1].CacheControl = &AnthropicCacheCtl{Type: "ephemeral"}
+		req.Tools[n-1].CacheControl = cached()
 	}
 
 	// Anthropic enforces strict user/assistant alternation. Merge consecutive
@@ -199,13 +112,8 @@ func markHistoryCacheBreakpoints(msgs []AnthropicMessage) {
 // "type":"object" + "properties" / "required" so the API doesn't 400. Schemas
 // declared with only properties (no type) are common in bee tools.
 func normalizeInputSchema(s map[string]any) map[string]any {
-	if s == nil {
-		return map[string]any{"type": "object", "properties": map[string]any{}}
-	}
 	out := make(map[string]any, len(s)+2)
-	for k, v := range s {
-		out[k] = v
-	}
+	maps.Copy(out, s)
 	if _, ok := out["type"]; !ok {
 		out["type"] = "object"
 	}
@@ -255,20 +163,13 @@ func anthropicMaxTokens(model string, n int) int {
 
 // isAdaptiveThinkingModel reports whether the model supports type:"adaptive"
 // thinking (model decides the budget). Opus 4.6+ / Sonnet 4.6+ require this;
-// older thinking models still need type:"enabled" with budget_tokens.
+// older thinking models still need type:"enabled" with budget_tokens. The 5
+// families are future-proofing.
 func isAdaptiveThinkingModel(model string) bool {
 	m := strings.ToLower(model)
-	if strings.Contains(m, "sonnet-4-6") {
-		return true
-	}
-	if strings.Contains(m, "opus-4-6") || strings.Contains(m, "opus-4-7") {
-		return true
-	}
-	// Future-proof: opus-5+/sonnet-5+ are adaptive too.
-	if strings.Contains(m, "opus-5") || strings.Contains(m, "sonnet-5") {
-		return true
-	}
-	return false
+	return slices.ContainsFunc([]string{"sonnet-4-6", "opus-4-6", "opus-4-7", "opus-5", "sonnet-5"}, func(s string) bool {
+		return strings.Contains(m, s)
+	})
 }
 
 // translateAnthropicMessage maps one internal Message to one Anthropic
@@ -276,23 +177,17 @@ func isAdaptiveThinkingModel(model string) bool {
 // is folded into a user turn (Anthropic represents tool results as user
 // messages with tool_result blocks).
 func translateAnthropicMessage(m types.Message) (AnthropicMessage, bool) {
+	var am AnthropicMessage
 	switch m.Role {
-	case types.RoleSystem:
-		return AnthropicMessage{}, false
 	case types.RoleUser, types.RoleTool:
-		parts := translateAnthropicUserBlocks(m.Content)
-		if len(parts) == 0 {
-			return AnthropicMessage{}, false
-		}
-		return AnthropicMessage{Role: "user", Content: parts}, true
+		am = AnthropicMessage{Role: "user", Content: translateAnthropicUserBlocks(m.Content)}
 	case types.RoleAssistant:
-		parts := translateAnthropicAssistantBlocks(m.Content)
-		if len(parts) == 0 {
-			return AnthropicMessage{}, false
-		}
-		return AnthropicMessage{Role: "assistant", Content: parts}, true
+		am = AnthropicMessage{Role: "assistant", Content: translateAnthropicAssistantBlocks(m.Content)}
 	}
-	return AnthropicMessage{}, false
+	if len(am.Content) == 0 {
+		return AnthropicMessage{}, false
+	}
+	return am, true
 }
 
 func translateAnthropicUserBlocks(blocks []types.ContentBlock) []AnthropicContentPart {

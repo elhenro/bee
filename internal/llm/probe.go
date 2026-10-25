@@ -1,9 +1,8 @@
 package llm
 
 import (
-	"bytes"
+	"cmp"
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
@@ -104,53 +103,14 @@ func isOllamaProvider(name string, cfg config.ProviderConfig) bool {
 	return strings.Contains(strings.ToLower(cfg.BaseURL), "11434")
 }
 
-// probeOllamaShow POSTs /api/show to ollama's native API and pulls the
-// context length out of model_info. Returns 0 on any failure.
-//
-// baseURL is the openai-compat base (`http://host:11434/v1`); ollama's
-// native API sits one path-segment up, so strip the trailing `/v1` before
-// composing the request.
+// probeOllamaShow reads the architecture context length from the native show
+// endpoint's model_info. baseURL is the chat-completions base
+// (`http://host:11434/v1`). 0 on any failure.
 func probeOllamaShow(ctx context.Context, baseURL, modelID string) int {
-	root := strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
-	if root == "" {
-		root = "http://localhost:11434"
-	}
-	body, _ := json.Marshal(map[string]string{"name": modelID})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, root+"/api/show", bytes.NewReader(body))
+	root := cmp.Or(OllamaBaseURL(baseURL), "http://localhost:11434")
+	show, err := ollamaShow(ctx, probeHTTPClient, root, modelID)
 	if err != nil {
 		return 0
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := probeHTTPClient.Do(req)
-	if err != nil {
-		return 0
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return 0
-	}
-	var out struct {
-		ModelInfo map[string]any `json:"model_info"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return 0
-	}
-	// model_info keys look like "llama.context_length", "qwen2.context_length",
-	// "gemma2.context_length", etc. Scan for any *.context_length.
-	for k, v := range out.ModelInfo {
-		if !strings.HasSuffix(k, ".context_length") {
-			continue
-		}
-		switch t := v.(type) {
-		case float64:
-			if t > 0 {
-				return int(t)
-			}
-		case int:
-			if t > 0 {
-				return t
-			}
-		}
-	}
-	return 0
+	return contextLengthFromModelInfo(show.ModelInfo)
 }

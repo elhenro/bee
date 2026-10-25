@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
 )
@@ -44,17 +45,12 @@ func SanitizeToolName(raw string) string {
 	s = modelMarkupRe.ReplaceAllString(s, "")
 	s = bareDSMLRe.ReplaceAllString(s, "")
 	s = strings.TrimLeft(s, "\"' \t\r\n")
-	end := 0
-	for end < len(s) {
-		c := s[end]
-		isIdent := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') || c == '_' || c == '-'
-		if !isIdent {
-			break
-		}
-		end++
+	if end := strings.IndexFunc(s, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-')
+	}); end >= 0 {
+		s = s[:end]
 	}
-	return s[:end]
+	return s
 }
 
 // StripMarkupBytes removes DSML / stray closing tags from a raw byte slice
@@ -120,114 +116,41 @@ func stripMarkupAny(v any) any {
 // its cut-off object closed into something that parses.
 func repairToolArgs(raw []byte, closeOpen bool) ([]byte, bool) {
 	// trim leading prose: keep from the first '{' or '['.
-	start := -1
-	for i, b := range raw {
-		if b == '{' || b == '[' {
-			start = i
-			break
-		}
-	}
+	start := bytes.IndexAny(raw, "{[")
 	if start < 0 {
 		return nil, false
 	}
 	s := raw[start:]
-	// walk to find the matched closing brace honoring string literals + escapes,
-	// then drop any trailing junk past it.
-	depth := 0
+	// walk honoring string literals; the first point where every opener is
+	// closed ends the value, anything past it is junk.
+	var stack []byte
 	inStr := false
-	esc := false
-	end := -1
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if inStr {
-			if esc {
-				esc = false
-				continue
-			}
-			if c == '\\' {
-				esc = true
-				continue
-			}
-			if c == '"' {
-				inStr = false
-			}
-			continue
-		}
+	for i, c := range OutsideStrings(s) {
 		switch c {
 		case '"':
-			inStr = true
-		case '{', '[':
-			depth++
+			inStr = !inStr
+		case '{':
+			stack = append(stack, '}')
+		case '[':
+			stack = append(stack, ']')
 		case '}', ']':
-			depth--
-			if depth == 0 {
-				end = i + 1
-				break
-			}
-			if depth < 0 {
-				return nil, false
+			stack = stack[:len(stack)-1]
+			if len(stack) == 0 {
+				return s[:i+1], true
 			}
 		}
-		if end > 0 {
-			break
-		}
-	}
-	if end > 0 {
-		// case 1: balanced object found; drop trailing junk.
-		return s[:end], true
 	}
 	if !closeOpen {
 		return nil, false
 	}
-	// case 2: unterminated. close it by appending missing braces/brackets.
-	// re-scan to count unmatched opens.
-	opens := 0
-	stack := make([]byte, 0, 8)
-	inStr = false
-	esc = false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if inStr {
-			if esc {
-				esc = false
-				continue
-			}
-			if c == '\\' {
-				esc = true
-				continue
-			}
-			if c == '"' {
-				inStr = false
-			}
-			continue
-		}
-		switch c {
-		case '"':
-			inStr = true
-		case '{':
-			stack = append(stack, '}')
-			opens++
-		case '[':
-			stack = append(stack, ']')
-			opens++
-		case '}', ']':
-			if len(stack) > 0 {
-				stack = stack[:len(stack)-1]
-			}
-		}
-	}
+	// unterminated: close an open string, then the containers in reverse.
 	if inStr {
-		// unterminated string — close it then the containers.
 		s = append(s, '"')
 	}
-	if len(stack) == 0 {
-		return nil, false
-	}
-	// close opens in reverse.
 	for i := len(stack) - 1; i >= 0; i-- {
 		s = append(s, stack[i])
 	}
-	return s, opens > 0
+	return s, true
 }
 
 // truncForErr clips raw bytes for embedding in error messages.

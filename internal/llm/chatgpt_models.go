@@ -1,11 +1,9 @@
 package llm
 
 import (
+	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 )
 
@@ -18,25 +16,9 @@ func FetchChatGPTModels(ctx context.Context, baseURL, accountIDHeader string) ([
 	if tok == nil || tok.AccessToken == "" {
 		return nil, fmt.Errorf("chatgpt: not logged in (run /login chatgpt)")
 	}
-	url := strings.TrimRight(baseURL, "/") + "/models?client_version=9.9.9"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("originator", "codex_cli_rs")
+	headers := map[string]string{"Authorization": "Bearer " + tok.AccessToken, "originator": "codex_cli_rs"}
 	if accountIDHeader != "" && tok.AccountID != "" {
-		req.Header.Set(accountIDHeader, tok.AccountID)
-	}
-	resp, err := modelsHTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(raw))
+		headers[accountIDHeader] = tok.AccountID
 	}
 	var body struct {
 		Models []struct {
@@ -46,19 +28,15 @@ func FetchChatGPTModels(ctx context.Context, baseURL, accountIDHeader string) ([
 			Visibility    string `json:"visibility"`
 		} `json:"models"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
+	if err := getJSON(ctx, strings.TrimRight(baseURL, "/")+"/models?client_version=9.9.9", headers, &body); err != nil {
+		return nil, err
 	}
 	out := make([]Model, 0, len(body.Models))
 	for _, m := range body.Models {
 		if m.Slug == "" || (m.Visibility != "" && m.Visibility != "list") {
 			continue
 		}
-		name := m.DisplayName
-		if name == "" {
-			name = m.Slug
-		}
-		out = append(out, Model{ID: m.Slug, Name: name, ContextLength: m.ContextWindow})
+		out = append(out, Model{ID: m.Slug, Name: cmp.Or(m.DisplayName, m.Slug), ContextLength: m.ContextWindow})
 	}
 	return out, nil
 }

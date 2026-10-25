@@ -16,11 +16,38 @@ import (
 // URL so ollama's native paths (/api/show, /api/tags) resolve cleanly.
 // Returns the input unchanged when no /v1 suffix is present.
 func OllamaBaseURL(baseURL string) string {
-	u := strings.TrimRight(baseURL, "/")
-	if strings.HasSuffix(u, "/v1") {
-		u = strings.TrimSuffix(u, "/v1")
+	return strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
+}
+
+// ollamaShowResp is the part of /api/show that carries the context length.
+type ollamaShowResp struct {
+	Parameters string         `json:"parameters"`
+	ModelInfo  map[string]any `json:"model_info"`
+}
+
+// ollamaShow POSTs <root>/api/show with {"name": modelID}.
+func ollamaShow(ctx context.Context, client *http.Client, root, modelID string) (ollamaShowResp, error) {
+	var out ollamaShowResp
+	url := root + "/api/show"
+	body, _ := json.Marshal(map[string]string{"name": modelID})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return out, fmt.Errorf("build request: %w", err)
 	}
-	return u
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("post %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return out, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return out, fmt.Errorf("decode: %w", err)
+	}
+	return out, nil
 }
 
 // ProbeOllamaContext POSTs to <baseURL>/api/show with {"name": modelID}, then
@@ -36,47 +63,14 @@ func ProbeOllamaContext(ctx context.Context, client *http.Client, baseURL, model
 	if modelID == "" {
 		return 0, fmt.Errorf("empty model id")
 	}
-
-	url := OllamaBaseURL(baseURL) + "/api/show"
-	body, err := json.Marshal(map[string]string{"name": modelID})
+	show, err := ollamaShow(ctx, client, OllamaBaseURL(baseURL), modelID)
 	if err != nil {
-		return 0, fmt.Errorf("marshal: %w", err)
+		return 0, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return 0, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("post %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return 0, fmt.Errorf("read: %w", err)
-	}
-
-	var payload struct {
-		Parameters string         `json:"parameters"`
-		ModelInfo  map[string]any `json:"model_info"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return 0, fmt.Errorf("decode: %w", err)
-	}
-
-	if n := numCtxFromParameters(payload.Parameters); n > 0 {
+	if n := numCtxFromParameters(show.Parameters); n > 0 {
 		return n, nil
 	}
-	if n := contextLengthFromModelInfo(payload.ModelInfo); n > 0 {
-		return n, nil
-	}
-	return 0, nil
+	return contextLengthFromModelInfo(show.ModelInfo), nil
 }
 
 var numCtxLine = regexp.MustCompile(`(?m)^\s*num_ctx\s+(\d+)\s*$`)
@@ -85,11 +79,8 @@ var numCtxLine = regexp.MustCompile(`(?m)^\s*num_ctx\s+(\d+)\s*$`)
 // separated key/value text section — for an explicit num_ctx override. This
 // is the only value that reflects what the runtime will actually allocate.
 func numCtxFromParameters(s string) int {
-	if s == "" {
-		return 0
-	}
 	m := numCtxLine.FindStringSubmatch(s)
-	if len(m) < 2 {
+	if m == nil {
 		return 0
 	}
 	n, err := strconv.Atoi(m[1])
