@@ -19,13 +19,6 @@ var writeArgTools = map[string][]string{
 	"apply_patch":   {"patch"},
 }
 
-// readPathTools maps read-side tool names → input key that holds the path.
-// observing one of these clears dup-eligibility for that path: the model may
-// have observed a state change and intentionally re-applied content.
-var readPathTools = map[string]string{
-	"read": "path",
-}
-
 // observeDuplicateWrites walks paired toolUses + results, feeds writes/reads
 // into the per-Run tracker, and prepends a [dup-write] warning to blocks when
 // the model commits identical content to the same path twice with no read in
@@ -42,9 +35,11 @@ func observeDuplicateWrites(e *Engine, uses []types.ToolUse, results []types.Too
 		byUseID[r.UseID] = r.IsError
 	}
 	for _, u := range uses {
-		if k, ok := readPathTools[u.Name]; ok {
-			if p, _ := u.Input[k].(string); p != "" {
-				e.run.dupWrites.ObserveRead(p)
+		path, _ := u.Input["path"].(string)
+		if u.Name == "read" {
+			// a read clears dup-eligibility for its path
+			if path != "" {
+				e.run.dupWrites.ObserveRead(path)
 			}
 			continue
 		}
@@ -52,7 +47,6 @@ func observeDuplicateWrites(e *Engine, uses []types.ToolUse, results []types.Too
 		if !ok || byUseID[u.ID] {
 			continue
 		}
-		path, _ := u.Input["path"].(string)
 		if path == "" {
 			// apply_patch: no single "path" — skip (the patch text itself acts
 			// as the body, fingerprinted via the repeat detector instead).
