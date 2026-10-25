@@ -19,12 +19,11 @@ func tickCmd() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = v.Width, v.Height
+		m.width = v.Width
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(v)
 	case tickMsg:
-		m.tick++
 		return m, tickCmd()
 	case wIterMsg:
 		w := m.workers[v.idx]

@@ -79,48 +79,16 @@ type Policy struct {
 // that Untrusted mode may auto-run without asking. Prefix match: an entry "git
 // status" matches "git status" and "git status --short" but not "git stash".
 var defaultSafe = []string{
-	"ls",
-	"pwd",
-	"cat",
-	"head",
-	"tail",
-	"wc",
-	"file",
-	"echo",
-	"true",
-	"false",
-	"which",
-	"whoami",
-	"hostname",
-	"uname",
-	"date",
-	"printenv",
-	"grep",
-	"egrep",
-	"fgrep",
-	"rg",
-	"find",
-	"fd",
-	"tree",
-	"stat",
-	"du",
-	"df",
-	"git status",
-	"git diff",
-	"git log",
-	"git show",
-	"git branch",
-	"git remote",
-	"git rev-parse",
+	// inspection
+	"ls", "pwd", "cat", "head", "tail", "wc", "file", "echo", "true", "false", "which", "whoami",
+	"hostname", "uname", "date", "printenv", "stat", "du", "df",
+	// search
+	"grep", "egrep", "fgrep", "rg", "find", "fd", "tree",
+	// git
+	"git status", "git diff", "git log", "git show", "git branch", "git remote", "git rev-parse",
 	"git config --get",
-	"go build",
-	"go test",
-	"go vet",
-	"go list",
-	"go env",
-	"go version",
-	"go mod download",
-	"go mod verify",
+	// go
+	"go build", "go test", "go vet", "go list", "go env", "go version", "go mod download", "go mod verify",
 }
 
 // IsAllowed reports whether every command in cmd matches a built-in safe

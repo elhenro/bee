@@ -27,14 +27,13 @@ func tickCmd() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = v.Width, v.Height
+		m.width = v.Width
 		m.input.SetWidth(max(40, v.Width-4))
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(v)
 	case tickMsg:
 		m.tick++
-		m.now = time.Time(v)
 		return m, tickCmd()
 	case iterMsg:
 		m.touchIter(v.n, v.max)

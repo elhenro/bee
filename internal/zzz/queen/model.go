@@ -16,9 +16,7 @@ type Model struct {
 	workers []*workerState
 	uis     []*WorkerUI
 	width   int
-	height  int
 	start   time.Time
-	tick    int
 	nDone   int
 
 	// cancelAll cancels the parent ctx shared by every worker's Drive. The

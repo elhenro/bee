@@ -17,14 +17,11 @@ import (
 // drains via tea.Msg dispatching — Drive runs in a goroutine and never
 // touches Model fields directly.
 type Model struct {
-	run    *zzz.Run
-	cfg    zzz.Config
-	width  int
-	height int
+	run   *zzz.Run
+	width int
 
 	input  textarea.Model
 	tick   int
-	now    time.Time
 	start  time.Time
 	iter   int
 	maxIt  int
@@ -47,7 +44,7 @@ type Model struct {
 
 // New builds the bubbletea model. width=0 defers sizing until the first
 // WindowSizeMsg lands.
-func New(run *zzz.Run, cfg zzz.Config) *Model {
+func New(run *zzz.Run, _ zzz.Config) *Model {
 	ti := textarea.New()
 	ti.Placeholder = "type a nudge or /stop /abort /note <text>"
 	ti.Prompt = styHoney.Render("› ") + " "
@@ -70,10 +67,8 @@ func New(run *zzz.Run, cfg zzz.Config) *Model {
 
 	return &Model{
 		run:   run,
-		cfg:   cfg,
 		input: ti,
 		start: time.Now(),
-		now:   time.Now(),
 		box:   uikit.NewMailbox(64),
 		steer: make(chan zzz.Steer, 16),
 	}
