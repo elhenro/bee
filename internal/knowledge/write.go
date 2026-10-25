@@ -129,7 +129,8 @@ func readsBackPlain(s string) bool {
 	return yaml.Unmarshal([]byte("v: "+s+"\n"), &v) == nil && v.V == s
 }
 
-// rebuildIndexLocked is the body of RebuildIndex; assumes storeMu is held.
+// rebuildIndexLocked rewrites INDEX.md from the record files; assumes storeMu
+// is held.
 func rebuildIndexLocked(dir string) error {
 	paths, err := storePaths(dir)
 	if err != nil {

@@ -69,8 +69,11 @@ func (s *Store) Write(name, md string) error {
 // empty store, not an error.
 func (s *Store) mdNames() ([]string, error) {
 	ents, err := os.ReadDir(s.dir)
-	if os.IsNotExist(err) {
-		return nil, nil
+	if err != nil {
+		if os.IsNotExist(err) {
+			err = nil
+		}
+		return nil, err
 	}
 	var names []string
 	for _, e := range ents {
@@ -78,7 +81,7 @@ func (s *Store) mdNames() ([]string, error) {
 			names = append(names, e.Name())
 		}
 	}
-	return names, err
+	return names, nil
 }
 
 // sweep calls fn with each waggle's name and path and counts the files fn
