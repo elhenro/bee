@@ -43,7 +43,6 @@ type repeatTracker struct {
 	// last signature seen and whether it failed. used for two-strike detect.
 	lastSig    ToolCallSignature
 	lastFailed bool
-	hasLast    bool
 	// failure fingerprint → times a test run returned it. see test_fail_loop.go.
 	testFails map[string]int
 	// failure keys already counted in the batch being observed; nil outside a
@@ -110,25 +109,21 @@ func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultCon
 			t.lastResult[sig] = resultHash
 		}
 	}
-	twoStrike := false
-	if t.hasLast && t.lastFailed && isErr && t.lastSig == sig {
-		twoStrike = true
-	}
+	twoStrike := isErr && t.lastFailed && t.lastSig == sig
 	// failBySig: extend streak only when current is err AND sig matches last err sig.
 	sigKey := "sig:" + sig.Name + ":" + sig.ArgsHash
-	if isErr && t.hasLast && t.lastFailed && t.lastSig == sig {
+	switch {
+	case twoStrike:
 		if t.firstFailIn(sigKey) {
 			t.failBySig++
 		}
-	} else if isErr {
+	case isErr:
 		t.failBySig = 1
 		t.firstFailIn(sigKey)
-	} else {
+	default:
 		t.failBySig = 0
 	}
-	t.lastSig = sig
-	t.lastFailed = isErr
-	t.hasLast = true
+	t.lastSig, t.lastFailed = sig, isErr
 	return Observation{
 		RepeatCount:                 t.sigCounts[sig],
 		ConsecutiveSameToolFailures: t.failByTool[u.Name],
