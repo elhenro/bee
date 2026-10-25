@@ -114,13 +114,9 @@ func (m Model) renderStatusLine() string {
 	if m.statusLine == nil && m.statusLineAllOff() {
 		return ""
 	}
-	ids := resolveStatusLine(m.statusLine)
-	if len(ids) == 0 {
-		return ""
-	}
 	var parts []statusPart
 	rightOpen := false
-	for _, id := range ids {
+	for _, id := range resolveStatusLine(m.statusLine) {
 		it := statusRegistry[id]
 		if it.align == alignRight {
 			rightOpen = true

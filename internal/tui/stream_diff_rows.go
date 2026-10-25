@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -44,13 +45,7 @@ func layoutRows(ops []editOp) []diffRow {
 	for len(ops) > 0 && ops[len(ops)-1].kind == '=' && ops[len(ops)-1].text == "" {
 		ops = ops[:len(ops)-1]
 	}
-	numbered := false
-	for _, op := range ops {
-		if op.old > 0 || op.new > 0 {
-			numbered = true
-			break
-		}
-	}
+	numbered := slices.ContainsFunc(ops, func(o editOp) bool { return o.old > 0 || o.new > 0 })
 	rows := make([]diffRow, 0, len(ops)+2)
 	var prev *editOp
 	for i := range ops {
