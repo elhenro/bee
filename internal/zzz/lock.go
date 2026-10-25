@@ -63,24 +63,15 @@ func AcquireLock(workdir, runID string) (func(), error) {
 	l, err := pidlock.Acquire(path, info)
 	var held *pidlock.HeldError
 	if errors.As(err, &held) {
-		pid, who := parseHolder(held.Info)
-		return nil, fmt.Errorf("another zzz run holds %s (pid %d, run %s) — wait for it to finish", workdir, pid, who)
+		// record: pid line, run id line, then the rest
+		rec := append(strings.SplitN(held.Info, "\n", 3), "", "")
+		pid, _ := strconv.Atoi(strings.TrimSpace(rec[0]))
+		return nil, fmt.Errorf("another zzz run holds %s (pid %d, run %s) — wait for it to finish", workdir, pid, strings.TrimSpace(rec[1]))
 	}
 	if err != nil {
 		return nil, err
 	}
 	return l.Release, nil
-}
-
-// parseHolder reads the pid (line 1) and run id (line 2) of a lock record.
-func parseHolder(rec string) (int, string) {
-	lines := strings.Split(rec, "\n")
-	pid, _ := strconv.Atoi(strings.TrimSpace(lines[0]))
-	who := ""
-	if len(lines) > 1 {
-		who = strings.TrimSpace(lines[1])
-	}
-	return pid, who
 }
 
 // processAlive reports whether pid names a live process. On Windows there is no

@@ -37,12 +37,6 @@ func (r *loopRunner) MarkOutcome(ok bool)     { r.eng.Waggle.MarkOutcome(ok) }
 // discards them, so a mutating route is only learned from work that survived.
 type outcomeMarker interface{ MarkOutcome(ok bool) }
 
-func markOutcome(eng Runner, ok bool) {
-	if m, is := eng.(outcomeMarker); is {
-		m.MarkOutcome(ok)
-	}
-}
-
 const (
 	defaultMaxConsecutiveFails = 3
 	defaultHardErrorRetries    = 3

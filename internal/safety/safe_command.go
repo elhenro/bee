@@ -31,20 +31,14 @@ func plainSegments(cmd string, depth int) ([][]string, bool) {
 	}
 	var segs [][]string
 	var cur []string
-	flush := func() bool {
-		if len(cur) == 0 {
-			return false
-		}
-		segs, cur = append(segs, cur), nil
-		return true
-	}
 	for _, t := range toks {
 		if t.Kind == TokenOp {
 			switch t.Value {
 			case "&&", "||", ";", "|":
-				if !flush() {
+				if len(cur) == 0 {
 					return nil, false
 				}
+				segs, cur = append(segs, cur), nil
 				continue
 			}
 			return nil, false
@@ -54,10 +48,10 @@ func plainSegments(cmd string, depth int) ([][]string, bool) {
 		}
 		cur = append(cur, t.Value)
 	}
-	if !flush() {
+	if len(cur) == 0 {
 		return nil, false // trailing operator
 	}
-	return unwrapShells(segs, depth)
+	return unwrapShells(append(segs, cur), depth)
 }
 
 // hasSubstitution reports command/process substitution in any context where

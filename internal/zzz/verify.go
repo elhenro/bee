@@ -64,12 +64,16 @@ func gateTree(ctx context.Context, cfg Config, run *Run, r *IterationResult, ui 
 // about the shell calls that ran (a stash, a cleanup or a POST also leave the
 // tree clean), so a no-change span is dropped, not verified.
 func markIter(eng Runner, res IterationResult) {
+	m, ok := eng.(outcomeMarker)
+	if !ok {
+		return
+	}
 	switch res.Status {
 	case IterCommitted:
 		if res.Verified {
-			markOutcome(eng, true)
+			m.MarkOutcome(true)
 		}
 	case IterNoop, IterReset, IterFailed:
-		markOutcome(eng, false)
+		m.MarkOutcome(false)
 	}
 }
