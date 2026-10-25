@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/safety"
-	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/types"
 	"github.com/elhenro/bee/internal/waggle"
 )
@@ -82,11 +80,7 @@ func (e *Engine) replayExec(ctx context.Context, script string) (string, error) 
 	if out.IsError {
 		return "", fmt.Errorf("replay step failed: %s", out.Content)
 	}
-	content := out.Content
-	if e.Cfg.Sandbox.Confined() {
-		content = safety.Redact(content)
-	}
-	content, _ = tools.TruncateWithLimit("bash", content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
+	content, _ := e.shapeOutput("bash", out.Content)
 	return content, nil
 }
 

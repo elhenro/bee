@@ -216,17 +216,22 @@ func (e *Engine) runOne(ctx context.Context, u types.ToolUse) (types.ToolResult,
 	if err != nil {
 		return types.ToolResult{}, err
 	}
-	// scrub obvious secrets before fold into model context. confined scopes
-	// only: under danger-full-access the operator opted out of restriction
-	// layers, and redaction silently corrupts legitimate credential reads.
-	if e.Cfg.Sandbox.Confined() {
-		out.Content = safety.Redact(out.Content)
-	}
-	content, truncated := tools.TruncateWithLimit(u.Name, out.Content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
+	content, truncated := e.shapeOutput(u.Name, out.Content)
 	if truncated && e.JSONEmitter != nil {
 		e.JSONEmitter.Emit(jsonmode.Event{Type: "tool_truncated", Name: u.Name, UseID: u.ID})
 	}
 	return types.ToolResult{UseID: u.ID, Content: content, IsError: out.IsError, Images: out.Images}, nil
+}
+
+// shapeOutput is what every tool output goes through before it reaches the
+// model: scrub obvious secrets, then cap the size. Redaction runs on confined
+// scopes only: under danger-full-access the operator opted out of restriction
+// layers, and redaction silently corrupts legitimate credential reads.
+func (e *Engine) shapeOutput(tool, content string) (string, bool) {
+	if e.Cfg.Sandbox.Confined() {
+		content = safety.Redact(content)
+	}
+	return tools.TruncateWithLimit(tool, content, config.ActiveProfile(e.Cfg).ToolOutputTokens)
 }
 
 // allowedNames returns the tool names advertised this turn, sorted, for the

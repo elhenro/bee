@@ -2,7 +2,8 @@ package loop
 
 import (
 	"encoding/json"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -19,7 +20,6 @@ type ToolCallSignature struct {
 // Observation summarizes what the tracker learned about a freshly observed
 // (ToolUse, isError) pair. Caller decides how to react.
 type Observation struct {
-	Sig                         ToolCallSignature
 	RepeatCount                 int  // how many times this exact Sig has fired this Run
 	ConsecutiveSameToolFailures int  // streak of failures on the same tool name (any args)
 	ConsecutiveSameSigFailures  int  // streak of failures on the same (tool,args) sig
@@ -130,7 +130,6 @@ func (t *repeatTracker) ObserveWithResult(u types.ToolUse, isErr bool, resultCon
 	t.lastFailed = isErr
 	t.hasLast = true
 	return Observation{
-		Sig:                         sig,
 		RepeatCount:                 t.sigCounts[sig],
 		ConsecutiveSameToolFailures: t.failByTool[u.Name],
 		ConsecutiveSameSigFailures:  t.failBySig,
@@ -147,13 +146,8 @@ func signatureFor(u types.ToolUse) ToolCallSignature {
 	if len(in) == 0 {
 		return ToolCallSignature{Name: u.Name, ArgsHash: "empty"}
 	}
-	keys := make([]string, 0, len(in))
-	for k := range in {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	var b strings.Builder
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(in)) {
 		b.WriteString(k)
 		b.WriteByte('=')
 		// json-encode each value so nested maps/slices canonicalize the same way.

@@ -39,28 +39,18 @@ func BuildHandoff(ctx context.Context, p llm.Provider, model string, msgs []type
 
 	var b strings.Builder
 	b.WriteString(handoffPreamble)
-	b.WriteString("\n## original task\n")
-	if original != "" {
-		b.WriteString(original)
-	} else {
-		b.WriteString("(none recorded)")
+	if original == "" {
+		original = "(none recorded)"
 	}
-	b.WriteString("\n")
-	if summary != "" {
-		b.WriteString("\n## what was tried\n")
-		b.WriteString(summary)
-		b.WriteString("\n")
+	section := func(title, body string) {
+		if body != "" {
+			b.WriteString("\n## " + title + "\n" + body + "\n")
+		}
 	}
-	if stall != "" {
-		b.WriteString("\n## where it got stuck\n")
-		b.WriteString(stall)
-		b.WriteString("\n")
-	}
-	if tailTxt := flattenTail(tail, partial); tailTxt != "" {
-		b.WriteString("\n## last steps\n")
-		b.WriteString(tailTxt)
-		b.WriteString("\n")
-	}
+	section("original task", original)
+	section("what was tried", summary)
+	section("where it got stuck", stall)
+	section("last steps", flattenTail(tail, partial))
 	b.WriteString("\ntake over and finish the original task.")
 	return strings.TrimSpace(b.String()), nil
 }

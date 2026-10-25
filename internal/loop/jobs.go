@@ -6,10 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/jobs"
-	"github.com/elhenro/bee/internal/safety"
-	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -45,10 +42,7 @@ func (e *Engine) jobBlock(j jobs.Info) string {
 		b.WriteString("\n(no output)")
 		return b.String()
 	}
-	if e.Cfg.Sandbox.Confined() {
-		out = safety.Redact(out)
-	}
-	out, _ = tools.TruncateWithLimit("bash", out, config.ActiveProfile(e.Cfg).ToolOutputTokens)
+	out, _ = e.shapeOutput("bash", out)
 	b.WriteString("\n" + out)
 	return b.String()
 }
