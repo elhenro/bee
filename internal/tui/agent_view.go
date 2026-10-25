@@ -34,7 +34,6 @@ type AgentRow struct {
 
 type AttachSessionMsg struct{ ID string }
 type CloseAgentViewMsg struct{}
-type OpenAgentViewMsg struct{}
 type agentTickMsg time.Time
 
 func NewAgentView() *AgentView {
@@ -159,7 +158,7 @@ func (a *AgentView) Render(width, height int) string {
 			}
 			lines = append(lines, fmt.Sprintf("%s %s  %-10s  %-8s  ⬢ %s",
 				marker,
-				fmt.Sprintf("%-40s", agentTruncate(r.Task, 40)),
+				fmt.Sprintf("%-40s", truncateRunes(r.Task, 40)),
 				stateLabel(r.State),
 				humanAgeShort(r.Updated),
 				shortName(r.SessionID),
@@ -212,16 +211,6 @@ func humanAgeShort(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
-}
-
-// agentTruncate clips s to n runes-ish with an ellipsis. Local helper to
-// avoid colliding with package-level truncate/wrap utilities in other files.
-func agentTruncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n-1]) + "…"
 }
 
 // agentWrap wraps on rune boundaries; byte indexing would split multi-byte

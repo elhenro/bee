@@ -107,22 +107,7 @@ func (p AtPickerModel) View() string {
 	}
 
 	total := len(p.matches)
-	start := 0
-	if total > maxAtPickerRows {
-		if p.selected >= maxAtPickerRows {
-			start = p.selected - maxAtPickerRows + 1
-		}
-		if start+maxAtPickerRows > total {
-			start = total - maxAtPickerRows
-		}
-		if start < 0 {
-			start = 0
-		}
-	}
-	end := start + maxAtPickerRows
-	if end > total {
-		end = total
-	}
+	start, end := scrollWindow(total, p.selected, maxAtPickerRows)
 	overflowAbove := start
 	overflowBelow := total - end
 

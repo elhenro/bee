@@ -31,17 +31,10 @@ var settingsRowsAgents = []settingsRow{
 	{key: "agents_show_merged", label: "show merged section", desc: "list agents whose branches are already merged"},
 }
 
-// settingsHayAgents is the fuzzy haystack per row ("label  description"),
-// parallel to settingsRowsAgents.
-var settingsHayAgents []string
-
 func init() {
 	sort.Slice(settingsRowsAgents, func(i, j int) bool {
 		return settingsRowsAgents[i].label < settingsRowsAgents[j].label
 	})
-	for _, r := range settingsRowsAgents {
-		settingsHayAgents = append(settingsHayAgents, r.label+"  "+r.desc)
-	}
 }
 
 // settingsPane is a modal overlay for toggling overview Prefs. The pane holds
@@ -89,7 +82,9 @@ func (p *settingsPane) close() {
 }
 
 func (p *settingsPane) recomputeMatches() {
-	p.matches = tui.FilterRows(p.filter.Value(), settingsHayAgents)
+	p.matches = tui.FuzzyAll(p.filter.Value(), settingsRowsAgents, func(i int) string {
+		return settingsRowsAgents[i].label + "  " + settingsRowsAgents[i].desc
+	})
 	if p.cursor >= len(p.matches) || p.cursor < 0 {
 		p.cursor = 0
 	}
@@ -216,12 +211,8 @@ func (p *settingsPane) view(width, height int) string {
 }
 
 func overlayBox(body string, width, height int) string {
-	if width < 40 {
-		width = 40
-	}
-	if height < 10 {
-		height = 10
-	}
+	width = max(width, 40)
+	height = max(height, 10)
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(honey).

@@ -48,18 +48,10 @@ var settingsRows = []settingsRow{
 	{key: "outer_pad_lr", label: "outer padding (L/R)", desc: "blank cells left+right around TUI (int 0-8, 0=off; enter cycles)", isInt: true},
 }
 
-// settingsHay is the fuzzy haystack per row, parallel to settingsRows. Matches
-// "label  description" so descriptions can rank too; the renderer masks
-// highlight indices to the label range.
-var settingsHay []string
-
 func init() {
 	sort.Slice(settingsRows, func(i, j int) bool {
 		return settingsRows[i].label < settingsRows[j].label
 	})
-	for _, r := range settingsRows {
-		settingsHay = append(settingsHay, r.label+"  "+r.desc)
-	}
 }
 
 // SettingsPane is a modal toggling persistent TUI settings. Arrow keys move
@@ -181,7 +173,11 @@ type settingsSetIntMsg struct {
 // recomputeMatches fuzzy-filters settingsRows against the filter input. Empty
 // input keeps the full alphabetised list (one code path for the renderer).
 func (p *SettingsPane) recomputeMatches() {
-	p.matches = FilterRows(p.filter.Value(), settingsHay)
+	// match against "label  description" so descriptions can rank too; the
+	// renderer masks highlight indices to the label range.
+	p.matches = FuzzyAll(p.filter.Value(), settingsRows, func(i int) string {
+		return settingsRows[i].label + "  " + settingsRows[i].desc
+	})
 	if p.cursor >= len(p.matches) || p.cursor < 0 {
 		p.cursor = 0
 	}

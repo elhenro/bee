@@ -65,16 +65,16 @@ func (p *Picker) activeMatches() []fuzzy.Match {
 }
 
 func (p *Picker) matchProviders() []fuzzy.Match {
-	return fuzzyAll(p.provQuery, p.providers, func(i int) string {
+	return FuzzyAll(p.provQuery, p.providers, func(i int) string {
 		return p.providers[i].name + " " + p.providers[i].cfg.BaseURL
 	})
 }
 
 func (p *Picker) matchModels() []fuzzy.Match {
 	models := p.modelsByProvider[p.currentProvider]
-	return fuzzyAll(p.modelQuery, models, func(i int) string {
+	return FuzzyAll(p.modelQuery, models, func(i int) string {
 		return models[i].display + " " + models[i].id + " " + models[i].desc
 	})
 }
 
-// helpers (fuzzyAll, buildProviderList, modelEntries) live in picker_items.go.
+// helpers (FuzzyAll, buildProviderList, modelEntries) live in picker_items.go.

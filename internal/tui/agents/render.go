@@ -249,10 +249,7 @@ func humanDuration(start, finish time.Time) string {
 	if end.IsZero() {
 		end = time.Now()
 	}
-	d := end.Sub(start)
-	if d < 0 {
-		d = 0
-	}
+	d := max(end.Sub(start), 0)
 	switch {
 	case d < time.Minute:
 		return fmt.Sprintf("%ds", int(d.Seconds()))

@@ -134,9 +134,6 @@ func (p *Picker) Show() tea.Cmd {
 	return p.loadCurrentProvider()
 }
 
-// Hide closes the picker without emitting a PickedMsg.
-func (p *Picker) Hide() { p.active = false }
-
 // SetSize records the available width so rows can truncate cleanly.
 func (p *Picker) SetSize(w, _ int) { p.width = w }
 
@@ -243,12 +240,7 @@ func (p *Picker) move(delta int) {
 		sel = &p.modelSel
 	}
 	*sel += delta
-	if *sel < 0 {
-		*sel = 0
-	}
-	if *sel >= len(matches) {
-		*sel = len(matches) - 1
-	}
+	*sel = min(max(*sel, 0), len(matches)-1)
 }
 
 // advance handles enter: stage 1 → load + jump to stage 2; stage 2 → commit.
@@ -276,7 +268,3 @@ func (p *Picker) advance() (*Picker, tea.Cmd) {
 	p.active = false
 	return p, func() tea.Msg { return PickedMsg{Provider: prov, Model: mid} }
 }
-
-// providerSelectedName returns the highlighted provider's name. Kept for
-// backward compatibility with the test suite + app.go callers.
-func (p *Picker) providerSelectedName() string { return p.selectedProvider() }

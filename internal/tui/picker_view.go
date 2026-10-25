@@ -85,22 +85,7 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 	}
 
 	total := len(matches)
-	start := 0
-	if total > maxPickerRows {
-		if sel >= maxPickerRows {
-			start = sel - maxPickerRows + 1
-		}
-		if start+maxPickerRows > total {
-			start = total - maxPickerRows
-		}
-		if start < 0 {
-			start = 0
-		}
-	}
-	end := start + maxPickerRows
-	if end > total {
-		end = total
-	}
+	start, end := scrollWindow(total, sel, maxPickerRows)
 
 	var b strings.Builder
 	if start > 0 {
@@ -122,27 +107,13 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 		line.WriteString(" ")
 
 		// highlight matched runes within the name only; fuzzy gives indices
-		// into the full haystack "name + space + extras", mask to name range
-		nameLen := len(name)
-		hits := map[int]struct{}{}
-		for _, idx := range m.MatchedIndexes {
-			if idx >= 0 && idx < nameLen {
-				hits[idx] = struct{}{}
-			}
-		}
+		// into the full haystack "name + space + extras", HighlightLabel masks
+		// to the name range
 		ns := nameNorm
 		if i == sel {
 			ns = nameSel
 		}
-		// fuzzy indexes are byte offsets of each matched rune, so walk runes
-		for j, r := range name {
-			ch := string(r)
-			if _, ok := hits[j]; ok {
-				line.WriteString(hl.Render(ch))
-			} else {
-				line.WriteString(ns.Render(ch))
-			}
-		}
+		line.WriteString(HighlightLabel(name, m.MatchedIndexes, ns, hl, 0))
 		if desc != "" {
 			line.WriteString(dim.Render("  " + desc))
 		}
@@ -161,6 +132,18 @@ func renderRows(matches []fuzzy.Match, sel int, _ string, glyph string, w int, r
 	return b.String()
 }
 
+// scrollWindow returns the rows [start,end) of an n-row list that fit
+// maxRows, scrolling just far enough to keep sel on the last visible row.
+func scrollWindow(n, sel, maxRows int) (start, end int) {
+	if n > maxRows {
+		if sel >= maxRows {
+			start = sel - maxRows + 1
+		}
+		start = min(start, n-maxRows)
+	}
+	return start, min(start+maxRows, n)
+}
+
 // compactError flattens multi-line/JSON error bodies into one short line so
 // the picker doesn't blow up vertically with stray }, ], " fragments from
 // upstream API responses.
@@ -171,8 +154,6 @@ func compactError(s string, maxLen int) string {
 		s = strings.ReplaceAll(s, "  ", " ")
 	}
 	s = strings.TrimSpace(s)
-	if maxLen < 16 {
-		maxLen = 16
-	}
+	maxLen = max(maxLen, 16)
 	return ansi.Truncate(s, maxLen, "…")
 }

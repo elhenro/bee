@@ -75,7 +75,7 @@ func TestPicker_ShowLoadsCurrentProvider(t *testing.T) {
 	if !p.Active() {
 		t.Fatal("picker not active after Show")
 	}
-	if got := p.providerSelectedName(); got != "alpha" {
+	if got := p.selectedProvider(); got != "alpha" {
 		t.Errorf("default selection = %q, want alpha", got)
 	}
 	if len(p.modelsByProvider["alpha"]) != 2 {
@@ -96,7 +96,7 @@ func TestPicker_ArrowMovesSelection(t *testing.T) {
 	_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyDown})
 	settle(t, p, cmd)
 
-	if got := p.providerSelectedName(); got != "beta" {
+	if got := p.selectedProvider(); got != "beta" {
 		t.Errorf("after down, selection = %q, want beta", got)
 	}
 	// beta only auto-loads when user advances to stage 2 (enter). Trigger that.

@@ -5,22 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/sahilm/fuzzy"
 )
-
-// FilterRows fuzzy-ranks hay against needle. An empty needle keeps every row
-// in order so renderers have a single code path.
-func FilterRows(needle string, hay []string) []fuzzy.Match {
-	needle = strings.TrimSpace(needle)
-	if needle != "" {
-		return fuzzy.Find(needle, hay)
-	}
-	all := make([]fuzzy.Match, len(hay))
-	for i, h := range hay {
-		all[i] = fuzzy.Match{Index: i, Str: h}
-	}
-	return all
-}
 
 // View renders the modal.
 func (p *SettingsPane) View(width, height int) string {

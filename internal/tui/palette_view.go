@@ -36,22 +36,7 @@ func (p PaletteModel) View() string {
 	}
 
 	total := len(p.matches)
-	start := 0
-	if total > maxPaletteRows {
-		if p.selected >= maxPaletteRows {
-			start = p.selected - maxPaletteRows + 1
-		}
-		if start+maxPaletteRows > total {
-			start = total - maxPaletteRows
-		}
-		if start < 0 {
-			start = 0
-		}
-	}
-	end := start + maxPaletteRows
-	if end > total {
-		end = total
-	}
+	start, end := scrollWindow(total, p.selected, maxPaletteRows)
 	rows := p.matches[start:end]
 	overflowAbove := start
 	overflowBelow := total - end
@@ -82,26 +67,12 @@ func (p PaletteModel) View() string {
 		line.WriteString(gs.Render(glyph))
 
 		// highlight matched runes within name range only. fuzzy returns
-		// indices into "name description"; mask to [0, nameLen).
-		nameLen := len(entry.Name)
-		matchSet := map[int]struct{}{}
-		for _, idx := range m.MatchedIndexes {
-			if idx >= 0 && idx < nameLen {
-				matchSet[idx] = struct{}{}
-			}
-		}
+		// indices into "name description"; HighlightLabel masks to the name.
 		ns := nameNorm
 		if absIdx == p.selected {
 			ns = nameSel
 		}
-		for j, r := range entry.Name {
-			ch := string(r)
-			if _, ok := matchSet[j]; ok {
-				line.WriteString(hl.Render(ch))
-			} else {
-				line.WriteString(ns.Render(ch))
-			}
-		}
+		line.WriteString(HighlightLabel(entry.Name, m.MatchedIndexes, ns, hl, 0))
 
 		if entry.Description != "" {
 			line.WriteString(dim.Render("  " + entry.Description))

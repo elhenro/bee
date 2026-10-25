@@ -5,9 +5,7 @@ import "strconv"
 // windowRange picks the rows [start,end) of an n-row list that fit maxRows
 // (floor 3), keeping sel in view and roughly centred.
 func windowRange(n, sel, maxRows int) rowRange {
-	if maxRows < 3 {
-		maxRows = 3
-	}
+	maxRows = max(maxRows, 3)
 	if n <= maxRows {
 		return rowRange{0, n}
 	}

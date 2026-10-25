@@ -41,12 +41,6 @@ func (p *UpdatePrompt) Show(info update.Info) {
 	p.focus = 1 // default to "update now" — least surprise for explicit prompt
 }
 
-// Hide closes without publishing a decision.
-func (p *UpdatePrompt) Hide() {
-	p.Active = false
-	p.Info = update.Info{}
-}
-
 // updateDecisionMsg carries the user's choice back into Model.Update.
 type updateDecisionMsg struct {
 	Decision UpdateDecision
@@ -73,7 +67,7 @@ func (p UpdatePrompt) Update(msg tea.Msg) (UpdatePrompt, tea.Cmd) {
 		p.focus = (p.focus + 3) % 4
 		return p, nil
 	case "enter", " ":
-		return p.decide(p.decisionFor(p.focus))
+		return p.decide(UpdateDecision(p.focus))
 	// single-letter shortcuts mirror the labels
 	case "1":
 		return p.decide(UpdateLater)
@@ -85,19 +79,6 @@ func (p UpdatePrompt) Update(msg tea.Msg) (UpdatePrompt, tea.Cmd) {
 		return p.decide(UpdateNeverAsk)
 	}
 	return p, nil
-}
-
-func (p UpdatePrompt) decisionFor(idx int) UpdateDecision {
-	switch idx {
-	case 1:
-		return UpdateNow
-	case 2:
-		return UpdateAlways
-	case 3:
-		return UpdateNeverAsk
-	default:
-		return UpdateLater
-	}
 }
 
 func (p UpdatePrompt) decide(d UpdateDecision) (UpdatePrompt, tea.Cmd) {

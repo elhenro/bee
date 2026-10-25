@@ -147,9 +147,7 @@ func (m model) refresh() model {
 	if m.sel >= len(m.flat) {
 		m.sel = 0
 	}
-	if m.sel < 0 {
-		m.sel = 0
-	}
+	m.sel = max(m.sel, 0)
 	if m.notice != "" && time.Now().After(m.noticeTTL) {
 		m.notice = ""
 	}
@@ -332,9 +330,6 @@ func (m model) View() string {
 
 // spawnAgent calls agents.Spawn for the current input + pending model/provider.
 func (m *model) spawnAgent(prompt string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = ctx
 	res, err := agents.Spawn(agents.SpawnOpts{
 		Prompt:   prompt,
 		Model:    m.pendingModel,
@@ -346,11 +341,4 @@ func (m *model) spawnAgent(prompt string) {
 		return
 	}
 	m.flash("spawned " + res.SessionID[:8] + " on " + res.Branch)
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

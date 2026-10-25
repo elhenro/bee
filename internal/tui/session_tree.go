@@ -34,9 +34,6 @@ type SessionCloneMsg struct{}
 // NewSessionTree constructs an empty tree modal.
 func NewSessionTree() *SessionTree { return &SessionTree{} }
 
-// Init satisfies tea.Model.
-func (t *SessionTree) Init() tea.Cmd { return nil }
-
 // Update reacts to ToggleSessionTreeMsg and (when open) key events.
 func (t *SessionTree) Update(msg tea.Msg) (*SessionTree, tea.Cmd) {
 	switch m := msg.(type) {
@@ -93,14 +90,6 @@ func (t *SessionTree) LoadMessages(msgs []types.Message, currentLeafID string) {
 	t.selected = t.defaultSelected()
 }
 
-// SetRoot lets a caller pass an already-built tree.
-func (t *SessionTree) SetRoot(root *types.MessageNode, currentLeafID string) {
-	t.root = root
-	t.current = currentLeafID
-	t.flat = flattenDFS(t.root)
-	t.selected = t.defaultSelected()
-}
-
 // defaultSelected picks the current leaf if present in flat, else the first node.
 func (t *SessionTree) defaultSelected() string {
 	if t.current != "" {
@@ -133,12 +122,7 @@ func (t *SessionTree) moveCursor(delta int) {
 		return
 	}
 	idx += delta
-	if idx < 0 {
-		idx = 0
-	}
-	if idx >= len(t.flat) {
-		idx = len(t.flat) - 1
-	}
+	idx = min(max(idx, 0), len(t.flat)-1)
 	t.selected = t.flat[idx].Msg.ID
 }
 
@@ -223,10 +207,7 @@ func (t *SessionTree) renderNode(b *strings.Builder, n *types.MessageNode, prefi
 
 	label := nodeLabel(n)
 	if width > 0 && cursorW+len(prefix)+len(branch)+len(label) > width {
-		cut := width - cursorW - len(prefix) - len(branch) - 1
-		if cut < 4 {
-			cut = 4
-		}
+		cut := max(width-cursorW-len(prefix)-len(branch)-1, 4)
 		if cut < len(label) {
 			label = cutBytes(label, cut) + "…"
 		}
@@ -276,9 +257,7 @@ func firstText(m types.Message) string {
 }
 
 func boxModal(body string, width int) string {
-	if width < 20 {
-		width = 20
-	}
+	width = max(width, 20)
 	// hugs its content: a pane of ten rows is ten rows, not a screen
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
