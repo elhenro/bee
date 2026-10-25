@@ -123,7 +123,7 @@ func firstUserText(msgs []types.Message) string {
 			continue
 		}
 		for _, c := range m.Content {
-			if c.Type == types.BlockText && strings.TrimSpace(c.Text) != "" && !isSyntheticUserText(c.Text) {
+			if c.Type == types.BlockText && strings.TrimSpace(c.Text) != "" && !types.IsSyntheticUserText(c.Text) {
 				return strings.TrimSpace(c.Text)
 			}
 		}

@@ -34,3 +34,31 @@ func TestToolUse_ArgsDropsLabelOnly(t *testing.T) {
 		t.Fatal("a tool without labels keeps its own description arg")
 	}
 }
+
+func TestToolUse_Why(t *testing.T) {
+	edit := ToolUse{Name: "edit", Input: map[string]any{"path": "a.go", "why": "  guard nil  "}}
+	if got := edit.Why(); got != "guard nil" {
+		t.Fatalf("Why() = %q", got)
+	}
+	if (ToolUse{Name: "edit", Input: map[string]any{"path": "a.go"}}).Why() != "" {
+		t.Fatal("a missing why is empty")
+	}
+	if (ToolUse{Name: "read", Input: map[string]any{"why": "mine"}}).Why() != "" {
+		t.Fatal("a tool that takes no why keeps its own arg")
+	}
+}
+
+func TestToolUse_ArgsDropsWhy(t *testing.T) {
+	u := ToolUse{Name: "edit", Input: map[string]any{"path": "a.go", "why": "guard nil"}}
+	got := u.Args()
+	if _, ok := got["why"]; ok || got["path"] != "a.go" {
+		t.Fatalf("Args() = %v, want path only", got)
+	}
+	if _, ok := u.Input["why"]; !ok {
+		t.Fatal("Args() must not edit Input: the transcript keeps the why")
+	}
+	own := ToolUse{Name: "read", Input: map[string]any{"why": "mine"}}
+	if own.Args()["why"] != "mine" {
+		t.Fatal("a tool without a why keeps its own arg")
+	}
+}

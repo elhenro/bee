@@ -156,20 +156,7 @@ global flags (any position):
 
 func back(args []string) {
 	// no id = resume most recent session
-	id := "latest"
-	if len(args) >= 1 && args[0] != "" {
-		id = args[0]
-	}
-	if id == "latest" || id == "l" {
-		sessions, err := session.List()
-		if err != nil {
-			exitf(1, "bee back: list sessions: %v", err)
-		}
-		if len(sessions) == 0 {
-			exitf(1, "bee back: no sessions found")
-		}
-		id = sessions[0].ID
-	}
+	id := resolveSession("back", args)
 	if p, err := session.Path(id); err != nil {
 		exitf(1, "bee back: %v", err)
 	} else if _, err := os.Stat(p); err != nil {

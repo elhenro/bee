@@ -141,7 +141,7 @@ func TestJobDisplay_Several(t *testing.T) {
 }
 
 func TestJobNotice_IsSynthetic(t *testing.T) {
-	if !isSyntheticUserText("[job 4 done, exit 0, 2s] make") {
+	if !types.IsSyntheticUserText("[job 4 done, exit 0, 2s] make") {
 		t.Fatal("job notice must not count as a real user ask")
 	}
 }

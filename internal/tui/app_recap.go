@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -111,14 +112,14 @@ type changeMapMsg struct{ text string }
 
 // changeMapCmd builds the review card for the turn's file mutations. It is
 // local work (git + code index), so it needs no model call and shows as soon
-// as the turn ends.
+// as the turn ends. A turn that mutated nothing costs no command at all.
 func (m Model) changeMapCmd(msgs []types.Message) tea.Cmd {
-	if m.eng == nil {
+	turn := slices.Clone(learn.LastTurn(msgs))
+	if m.eng == nil || len(learn.Touched(turn, "")) == 0 {
 		return nil
 	}
 	cwd := m.eng.Cwd
-	copyMsgs := append([]types.Message(nil), msgs...)
 	return func() tea.Msg {
-		return changeMapMsg{text: learn.ChangeMap(context.Background(), cwd, copyMsgs)}
+		return changeMapMsg{text: learn.ChangeMap(context.Background(), cwd, turn)}
 	}
 }

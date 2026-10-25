@@ -22,7 +22,7 @@ func labelSpecs() []llm.ToolSpec {
 
 func TestAddCallLabels_OffersLabelOnLabeledToolsOnly(t *testing.T) {
 	specs := labelSpecs()
-	out := addCallLabels(specs, config.Config{Profile: "normal"})
+	out := addDisplayArgs(specs, config.Config{Profile: "normal"})
 	bash := out[0].Schema["properties"].(map[string]any)
 	if _, ok := bash[types.CallLabelKey]; !ok {
 		t.Fatal("bash should offer a label")
@@ -36,7 +36,7 @@ func TestAddCallLabels_OffersLabelOnLabeledToolsOnly(t *testing.T) {
 }
 
 func TestAddCallLabels_SkippedOnTiny(t *testing.T) {
-	out := addCallLabels(labelSpecs(), config.Config{Profile: "tiny"})
+	out := addDisplayArgs(labelSpecs(), config.Config{Profile: "tiny"})
 	if _, ok := out[0].Schema["properties"].(map[string]any)[types.CallLabelKey]; ok {
 		t.Fatal("tiny profile should not pay for labels")
 	}
@@ -46,7 +46,7 @@ func TestAddCallLabels_KeepsAnExistingDescriptionArg(t *testing.T) {
 	specs := []llm.ToolSpec{{Name: "bash", Schema: map[string]any{
 		"properties": map[string]any{"description": map[string]any{"type": "string", "description": "own"}},
 	}}}
-	out := addCallLabels(specs, config.Config{Profile: "normal"})
+	out := addDisplayArgs(specs, config.Config{Profile: "normal"})
 	got := out[0].Schema["properties"].(map[string]any)["description"].(map[string]any)["description"]
 	if got != "own" {
 		t.Fatalf("existing description arg replaced: %v", got)
@@ -101,5 +101,30 @@ func TestRunOne_ToolNeverSeesCallLabel(t *testing.T) {
 	}
 	if !kept {
 		t.Fatal("transcript lost the label the card needs")
+	}
+}
+
+func TestAddDisplayArgs_OffersWhyOnMutatorsEvenOnTiny(t *testing.T) {
+	specs := []llm.ToolSpec{{Name: "edit", Schema: labelSpecs()[0].Schema}, {Name: "read", Schema: labelSpecs()[1].Schema}}
+	for _, profile := range []string{"normal", "tiny"} {
+		out := addDisplayArgs(specs, config.Config{Profile: profile})
+		if _, ok := out[0].Schema["properties"].(map[string]any)[types.WhyKey]; !ok {
+			t.Fatalf("%s: edit should offer a why", profile)
+		}
+		if _, ok := out[1].Schema["properties"].(map[string]any)[types.WhyKey]; ok {
+			t.Fatalf("%s: read has nothing to justify", profile)
+		}
+	}
+	if _, ok := specs[0].Schema["properties"].(map[string]any)[types.WhyKey]; ok {
+		t.Fatal("registry spec was edited in place")
+	}
+}
+
+// a retried failing edit with reworded reasons is still the same call
+func TestSignatureFor_IgnoresWhy(t *testing.T) {
+	a := types.ToolUse{Name: "edit", Input: map[string]any{"path": "a.go", "old": "x", "new": "y", "why": "fix the bug"}}
+	b := types.ToolUse{Name: "edit", Input: map[string]any{"path": "a.go", "old": "x", "new": "y", "why": "try again"}}
+	if signatureFor(a) != signatureFor(b) {
+		t.Fatal("why changed the call signature, repeat detection would miss the loop")
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/elhenro/bee/internal/tools/read"
-	"github.com/elhenro/bee/internal/tools/why"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -96,11 +95,11 @@ func (r *StreamRenderer) callParts(u types.ToolUse, o toolOutcome, anchor int) (
 // the model's one-line reason for a mutation, hung under the call header;
 // "" when the call carried none
 func (r *StreamRenderer) whyRow(u types.ToolUse) string {
-	text := why.Of(u.Input)
+	text := u.Why()
 	if text == "" {
 		return ""
 	}
-	rows := strings.Split(wrapText(r.styles.ToolPrev.Render(expandTabs(ansi.Strip(text))), r.textWidth(resultIndent)), "\n")
+	rows := strings.Split(wrapText(r.styles.ToolPrev.Render(cleanCallText(expandTabs(text), true)), r.textWidth(resultIndent)), "\n")
 	if !r.verbose && len(rows) > 2 {
 		rows = append(rows[:1], r.styles.Dim.Render(glyphMore))
 	}

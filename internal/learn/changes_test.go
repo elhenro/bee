@@ -36,11 +36,28 @@ func TestTouched(t *testing.T) {
 	}
 }
 
-func TestTouchedStopsAtLastUser(t *testing.T) {
-	msgs := append(turn(use("write", map[string]any{"path": "old.go"})),
-		types.Message{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: "next"}}})
-	if got := Touched(msgs, ""); len(got) != 0 {
+func userMsg(text string) types.Message {
+	return types.Message{Role: types.RoleUser, Content: []types.ContentBlock{{Type: types.BlockText, Text: text}}}
+}
+
+func TestLastTurnStopsAtLastRequest(t *testing.T) {
+	msgs := append(turn(use("write", map[string]any{"path": "old.go"})), userMsg("next"))
+	if got := Touched(LastTurn(msgs), ""); len(got) != 0 {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+// a steer or nudge the loop injected mid-turn is not a new request: edits made
+// before it still belong to the turn's card
+func TestChangeMapSpansInjectedUserTurns(t *testing.T) {
+	msgs := append(turn(use("edit", map[string]any{"path": "a.go", "why": "A"})), userMsg("[steer] hurry up"),
+		types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{use("edit", map[string]any{"path": "b.go", "why": "B"})}})
+	s := ChangeMap(context.Background(), t.TempDir(), msgs)
+	if !strings.Contains(s, "2 files") || !strings.Contains(s, "a.go") || !strings.Contains(s, "b.go") {
+		t.Fatalf("got %q", s)
+	}
+	if w := Walkthrough(msgs, ""); strings.Contains(w, "2. ") {
+		t.Fatalf("steer counted as a request: %q", w)
 	}
 }
 

@@ -31,7 +31,7 @@ func (m Model) onChangeMap(msg changeMapMsg) (tea.Model, tea.Cmd) {
 	if w < minRenderWidth {
 		w = 80
 	}
-	rows := strings.Split(expandTabs(msg.text), "\n")
+	rows := strings.Split(msg.text, "\n")
 	for i, row := range rows {
 		rows[i] = m.styles.Dim.Render(clipLine(row, w-2))
 	}

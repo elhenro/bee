@@ -14,31 +14,24 @@ const summaryChars = 600
 // It reads only what the transcript already holds.
 func Walkthrough(msgs []types.Message, cwd string) string {
 	var b strings.Builder
-	turn := 0
-	for i, m := range msgs {
-		if m.Role != types.RoleUser || m.Ephemeral {
+	n := 0
+	for _, turn := range turns(msgs) {
+		if !isRequest(turn[0]) {
 			continue
 		}
-		ask := Clean(firstLine(text(m)))
+		ask := Clean(firstLine(text(turn[0])))
 		if ask == "" {
 			continue
 		}
-		end := len(msgs)
-		for j := i + 1; j < len(msgs); j++ {
-			if msgs[j].Role == types.RoleUser && text(msgs[j]) != "" {
-				end = j
-				break
-			}
-		}
-		turn++
-		fmt.Fprintf(&b, "%d. %s\n", turn, ask)
-		for _, c := range Touched(msgs[i:end], cwd) {
-			b.WriteString("   " + c.Path + "\n")
+		n++
+		fmt.Fprintf(&b, "%d. %s\n", n, ask)
+		for _, c := range Touched(turn, cwd) {
+			b.WriteString("   " + Clean(c.Path) + "\n")
 			for _, w := range c.Whys {
-				b.WriteString("     why: " + w + "\n")
+				b.WriteString("     why: " + Clean(w) + "\n")
 			}
 		}
-		if last := lastAssistantText(msgs[i:end]); last != "" {
+		if last := lastAssistantText(turn); last != "" {
 			b.WriteString("   " + clip(Clean(last), summaryChars) + "\n")
 		}
 		b.WriteString("\n")
@@ -60,7 +53,7 @@ func lastAssistantText(msgs []types.Message) string {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Role == types.RoleAssistant {
 			if t := text(msgs[i]); t != "" {
-				return strings.ReplaceAll(t, "\n", " ")
+				return t
 			}
 		}
 	}

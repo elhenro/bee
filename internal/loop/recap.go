@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/elhenro/bee/internal/learn"
 	"github.com/elhenro/bee/internal/llm"
-	"github.com/elhenro/bee/internal/tools/why"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -125,20 +125,9 @@ func extractRecapInput(msgs []types.Message) string {
 // why, so the recap can state the real rationale instead of guessing it.
 func editReasons(msgs []types.Message) string {
 	var b strings.Builder
-	for _, m := range msgs {
-		for _, c := range m.Content {
-			if c.Type != types.BlockToolUse || c.Use == nil || !why.Mutators[c.Use.Name] {
-				continue
-			}
-			reason := why.Of(c.Use.Input)
-			if reason == "" {
-				continue
-			}
-			path, _ := c.Use.Input["path"].(string)
-			if path == "" {
-				path = c.Use.Name
-			}
-			b.WriteString("- " + path + ": " + reason + "\n")
+	for _, c := range learn.Touched(msgs, "") {
+		for _, w := range c.Whys {
+			b.WriteString("- " + c.Path + ": " + w + "\n")
 		}
 	}
 	return strings.TrimSpace(b.String())

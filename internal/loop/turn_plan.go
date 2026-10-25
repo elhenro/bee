@@ -95,7 +95,7 @@ func (e *Engine) advertisedSpecs(pl runPlan) []llm.ToolSpec {
 	// no-op when the profile uses tool_format=xml (schema is nilled by the
 	// textmode wrapper before it reaches the wire).
 	specs = stripToolSpecDescriptionsForProfile(specs, e.Cfg)
-	specs = addCallLabels(specs, e.Cfg)
+	specs = addDisplayArgs(specs, e.Cfg)
 	// then narrow by role/posture: a read-only turn drops mutators entirely.
 	specs = filterToolSpecsForRole(specs, pl.role, pl.readOnly)
 	// re-add any plan-only tool a prompt skill granted for this turn (e.g.

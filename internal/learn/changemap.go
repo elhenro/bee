@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/gitsafe"
 	"github.com/elhenro/bee/internal/tools/codegraph"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -22,27 +23,36 @@ const (
 // Returns "" when the turn changed nothing. Both lookups are best effort; a
 // missing git repo or codegraph index just drops that part of the card.
 func ChangeMap(ctx context.Context, cwd string, msgs []types.Message) string {
-	changes := Touched(msgs, cwd)
+	changes := Touched(LastTurn(msgs), cwd)
 	if len(changes) == 0 {
 		return ""
 	}
-	paths := Paths(changes)
-	stats := numstat(ctx, cwd, paths)
+	paths := make([]string, len(changes))
+	for i, c := range changes {
+		paths[i] = c.Path
+	}
+	var stats map[string]string
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		stats = numstat(ctx, cwd, paths)
+	}()
 	tests, haveIndex := affectedTests(ctx, cwd, paths)
+	<-done
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "changes %s %d %s", "·", len(changes), plural(len(changes), "file", "files"))
+	fmt.Fprintf(&b, "changes · %d %s", len(changes), plural(len(changes), "file", "files"))
 	for i, c := range changes {
 		if i == maxRows {
 			fmt.Fprintf(&b, "\n  … +%d more", len(changes)-maxRows)
 			break
 		}
-		b.WriteString("\n  " + c.Path)
+		b.WriteString("\n  " + Clean(c.Path))
 		if s, ok := stats[c.Path]; ok {
 			b.WriteString("  " + s)
 		}
 		if len(c.Whys) > 0 {
-			b.WriteString("  · " + c.Whys[len(c.Whys)-1])
+			b.WriteString("  · " + Clean(c.Whys[len(c.Whys)-1]))
 		}
 	}
 	if haveIndex {
@@ -77,7 +87,7 @@ func run(ctx context.Context, cwd, bin string, args ...string) (string, bool) {
 
 // numstat maps path → "+adds −dels" from the working tree against HEAD.
 func numstat(ctx context.Context, cwd string, paths []string) map[string]string {
-	out, ok := run(ctx, cwd, "git", append([]string{"diff", "--numstat", "HEAD", "--"}, paths...)...)
+	out, ok := run(ctx, cwd, "git", gitsafe.Args(append([]string{"diff", "--numstat", "--relative", "HEAD", "--"}, paths...)...)...)
 	if !ok {
 		return nil
 	}
