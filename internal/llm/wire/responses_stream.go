@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -10,13 +11,12 @@ import (
 // response.function_call_arguments.delta, response.output_item.added,
 // response.output_item.done, response.completed, response.failed.
 type ResponsesEvent struct {
-	Type        string               `json:"type"`
-	Response    *ResponsesEventBody  `json:"response,omitempty"`
-	Item        *ResponsesOutputItem `json:"item,omitempty"`
-	Delta       string               `json:"delta,omitempty"`
-	OutputIndex *int                 `json:"output_index,omitempty"`
-	ItemID      string               `json:"item_id,omitempty"`
-	CallID      string               `json:"call_id,omitempty"`
+	Type     string               `json:"type"`
+	Response *ResponsesEventBody  `json:"response,omitempty"`
+	Item     *ResponsesOutputItem `json:"item,omitempty"`
+	Delta    string               `json:"delta,omitempty"`
+	ItemID   string               `json:"item_id,omitempty"`
+	CallID   string               `json:"call_id,omitempty"`
 	// Arguments-done event includes the full arguments string.
 	Arguments string `json:"arguments,omitempty"`
 	// Code and Message carry a top-level `error` event's payload.
@@ -66,7 +66,7 @@ type ResponsesErrorPayload struct {
 
 // ParseResponsesEvent decodes one SSE `data:` payload.
 func ParseResponsesEvent(data []byte) (*ResponsesEvent, error) {
-	trimmed := trimSpace(data)
+	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
 		return nil, nil
 	}
