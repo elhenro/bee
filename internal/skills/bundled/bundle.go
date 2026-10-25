@@ -10,9 +10,10 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -70,12 +71,8 @@ func WriteDefaults(skillsDir string) ([]string, error) {
 		if !changed {
 			return
 		}
-		var keys []string
-		for k := range seeded {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		_ = os.WriteFile(filepath.Join(skillsDir, seededFile), []byte(strings.Join(keys, "\n")+"\n"), 0o644)
+		keys := strings.Join(slices.Sorted(maps.Keys(seeded)), "\n")
+		_ = os.WriteFile(filepath.Join(skillsDir, seededFile), []byte(keys+"\n"), 0o644)
 	}()
 	var written []string
 	for _, n := range names {

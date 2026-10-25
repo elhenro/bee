@@ -98,18 +98,21 @@ func recipeBuild(s *Skill, raw []recipeStepRaw, knownTools map[string]bool) erro
 	return nil
 }
 
+// bodyHead is the title and description block both recipe bodies open with.
+func bodyHead(title string, s Skill) string {
+	head := title + ": " + s.Name + "\n\n"
+	if s.Description != "" {
+		head += s.Description + "\n\n"
+	}
+	return head
+}
+
 // renderRecipeBody turns a parsed recipe into the prompt addendum the model
 // sees. one block per step: number, description, tool example (if any),
 // failure routing (if any).
 func renderRecipeBody(s Skill) string {
 	var b strings.Builder
-	b.WriteString("Recipe: ")
-	b.WriteString(s.Name)
-	b.WriteString("\n\n")
-	if s.Description != "" {
-		b.WriteString(s.Description)
-		b.WriteString("\n\n")
-	}
+	b.WriteString(bodyHead("Recipe", s))
 	b.WriteString("Follow these steps in order. After each step, call the named tool. If a step fails, follow its on_failure rule. Stop only when every step completes or a step routes to escalate.\n\n")
 	for i, st := range s.Steps {
 		fmt.Fprintf(&b, "%d. [%s] %s\n", i+1, st.ID, st.Description)

@@ -1,4 +1,4 @@
-// Package skills defines skill types and the contract a skill executor satisfies.
+// Package skills defines skill types and parses them from markdown files.
 //
 // A Skill is a markdown file with YAML frontmatter. It can be: a prompt template
 // (type=prompt), an external command (type=exec), or an ordered multi-step
@@ -7,8 +7,6 @@
 //  2. as a model-callable tool in the live agent session (exec only; prompt
 //     and recipe fold into the user turn)
 package skills
-
-import "context"
 
 type Kind string
 
@@ -31,8 +29,6 @@ type Skill struct {
 	Kind        Kind
 	Description string
 	Tools       []string // optional whitelist (prompt kind)
-	Model       string   // optional override
-	AutoApprove []string
 
 	// kind=prompt
 	Body string
@@ -89,10 +85,4 @@ type RecipeStep struct {
 	// FailIf is a regexp; a step whose output matches it counts as failed
 	// even when the tool itself succeeded. Lets a bee step branch by answer.
 	FailIf string
-}
-
-// Executor runs a skill non-interactively given the user message + ambient
-// context, returning a single string result.
-type Executor interface {
-	Exec(ctx context.Context, s Skill, userMsg string) (string, error)
 }

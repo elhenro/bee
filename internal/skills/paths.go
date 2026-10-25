@@ -18,13 +18,9 @@ func BaseDir() string {
 	if v := os.Getenv(envBaseDir); v != "" {
 		return v
 	}
-	return filepath.Join(beeHome(), "skills")
-}
-
-func beeHome() string {
-	if root, err := beehome.Dir(); err == nil {
-		return root
+	root, err := beehome.Dir()
+	if err != nil {
+		root = ".bee" // last-resort fallback, will surface in caller errors
 	}
-	// last-resort fallback, will surface in caller errors
-	return ".bee"
+	return filepath.Join(root, "skills")
 }

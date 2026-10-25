@@ -77,16 +77,8 @@ func validateRuntimeStep(st RecipeStep, ids map[string]bool, knownTools map[stri
 // to invoke the recipe as a subcommand.
 func renderRuntimeBody(s Skill) string {
 	var b strings.Builder
-	b.WriteString("Runtime recipe: ")
-	b.WriteString(s.Name)
-	b.WriteString("\n\n")
-	if s.Description != "" {
-		b.WriteString(s.Description)
-		b.WriteString("\n\n")
-	}
-	b.WriteString("This recipe executes in Go, not by you. Run it with the bash tool: `bee ")
-	b.WriteString(s.Name)
-	b.WriteString(" [args...]` and report its output.\nSteps:\n")
+	b.WriteString(bodyHead("Runtime recipe", s))
+	b.WriteString("This recipe executes in Go, not by you. Run it with the bash tool: `bee " + s.Name + " [args...]` and report its output.\nSteps:\n")
 	for i, st := range s.Steps {
 		fmt.Fprintf(&b, "%d. [%s] (%s) %s\n", i+1, st.ID, st.Kind, st.Description)
 	}

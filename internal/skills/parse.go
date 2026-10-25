@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -17,8 +18,6 @@ type frontmatter struct {
 	Type        string          `yaml:"type"`
 	Description string          `yaml:"description"`
 	Tools       []string        `yaml:"tools"`
-	Model       string          `yaml:"model"`
-	AutoApprove []string        `yaml:"auto_approve"`
 	Exec        []string        `yaml:"exec"`
 	Stream      bool            `yaml:"stream"`
 	Steps       []recipeStepRaw `yaml:"steps"`
@@ -67,8 +66,6 @@ func Parse(path string, raw []byte) (Skill, error) {
 		Kind:        kind,
 		Description: strings.TrimSpace(meta.Description),
 		Tools:       meta.Tools,
-		Model:       meta.Model,
-		AutoApprove: meta.AutoApprove,
 		Body:        strings.TrimSpace(string(body)),
 	}
 
@@ -130,15 +127,10 @@ func validName(n string) error {
 	if n == "" {
 		return fmt.Errorf("empty name")
 	}
-	for _, r := range n {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= 'A' && r <= 'Z':
-		case r >= '0' && r <= '9':
-		case r == '-' || r == '_':
-		default:
-			return fmt.Errorf("invalid name %q (allowed: [A-Za-z0-9_-])", n)
-		}
+	if !namePattern.MatchString(n) {
+		return fmt.Errorf("invalid name %q (allowed: [A-Za-z0-9_-])", n)
 	}
 	return nil
 }
+
+var namePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)

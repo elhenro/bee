@@ -1,10 +1,12 @@
 package skills
 
 import (
+	"cmp"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -103,29 +105,18 @@ func (r *Registry) Get(name string) (Skill, bool) {
 func (r *Registry) List() []Skill {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]Skill, 0, len(r.byName))
-	for _, s := range r.byName {
-		out = append(out, s)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	out := slices.Collect(maps.Values(r.byName))
+	slices.SortFunc(out, func(a, b Skill) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
 // Manifest returns a one-line-per-skill string for system-prompt injection.
 // Format: `name: description (kind)`. Empty if no skills.
 func (r *Registry) Manifest() string {
-	skills := r.List()
-	if len(skills) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, s := range skills {
-		desc := s.Description
-		if desc == "" {
-			desc = "(no description)"
-		}
+	var lines []string
+	for _, s := range r.List() {
 		// keep each line tight; system-prompt budget matters
-		fmt.Fprintf(&b, "%s: %s (%s)\n", s.Name, desc, s.Kind)
+		lines = append(lines, fmt.Sprintf("%s: %s (%s)", s.Name, cmp.Or(s.Description, "(no description)"), s.Kind))
 	}
-	return strings.TrimRight(b.String(), "\n")
+	return strings.Join(lines, "\n")
 }
