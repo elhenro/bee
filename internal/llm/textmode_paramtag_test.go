@@ -22,6 +22,15 @@ func TestParseToolArgs_ParamNameAsTag(t *testing.T) {
 	}
 }
 
+// lowercasing İ changes its byte length, which used to shift the close-tag
+// offset and corrupt the value and everything after it.
+func TestParseToolArgs_ParamNameAsTagNonASCII(t *testing.T) {
+	args := parseToolArgs("<path>İstanbul.go</path><new>K</new>")
+	if args["path"] != "İstanbul.go" || args["new"] != "K" {
+		t.Fatalf("args = %v", args)
+	}
+}
+
 // guard: a real JSON write payload whose content contains markup must NOT be
 // hijacked by the fallback — strict JSON parse wins first.
 func TestParseToolArgs_JSONWithMarkupNotHijacked(t *testing.T) {

@@ -1,9 +1,6 @@
 package llm
 
-import (
-	"regexp"
-	"strings"
-)
+import "strings"
 
 // completeCallsEnd walks s left to right over known `<name>` calls and returns
 // the end offset of the last call whose own close tag is present, plus whether
@@ -25,18 +22,14 @@ func completeCallsEnd(s string, known map[string]bool) (end int, sawOpen bool) {
 		}
 		sawOpen = true
 		scanFrom := bodyStart
-		i := bodyStart
-		for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n') {
-			i++
-		}
-		if i < len(s) && s[i] == '{' {
+		if i := skipSpace(s, bodyStart); i < len(s) && s[i] == '{' {
 			m := matchBraces(s, i)
 			if m < 0 {
 				return end, sawOpen
 			}
 			scanFrom = m + 1
 		}
-		cl := regexp.MustCompile(`(?i)</` + regexp.QuoteMeta(name) + `>`).FindStringIndex(s[scanFrom:])
+		cl := foldLoc(s[scanFrom:], "</"+name+">")
 		if cl == nil {
 			return end, sawOpen
 		}

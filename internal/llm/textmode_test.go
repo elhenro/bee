@@ -993,7 +993,7 @@ func TestLenientRepair_PreservesValidEscapes(t *testing.T) {
 func TestEscapeInvalidBackslashes_PreservesUnicode(t *testing.T) {
 	// \u escapes must survive untouched.
 	in := `{"x":"é"}`
-	out := escapeInvalidBackslashesInStrings(in)
+	out := escapeInStrings(in)
 	if out != in {
 		t.Errorf("unicode escape mangled: %q -> %q", in, out)
 	}
