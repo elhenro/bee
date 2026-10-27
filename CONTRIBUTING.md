@@ -13,7 +13,7 @@ internal/skills/ parse, shim, watcher, registry, bundled defaults
 internal/knowledge/ on-disk frontmatter knowledge store (scan + query + write)
 internal/llm/    OpenAI-compatible provider + wire translation
 internal/caveman/ embedded prompt-injection rules
-internal/sandbox/ two-axis policy + sandbox-exec/bwrap
+internal/sandbox/ scope policy + sandbox-exec/bwrap
 internal/session/ JSONL rollouts + parent-pointer tree
 internal/hive/   fan-out + queen-and-workers
 internal/tui/    bubbletea app
