@@ -9,8 +9,6 @@ import (
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/checkpoint"
 	"github.com/elhenro/bee/internal/commands"
-	"github.com/elhenro/bee/internal/cost"
-	"github.com/elhenro/bee/internal/goal"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -23,14 +21,6 @@ const (
 	StateStreaming
 	StateError
 )
-
-// rateSample is one (time, chars) entry in the sliding tok/s window.
-// Pushed only when the tick produced output, so the window contains
-// only active-generation data.
-type rateSample struct {
-	at    time.Time
-	chars int
-}
 
 // Model is the bubbletea root model for bee's interactive REPL.
 type Model struct {
@@ -47,33 +37,6 @@ type Model struct {
 	partial  string // live-streaming buffer
 	lastErr  string
 
-	// pendingTools holds the tool_use blocks of the in-flight turn: set when
-	// the assistant message lands (before dispatch), cleared when the tool
-	// result message arrives. The live region renders each as a per-tool
-	// swarm so a batch of calls shows as N buzzing bees while they run,
-	// instead of one generic loader.
-	pendingTools []types.ToolUse
-	// pendingSince is when that batch landed; the busy row shows how long
-	// the model has been waiting on it
-	pendingSince time.Time
-
-	// streamFlushed holds the prefix of m.partial that has already been
-	// pushed into terminal scrollback via tea.Println by the progressive
-	// flush path. View() renders only m.partial[len(streamFlushed):]; flush()
-	// strips the prefix from the matching final assistant message so the
-	// settled head doesn't get re-printed underneath.
-	streamFlushed string
-	// streamFenceOpen tracks whether the already-flushed prefix sits inside
-	// an unclosed ``` fence. Drives the glamour-vs-raw rendering choice for
-	// the next chunk: code-block content gets shipped raw (preserving its
-	// monospace layout) while prose chunks flow through glamour for full
-	// markdown styling (headings, lists, bold, links).
-	streamFenceOpen bool
-	// pendingFlushedPrefix carries streamFlushed across the partial reset
-	// (turnDoneMsg / liveMsgMsg) so the next flush() call can suppress the
-	// already-printed prefix. Consumed (cleared) on first flush() call after
-	// commit, even if no matching message was found.
-	pendingFlushedPrefix string
 	// progressiveStream enables the head-flush path. On by default; disable
 	// with BEE_STREAM_PROGRESSIVE=0 to fall back to pure tail-clipping.
 	progressiveStream bool
@@ -113,21 +76,6 @@ type Model struct {
 	eng       *loop.Engine
 	ctx       context.Context
 	cancelRun context.CancelFunc
-
-	// turnGen is a monotonic epoch bumped on every submit and stamped onto the
-	// turn's turnDoneMsg. A late result from a cancelled turn (user esc) carries
-	// a stale gen and is dropped by onTurnDone, so it can't nil cancelRun, flip
-	// state to idle, or overwrite messages of a newer turn.
-	turnGen int
-	// runDone closes when the in-flight engine goroutine returns. A resubmit
-	// waits on the prior run's runDone before touching the shared engine, so an
-	// esc'd turn still unwinding never runs concurrently with the next one — the
-	// manual-cancel analogue of the watchdog's wait-for-landing handshake.
-	runDone chan struct{}
-
-	// queue holds follow-up messages submitted via Alt+Enter; drained
-	// one-at-a-time when each turn finishes.
-	queue []string
 
 	// approval modal
 	approval ApprovalModel
@@ -183,18 +131,6 @@ type Model struct {
 	picker          *Picker
 	pickerRequested bool
 
-	// handoff flow — /handoff reuses the picker but routes the pick into a
-	// stuck-agent rescue: build a distilled brief on the small/fast model,
-	// switch to the picked bigger model, drop the stuck transcript, continue.
-	// handoffActive routes the next PickedMsg; handoffing drives the loader
-	// while the brief builds. handoffStall preserves the last wedge/bail reason
-	// across handleSubmit's StateError recovery (which clears lastErr) so a
-	// following /handoff can still feed it into the brief.
-	handoffRequested bool
-	handoffActive    bool
-	handoffing       bool
-	handoffStall     string
-
 	// role pane — opened by /role (no args). Arrow keys pick role;
 	// enter commits, esc closes.
 	rolePane      *RolePane
@@ -225,16 +161,6 @@ type Model struct {
 	// ctrl+r reverse history search picker
 	history HistoryPickerModel
 
-	// up/down prompt cycling. cycleActive is true mid-cycle; cycleEntries is
-	// the deduped newest-first list loaded once per cycle session (includes
-	// prior sessions via ~/.bee/history); cycleIdx is -1 before the first
-	// up press; cycleStash holds the buffer the user had typed before
-	// cycling started so down past the newest restores it.
-	cycleActive  bool
-	cycleEntries []string
-	cycleStash   string
-	cycleIdx     int
-
 	// pendingImage holds raw image bytes staged via Ctrl+I; attached to the
 	// next user message on submit and cleared after.
 	pendingImage []byte
@@ -243,161 +169,14 @@ type Model struct {
 	// pasted). Drained alongside pendingImage on submit.
 	pendingImages []types.ContentBlock
 
-	// streamCh receives text deltas from the engine via Engine.StreamCh.
-	// nil in tests; lifetime owned by the caller of WithStreamCh.
-	streamCh chan string
-
-	// progressCh receives withheld-output char counts via Engine.ProgressCh
-	// (buffered tool-call modes). Feeds turnOutChars when streamCh is silent.
-	progressCh chan int
-
-	// thinkCh receives chain-of-thought deltas from the engine via
-	// Engine.ThinkCh so reasoning renders live above the answer instead
-	// of dumping all at once when the stream ends.
-	thinkCh chan string
-	// thinkPartial is the accumulated reasoning buffer for the in-flight
-	// turn. Rendered dim+italic above m.partial while streaming. Cleared
-	// when the final BlockThinking lands via liveMsgMsg/turnDoneMsg.
-	thinkPartial string
-	// reasoning clock for the live row: set by the first delta of a block,
-	// frozen when the answer starts (see think_time.go)
-	thinkStartedAt, thinkEndedAt time.Time
-
-	// liveMsgCh receives each persisted assistant/tool message from the
-	// engine's LiveMsgCh so cards render mid-Run instead of only on done.
-	liveMsgCh chan types.Message
-
-	// toolTailCh receives the output tail of a running tool via
-	// Engine.ToolTailCh; liveTail is the latest one, shown under its pending row.
-	toolTailCh chan loop.ToolTail
-	liveTail   loop.ToolTail
-
-	// warnCh receives transient operational notices from Engine.WarnCh —
-	// stream retries, watchdog hiccups, etc. The latest one shows as a dim
-	// line, then fades after warningTTL.
-	warnCh chan string
-	// warning is the currently-displayed notice ("" when none active).
-	warning string
-	// warningExpires is the wall-clock instant after which the warning fades.
-	warningExpires time.Time
-
-	// loaderFrame drives the pre-token streaming animation. Incremented by
-	// loaderTickMsg while state == StateStreaming and partial is empty.
-	loaderFrame int
-
-	// turnOutChars is the cumulative chars (text + reasoning) generated this
-	// turn — the live "output" figure for the token-stream loader. Reset on
-	// submit, bumped per delta. Chars not tokens: the real output-token tally
-	// lands at turn end via the cost flash, so the strip shows honest live
-	// throughput without fabricating token math.
-	turnOutChars int
-	// turnStartOutput snapshots the cost tracker's cumulative output tokens at
-	// submit. In queen/hive mode the work runs on sub-engines, so no main-loop
-	// deltas bump turnOutChars and the live "↓" would read 0; the cost-tracker
-	// delta since this baseline gives the real output figure instead.
-	turnStartOutput int
-	// loaderSeed varies the procedural particle layout per turn. Rolled on
-	// submit so each generation looks distinct.
-	loaderSeed int64
-	// loaderStallFrames counts consecutive loader ticks with no output
-	// growth; reset on any growth. Drives the busy-row dance form: the bee
-	// loops the round dance while tokens flow and switches to the straight
-	// waggle-run when the stream stalls, so the pattern reports stream
-	// health without a single word of text.
-	loaderStallFrames int
-	// loaderRate is chars produced since the previous loaderTick — the raw
-	// per-tick delta, kept for the tok/s window and for the existing tests.
-	// loaderSampleChars holds the prior sample point. loaderRateEMA is the
-	// smoothed version actually fed to the braille loader as particle density;
-	// it caps the 1-tick flash when a provider batch lands in a single tick
-	// (and when hasThinkingBlock resets the rate between reasoning and answer).
-	loaderRate        int
-	loaderRateEMA     float64
-	loaderSampleChars int
-	// loaderRateSamples is a sliding 10s window of (time, chars) used to
-	// compute the displayed tok/s. Idle ticks push nothing, so the window
-	// naturally excludes gaps. loaderRateTokS is the cached result the
-	// renderer reads; recomputed from the window on every tick.
-	loaderRateSamples []rateSample
-	loaderRateTokS    float64
-
-	// turnStartedAt is wall-clock when the current turn left submit(). Zero
-	// when no turn in flight. Top-bar timer reads time.Since on every tick
-	// so the elapsed string updates live without per-second state.
-	turnStartedAt time.Time
-	// lastTurnDuration is how long the most recent turn took end-to-end.
-	// Set on every turnDoneMsg path (success, cancel, error). Persists in
-	// the top bar after streaming ends until the next submit clears it.
-	lastTurnDuration time.Duration
-
-	// watchdog: inactivity stall detection + bounded auto-resume so a turn
-	// that hangs or stops on a recoverable error finishes unattended. Mirrored
-	// from cfg.Watchdog (see seedFromEngine). The stall check reads
-	// time.Since(lastActivityAt) — NOT turn duration — so a productive long
-	// turn (output still streaming) is never interrupted.
-	watchdogEnabled    bool
-	watchdogStall      time.Duration
-	watchdogMaxResumes int
-	watchdogDisabled   bool      // /watchdog off — session-only opt-out
-	lastActivityAt     time.Time // bumped on every stream/think/live/warn delta
-	turnSawActivity    bool      // first-token grace: false until the turn shows life; gates the stall watchdog
-	resumeCount        int       // consecutive auto-resumes for the current task
-	awaitingProgress   bool      // set after a resume; first activity resets resumeCount
-	resumeErrGen       int       // invalidates a scheduled error-resume on a newer turn
-	// stall-resume handshake: on a stall we cancel the run and wait for its
-	// context.Canceled turnDoneMsg before resubmitting, so two eng.Run calls
-	// never overlap on the shared engine.
-	stallResumePending bool
-	stallResumeText    string
-	stallResumeReason  string
-	// esc was pressed on this turn: when its Canceled turnDoneMsg lands, say so
-	interrupted bool
-	// the last printed tool card cut rows: the footer offers ctrl+o
-	lastToolClipped bool
-
-	// compacting is true while an async /compact goroutine is running.
-	// renderLive uses this to keep the loader animation alive while the
-	// summarization LLM call streams, since state stays StateIdle.
-	compacting bool
-
-	// queuedMidCompact holds plain-text submits typed while compacting.
-	// Drained by onCompactDone — the queued text is fed back through
-	// submit() once the compacted history is in place. Slash commands and
-	// shell-bangs are not queued (they're meta, weird to delay). Last
-	// queued wins on rapid retyping.
-	queuedMidCompact string
-
 	// printedCount tracks how many messages from m.messages have already
 	// been emitted to the terminal scrollback via tea.Println. The live
 	// View() never renders past messages — they live in native scrollback.
 	// flush() emits the slice m.messages[printedCount:] and advances this.
 	printedCount int
-	// loader is the configured busy-indicator name (tui.loader), re-applied
-	// whenever the stream renderer is rebuilt on resize
-	loader string
 	// scroll orders everything that goes to scrollback; shared by pointer
 	// like styles, so every copy of the Model queues into the same line
 	scroll *scrollback
-
-	// costs is the per-session usage/dollar accumulator shared with the
-	// engine. Read for the top-bar total and the /cost monitor pane.
-	costs *cost.Tracker
-	// costPane is the Ctrl+Y modal — opens on demand, claims keys while open.
-	costPane      *CostPane
-	costRequested bool
-	// usagePane is the /usage modal — historical cross-session usage overview.
-	usagePane      *UsagePane
-	usageRequested bool
-	// costFlashFrame counts up while a brief post-turn animation plays in
-	// the top bar: colour-cycling the dollar amount and showing the delta.
-	// costFlashUntil holds the inclusive end frame (0 = no flash active).
-	// costFlashDelta is the USD added by the most recent turn.
-	// costPrevCalls tracks how many events were already in the tracker the
-	// last time we looked — used to detect "a new turn just landed".
-	costFlashFrame int
-	costFlashUntil int
-	costFlashDelta float64
-	costPrevCalls  int
 
 	// verbose unlocks full tool-output rendering. Off by default keeps the
 	// transcript compact; toggle with ctrl+v or pass --verbose.
@@ -479,33 +258,6 @@ type Model struct {
 	quitArmed   bool
 	quitArmedAt time.Time
 
-	// intro animation — plays above the input bar without blocking. Frames
-	// are built lazily on the first tick once width is known. introDone
-	// keeps the space reserved after the last frame so the live region
-	// doesn't shrink; renderIntro then draws a static "bee v<x>" placeholder.
-	// introDoneFrame drives the post-intro pulse (two bold-flashes on "bee");
-	// it ticks up until introPulseFrames then settles.
-	introActive    bool
-	introDone      bool
-	introStyle     IntroStyle
-	introFrames    []IntroFrame
-	introIdx       int
-	introDoneFrame int
-
-	// showBanner mirrors cfg.ShowBanner. Persisted via /settings; takes
-	// effect on the NEXT launch (intro plays once at startup).
-	showBanner bool
-
-	// showLoader gates the streaming "generating" animation live. Toggle
-	// via /settings; persists across launches.
-	showLoader bool
-
-	// loader readout figure toggles: ↑ input, ↓ output, avg tok/s. Default
-	// true; persisted via /settings. Fed into LoaderStats each frame.
-	showLoaderIn   bool
-	showLoaderOut  bool
-	showLoaderRate bool
-
 	// outerPadLR inserts N cells of left+right padding around the live TUI
 	// region (top bar, streaming partial, input, modals). 0 = off. Capped at 8
 	// on write so a tiny terminal never collapses to a sliver. Mirrors
@@ -517,33 +269,19 @@ type Model struct {
 	// updatePrompt is the four-button modal surfaced when the hourly checker
 	// finds that main has new commits. Inactive until updateAvailableMsg fires.
 	updatePrompt UpdatePrompt
-	// updateSeenSession suppresses re-prompts for the remainder of this
-	// session after the user picks "later". Re-checking still happens — the
-	// gate is between probe + show, not between probe + skip.
-	updateSeenSession bool
-	// updateApplying flags an in-flight install subprocess so the user can't
-	// trigger a second one before the first finishes.
-	updateApplying bool
 
-	// tutorial drives the first-run interactive walkthrough — a faked,
-	// LLM-free session that teaches input, tool calls, roles, and slash
-	// commands. Zero value = inactive. Replayed via /tutorial.
-	tutorial tutorialState
-	// tutorialPending defers the welcome gate until the intro animation
-	// settles (set at startup when intro will play; consumed in onIntroTick).
-	tutorialPending bool
-	// tutorialRequested is the /tutorial sentinel Model.Update consumes to
-	// replay the walkthrough — mirror of loginRequested/settingsRequested.
-	tutorialRequested bool
-
-	// goal holds the active /goal completion-condition loop state. Zero value
-	// = inactive. After each clean turn a fast model judges whether the
-	// condition is met; not-met auto-submits a continuation.
-	goal goal.State
-	// goalGen bumps on each scheduled eval so a stale async verdict (from a
-	// cleared/replaced goal) is ignored when it lands.
-	goalGen int
-	// goalJudging is true while the fast model rules on the last turn; the
-	// live region shows a busy row so the gap before the next turn isn't blank.
-	goalJudging bool
+	// state groups, embedded so fields stay m.<name>: see model_*.go
+	turnState
+	flushState
+	promptCycle
+	handoffFlow
+	compactFlow
+	engineFeeds
+	loaderState
+	watchdogState
+	costState
+	introState
+	updateState
+	tutorialFlow
+	goalLoop
 }

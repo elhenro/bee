@@ -168,7 +168,7 @@ func DefaultStyles() Styles {
 
 // rainbowColorForFrame maps an animation frame to a fully-saturated rainbow
 // color, sweeping the whole hue wheel about every 7s at the glow-tick cadence.
-// Drives the mastermind input glow. Truecolor hex — lipgloss renders 24-bit
+// Drives the queen input glow. Truecolor hex — lipgloss renders 24-bit
 // where the terminal supports it and degrades gracefully where it doesn't.
 func rainbowColorForFrame(frame int) lipgloss.Color {
 	const steps = 60 // frames per full hue cycle (~7.2s at 120ms)

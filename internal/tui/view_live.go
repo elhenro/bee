@@ -159,6 +159,11 @@ func (m Model) renderBusyRow() string {
 	if label := waitingLabel(m.pendingTools); label != "" {
 		row = m.stream.RenderSpinnerLabel(m.loaderFrame, label, time.Since(m.pendingSince), interruptHint)
 	}
+	return m.spaced(row)
+}
+
+// a busy row under the blank row that sets it off, outside compact mode
+func (m Model) spaced(row string) string {
 	if m.compact {
 		return row
 	}
@@ -200,19 +205,13 @@ func (m Model) renderCompactingRow() string {
 		label = "Writing handoff…"
 	}
 	row := m.stream.RenderSpinnerLabel(m.loaderFrame, label, 0, "")
-	if m.compact {
-		return row
-	}
-	return "\n" + row
+	return m.spaced(row)
 }
 
 // busy row while the fast model judges whether the goal is met
 func (m Model) renderGoalJudgingRow() string {
 	row := m.stream.RenderSpinnerLabel(m.loaderFrame, "Judging goal…", 0, "")
-	if m.compact {
-		return row
-	}
-	return "\n" + row
+	return m.spaced(row)
 }
 
 // busy-row label while calls run: the tool's name for one, a count for a batch

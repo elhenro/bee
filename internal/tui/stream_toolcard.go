@@ -64,6 +64,15 @@ func (r *StreamRenderer) callParts(u types.ToolUse, o toolOutcome, anchor int) (
 	// words, which can overshoot the row: clip, a wrapped head tears the left edge
 	defer func() { head = clipLine(head, r.textWidth(0)) }()
 	prefix := r.bullet(o) + " " + r.styles.ToolName.Render(toolTitle(u.Name))
+	// a running call shows only its header, and shows it every frame
+	if o == outcomePending {
+		if h, ok := r.pendingEditHead(u); ok {
+			if h != "" {
+				prefix += "  " + h
+			}
+			return prefix, ""
+		}
+	}
 	if h, b, ok := r.renderEditPreview(u, anchor); ok {
 		if h != "" {
 			prefix += "  " + h
@@ -233,9 +242,12 @@ func (r *StreamRenderer) resultBody(use types.ToolUse, res types.ToolResult, v r
 		if n > 0 {
 			shown = shown[:min(n, len(shown))]
 		}
-		styleRow, w := r.rowStyler(use, res, style), r.textWidth(resultIndent)
-		for _, ln := range shown {
-			row := styleRow(shortenPathsInline(ln))
+		src := make([]string, len(shown))
+		for i, ln := range shown {
+			src[i] = shortenPathsInline(ln)
+		}
+		w := r.textWidth(resultIndent)
+		for _, row := range r.rowStyler(use, res, style)(src) {
 			if r.verbose {
 				rows = append(rows, strings.Split(wrapText(row, w), "\n")...)
 			} else {

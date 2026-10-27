@@ -13,7 +13,7 @@ import (
 // compactLines splits clean output and drops blank/whitespace-only lines so
 // previews don't waste rows on padding. Order is preserved. Non-printable
 // control bytes (NUL, BS, BEL, raw CR — anything below 0x20 except tab) are
-// replaced with `·` per line: grep accidentally hitting a binary blob,
+// dropped per line (sanitizeControl): grep accidentally hitting a binary blob,
 // curl spitting raw bytes, etc. would otherwise blit blank rows + scrambled
 // glyphs into the terminal even after ansi.Strip.
 func compactLines(s string) []string {
@@ -79,20 +79,41 @@ func withSize(s string, bytes int) string {
 	return s
 }
 
-// per-row styling of a result: syntax colors (lexer from the path) for a
+// styling of a result's rows: syntax colors (lexer from the path) for a
 // verbose read, a subtle location for search hits, base otherwise
-func (r *StreamRenderer) rowStyler(use types.ToolUse, res types.ToolResult, base lipgloss.Style) func(string) string {
+func (r *StreamRenderer) rowStyler(use types.ToolUse, res types.ToolResult, base lipgloss.Style) func([]string) []string {
 	if !res.IsError {
 		switch use.Name {
 		case "read":
 			if path, _ := use.Input["path"].(string); path != "" && r.verbose && r.highlight {
-				return func(s string) string { return r.hl(s, path) }
+				return func(rows []string) []string { return r.hlRows(rows, path) }
 			}
 		case "search":
-			return r.searchRow
+			return eachRow(r.searchRow)
 		}
 	}
-	return func(s string) string { return base.Render(s) }
+	return eachRow(func(s string) string { return base.Render(s) })
+}
+
+func eachRow(style func(string) string) func([]string) []string {
+	return func(rows []string) []string {
+		out := make([]string, len(rows))
+		for i, ln := range rows {
+			out[i] = style(ln)
+		}
+		return out
+	}
+}
+
+// a read's rows highlighted as one document: multi-line constructs stay
+// intact and the lexer is resolved once. the formatter closes and reopens a
+// span at each line break, so the output splits back to one row per input row
+func (r *StreamRenderer) hlRows(rows []string, path string) []string {
+	out := strings.Split(r.hl(strings.Join(rows, "\n"), path), "\n")
+	if len(out) != len(rows) {
+		return rows
+	}
+	return out
 }
 
 // file-mutation tools whose call card carries a diff

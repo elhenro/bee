@@ -38,10 +38,10 @@ func (m Model) onSessionClone(_ SessionCloneMsg) (tea.Model, tea.Cmd) {
 	return m.failOn(err)
 }
 
+// onOpenHive opens the agent view; Update arms its refresh chain.
 func (m Model) onOpenHive(_ openHiveMsg) (tea.Model, tea.Cmd) {
 	if m.agentView != nil {
 		m.agentView.Open()
-		return m, m.agentView.Init()
 	}
 	return m, nil
 }
@@ -53,8 +53,9 @@ func (m Model) onCloseAgentView() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) onAgentTick(msg agentTickMsg) (tea.Model, tea.Cmd) {
-	if m.agentView != nil && m.agentView.IsOpen() {
+// onAgentMsg feeds a refresh tick or result to the view; a closed view drops it.
+func (m Model) onAgentMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.agentView != nil {
 		var cmd tea.Cmd
 		m.agentView, cmd = m.agentView.Update(msg)
 		return m, cmd

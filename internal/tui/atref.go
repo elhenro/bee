@@ -66,33 +66,66 @@ func completePath(cwd, val string) (string, bool) {
 	return val + completion[len(base):], true
 }
 
-// fuzzyMax caps the fuzzy file walker so the @-picker stays snappy.
+// fuzzyMax caps the matches the @-picker lists so it stays snappy.
 const fuzzyMax = 50
 
-// FuzzyFiles returns paths under root containing needle (case-insensitive).
-// Skips hidden .folders, node_modules, vendor, worktrees. Caps at fuzzyMax results.
-func FuzzyFiles(root, needle string) []string {
-	needleLower := strings.ToLower(needle)
-	var out []string
+// indexMax bounds the file index so a huge tree cannot balloon memory.
+const indexMax = 20000
+
+// skipDirs are never indexed: dependencies, build output, worktree copies.
+var skipDirs = map[string]bool{
+	"node_modules": true, "vendor": true, "worktrees": true,
+	"target": true, "dist": true, "build": true, "__pycache__": true,
+}
+
+// fileIndex is a one-time walk of a tree. lower mirrors paths so each
+// keystroke filters in memory without lowercasing or touching the disk.
+type fileIndex struct {
+	paths []string
+	lower []string
+}
+
+// indexFiles walks root once, skipping hidden folders and skipDirs, and
+// stops after indexMax files. Blocking: run it off the UI goroutine.
+func indexFiles(root string) *fileIndex {
+	idx := &fileIndex{}
 	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if d.IsDir() {
 			n := d.Name()
-			if p != root && (n == "node_modules" || n == "vendor" || n == "worktrees" || strings.HasPrefix(n, ".")) {
+			if p != root && (skipDirs[n] || strings.HasPrefix(n, ".")) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		rel, _ := filepath.Rel(root, p)
-		if needleLower == "" || strings.Contains(strings.ToLower(rel), needleLower) {
-			out = append(out, rel)
-			if len(out) >= fuzzyMax {
-				return filepath.SkipAll
-			}
+		idx.paths = append(idx.paths, rel)
+		idx.lower = append(idx.lower, strings.ToLower(rel))
+		if len(idx.paths) >= indexMax {
+			return filepath.SkipAll
 		}
 		return nil
 	})
+	return idx
+}
+
+// filter returns up to fuzzyMax paths containing needle (case-insensitive),
+// in walk order. A nil index matches nothing.
+func (idx *fileIndex) filter(needle string) []string {
+	if idx == nil {
+		return nil
+	}
+	needle = strings.ToLower(needle)
+	var out []string
+	for i, l := range idx.lower {
+		if strings.Contains(l, needle) {
+			out = append(out, idx.paths[i])
+			if len(out) >= fuzzyMax {
+				break
+			}
+		}
+	}
 	return out
 }

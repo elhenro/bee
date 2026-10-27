@@ -47,6 +47,7 @@ type updateAvailableMsg struct{ Info update.Info }
 type updateAppliedMsg struct {
 	output string
 	err    error
+	retry  string // install command to show when the apply failed
 }
 
 // startUpdateChecker spawns a hourly probe goroutine. Exits on ctx.Done.
@@ -109,8 +110,8 @@ func applyAndNotify(ctx context.Context, p *tea.Program, info update.Info) {
 	p.Send(warningMsg{Text: "updating bee… (" + shortSHA(info.LatestSHA) + ")"})
 	actx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	out, err := update.Apply(actx)
-	p.Send(updateAppliedMsg{output: string(out), err: err})
+	out, err := update.ApplyFor(actx, info.Repo, info.Branch)
+	p.Send(updateAppliedMsg{output: string(out), err: err, retry: update.InstallCommandFor(info.Repo, info.Branch)})
 }
 
 // summarizeApplyOutput keeps the warn line short — full output would shove

@@ -22,6 +22,40 @@ func (m *Model) resetCycle() {
 	m.cycleActive, m.cycleEntries, m.cycleStash, m.cycleIdx = false, nil, "", -1
 }
 
+// cycleHistory steps through past prompts (fish-style) and reports whether the
+// key was used. Single-line buffers route into cycling on up; once cycling,
+// both arrows continue regardless of line count (history entries may
+// themselves be multi-line). Multi-line buffers leave up/down alone so they
+// navigate textarea rows.
+func (m *Model) cycleHistory(keyStr string) bool {
+	if !m.cycleActive && !(keyStr == "up" && m.input.LineCount() == 1) {
+		return false
+	}
+	if !m.cycleActive {
+		m.cycleEntries = LoadHistory()
+		m.cycleStash = m.input.Value()
+		m.cycleIdx = -1
+		m.cycleActive = true
+	}
+	if len(m.cycleEntries) == 0 {
+		m.cycleActive = false
+		return true
+	}
+	if keyStr == "up" {
+		m.cycleIdx = min(m.cycleIdx+1, len(m.cycleEntries)-1)
+	} else {
+		m.cycleIdx-- // down walks back toward the stash; past it ends the cycle
+	}
+	if m.cycleIdx < 0 {
+		m.cycleActive = false
+		m.input.SetValue(m.cycleStash)
+	} else {
+		m.input.SetValue(m.cycleEntries[m.cycleIdx])
+	}
+	m.input.CursorEnd()
+	return true
+}
+
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// classic readline chords must reach the textinput when the buffer has
 	// content. Pane/quit shortcuts that overlap with editing chords
@@ -126,7 +160,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// triaged to a single pass.
 		if m.role == "queen" && prev != "queen" {
 			m = m.withWarn("queen: big tasks spawn a planning+review hive; small ones run single-pass — higher quality, more tokens")
-			return m, tea.Batch(glowTickCmd(), warningFadeCmd())
+			return m, tea.Batch(m.glowTick(), warningFadeCmd())
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.EffortCycle):
@@ -182,38 +216,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.atpicker = NewAtPicker(m.cwd)
 		m.atpicker.SetWidth(m.width)
 		m.atpicker.Active = true
-		return m, cmd
+		return m, tea.Batch(cmd, m.atpicker.indexCmd())
 	}
-	// up/down cycle through past prompts (fish-style). Single-line buffers
-	// route into cycling on up; once cycling, both arrows continue regardless
-	// of line count (history entries may themselves be multi-line). Multi-
-	// line buffers leave up/down alone so they navigate textarea rows.
-	if (keyStr == "up" || keyStr == "down") && m.state == StateIdle {
-		if m.cycleActive || (keyStr == "up" && m.input.LineCount() == 1) {
-			if !m.cycleActive {
-				m.cycleEntries = LoadHistory()
-				m.cycleStash = m.input.Value()
-				m.cycleIdx = -1
-				m.cycleActive = true
-			}
-			if len(m.cycleEntries) == 0 {
-				m.cycleActive = false
-				return m, nil
-			}
-			if keyStr == "up" {
-				m.cycleIdx = min(m.cycleIdx+1, len(m.cycleEntries)-1)
-			} else {
-				m.cycleIdx-- // down walks back toward the stash; past it ends the cycle
-			}
-			if m.cycleIdx < 0 {
-				m.cycleActive = false
-				m.input.SetValue(m.cycleStash)
-			} else {
-				m.input.SetValue(m.cycleEntries[m.cycleIdx])
-			}
-			m.input.CursorEnd()
-			return m, nil
-		}
+	if (keyStr == "up" || keyStr == "down") && m.state == StateIdle && m.cycleHistory(keyStr) {
+		return m, nil
 	}
 	// any other key while cycling resets the cycle — the landed-on entry
 	// becomes the new base buffer for normal editing.

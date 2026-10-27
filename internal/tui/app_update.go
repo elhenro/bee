@@ -8,21 +8,33 @@ import (
 
 // Update is the bubbletea main switch.
 func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
-	// pre-grow textarea so any input mutation in this turn (handleKey,
-	// SetValue from a palette/picker, etc.) wraps inside a tall viewport
-	// instead of scrolling YOffset down and hiding row 0. The defer below
-	// shrinks back to the actual row count after the message is processed
-	// so the persistent model carries the layout-accurate height.
-	m.inputGrowForMutation()
-	// shrink textarea back to actual row count once the message is processed
-	// so the persistent model carries the layout-accurate height. Runs even
-	// on the early returns below (quit gates, pane claims).
+	// the agent view opens from a key or a slash command, neither of which can
+	// hand back a cmd: arm its refresh chain on the way out, whichever path won.
+	// only the pointer is captured so the deferred closure does not drag the
+	// Model along.
+	av := m.agentView
 	defer func() {
-		if mm, ok := resultModel.(Model); ok {
-			mm.syncInputHeight()
-			resultModel = mm
+		if start := av.start(); start != nil {
+			resultCmd = tea.Batch(resultCmd, start)
 		}
 	}()
+	// streaming deltas and ticks arrive far more often than keys and never
+	// touch the input: skip the textarea height dance and its second Model copy.
+	if touchesInput(msg) {
+		// pre-grow textarea so any input mutation in this turn (handleKey,
+		// SetValue from a palette/picker, etc.) wraps inside a tall viewport
+		// instead of scrolling YOffset down and hiding row 0.
+		m.inputGrowForMutation()
+		// shrink textarea back to actual row count once the message is processed
+		// so the persistent model carries the layout-accurate height. Runs even
+		// on the early returns below (quit gates, pane claims).
+		defer func() {
+			if mm, ok := resultModel.(Model); ok {
+				mm.syncInputHeight()
+				resultModel = mm
+			}
+		}()
+	}
 	// global hard-quit gate — runs above every pane/modal so the user is
 	// never trapped. ctrl+c quits immediately (POSIX cancel convention);
 	// ctrl+d requires two presses within quitConfirmWindow. Any other key
@@ -152,6 +164,19 @@ func (m Model) Update(msg tea.Msg) (resultModel tea.Model, resultCmd tea.Cmd) {
 		return nm, cmd
 	}
 	return m.route(msg)
+}
+
+// touchesInput reports whether handling msg can change the input text or its
+// width. Unknown messages count as input: the fallthrough feeds them to the
+// textarea.
+func touchesInput(msg tea.Msg) bool {
+	switch msg.(type) {
+	case streamDeltaMsg, thinkDeltaMsg, progressMsg, toolTailMsg, liveMsgMsg,
+		warningFadeMsg, loaderTickMsg, glowTickMsg, costTickMsg, introTickMsg,
+		tutorialTickMsg, agentTickMsg, agentRowsMsg, atIndexMsg:
+		return false
+	}
+	return true
 }
 
 // modal is an inline prompt that consumes input while active.

@@ -125,7 +125,7 @@ func (m Model) runSlash(text string) (tea.Model, tea.Cmd) {
 		eng := m.eng
 		ctx := m.baseCtx()
 		return m, tea.Batch(
-			loaderTickCmd(),
+			m.loaderTick(),
 			func() tea.Msg {
 				if eng == nil {
 					return compactDoneMsg{}

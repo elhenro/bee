@@ -67,7 +67,7 @@ func TestFormatReview_ConfirmedAndRefuted(t *testing.T) {
 // streaming fix: in queen mode the parent engine never runs, so the planner's
 // first call (decompose) and every worker / reviewer / verifier / synthesize
 // turn live on sub-engines. SpawnWorker leaves ThinkCh / StreamCh /
-// ProgressCh nil and rewires only LiveMsgCh at the mastermind level; before
+// ProgressCh nil and rewires only LiveMsgCh at the queen level; before
 // the fix the spawn closure forgot the other three, so reasoning + text
 // deltas hit nil-channel selects in turn_stream.go and were dropped — the
 // user saw a spinner through the entire planning phase. This test calls the

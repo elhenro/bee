@@ -13,7 +13,7 @@ func lifecycleFrames(cw, h int) []IntroFrame {
 		}
 	}
 	add(10, "egg", func(i, n int) *DrawilleCanvas { return makeEggFrame(cw, h, i, n) })
-	add(12, "larva", func(i, n int) *DrawilleCanvas { return makeLarvaFrame(cw, h, i, n) })
+	add(12, "larva", func(i, _ int) *DrawilleCanvas { return makeLarvaFrame(cw, h, i) })
 	add(10, "pupa", func(i, n int) *DrawilleCanvas { return makePupaFrame(cw, h, i, n) })
 	add(8, "emerge", func(i, n int) *DrawilleCanvas { return makeEmergeFrame(cw, h, i, n) })
 	add(14, "flight", func(i, n int) *DrawilleCanvas { return makeFlightFrame(cw, h, i, n) })
@@ -35,8 +35,7 @@ func makeEggFrame(cw, h, idx, total int) *DrawilleCanvas {
 	return c
 }
 
-func makeLarvaFrame(cw, h, idx, total int) *DrawilleCanvas {
-	_ = total
+func makeLarvaFrame(cw, h, idx int) *DrawilleCanvas {
 	c := NewDrawilleCanvas(cw, h)
 	for s := 0; s < 5; s++ {
 		pt := float64(idx-s*3) * 0.5

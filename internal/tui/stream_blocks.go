@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/elhenro/bee/internal/types"
 )
@@ -132,26 +131,4 @@ func (r *StreamRenderer) thoughtBlock(s, label string) string {
 		return marker + r.styles.Thought.Render(label) + "\n"
 	}
 	return marker + r.styles.Thought.Render(label) + "\n" + hang(strings.Join(lines, "\n"), "  ", "  ") + "\n"
-}
-
-// wrapped, styled reasoning rows; nil when there is no visible text
-func (r *StreamRenderer) thoughtRows(s string) []string {
-	clean := expandTabs(ansi.Strip(strings.TrimRight(s, "\n")))
-	var rows []string
-	for _, ln := range strings.Split(clean, "\n") {
-		ln = sanitizeControl(ln)
-		if strings.TrimSpace(ln) == "" {
-			continue
-		}
-		rows = append(rows, wrapText(ln, r.textWidth(markIndent)))
-	}
-	if len(rows) == 0 {
-		return nil
-	}
-	// style per line: SGR must not bleed across the hanging indent.
-	lines := strings.Split(strings.Join(rows, "\n"), "\n")
-	for i := range lines {
-		lines[i] = r.styles.Thought.Render(lines[i])
-	}
-	return lines
 }

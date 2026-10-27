@@ -193,8 +193,9 @@ func (m Model) onPlanProceed(c PlanProceedMsg) (tea.Model, tea.Cmd) {
 		nm, err := m.clearForFreshSession()
 		if err != nil {
 			// rollout swap failed — fall back to an in-context proceed.
-			m.lastErr = err.Error()
-			return m.submit(continuePrompt)
+			m = m.withWarn("fresh session failed, continuing in context: " + err.Error())
+			nm, cmd := m.submit(continuePrompt)
+			return nm, tea.Batch(cmd, warningFadeCmd())
 		}
 		// long prompt to the model, short bubble in scrollback (with a marker
 		// that the plan was carried, so a wedge isn't misread as a lost plan).

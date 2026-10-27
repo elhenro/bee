@@ -134,7 +134,7 @@ func (m Model) openPane() (string, bool) {
 		}
 	}
 	if m.agentView != nil && m.agentView.IsOpen() {
-		return m.agentView.Render(m.width, m.height), true
+		return m.agentView.Render(m.width), true
 	}
 	return "", false
 }

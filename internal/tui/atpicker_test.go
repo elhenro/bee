@@ -16,8 +16,53 @@ func TestAtPicker_FilterMatches(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "internal", "tui"), 0o755)
 	os.WriteFile(filepath.Join(dir, "internal", "tui", "app.go"), nil, 0o644)
 	p := NewAtPicker(dir)
+	if len(p.matches) != 0 || p.index != nil {
+		t.Fatal("a new picker lists nothing until its walk lands")
+	}
+	p.Active = true
+	p = p.withIndex(p.indexCmd()().(atIndexMsg))
 	if len(p.matches) == 0 {
 		t.Fatal("want some initial matches")
+	}
+	// typing filters the in-memory index, no disk walk
+	os.Remove(filepath.Join(dir, "internal", "tui", "app.go"))
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tui")})
+	if len(p.matches) != 1 {
+		t.Fatalf("want 1 match for \"tui\" from the index, got %v", p.matches)
+	}
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("zzz")})
+	if len(p.matches) != 0 {
+		t.Fatalf("want no match for \"tuizzz\", got %v", p.matches)
+	}
+}
+
+// keystrokes typed before the walk lands apply to it once it arrives, and a
+// walk for another root or a closed picker is dropped.
+func TestAtPicker_IndexArrivesLate(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "alpha.go"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "beta.go"), nil, 0o644)
+	p := NewAtPicker(dir)
+	p.Active = true
+	p, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("bet")})
+	if len(p.matches) != 0 {
+		t.Fatalf("no index yet, got %v", p.matches)
+	}
+	if !strings.Contains(p.View(), "indexing") {
+		t.Errorf("want an indexing note while loading:\n%s", p.View())
+	}
+	msg := p.indexCmd()().(atIndexMsg)
+	if got := p.withIndex(atIndexMsg{root: "/elsewhere", index: msg.index}); got.index != nil {
+		t.Error("a walk for another root must be dropped")
+	}
+	closed := p
+	closed.Active = false
+	if got := closed.withIndex(msg); got.index != nil {
+		t.Error("a walk landing after close must be dropped")
+	}
+	p = p.withIndex(msg)
+	if len(p.matches) != 1 || p.matches[0] != "beta.go" {
+		t.Fatalf("want beta.go after the walk lands, got %v", p.matches)
 	}
 }
 

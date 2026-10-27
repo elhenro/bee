@@ -15,18 +15,34 @@ import (
 )
 
 // AgentView is the multi-bee management pane (Left arrow / Ctrl+H).
-// List + peek + inline reply. Refreshes every tick so live bg bees update.
+// List + peek + inline reply. Refreshes every second so live bg bees update.
 type AgentView struct {
 	rows     []bgreg.Status
 	selected int
 	reply    textinput.Model
 	err      string
 	visible  bool
+	// gen counts opens. A tick or refresh result from an earlier open carries
+	// an older gen and is dropped, so close+reopen never runs two chains.
+	gen int
+	// starting is set by Open until start arms the refresh chain
+	starting bool
 }
 
 type AttachSessionMsg struct{ ID string }
 type CloseAgentViewMsg struct{}
-type agentTickMsg time.Time
+
+// agentTickMsg asks the open view to refresh.
+type agentTickMsg struct{ gen int }
+
+// agentRowsMsg carries a finished refresh back to the UI goroutine.
+type agentRowsMsg struct {
+	gen  int
+	rows []bgreg.Status
+	err  error
+}
+
+const agentRefreshInterval = time.Second
 
 func NewAgentView() *AgentView {
 	ti := textinput.New()
@@ -36,21 +52,54 @@ func NewAgentView() *AgentView {
 	return &AgentView{reply: ti}
 }
 
-func (a *AgentView) Open()                { a.visible = true; a.reply.Focus(); a.Refresh() }
-func (a *AgentView) Close()               { a.visible = false; a.reply.Blur() }
-func (a *AgentView) IsOpen() bool         { return a.visible }
-func (a *AgentView) Rows() []bgreg.Status { return a.rows }
+func (a *AgentView) Open() {
+	a.visible = true
+	a.reply.Focus()
+	a.gen++
+	a.starting = true
+}
 
-func (a *AgentView) Refresh() {
-	statuses, err := bgreg.List()
-	if err != nil {
-		a.err = err.Error()
+func (a *AgentView) Close()       { a.visible = false; a.reply.Blur() }
+func (a *AgentView) IsOpen() bool { return a.visible }
+
+// start arms the refresh chain once after Open. Nil-safe: the Model calls it
+// on every Update.
+func (a *AgentView) start() tea.Cmd {
+	if a == nil || !a.starting {
+		return nil
+	}
+	a.starting = false
+	return a.refreshCmd()
+}
+
+// refreshCmd reads the registry off the UI goroutine: List hits the disk and
+// WakeWaiting can spawn processes.
+func (a *AgentView) refreshCmd() tea.Cmd {
+	gen := a.gen
+	return func() tea.Msg {
+		statuses, err := bgreg.List()
+		if err == nil {
+			// a reply to an agent whose process already exited has nobody to read it
+			agents.WakeWaiting(statuses)
+		}
+		return agentRowsMsg{gen: gen, rows: statuses, err: err}
+	}
+}
+
+// tickCmd schedules the next refresh. It is armed only when a result lands,
+// so a slow refresh never stacks up behind the next one.
+func (a *AgentView) tickCmd() tea.Cmd {
+	gen := a.gen
+	return tea.Tick(agentRefreshInterval, func(time.Time) tea.Msg { return agentTickMsg{gen: gen} })
+}
+
+func (a *AgentView) applyRows(msg agentRowsMsg) {
+	if msg.err != nil {
+		a.err = msg.err.Error()
 		return
 	}
 	a.err = ""
-	// a reply to an agent whose process already exited has nobody to read it
-	agents.WakeWaiting(statuses)
-	a.rows = statuses
+	a.rows = msg.rows
 	if a.selected >= len(a.rows) {
 		a.selected = 0
 	}
@@ -67,12 +116,7 @@ func (a *AgentView) SubmitReply(text string) error {
 		return err
 	}
 	a.reply.SetValue("")
-	a.Refresh()
 	return nil
-}
-
-func (a *AgentView) Init() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return agentTickMsg(t) })
 }
 
 func (a *AgentView) Update(msg tea.Msg) (*AgentView, tea.Cmd) {
@@ -81,8 +125,16 @@ func (a *AgentView) Update(msg tea.Msg) (*AgentView, tea.Cmd) {
 	}
 	switch m := msg.(type) {
 	case agentTickMsg:
-		a.Refresh()
-		return a, tea.Tick(time.Second, func(t time.Time) tea.Msg { return agentTickMsg(t) })
+		if m.gen != a.gen {
+			return a, nil
+		}
+		return a, a.refreshCmd()
+	case agentRowsMsg:
+		if m.gen != a.gen {
+			return a, nil
+		}
+		a.applyRows(m)
+		return a, a.tickCmd()
 	case tea.KeyMsg:
 		switch m.String() {
 		// the reply input is always focused, so letters are text: only
@@ -125,7 +177,7 @@ var (
 	avDim        = lipgloss.NewStyle().Foreground(fgSmoke)
 )
 
-func (a *AgentView) Render(width, height int) string {
+func (a *AgentView) Render(width int) string {
 	if !a.visible {
 		return ""
 	}
@@ -162,7 +214,6 @@ func (a *AgentView) Render(width, height int) string {
 	if a.err != "" {
 		lines = append(lines, lipgloss.NewStyle().Foreground(semError).Render("error: "+a.err))
 	}
-	_ = height
 	return strings.Join(lines, "\n")
 }
 

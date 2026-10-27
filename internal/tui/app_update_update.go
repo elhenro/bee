@@ -66,8 +66,8 @@ func (m Model) kickApply(info update.Info) (Model, tea.Cmd) {
 	applyCmd := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		out, err := update.Apply(ctx)
-		return updateAppliedMsg{output: string(out), err: err}
+		out, err := update.ApplyFor(ctx, info.Repo, info.Branch)
+		return updateAppliedMsg{output: string(out), err: err, retry: update.InstallCommandFor(info.Repo, info.Branch)}
 	}
 	return m, tea.Batch(applyCmd, warningFadeCmd())
 }
@@ -79,7 +79,7 @@ func (m Model) onUpdateApplied(msg updateAppliedMsg) (tea.Model, tea.Cmd) {
 		if hint == "" {
 			hint = msg.err.Error()
 		}
-		return m.withWarn("update failed: " + hint + " — try: " + update.InstallCommand()), warningFadeCmd()
+		return m.withWarn("update failed: " + hint + " — try: " + msg.retry), warningFadeCmd()
 	}
 	return m.withWarn("✓ bee updated — restart to use new version"), warningFadeCmd()
 }

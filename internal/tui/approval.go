@@ -119,7 +119,7 @@ func (m ApprovalModel) decide(d ApprovalDecision) (ApprovalModel, tea.Cmd) {
 	return m, func() tea.Msg { return ApprovalDecisionMsg{UseID: useID, Decision: d} }
 }
 
-// approvalActionLines caps how many lines of the action (command) the panel
+// approvalActionLines caps how many rows of the action (command) the panel
 // shows; the rest collapse into a `… +N more` note so a long script can't
 // blow it up to full-screen.
 const approvalActionLines = 8
@@ -169,7 +169,7 @@ func (m ApprovalModel) View() string {
 		action = "(no detail)"
 	}
 	rail := dim.Render("   " + glyphDetail + " ")
-	for _, l := range clipActionLines(action, inner) {
+	for _, l := range wrapActionLines(action, inner) {
 		lines = append(lines, rail+body.Render(l))
 	}
 	lines = append(lines, "")
@@ -189,19 +189,20 @@ func (m ApprovalModel) View() string {
 	return strings.Join(lines, "\n")
 }
 
-// clipActionLines truncates each command line to the width and caps the total
-// at approvalActionLines, appending a `… +N more` note when over.
-func clipActionLines(action string, w int) []string {
-	raw := strings.Split(action, "\n")
-	var out []string
-	for _, l := range raw {
-		out = append(out, clipLine(l, w))
-		if len(out) >= approvalActionLines && len(raw) > approvalActionLines {
-			out = append(out, fmt.Sprintf("%s +%d more", glyphMore, len(raw)-approvalActionLines))
-			break
-		}
+// wrapActionLines wraps each command line to the width, so the tail of a long
+// `a && b | sh` stays in front of the approver, and caps the total at
+// approvalActionLines with a `… +N more` note. Control bytes drop and tabs
+// expand, so a row can neither outgrow w nor repaint over the panel.
+func wrapActionLines(action string, w int) []string {
+	var rows []string
+	for _, l := range strings.Split(action, "\n") {
+		rows = append(rows, wrapHanging(expandTabs(sanitizeControl(l)), w)...)
 	}
-	return out
+	if len(rows) <= approvalActionLines {
+		return rows
+	}
+	more := fmt.Sprintf("%s +%d more", glyphMore, len(rows)-approvalActionLines)
+	return append(rows[:approvalActionLines], more)
 }
 
 // items laid out left to right, starting a new row when the next one won't fit

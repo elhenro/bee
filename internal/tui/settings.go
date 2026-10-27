@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"maps"
 	"sort"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -87,31 +88,9 @@ func NewSettingsPane() *SettingsPane {
 // Open reports visibility.
 func (p *SettingsPane) Open() bool { return p != nil && p.open }
 
-// SettingsSnapshot is the live values handed to Show. Grouped into a struct
-// because the status-line toggles pushed the positional-arg list past readable.
+// SettingsSnapshot is the live values handed to Show.
 type SettingsSnapshot struct {
-	Verbose         bool
-	ShowThoughts    bool
-	ShowNudges      bool
-	ShowRecap       bool
-	Compact         bool
-	ShowContextBar  bool
-	Highlight       bool
-	ShowCallDetail  bool
-	ShellBangSilent bool
-	ShowBee         bool
-	ShowContextPct  bool
-	ShowModel       bool
-	ShowCwd         bool
-	ShowEffort      bool
-	ShowTurnTimer   bool
-	ShowGitBranch   bool
-	ShowTotalTokens bool
-	ShowBanner      bool
-	ShowLoader      bool
-	ShowLoaderIn    bool
-	ShowLoaderOut   bool
-	ShowLoaderRate  bool
+	On map[string]bool // bool rows by toml key
 	// OuterPadLR is the live 0..8 cell count for the left+right padding wrap
 	// applied to View() output. Renders as the int row in the settings pane.
 	OuterPadLR int
@@ -126,29 +105,9 @@ func (p *SettingsPane) Show(s SettingsSnapshot) {
 	p.cursor = 0
 	p.filter.SetValue("")
 	p.filter.Focus()
-	p.on = map[string]bool{
-		"verbose":           s.Verbose,
-		"show_thoughts":     s.ShowThoughts,
-		"show_nudges":       s.ShowNudges,
-		"show_recap":        s.ShowRecap,
-		"compact":           s.Compact,
-		"show_context_bar":  s.ShowContextBar,
-		"highlight":         s.Highlight,
-		"show_call_detail":  s.ShowCallDetail,
-		"shell_bang_silent": s.ShellBangSilent,
-		"show_bee":          s.ShowBee,
-		"show_context_pct":  s.ShowContextPct,
-		"show_model":        s.ShowModel,
-		"show_cwd":          s.ShowCwd,
-		"show_effort":       s.ShowEffort,
-		"show_turn_timer":   s.ShowTurnTimer,
-		"show_git_branch":   s.ShowGitBranch,
-		"show_total_tokens": s.ShowTotalTokens,
-		"show_banner":       s.ShowBanner,
-		"show_loader":       s.ShowLoader,
-		"show_loader_in":    s.ShowLoaderIn,
-		"show_loader_out":   s.ShowLoaderOut,
-		"show_loader_rate":  s.ShowLoaderRate,
+	p.on = maps.Clone(s.On)
+	if p.on == nil {
+		p.on = map[string]bool{}
 	}
 	p.outerPad = s.OuterPadLR
 	p.recomputeMatches()

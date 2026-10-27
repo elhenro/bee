@@ -104,6 +104,8 @@ type StreamRenderer struct {
 	// streamMarkdown cache: render of the last settled prefix
 	settledSrc string
 	settledOut string
+
+	live liveCache
 }
 
 // invalidateStreamCache drops the cached streaming render so the next

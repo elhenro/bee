@@ -103,8 +103,9 @@ func gutterWidth(blocks []diffBlock) int {
 	return len(strconv.Itoa(top))
 }
 
-// one styled row: `<no> <sign> <code>`, changes wash the full width
-func (r *StreamRenderer) styleRow(rw diffRow, lang string, gw, width int) string {
+// one styled row: `<no> <sign> <code>`, changes wash the full width. hl is the
+// card's lexer, resolved once; nil leaves code plain
+func (r *StreamRenderer) styleRow(rw diffRow, hl *highlighter, gw, width int) string {
 	under := ""
 	if gw > 0 {
 		under = strings.Repeat(" ", gw+1)
@@ -124,8 +125,8 @@ func (r *StreamRenderer) styleRow(rw diffRow, lang string, gw, width int) string
 		if num != "" {
 			inner = r.styles.Dim.Render(num)
 		}
-		if r.highlight && lang != "" {
-			inner += sty.Render(sign) + " " + HighlightCode(body, lang)
+		if hl != nil {
+			inner += sty.Render(sign) + " " + hl.format(body)
 		} else {
 			inner += sty.Render(sign + " " + body)
 		}
@@ -156,9 +157,14 @@ func (r *StreamRenderer) diffCard(blocks []diffBlock) string {
 		if b.label != "" {
 			out = append(out, clipLine(b.label, w))
 		}
-		lang := langFromPath(b.path)
+		var hl *highlighter
+		if r.highlight {
+			if lang := langFromPath(b.path); lang != "" {
+				hl = newHighlighter(lang, "")
+			}
+		}
 		for _, rw := range b.rows {
-			out = append(out, clipLine(r.styleRow(rw, lang, gw, w), w))
+			out = append(out, clipLine(r.styleRow(rw, hl, gw, w), w))
 		}
 	}
 	if len(out) == 0 {

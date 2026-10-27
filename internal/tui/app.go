@@ -118,7 +118,7 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, introTickCmd())
 	}
 	if m.role == "queen" {
-		cmds = append(cmds, glowTickCmd())
+		cmds = append(cmds, m.glowTick())
 	}
 	// one-shot auto-submit: fire the seeded prompt as if the user typed it.
 	// banner is non-blocking so submitting now is safe.

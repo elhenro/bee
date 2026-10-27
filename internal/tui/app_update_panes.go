@@ -4,8 +4,6 @@ import (
 	"cmp"
 
 	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/elhenro/bee/internal/commands"
 )
 
 // togglePane sends the toggle message to the pane at *p, creating it on first use.
@@ -21,8 +19,7 @@ func togglePane[P keyPane[P]](p *P, create func() P, toggle tea.Msg) tea.Cmd {
 
 func (m Model) onOpenCost(_ openCostMsg) (tea.Model, tea.Cmd) {
 	if m.isLocalProvider() {
-		m.lastErr = "cost monitor hidden for local provider"
-		return m, nil
+		return m.fail("cost monitor hidden for local provider")
 	}
 	return m, togglePane(&m.costPane, func() *CostPane { return NewCostPane(m.costs) }, ToggleCostPaneMsg{})
 }
@@ -58,77 +55,20 @@ func (m Model) onOpenSettings(_ openSettingsMsg) (tea.Model, tea.Cmd) {
 	if m.settingsPane == nil {
 		m.settingsPane = NewSettingsPane()
 	}
-	m.settingsPane.Show(SettingsSnapshot{
-		Verbose:         m.verbose,
-		ShowThoughts:    m.showThoughts,
-		ShowNudges:      m.showNudges,
-		ShowRecap:       m.showRecap,
-		Compact:         m.compact,
-		ShowContextBar:  m.showContextBar,
-		Highlight:       m.highlight,
-		ShowCallDetail:  m.showCallDetail,
-		ShellBangSilent: m.shellBangSilent,
-		ShowBee:         m.showBee,
-		ShowContextPct:  m.showContextPct,
-		ShowModel:       m.showModel,
-		ShowCwd:         m.showCwd,
-		ShowEffort:      m.showEffort,
-		ShowTurnTimer:   m.showTurnTimer,
-		ShowGitBranch:   m.showGitBranch,
-		ShowTotalTokens: m.showTotalTokens,
-		ShowBanner:      m.showBanner,
-		ShowLoader:      m.showLoader,
-		ShowLoaderIn:    m.showLoaderIn,
-		ShowLoaderOut:   m.showLoaderOut,
-		ShowLoaderRate:  m.showLoaderRate,
-		OuterPadLR:      m.outerPadLR,
-	})
-	return m, nil
-}
-
-// settingSetters maps a settings-pane toggle key to the Side setter that
-// applies it live and persists it.
-var settingSetters = map[string]func(commands.Side, bool) error{
-	"verbose":           commands.Side.SetVerbose,
-	"show_thoughts":     commands.Side.SetShowThoughts,
-	"show_nudges":       commands.Side.SetShowNudges,
-	"show_recap":        commands.Side.SetShowRecap,
-	"compact":           commands.Side.SetCompact,
-	"show_context_bar":  commands.Side.SetShowContextBar,
-	"highlight":         commands.Side.SetHighlight,
-	"show_call_detail":  commands.Side.SetShowCallDetail,
-	"shell_bang_silent": commands.Side.SetShellBangSilent,
-	"show_bee":          commands.Side.SetShowBee,
-	"show_context_pct":  commands.Side.SetShowContextPct,
-	"show_model":        commands.Side.SetShowModel,
-	"show_cwd":          commands.Side.SetShowCwd,
-	"show_effort":       commands.Side.SetShowEffort,
-	"show_turn_timer":   commands.Side.SetShowTurnTimer,
-	"show_git_branch":   commands.Side.SetShowGitBranch,
-	"show_total_tokens": commands.Side.SetShowTotalTokens,
-	"show_banner":       commands.Side.SetShowBanner,
-	"show_loader":       commands.Side.SetShowLoader,
-	"show_loader_in":    commands.Side.SetShowLoaderIn,
-	"show_loader_out":   commands.Side.SetShowLoaderOut,
-	"show_loader_rate":  commands.Side.SetShowLoaderRate,
-}
-
-// failQuietly surfaces a persist error unless a turn is streaming: don't kill
-// an in-flight turn over a persist hiccup.
-func (m Model) failQuietly(err error) Model {
-	if err != nil && m.state != StateStreaming {
-		m.lastErr = err.Error()
-		m.state = StateError
+	on := make(map[string]bool, len(boolSettings))
+	for _, f := range boolSettings {
+		on[f.key] = f.value(&m)
 	}
-	return m
+	m.settingsPane.Show(SettingsSnapshot{On: on, OuterPadLR: m.outerPadLR})
+	return m, nil
 }
 
 func (m Model) onSettingsToggle(msg settingsToggleMsg) (tea.Model, tea.Cmd) {
 	var err error
-	if set := settingSetters[msg.key]; set != nil {
-		err = set(m.side(), msg.value)
+	if f, ok := flagByKey(msg.key); ok {
+		err = (&tuiSide{m: &m}).setFlag(f, msg.value)
 	}
-	return m.failQuietly(err), nil
+	return m.failOn(err)
 }
 
 // onSettingsSetInt handles the int-magnitude row cycle (only outer_pad_lr
@@ -141,7 +81,7 @@ func (m Model) onSettingsSetInt(msg settingsSetIntMsg) (tea.Model, tea.Cmd) {
 		m.outerPadLR = msg.value
 		err = m.side().SetOuterPadLR(msg.value)
 	}
-	return m.failQuietly(err), nil
+	return m.failOn(err)
 }
 
 func (m Model) onOpenTools(_ openToolsMsg) (tea.Model, tea.Cmd) {
@@ -153,7 +93,7 @@ func (m Model) onOpenTools(_ openToolsMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onToolsToggle(msg toolsToggleMsg) (tea.Model, tea.Cmd) {
-	return m.failQuietly(m.side().SetToolDisabled(msg.name, msg.disabled)), nil
+	return m.failOn(m.side().SetToolDisabled(msg.name, msg.disabled))
 }
 
 func (m Model) onLoginActionDone(msg loginActionDoneMsg) (tea.Model, tea.Cmd) {

@@ -16,11 +16,14 @@ func (m Model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// re-size text input to fit
 		m.input.SetWidth(max(0, msg.Width-2))
-		prev := m.stream
-		m.stream = NewStreamRenderer(*m.styles, max(minRenderWidth, msg.Width))
-		if prev != nil {
-			// a resize mid-tool-call must not orphan the call's result
-			m.stream.toolUses, m.stream.afterTool = prev.toolUses, prev.afterTool
+		// rebuilding drops the markdown renderers, so only a new width pays for it
+		if w := max(minRenderWidth, msg.Width); m.stream == nil || m.stream.width != w {
+			prev := m.stream
+			m.stream = NewStreamRenderer(*m.styles, w)
+			if prev != nil {
+				// a resize mid-tool-call must not orphan the call's result
+				m.stream.toolUses, m.stream.afterTool = prev.toolUses, prev.afterTool
+			}
 		}
 		m.syncStream()
 		m.palette.SetWidth(msg.Width)
@@ -191,8 +194,11 @@ func (m Model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// outer app routes it to /attach. For now: just close the pane.
 	case CloseAgentViewMsg, AttachSessionMsg:
 		return m.onCloseAgentView()
-	case agentTickMsg:
-		return m.onAgentTick(msg)
+	case agentTickMsg, agentRowsMsg:
+		return m.onAgentMsg(msg)
+	case atIndexMsg:
+		m.atpicker = m.atpicker.withIndex(msg)
+		return m, nil
 	}
 
 	var cmd tea.Cmd

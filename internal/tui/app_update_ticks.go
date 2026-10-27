@@ -8,7 +8,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
+func (m Model) onLoaderTick(msg loaderTickMsg) (tea.Model, tea.Cmd) {
+	// a tick from a chain that lost the race to a newer one dies here, without
+	// sampling (a second sample in the same instant reads as a stalled stream)
+	if !msg.live(m) {
+		return m, nil
+	}
 	// Only animate while a turn or async compact is in flight. Letting the
 	// tick die when we leave streaming/compacting/judging keeps idle terminals quiet.
 	if m.state != StateStreaming && !m.compacting && !m.goalJudging {
@@ -27,8 +32,8 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 	// its own timeout: cancelling it here kills the work and the resumed model
 	// just re-runs the same call.
 	if m.state == StateStreaming && m.watchdogEnabled && !m.watchdogDisabled &&
-		!m.stallResumePending && strings.TrimSpace(m.input.Value()) == "" &&
-		len(m.pendingTools) == 0 && m.turnSawActivity && time.Since(m.lastActivityAt) >= m.watchdogStall {
+		!m.stallResumePending && len(m.pendingTools) == 0 && m.turnSawActivity &&
+		time.Since(m.lastActivityAt) >= m.watchdogStall && strings.TrimSpace(m.input.Value()) == "" {
 		// continue from partial output when the turn produced any, else
 		// re-send the original instruction.
 		text := resumeContinueText
@@ -46,7 +51,7 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 			m.stallResumeText = text
 			m.stallResumeReason = "stalled"
 			m = m.withWarn("bee stalled — auto-resuming…")
-			return m, tea.Batch(warningFadeCmd(), loaderTickCmd())
+			return m, tea.Batch(warningFadeCmd(), m.loaderTick())
 		}
 	}
 	m.loaderFrame++
@@ -84,18 +89,18 @@ func (m Model) onLoaderTick(_ loaderTickMsg) (tea.Model, tea.Cmd) {
 		winChars += s.chars
 	}
 	m.loaderRateTokS = float64(winChars) / 10.0 / charsPerToken
-	return m, loaderTickCmd()
+	return m, m.loaderTick()
 }
 
 // onGlowTick advances the rainbow input animation. Self-rearms only while the
-// mastermind tier is active so switching it off lets the tick die and leaves
+// queen role is active so switching it off lets the tick die and leaves
 // idle terminals quiet.
-func (m Model) onGlowTick(_ glowTickMsg) (tea.Model, tea.Cmd) {
-	if m.role != "queen" {
+func (m Model) onGlowTick(msg glowTickMsg) (tea.Model, tea.Cmd) {
+	if m.role != "queen" || (msg.keyed && msg.frame != m.glowFrame) {
 		return m, nil
 	}
 	m.glowFrame++
-	return m, glowTickCmd()
+	return m, m.glowTick()
 }
 
 func (m Model) onCostTick(_ costTickMsg) (tea.Model, tea.Cmd) {

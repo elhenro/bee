@@ -49,7 +49,16 @@ const warningTTL = 5 * time.Second
 
 // loaderTickMsg drives the streaming-loader animation. Self-rearming while
 // state == StateStreaming; dies on its own when the turn finishes.
-type loaderTickMsg struct{}
+//
+// A keyed tick carries the loaderFrame it was armed at and is accepted only
+// while the model is still on that frame, so when two chains overlap (a
+// follow-up submit arms a new one while the old tick is pending) the first
+// tick to land advances the frame and the other dies. An unkeyed tick, from
+// loaderTickCmd, is always accepted and then continues keyed.
+type loaderTickMsg struct {
+	frame int
+	keyed bool
+}
 
 // compactDoneMsg is published when an async /compact goroutine finishes.
 // nil err means the summarization succeeded. stats carries before/after token
@@ -87,16 +96,33 @@ func tickAfter(d time.Duration, msg tea.Msg) tea.Cmd {
 
 func loaderTickCmd() tea.Cmd { return tickAfter(loaderTickInterval, loaderTickMsg{}) }
 
+// loaderTick arms a keyed tick at the current frame.
+func (m Model) loaderTick() tea.Cmd {
+	return tickAfter(loaderTickInterval, loaderTickMsg{frame: m.loaderFrame, keyed: true})
+}
+
+// live reports whether the tick still belongs to the model's chain.
+func (t loaderTickMsg) live(m Model) bool { return !t.keyed || t.frame == m.loaderFrame }
+
 // glowTickMsg drives the queen rainbow-input animation. Unlike the loader
 // tick it runs at idle too — it self-rearms for as long as the queen role is
 // active (see onGlowTick) and dies on its own once the role changes.
-type glowTickMsg struct{}
+// Keyed like loaderTickMsg, on glowFrame.
+type glowTickMsg struct {
+	frame int
+	keyed bool
+}
 
 // glowTickInterval paces the rainbow hue sweep. 120ms matches the loader so the
 // redraw cost stays invisible; the full-hue cycle lands around 7s.
 const glowTickInterval = 120 * time.Millisecond
 
 func glowTickCmd() tea.Cmd { return tickAfter(glowTickInterval, glowTickMsg{}) }
+
+// glowTick arms a keyed tick at the current frame.
+func (m Model) glowTick() tea.Cmd {
+	return tickAfter(glowTickInterval, glowTickMsg{frame: m.glowFrame, keyed: true})
+}
 
 // costTickMsg drives the post-turn cost flash animation. Self-rearms while
 // costFlashFrame < costFlashUntil; dies on its own once the flash completes.

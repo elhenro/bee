@@ -199,8 +199,10 @@ func (m Model) onHandoffReady(msg handoffReadyMsg) (tea.Model, tea.Cmd) {
 	if err := m.side().SwitchProviderModel(msg.provider, msg.model); err != nil {
 		return m.setError(err.Error())
 	}
+	var fade tea.Cmd
 	if perr := PersistPick("", msg.provider, msg.model); perr != nil {
-		m.lastErr = "saved live but persist failed: " + perr.Error()
+		m = m.withWarn("saved live but persist failed: " + perr.Error())
+		fade = warningFadeCmd()
 	}
 	// drop the stuck transcript: the brief already carries goal + what was tried
 	// + blocker + last steps. Fresh slice + printedCount=0 keeps already-printed
@@ -211,5 +213,6 @@ func (m Model) onHandoffReady(msg handoffReadyMsg) (tea.Model, tea.Cmd) {
 		m.eng.InitialMessages = nil
 	}
 	// inject the brief as the next user turn; display shows the compact tag.
-	return m.submitWithDisplay(msg.brief, "/handoff → "+msg.model)
+	nm, cmd := m.submitWithDisplay(msg.brief, "/handoff → "+msg.model)
+	return nm, tea.Batch(cmd, fade)
 }

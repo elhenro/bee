@@ -1,24 +1,13 @@
 package tui
 
 import (
-	"bufio"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
-
-	"github.com/elhenro/bee/internal/atomicfile"
-	"github.com/elhenro/bee/internal/beehome"
 )
-
-// historyMax caps the on-disk history file. Sized for years of prompts so
-// fish-style autosuggestions can match against the user's whole history.
-const historyMax = 50000
 
 // HistorySelectMsg pastes the chosen entry into the main input.
 type HistorySelectMsg struct{ Text string }
@@ -146,123 +135,4 @@ func (p HistoryPickerModel) View() string {
 
 	hint := "enter pick · esc cancel · ↑↓ nav · ⌃r next"
 	return strings.Join([]string{crumb, p.input.View(), body, " " + dim.Render(hint)}, "\n")
-}
-
-// ---- on-disk history ----
-
-var historyMu sync.Mutex
-
-// historyPath returns ~/.bee/history (honors BEE_HOME), "" when unresolvable.
-func historyPath() string {
-	p, _ := beehome.Join("history")
-	return p
-}
-
-// readHistoryLines returns every line of the history file, nil when unreadable.
-func readHistoryLines(p string) []string {
-	f, err := os.Open(p)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	var lines []string
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<16), 1<<20)
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
-	return lines
-}
-
-// LoadHistory reads ~/.bee/history newest-first, dedupes consecutive entries.
-func LoadHistory() []string {
-	p := historyPath()
-	if p == "" {
-		return nil
-	}
-	historyMu.Lock()
-	defer historyMu.Unlock()
-	lines := readHistoryLines(p)
-	// reverse to newest-first and dedupe globally — most-recent occurrence
-	// wins so autosuggestions surface the freshest match for any prefix.
-	out := make([]string, 0, len(lines))
-	seen := make(map[string]struct{}, len(lines))
-	for i := len(lines) - 1; i >= 0; i-- {
-		if lines[i] == "" {
-			continue
-		}
-		l := decodeHistory(lines[i])
-		if _, ok := seen[l]; ok {
-			continue
-		}
-		seen[l] = struct{}{}
-		out = append(out, l)
-	}
-	return out
-}
-
-// multiMark prefixes a stored entry that held newlines. Plain single-line
-// entries are stored untouched, so older history files load unchanged.
-const multiMark = "\x1e"
-
-var (
-	historyEscape   = strings.NewReplacer(`\`, `\\`, "\n", `\n`, "\r", `\r`)
-	historyUnescape = strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\r`, "\r")
-)
-
-// encodeHistory folds a multi-line prompt onto one file line.
-func encodeHistory(t string) string {
-	if !strings.ContainsAny(t, "\n\r") {
-		return t
-	}
-	return multiMark + historyEscape.Replace(t)
-}
-
-func decodeHistory(l string) string {
-	if rest, ok := strings.CutPrefix(l, multiMark); ok {
-		return historyUnescape.Replace(rest)
-	}
-	return l
-}
-
-// AppendHistory atomically appends a single entry to ~/.bee/history. Skips
-// empty / whitespace-only lines. Trims to historyMax if the file gets large.
-func AppendHistory(text string) {
-	t := strings.TrimSpace(text)
-	if t == "" {
-		return
-	}
-	p := historyPath()
-	if p == "" {
-		return
-	}
-	historyMu.Lock()
-	defer historyMu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return
-	}
-	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	_, _ = f.WriteString(encodeHistory(t) + "\n")
-	_ = f.Close()
-	maybeTrim(p)
-}
-
-// maybeTrim shrinks the history file when it exceeds historyMax lines.
-// Stat-gated: AppendHistory runs synchronously in the update loop, and a
-// full line scan per submit causes visible input lag once the file is big.
-// Below ~8 bytes/line the file can't meaningfully exceed historyMax, and
-// trim is best-effort housekeeping anyway.
-func maybeTrim(p string) {
-	if fi, err := os.Stat(p); err != nil || fi.Size() < int64(historyMax)*8 {
-		return
-	}
-	lines := readHistoryLines(p)
-	if len(lines) <= historyMax {
-		return
-	}
-	keep := strings.Join(lines[len(lines)-historyMax:], "\n") + "\n"
-	_ = atomicfile.Write(p, []byte(keep), 0o600)
 }

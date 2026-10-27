@@ -42,7 +42,7 @@ func splitTables(s string) []mdSegment {
 	var segs []mdSegment
 	start, fence := 0, false
 	for i := 0; i < len(lines); i++ {
-		if strings.HasPrefix(strings.TrimSpace(lines[i]), "```") {
+		if isFenceLine(lines[i]) {
 			fence = !fence
 		}
 		if fence || !tableAt(lines, i) {

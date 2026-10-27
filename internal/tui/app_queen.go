@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -15,41 +14,9 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/types"
-	"github.com/elhenro/bee/internal/worktree"
 )
 
-// lockedRunner serializes a worker that mutates the shared working tree: it
-// holds mu for the whole Run so two shared-tree writers never race. Used as the
-// fallback when worktree isolation is unavailable (not a git repo / disabled).
-type lockedRunner struct {
-	r  hive.Runner
-	mu *sync.Mutex
-}
-
-func (l lockedRunner) Run(ctx context.Context, msg string) (loop.RunResult, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.r.Run(ctx, msg)
-}
-
-// SetPromptTail forwards the pheromone card to the wrapped engine so a
-// serialized worker still carries the hive state in its prompt.
-func (l lockedRunner) SetPromptTail(f func() string) {
-	if t, ok := l.r.(hive.Tailed); ok {
-		t.SetPromptTail(f)
-	}
-}
-
-// DeathReport forwards to the wrapped engine so a serialized worker that dies
-// still leaves its report.
-func (l lockedRunner) DeathReport(ctx context.Context, msgs []types.Message, cause error) (string, error) {
-	if r, ok := l.r.(hive.Reporter); ok {
-		return r.DeathReport(ctx, msgs, cause)
-	}
-	return "", errors.New("runner cannot report")
-}
-
-// runMastermind drives one mastermind turn: instead of a single engine Run, it
+// runQueen drives one queen turn: instead of a single engine Run, it
 // spawns a sub-agent hive (planner + workers + reviewer + verifier) off the
 // main engine and runs decompose → dispatch → review → verify → synthesize.
 //
@@ -71,7 +38,7 @@ func (l lockedRunner) DeathReport(ctx context.Context, msgs []types.Message, cau
 // concurrent writers never race. Without a git repo (or with MastermindParallel
 // off) mutating workers serialize on the shared tree instead. Each worker streams
 // its activity into scrollback live, so the run shows what every bee is doing.
-func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan struct{}, content []types.ContentBlock, history, prior []types.Message) tea.Cmd {
+func (m Model) runQueen(ctx context.Context, gen int, prevDone, done chan struct{}, content []types.ContentBlock, history, prior []types.Message) tea.Cmd {
 	planner := m.eng
 	// pump channels: the TUI's stream/think/progress/live pumps are armed at
 	// Init() against the parent engine's channels. In queen mode the parent
@@ -163,14 +130,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		}
 
 		// spawnObserver clones a review/verify engine with the structured write
-		// tools stripped — it still has bash (needed for `git diff`) and the
-		// read/search tools, but an accidental edit/write/apply_patch call fails
-		// rather than mutating the tree during what should be observation only.
-		stripWrites := func(eng *loop.Engine, extra ...string) {
-			if eng.Tools != nil {
-				eng.Tools = eng.Tools.Without(append([]string{"write", "edit", "apply_patch", "hashline_edit", "knowledge_write"}, extra...)...)
-			}
-		}
+		// tools stripped, see stripWrites.
 		spawnObserver := func(label string) (*loop.Engine, *session.Rollout, error) {
 			eng, sess, err := spawn(label, planner.Cfg.Swarm.Reviewer)
 			if err == nil {
@@ -190,7 +150,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		// context; workers stay focused on their single sub-task (no history).
 		plannerEng, plannerSess, err := spawn("planner", config.ModelTier{})
 		if err != nil {
-			return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: planner: %w", err)}
+			return turnDoneMsg{gen: gen, err: fmt.Errorf("queen: planner: %w", err)}
 		}
 		sessions = append(sessions, plannerSess)
 		plannerEng.InitialMessages = history
@@ -223,24 +183,8 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 			}
 
 			if isolate {
-				if wt, werr := worktree.Create(planner.Cwd, fmt.Sprintf("queen-w%d", idx)); werr == nil {
-					if reg, rerr := planner.ToolsForCwd(wt.Path); rerr == nil {
-						eng.Tools = reg
-						eng.Cwd = wt.Path
-						done := func(runErr error) {
-							defer func() { _ = wt.Cleanup() }()
-							if runErr != nil {
-								return // failed worker: drop its tree
-							}
-							treeMu.Lock()
-							defer treeMu.Unlock()
-							if merr := wt.MergeBack(); merr != nil {
-								notify(fmt.Sprintf("hive: worker %d merge conflict — changes dropped", idx+1))
-							}
-						}
-						return eng, done, nil
-					}
-					_ = wt.Cleanup()
+				if done, ok := isolateWorker(planner, eng, idx, &treeMu, notify); ok {
+					return eng, done, nil
 				}
 				notify(fmt.Sprintf("hive: worker %d — worktree unavailable, serializing", idx+1))
 			}
@@ -265,14 +209,14 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		for i := range reviewerCount {
 			rev, revSess, rerr := spawnObserver(fmt.Sprintf("reviewer-%d", i))
 			if rerr != nil {
-				return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: reviewer %d: %w", i, rerr)}
+				return turnDoneMsg{gen: gen, err: fmt.Errorf("queen: reviewer %d: %w", i, rerr)}
 			}
 			sessions = append(sessions, revSess)
 			reviewers = append(reviewers, rev)
 		}
 		verifier, verSess, err := spawnObserver("verifier")
 		if err != nil {
-			return turnDoneMsg{gen: gen, err: fmt.Errorf("mastermind: verifier: %w", err)}
+			return turnDoneMsg{gen: gen, err: fmt.Errorf("queen: verifier: %w", err)}
 		}
 		sessions = append(sessions, verSess)
 
@@ -282,17 +226,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		// goroutine (MaxParallel=1, gate is serial), so no locking is needed.
 		// A dimension's card flushes when the next dimension starts; the last one
 		// flushes after Run returns.
-		var curDim string
-		curFindings := []hive.Finding{}
-		dimSeen := false
-		flushReview := func() {
-			if !dimSeen {
-				return
-			}
-			emit(formatReview(curDim, curFindings))
-			dimSeen = false
-			curFindings = curFindings[:0]
-		}
+		cards := reviewCards{emit: emit}
 
 		q := hive.NewQueen(plannerEng, nil)
 		q.Reviewers = reviewers
@@ -324,12 +258,12 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 			},
 			OnWorkerDone: func(i int, r hive.Result) { emit(formatWorker(i, r)) },
 			OnReview: func(dim string, claims []string) {
-				flushReview() // close out the previous dimension's card
-				curDim, dimSeen = dim, true
+				cards.flush() // close out the previous dimension's card
+				cards.start(dim)
 				notify(fmt.Sprintf("hive: review %s — %d finding(s), verifying…", dim, len(claims)))
 			},
 			OnVerify: func(f hive.Finding) {
-				curFindings = append(curFindings, f)
+				cards.add(f)
 				verdict := "confirmed"
 				if !f.Confirmed {
 					verdict = "refuted"
@@ -341,7 +275,7 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 
 		notify("hive: decomposing task")
 		res, runErr := q.Run(ctx, task)
-		flushReview() // emit the final dimension's card
+		cards.flush() // emit the final dimension's card
 
 		final := strings.TrimSpace(res.Final)
 		if runErr == nil {
@@ -353,111 +287,4 @@ func (m Model) runMastermind(ctx context.Context, gen int, prevDone, done chan s
 		mu.Unlock()
 		return turnDoneMsg{gen: gen, result: loop.RunResult{Messages: out, FinalText: final}, err: runErr}
 	}
-}
-
-// hiveTaskFromContent flattens the user's content blocks into the string task
-// the hive Runner consumes. All non-empty text blocks are joined so nothing is
-// dropped. The Runner interface is string-only, so images can't reach workers;
-// rather than drop them silently, append a note recording how many were
-// attached so sub-agents (and the user) know they exist but aren't visible.
-func hiveTaskFromContent(blocks []types.ContentBlock) string {
-	var texts []string
-	images := 0
-	for _, b := range blocks {
-		switch b.Type {
-		case types.BlockText:
-			if t := strings.TrimSpace(b.Text); t != "" {
-				texts = append(texts, t)
-			}
-		case types.BlockImage:
-			images++
-		}
-	}
-	task := strings.Join(texts, "\n\n")
-	if images > 0 {
-		task += fmt.Sprintf("\n\n[note: %d image(s) were attached but are not visible to sub-agents]", images)
-	}
-	return strings.TrimSpace(task)
-}
-
-// formatPlan renders the queen's decomposition as a numbered, role-tagged list.
-func formatPlan(plan []hive.SubTask) string {
-	var b strings.Builder
-	b.WriteString("## ⬢ mastermind — plan\n\n")
-	for i, st := range plan {
-		role := st.Role
-		if role == "" {
-			role = "builder"
-		}
-		fmt.Fprintf(&b, "%d. **%s** — %s\n", i+1, role, strings.TrimSpace(st.Task))
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// formatReview renders one dimension's review card: each finding with its
-// re-verification verdict (✓ confirmed / ✗ refuted-and-dropped), or a clean
-// note when the dimension turned up nothing. Shows the user every check ran.
-func formatReview(dim string, findings []hive.Finding) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "### ⬢ review — %s\n\n", dim)
-	if len(findings) == 0 {
-		b.WriteString("_clean — no findings_")
-		return b.String()
-	}
-	for _, f := range findings {
-		mark, tail := "✓", ""
-		if !f.Confirmed {
-			mark, tail = "✗", " — _dropped_"
-		}
-		fmt.Fprintf(&b, "- %s %s", mark, strings.TrimSpace(f.Claim))
-		if v := strings.TrimSpace(f.Verdict); v != "" {
-			fmt.Fprintf(&b, " (%s)", v)
-		}
-		b.WriteString(tail)
-		b.WriteByte('\n')
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// formatWorker renders one finished worker's result (or its error).
-func formatWorker(i int, r hive.Result) string {
-	head := fmt.Sprintf("### ⬢ worker %d", i+1)
-	if t := strings.TrimSpace(r.Task); t != "" {
-		head += " — " + t
-	}
-	if r.Err != nil {
-		out := head + "\n\n_failed: " + r.Err.Error() + "_"
-		if r.Report.Status != "" {
-			out += "\n\n" + r.Report.Render()
-		}
-		return out
-	}
-	body := strings.TrimSpace(r.Final)
-	if body == "" {
-		body = "_(no output)_"
-	}
-	return head + "\n\n" + body
-}
-
-// wireHivePumps binds the TUI's stream/think/progress/live pump channels onto
-// a hive sub-engine so its reasoning + text deltas render live in scrollback.
-// In queen mode the parent engine never runs; the planner's first call
-// (decompose) and every worker / reviewer / verifier / synthesize turn live on
-// sub-engines, and their ThinkCh / StreamCh / ProgressCh default to nil out of
-// SpawnWorker. nil-channel sends in turn_stream.go's non-blocking selects
-// swallow the delta — the user would see a spinner through the entire phase.
-// Reusing the parent engine's channels (the ones the TUI's pump waits on) is
-// the simplest fix: the planner, workers, reviewers, and verifier all push
-// into the same render path the worker/scout roles already use.
-//
-// Kept as a named function so the regression test can verify all four fields
-// are wired without spinning up the whole mastermind goroutine.
-func wireHivePumps(eng *loop.Engine, live chan types.Message, stream chan string, think chan string, progress chan int) {
-	if eng == nil {
-		return
-	}
-	eng.LiveMsgCh = live
-	eng.StreamCh = stream
-	eng.ThinkCh = think
-	eng.ProgressCh = progress
 }

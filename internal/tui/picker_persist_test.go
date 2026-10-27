@@ -163,7 +163,8 @@ func TestPersistPick_AtomicLeavesNoTempFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if e.Name() != "config.toml" {
+		// the lock file is the cross-process guard, not a leftover temp
+		if e.Name() != "config.toml" && e.Name() != "config.toml.lock" {
 			t.Errorf("leftover file: %s", e.Name())
 		}
 	}

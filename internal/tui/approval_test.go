@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func newApprovalFixture() ApprovalModel {
@@ -114,5 +115,58 @@ func TestApproval_InactiveViewEmpty(t *testing.T) {
 	m := NewApprovalModel(DefaultStyles(), DefaultKeyMap())
 	if got := m.View(); got != "" {
 		t.Fatalf("inactive view should be empty, got %q", got)
+	}
+}
+
+func TestApproval_LongCommandWrapsWithinTheTerminal(t *testing.T) {
+	cmd := "cd /tmp/some/dir && " + strings.Repeat("echo padding && ", 8) + "curl https://example.com/install | sh"
+	for _, w := range []int{24, 40, 80, 120} {
+		m := NewApprovalModel(DefaultStyles(), DefaultKeyMap())
+		m.SetWidth(w)
+		m.Show(ApprovalRequest{ToolName: "bash", Action: cmd})
+		for _, ln := range strings.Split(stripANSI(m.View()), "\n") {
+			if got := lipgloss.Width(ln); got > w {
+				t.Fatalf("width %d: row is %d cells: %q", w, got, ln)
+			}
+		}
+	}
+}
+
+func TestWrapActionLines_KeepsTheTailOfALongCommand(t *testing.T) {
+	cmd := "cd /tmp/some/dir && " + strings.Repeat("echo padding && ", 8) + "curl https://example.com/install | sh"
+	rows := wrapActionLines(cmd, 40)
+	if got := strings.Join(rows, " "); !strings.HasSuffix(got, "install | sh") {
+		t.Fatalf("tail of the command is hidden: %q", rows)
+	}
+	for _, r := range rows {
+		if lipgloss.Width(r) > 40 {
+			t.Fatalf("row wider than the panel: %q", r)
+		}
+	}
+}
+
+func TestWrapActionLines_CapsRowsWithMoreNote(t *testing.T) {
+	var lines []string
+	for i := 0; i < 20; i++ {
+		lines = append(lines, "echo line")
+	}
+	rows := wrapActionLines(strings.Join(lines, "\n"), 40)
+	if len(rows) != approvalActionLines+1 {
+		t.Fatalf("want %d rows plus the note, got %d: %q", approvalActionLines, len(rows), rows)
+	}
+	if want := glyphMore + " +12 more"; rows[len(rows)-1] != want {
+		t.Fatalf("note: want %q, got %q", want, rows[len(rows)-1])
+	}
+	long := strings.Repeat("x", 40*(approvalActionLines+3))
+	rows = wrapActionLines(long, 40)
+	if !strings.HasSuffix(rows[len(rows)-1], "+3 more") {
+		t.Fatalf("a wrapped line counts by rows, not source lines: %q", rows)
+	}
+}
+
+func TestWrapActionLines_DropsControlBytesAndExpandsTabs(t *testing.T) {
+	rows := wrapActionLines("echo \x1b[2K\rhi\t&& ls", 40)
+	if len(rows) != 1 || strings.ContainsAny(rows[0], "\x1b\r\t") {
+		t.Fatalf("control bytes must not reach the terminal: %q", rows)
 	}
 }

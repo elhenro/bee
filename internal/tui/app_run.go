@@ -94,24 +94,19 @@ func RunSeededAsker(ctx context.Context, eng *loop.Engine, reg *commands.Registr
 // constructor defaults, with the banner and loader figures on. Verbose and
 // compact also come from the environment.
 func (m Model) seedFromEngine(eng *loop.Engine) Model {
-	m.verbose = os.Getenv("BEE_VERBOSE") != ""
-	m.compact = os.Getenv("BEE_COMPACT") != ""
+	envVerbose, envCompact := os.Getenv("BEE_VERBOSE") != "", os.Getenv("BEE_COMPACT") != ""
+	m.verbose, m.compact = envVerbose, envCompact
 	if eng == nil {
 		m.showBanner, m.showLoader, m.showLoaderIn, m.showLoaderOut = true, true, true, true
 		m.syncStream()
 		return m
 	}
 	c := eng.Cfg
-	m.verbose = m.verbose || c.Verbose
-	m.compact = m.compact || c.Compact
-	m.showBanner, m.showLoader = c.ShowBanner, c.ShowLoader
-	m.showLoaderIn, m.showLoaderOut, m.showLoaderRate = c.ShowLoaderIn, c.ShowLoaderOut, c.ShowLoaderRate
-	m.showThoughts, m.showNudges, m.showRecap = c.ShowThoughts, c.ShowNudges, c.ShowRecap
-	m.showContextBar, m.showCallDetail = c.ShowContextBar, c.ShowCallDetail
-	m.highlight, m.shellBangSilent = c.Highlight, c.ShellBangSilent
-	// top-bar chrome
-	m.showBee, m.showContextPct, m.showModel, m.showCwd = c.ShowBee, c.ShowContextPct, c.ShowModel, c.ShowCwd
-	m.showEffort, m.showTurnTimer, m.showGitBranch, m.showTotalTokens = c.ShowEffort, c.ShowTurnTimer, c.ShowGitBranch, c.ShowTotalTokens
+	for _, f := range boolSettings {
+		mp, cp := f.ptrs(&m, &c)
+		*mp = *cp
+	}
+	m.verbose, m.compact = m.verbose || envVerbose, m.compact || envCompact
 	m.loader = c.TUI.Loader
 	m = m.WithStatusLine(c.TUI.StatusLine).WithOuterPadLR(c.OuterPadLR)
 	// hand the engine's channels to the model so deltas land in the bubbletea

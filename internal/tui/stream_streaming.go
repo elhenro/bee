@@ -81,13 +81,18 @@ func (r *StreamRenderer) streamMarkdown(text string) string {
 	return out
 }
 
+// a ``` fence marker, indented or not
+func isFenceLine(ln string) bool {
+	return strings.HasPrefix(strings.TrimLeft(ln, " \t"), "```")
+}
+
 // cut after the last paragraph break outside a ``` fence; before = settled,
 // after = still being written
 func splitSettled(text string) (settled, tail string) {
 	fence, cut, off := false, 0, 0
 	lines := strings.Split(text, "\n")
 	for i, ln := range lines {
-		if strings.HasPrefix(strings.TrimLeft(ln, " \t"), "```") {
+		if isFenceLine(ln) {
 			fence = !fence
 		}
 		off += len(ln) + 1
@@ -135,8 +140,7 @@ func (r *StreamRenderer) RenderStreamingChunk(chunk string, styleMarkdown bool) 
 func fenceTransitionsAfter(chunk string, startOpen bool) bool {
 	open := startOpen
 	for _, line := range strings.Split(chunk, "\n") {
-		t := strings.TrimLeft(line, " \t")
-		if strings.HasPrefix(t, "```") {
+		if isFenceLine(line) {
 			open = !open
 		}
 	}

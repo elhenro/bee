@@ -217,7 +217,7 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 				}
 				return turnDoneMsg{gen: gen, result: loop.RunResult{Messages: merged}}
 			},
-			loaderTickCmd(),
+			m.loaderTick(),
 		)
 	}
 
@@ -226,21 +226,21 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 	eng := m.eng
 	toggles := m.cfgSnapshot()
 	// prior turns for context. exclude the optimistic user msg we just appended
-	// (history); prior keeps it (the full list mastermind rebuilds its result from).
+	// (history); prior keeps it (the full list the queen run rebuilds its result from).
 	var history []types.Message
 	if n := len(m.messages); n > 0 {
 		history = nonEphemeral(m.messages[:n-1])
 	}
-	// mastermind tier: route the turn through a sub-agent hive instead of a
+	// queen role: route the turn through a sub-agent hive instead of a
 	// single engine Run. The glow tick keeps the rainbow input alive mid-turn.
 	if m.role == "queen" {
-		// the glow tick is already running (armed when the tier was enabled and
+		// the glow tick is already running (armed when the role was enabled and
 		// self-rearming across turns), so don't arm a second loop here.
 		prior := append([]types.Message(nil), m.messages...)
 		return m, tea.Batch(
 			userFlush,
-			m.runMastermind(ctx, gen, prevDone, done, content, history, prior),
-			loaderTickCmd(),
+			m.runQueen(ctx, gen, prevDone, done, content, history, prior),
+			m.loaderTick(),
 		)
 	}
 	return m, tea.Batch(
@@ -266,6 +266,6 @@ func (m Model) submitWithDisplay(text, display string) (tea.Model, tea.Cmd) {
 			res, err := eng.RunWithContentDisplay(ctx, content, display)
 			return turnDoneMsg{gen: gen, result: res, err: err}
 		},
-		loaderTickCmd(),
+		m.loaderTick(),
 	)
 }

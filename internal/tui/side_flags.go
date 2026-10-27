@@ -43,6 +43,31 @@ var (
 	flagShowLoaderRate  = boolSetting{"show_loader_rate", true, func(m *Model, c *config.Config) (*bool, *bool) { return &m.showLoaderRate, &c.ShowLoaderRate }, nil}
 )
 
+// boolSettings lists every persisted on/off setting once: the settings pane
+// snapshot, its toggle handler and the engine seed all iterate it.
+var boolSettings = []boolSetting{
+	flagVerbose, flagShowThoughts, flagShowNudges, flagShowRecap, flagCompact,
+	flagShowContextBar, flagShowCallDetail, flagHighlight, flagShellBangSilent,
+	flagShowBanner, flagShowLoader, flagShowBee, flagShowContextPct, flagShowModel,
+	flagShowCwd, flagShowEffort, flagShowTurnTimer, flagShowGitBranch,
+	flagShowTotalTokens, flagShowLoaderIn, flagShowLoaderOut, flagShowLoaderRate,
+}
+
+func flagByKey(key string) (boolSetting, bool) {
+	for _, f := range boolSettings {
+		if f.key == key {
+			return f, true
+		}
+	}
+	return boolSetting{}, false
+}
+
+// value reads the setting off the model.
+func (f boolSetting) value(m *Model) bool {
+	mp, _ := f.ptrs(m, new(config.Config))
+	return *mp
+}
+
 // setFlag applies v live (model, renderer, engine config) and persists it.
 func (s *tuiSide) setFlag(f boolSetting, v bool) error {
 	if s.m == nil {
@@ -64,8 +89,7 @@ func (s *tuiSide) getFlag(f boolSetting) bool {
 	if s.m == nil {
 		return f.def
 	}
-	mp, _ := f.ptrs(s.m, new(config.Config))
-	return *mp
+	return f.value(s.m)
 }
 
 // SetVerbose toggles the verbose tool-output flag.

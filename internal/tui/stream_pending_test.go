@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -89,5 +90,47 @@ func TestRenderPendingTools_TailFitsNarrowTerminal(t *testing.T) {
 		if w := lipglossWidth(ln); w > minRenderWidth {
 			t.Fatalf("row wider than terminal (%d): %q", w, ln)
 		}
+	}
+}
+
+func TestRenderPendingTools_EditHeadIsBuiltOnce(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 100)
+	u := types.ToolUse{ID: "e1", Name: "edit", Input: map[string]any{"path": "a.go", "old": "x := 1\n", "new": "x := 2\ny := 3\n"}}
+	first := stripANSI(r.RenderPendingTools([]types.ToolUse{u}, 0))
+	for _, want := range []string{"Update", "a.go", "+2", "−1"} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("missing %q in pending edit head: %q", want, first)
+		}
+	}
+	if strings.Contains(first, "x := 2") {
+		t.Fatalf("a running call shows its header, not the diff: %q", first)
+	}
+	// a planted head comes back verbatim: the diff is not rebuilt per frame
+	r.live.editHeads["e1"] = "PLANTED"
+	if got := stripANSI(r.RenderPendingTools([]types.ToolUse{u}, 1)); !strings.Contains(got, "PLANTED") {
+		t.Fatalf("second frame rebuilt the head: %q", got)
+	}
+	// and it matches the head the finished card opens with
+	r = NewStreamRenderer(DefaultStyles(), 100)
+	ph, _ := r.callParts(u, outcomePending, 0)
+	dh, _ := r.callParts(u, outcomeDone, 0)
+	if stripANSI(ph) != stripANSI(dh) {
+		t.Fatalf("pending head %q differs from settled head %q", stripANSI(ph), stripANSI(dh))
+	}
+}
+
+func TestPendingEditHead_MemoStaysBounded(t *testing.T) {
+	r := NewStreamRenderer(DefaultStyles(), 100)
+	for i := 0; i < 3*maxEditHeads; i++ {
+		u := types.ToolUse{ID: fmt.Sprintf("w%d", i), Name: "write", Input: map[string]any{"path": "a.txt", "content": "hi\n"}}
+		if _, ok := r.pendingEditHead(u); !ok {
+			t.Fatal("write is a file mutation")
+		}
+	}
+	if n := len(r.live.editHeads); n > maxEditHeads {
+		t.Fatalf("memo grew to %d entries", n)
+	}
+	if _, ok := r.pendingEditHead(types.ToolUse{ID: "r", Name: "read"}); ok {
+		t.Fatal("only file mutations carry a diff header")
 	}
 }
