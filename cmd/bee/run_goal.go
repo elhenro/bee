@@ -68,7 +68,7 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 			return 0
 		}
 		res, err := eng.Run(ctx, msg)
-		carryGoalHistory(eng, res, err)
+		carryHistory(eng, res, err)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				fmt.Fprintln(os.Stderr, "goal: cancelled")
@@ -127,10 +127,10 @@ func runGoalHeadless(ctx context.Context, eng *loop.Engine, cfg config.Config, s
 	return 0
 }
 
-// carryGoalHistory seeds the next turn with this turn's transcript: Run is
-// stateless, so without it every continuation starts blind and the judge sees
-// only the latest turn. a tool_use left dangling by a failed turn is dropped.
-func carryGoalHistory(eng *loop.Engine, res loop.RunResult, err error) {
+// carryHistory seeds the next turn with this turn's transcript: Run is
+// stateless, so without it every continuation starts blind (and the goal judge
+// sees only the latest turn). a tool_use left dangling by a failed turn is dropped.
+func carryHistory(eng *loop.Engine, res loop.RunResult, err error) {
 	if len(res.Messages) == 0 {
 		return
 	}

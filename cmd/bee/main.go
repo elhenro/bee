@@ -133,7 +133,8 @@ usage:
   bee bg --tail <id>                 follow a background log
   bee bg --kill <id>                 stop a background bee
   bee agents                        parallel-agents overview (worktree-per-agent)
-  bee remote-control [--port N] [--yes]  serve a local web relay (URL + QR) to drive bee from another device
+  bee remote-control [--port N] [--lan] [--yes] [--yolo]  serve a local web relay (URL + QR) to drive bee from another device
+                            --yes acknowledges full-access exposure, --yolo auto-approves dangerous commands
   bee zzz [flags] <objective>        overnight loop: clean→prompt→commit-or-reset
   bee zzz --agents N --yes <obj>     queen mode: N parallel worker bees, one dashboard
   bee zzz --list                     list overnight runs
@@ -141,6 +142,8 @@ usage:
   bee zzz --gc [--gc-max-age <d>] [--gc-keep <n>]  prune terminal runs + bg sessions
   bee cron ls|run <name>|daemon      scheduled jobs from [[cron.jobs]] in config
   bee doctor [--json]       preflight: dirs, sandbox, provider creds
+  bee bench [flags]         score a task suite against the configured model
+  bee waggle [ls|gc]        list or curate crystallized procedure memory
   bee explore <target>      trace a file/symbol/concept and print a markdown map
   bee research <topic>      deep multi-source web research, structured report
   bee <skill> [args...]     run a skill non-interactively

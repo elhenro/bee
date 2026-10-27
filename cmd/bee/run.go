@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/elhenro/bee/internal/approval"
-	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/herdr"
 	"github.com/elhenro/bee/internal/jsonmode"
 	"github.com/elhenro/bee/internal/knowledge"
@@ -28,7 +27,6 @@ import (
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/skills"
 	"github.com/elhenro/bee/internal/skills/bundled"
-	"github.com/elhenro/bee/internal/tools/skillexec"
 )
 
 // runHeadless is the headless implementation behind `bee run`. Cleanup is
@@ -42,22 +40,16 @@ func runHeadless(args []string) {
 func headlessRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.Bool("headless", true, "run without TUI (default true)")
-	model := fs.String("model", "", "override config default_model")
-	providerName := fs.String("provider", "", "override config default_provider")
-	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|workspace-write-net|danger-full-access)")
-	safe := fs.Bool("safe", false, "shorthand for --sandbox workspace-write: confine writes to cwd+tmp, block network")
+	var ef engineFlags
+	ef.register(fs)
+	ef.registerAutoApprove(fs)
 	skillName := fs.String("skill", "", "run a skill as the user message (prompt-kind only in Wave 2)")
-	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high|max (default: from config)")
-	effort := fs.String("effort", "", "alias for --thinking: auto|off|low|medium|high|max")
-	cavemanLvl := fs.String("caveman", "", "force caveman level: off|lite|full|ultra")
 	jsonOut := fs.Bool("json", false, "emit NDJSON events to stdout instead of text")
 	allowedTools := fs.String("allowed-tools", "", "comma-list of tool names to expose (default: all)")
 	sessionID := fs.String("session", "", "use this session id instead of a fresh uuid")
 	writeFilter := fs.String("write-path-re", "", "regex; writes restricted to paths matching this regex (default: no filter)")
 	verbose := fs.Bool("verbose", false, "show full tool output (default: compact one-line preview)")
 	bgLoop := fs.Bool("bg-loop", false, "persist after first turn: write status sidecar, poll inbox for follow-ups")
-	yes := fs.Bool("yes", false, "auto-approve any dangerous shell command without prompting (still blocks hardline-refused commands)")
-	yolo := fs.Bool("yolo", false, "alias for --yes: auto-approve dangerous commands")
 	browserOn := fs.Bool("browser", false, "enable native browser tools (open/snapshot/click/type/console) for this run")
 	parseFlags(fs, args)
 	if *verbose {
@@ -82,7 +74,7 @@ func headlessRun(args []string) int {
 		}
 	}
 
-	cfg := mustConfig("bee run", *model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
+	cfg := ef.mustLoad("bee run", "")
 	// scripted provider needs deterministic Stream-call count: pin worker role
 	// (no per-turn classifier side-query fires — classifier was removed) and
 	// disable compaction + memory selection. tests script exactly the calls
@@ -92,9 +84,6 @@ func headlessRun(args []string) int {
 		cfg.Compaction.Enabled = false
 		cfg.Memory.Enabled = false
 	}
-	if err := applyThinkingCaveman(&cfg, *thinking, *effort, *cavemanLvl); err != nil {
-		exitf(2, "bee run: %v", err)
-	}
 	if *browserOn {
 		cfg.Browser.Enabled = true
 	}
@@ -103,7 +92,7 @@ func headlessRun(args []string) int {
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
-	app := buildHeadlessApprover(cfg, *yes || *yolo)
+	app := buildHeadlessApprover(cfg, ef.autoApprove())
 	if c, ok := app.(*approval.Cache); ok {
 		defer c.Flush()
 	}
@@ -116,9 +105,7 @@ func headlessRun(args []string) int {
 	}
 	ensureFirstRun()
 	skillReg := newSkillRegistry()
-	// exec-kind skills (including waggles) become model-callable tools. Done
-	// before the --allowed-tools filter so the allowlist governs them too.
-	skillexec.RegisterExecSkills(reg, skillReg.List(), execSandbox(cfg, cwd)...)
+	registerSkillTools(reg, skillReg, cfg, cwd)
 
 	if *allowedTools != "" {
 		if reg, err = filterTools(reg, *allowedTools); err != nil {
@@ -145,21 +132,11 @@ func headlessRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "bee: queen role spawns a hive only in the TUI — running a single worker turn here")
 	}
 
-	eng := &loop.Engine{
-		Provider:    prov,
-		Tools:       reg,
-		Skills:      skillReg,
-		Waggle:      waggleManager(cfg, cwd),
-		Replay:      waggleReplayer(cfg, cwd),
-		Memory:      newKnowledgeAdapter(prov, cfg),
-		Sessions:    roll,
-		HostSession: true,
-		Cfg:         cfg,
-		Cwd:         cwd,
-		Stdout:      os.Stdout,
-		Costs:       cost.New(),
-		Jobs:        jm,
-	}
+	eng := newHeadlessEngine(prov, reg, skillReg, cfg, cwd, roll, os.Stdout)
+	eng.Waggle = waggleManager(cfg, cwd)
+	eng.Replay = waggleReplayer(cfg, cwd)
+	eng.HostSession = true
+	eng.Jobs = jm
 	if *jsonOut {
 		eng.JSONEmitter = jsonmode.New(os.Stdout)
 		// text deltas already routed through emitter; suppress raw writes.
@@ -219,10 +196,14 @@ func headlessRun(args []string) int {
 	return 0
 }
 
-// newSkillRegistry loads the installed skills, best-effort.
+// newSkillRegistry loads the installed skills. Valid ones load even when
+// others fail to parse; those are reported so a malformed skill does not just
+// vanish.
 func newSkillRegistry() *skills.Registry {
 	reg := skills.NewRegistry()
-	_ = reg.Load(skills.BaseDir())
+	if err := reg.Load(skills.BaseDir()); err != nil {
+		fmt.Fprintf(os.Stderr, "bee: %v\n", err)
+	}
 	return reg
 }
 

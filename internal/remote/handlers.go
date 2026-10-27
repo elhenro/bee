@@ -90,7 +90,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	s.broadcast(sseEvent{typ: "message", data: user})
 	s.broadcast(sseEvent{typ: "busy", data: true})
 
-	final, err := s.eng.Send(r.Context(), body.Text, func(chunk string) {
+	final, err := s.eng.Send(s.life, body.Text, func(chunk string) {
 		if chunk != "" {
 			s.broadcast(sseEvent{typ: "delta", data: chunk})
 		}

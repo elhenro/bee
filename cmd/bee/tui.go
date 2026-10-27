@@ -24,7 +24,6 @@ import (
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/session"
 	"github.com/elhenro/bee/internal/tools"
-	"github.com/elhenro/bee/internal/tools/skillexec"
 	"github.com/elhenro/bee/internal/tui"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -83,8 +82,7 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 	toolsFor := func(wcwd string, c config.Config, p llm.Provider, opts ...buildOpt) (*tools.Registry, error) {
 		r, err := buildToolsAsker(wcwd, c, p, storeDir, app, tuiAsker, opts...)
 		if err == nil {
-			// exec-kind skills (including waggles) become model-callable tools.
-			skillexec.RegisterExecSkills(r, skillReg.List(), execSandbox(c, wcwd)...)
+			registerSkillTools(r, skillReg, c, wcwd)
 		}
 		return r, err
 	}
@@ -231,7 +229,9 @@ func runTUIWithSession(resumeID, seedPrompt string) {
 		// os.Exit skips defers: persist the allowlist and sync the rollout first
 		jm.Close()
 		herdr.Close()
-		app.Flush()
+		if err := app.Flush(); err != nil {
+			fmt.Fprintf(os.Stderr, "bee: allowlist not saved: %v\n", err)
+		}
 		_ = roll.Close()
 		os.Exit(1)
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/cron"
+	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/zzz"
 )
 
@@ -90,11 +91,15 @@ func cronList(reg *cron.Registry, now time.Time) {
 }
 
 func cronRunOne(reg *cron.Registry, name string) int {
+	// the job runs in its own process group, so a terminal ctrl-c reaches it
+	// only through this context
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	for _, j := range reg.Jobs() {
 		if j.Name != name {
 			continue
 		}
-		if err := newCronRunner().Run(context.Background(), j); err != nil {
+		if err := newCronRunner().Run(ctx, j); err != nil {
 			fmt.Fprintf(os.Stderr, "bee cron: %v\n", err)
 			return 1
 		}
@@ -119,6 +124,10 @@ func cronDaemon(reg *cron.Registry) int {
 	sc.Shutdown()
 	return 0
 }
+
+// cronKillWait caps how long a cancelled job's Wait blocks on pipes a
+// surviving grandchild still holds open.
+const cronKillWait = 5 * time.Second
 
 // newCronRunner runs job commands through the shell in the current directory.
 // Each run takes the zzz worktree lock for that directory, so a cron job and
@@ -151,6 +160,9 @@ func newCronRunner() cron.Runner {
 		}
 		cmd := exec.CommandContext(ctx, shell, flag, j.Command)
 		cmd.Dir, cmd.Stdout, cmd.Stderr = wd, os.Stdout, os.Stderr
+		// cancel must reach what the shell started: a `bee zzz` job outliving
+		// the daemon would keep the worktree lock
+		tools.GroupKill(cmd, cronKillWait)
 		// a job that runs `bee zzz` is a child of the lock holder, not a rival
 		cmd.Env = append(os.Environ(), zzz.LockEnv(lockDir))
 		if err := cmd.Run(); err != nil {

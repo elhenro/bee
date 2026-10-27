@@ -20,6 +20,9 @@ import (
 	"github.com/elhenro/bee/internal/llm/mockprov"
 )
 
+// maxStdinBytes caps a message piped on stdin.
+const maxStdinBytes = 1 << 20
+
 func resolveUserMessage(positional []string, stdin io.Reader) (string, error) {
 	if len(positional) > 0 {
 		return strings.Join(positional, " "), nil
@@ -29,10 +32,14 @@ func resolveUserMessage(positional []string, stdin io.Reader) (string, error) {
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		return "", fmt.Errorf("no user message: pass as args or pipe via stdin")
 	}
-	// stdin fallback. limit read so a stuck pipe doesn't hang forever.
-	buf := make([]byte, 1<<20)
-	n, _ := io.ReadFull(stdin, buf)
-	s := strings.TrimSpace(string(buf[:n]))
+	// stdin fallback. limit read so a stuck pipe doesn't hang forever; one
+	// byte past the limit tells a cut-off message from one that fits exactly.
+	buf, _ := io.ReadAll(io.LimitReader(stdin, maxStdinBytes+1))
+	if len(buf) > maxStdinBytes {
+		fmt.Fprintf(os.Stderr, "bee: stdin message truncated to %d bytes\n", maxStdinBytes)
+		buf = buf[:maxStdinBytes]
+	}
+	s := strings.TrimSpace(string(buf))
 	if s == "" {
 		return "", fmt.Errorf("no user message: pass as args or stdin")
 	}

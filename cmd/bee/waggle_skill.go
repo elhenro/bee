@@ -41,14 +41,24 @@ func waggleSkill(name string) (skills.Skill, bool) {
 	return skills.Skill{}, false
 }
 
+// loadConfigNoKey loads config for a command that never calls a model. A
+// missing provider key still leaves the partial config usable, so the user's
+// sandbox settings keep applying; a config file that failed to read or parse
+// is reported, since its settings were not all applied. Load names the file
+// in those errors, and only those.
+func loadConfigNoKey(cmd string) config.Config {
+	cfg, err := config.Load()
+	if err != nil && strings.Contains(err.Error(), config.ConfigPath()) {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", cmd, err)
+	}
+	return cfg
+}
+
 // runExecWaggle follows a read-only exec waggle directly through the hardened
 // skillexec path, no engine needed. Prints the output; exit 1 on error.
 func runExecWaggle(sk skills.Skill, rest []string) {
 	cwd, _ := os.Getwd()
-	cfg, cerr := config.Load()
-	if cerr != nil {
-		cfg = config.Defaults()
-	}
+	cfg := loadConfigNoKey("bee " + sk.Name)
 	tool, err := skillexec.New(sk, execSandbox(cfg, cwd)...)
 	if err != nil {
 		exitf(1, "bee %s: %v", sk.Name, err)

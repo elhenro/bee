@@ -34,10 +34,8 @@ func runFan(args []string) {
 	task := fs.String("task", "", "task description applied to each worker")
 	per := fs.String("per", "file", "workload mode: file|line|count")
 	count := fs.Int("count", 0, "number of workers when --per=count")
-	model := fs.String("model", "", "override config default_model")
-	providerName := fs.String("provider", "", "override config default_provider")
-	sandboxScope := fs.String("sandbox", "", "override sandbox scope")
-	safe := fs.Bool("safe", false, "shorthand for --sandbox workspace-write: confine writes to cwd+tmp, block network")
+	var ef engineFlags
+	ef.register(fs)
 	isolated := fs.Bool("isolated", false, "give each worker its own git worktree (avoids write races)")
 	parseFlags(fs, args)
 	if strings.TrimSpace(*task) == "" {
@@ -52,7 +50,7 @@ func runFan(args []string) {
 		exitf(2, "bee fan: no work to do")
 	}
 
-	cfg := mustConfig("bee fan", *model, *providerName, resolveSafe(*sandboxScope, *safe, ""))
+	cfg := ef.mustLoad("bee fan", "")
 	prov := mustProvider("bee fan", cfg)
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()

@@ -45,6 +45,10 @@ type Server struct {
 	opts  Options
 	log   io.Writer
 	token string // random per-instance bearer token embedded in the URL path
+	// life bounds every turn: it ends with the server, not with the request
+	// that started the turn, so a client dropping off wifi cannot cancel the
+	// agent mid-edit. Serve swaps in a context cancelled on shutdown.
+	life context.Context
 
 	mu          sync.Mutex
 	history     []Msg
@@ -73,6 +77,7 @@ func New(eng Engine, opts Options) *Server {
 		opts:        opts,
 		log:         logw,
 		token:       genToken(),
+		life:        context.Background(),
 		subscribers: make(map[int]chan sseEvent),
 	}
 }
@@ -166,6 +171,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	// and in-flight turns, which Shutdown alone waits on until its deadline
 	base, cancelBase := context.WithCancel(context.Background())
 	defer cancelBase()
+	s.life = base
 	srv := &http.Server{Handler: s.Handler(), BaseContext: func(net.Listener) context.Context { return base }}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()

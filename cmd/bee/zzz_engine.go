@@ -10,7 +10,6 @@ import (
 
 	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/config"
-	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/gate"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/llm"
@@ -26,17 +25,15 @@ import (
 //
 // The approval policy never reads stdin: an unattended overnight run with no
 // one to answer would wedge the loop forever (and in TUI mode contends with
-// bubbletea for the tty). With autoYes flagged-dangerous commands run;
+// bubbletea for the tty). With --yes/--yolo flagged-dangerous commands run;
 // otherwise they are denied so the model picks another approach instead of
 // blocking. Non-dangerous commands never reach the approver either way.
-func buildZzzDeps(model, provider, sandboxScope, thinking, effort, cavemanLvl string, autoYes bool) (
+func buildZzzDeps(ef engineFlags) (
 	config.Config, llm.Provider, approval.Approver, *skills.Registry, error,
 ) {
-	cfg, err := loadConfig(model, provider, sandboxScope)
+	// unattended: confine to the workspace unless --sandbox says otherwise
+	cfg, err := ef.load("workspace-write")
 	if err != nil {
-		return cfg, nil, nil, nil, fmt.Errorf("config: %w", err)
-	}
-	if err := applyThinkingCaveman(&cfg, thinking, effort, cavemanLvl); err != nil {
 		return cfg, nil, nil, nil, err
 	}
 	prov, err := buildProvider(cfg)
@@ -44,7 +41,7 @@ func buildZzzDeps(model, provider, sandboxScope, thinking, effort, cavemanLvl st
 		return cfg, nil, nil, nil, fmt.Errorf("provider: %w", err)
 	}
 	verdict := approval.Deny
-	if autoYes {
+	if ef.autoApprove() {
 		verdict = approval.AllowOnce
 	}
 	ensureFirstRun()
@@ -68,18 +65,9 @@ func buildZzzEngine(cfg config.Config, prov llm.Provider, app approval.Approver,
 	if out == nil {
 		out = os.Stdout
 	}
-	eng := &loop.Engine{
-		Provider: prov,
-		Tools:    reg,
-		Skills:   skillReg,
-		Waggle:   waggleManagerLearning(cfg, waggleProject(cwd)),
-		Memory:   newKnowledgeAdapter(prov, cfg),
-		Sessions: roll,
-		Cfg:      cfg,
-		Cwd:      cwd,
-		Stdout:   out,
-		Costs:    cost.New(),
-	}
+	registerSkillTools(reg, skillReg, cfg, cwd)
+	eng := newHeadlessEngine(prov, reg, skillReg, cfg, cwd, roll, out)
+	eng.Waggle = waggleManagerLearning(cfg, waggleProject(cwd))
 	return eng, func() { roll.Close() }, nil
 }
 

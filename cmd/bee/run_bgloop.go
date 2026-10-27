@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -19,22 +20,23 @@ import (
 )
 
 // putStatus stamps s with state, last response and the current time, writes the
-// sidecar and returns the stamped status.
+// sidecar and returns the stamped status. Only an active write may create the
+// file: a later write after `bee bg --kill` removed it would resurrect the
+// husk for the merger.
 func putStatus(s bgreg.Status, state bgreg.State, resp string) bgreg.Status {
 	s.State, s.LastResponse, s.UpdatedAt = state, resp, time.Now().UTC()
+	if _, err := bgreg.Read(s.SessionID); errors.Is(err, os.ErrNotExist) && state != bgreg.StateActive {
+		return s
+	}
 	_ = bgreg.Write(s)
 	return s
 }
 
-// runBgLoop persists the engine across turns: write status sidecar on every
-// boundary, run a turn, write awaiting status with the assistant's final
-// text, then poll the inbox for follow-up messages. Exits on ctx cancel.
-func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) error {
-	agentMode := os.Getenv("BEE_AGENT_WORKTREE") == "1"
-	repoRoot := os.Getenv("BEE_AGENT_REPO_ROOT")
-
-	// inherit prior status fields (worktree/branch/provider/etc.) written by
-	// the spawner so we don't overwrite them on the first status update.
+// inheritStatus builds the status this process writes, starting from whatever
+// the spawner left on disk (worktree, branch, merge state, retry budgets, ...)
+// so the first update does not overwrite it. Only what this process owns is
+// reset: pid, cwd, state, token totals and the finish time.
+func inheritStatus(eng *loop.Engine, sessID, firstMsg string, agentMode bool) bgreg.Status {
 	base := bgreg.Status{
 		SessionID: sessID,
 		PID:       os.Getpid(),
@@ -45,27 +47,16 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		StartedAt: time.Now().UTC(),
 	}
 	if existing, err := bgreg.Read(sessID); err == nil {
-		// preserve fields set by Spawn that the bg-loop doesn't own
-		if existing.Task != "" {
-			base.Task = existing.Task
-		}
-		if !existing.StartedAt.IsZero() {
-			base.StartedAt = existing.StartedAt
-		}
-		base.WorktreePath = existing.WorktreePath
-		base.Branch = existing.Branch
-		if existing.Provider != "" {
-			base.Provider = existing.Provider
-		}
-		if existing.Model != "" {
-			base.Model = existing.Model
-		}
-		base.MergeState = existing.MergeState
-		// retry budgets and the last bounce reason survive a resume
-		base.Hops = existing.Hops
-		base.Resumes = existing.Resumes
-		base.ConflictMsg = existing.ConflictMsg
-		base.HandinSHA = existing.HandinSHA
+		inherited := existing
+		inherited.PID, inherited.Cwd = base.PID, base.Cwd
+		inherited.State, inherited.LastResponse = "", ""
+		inherited.InputTokens, inherited.OutputTokens = 0, 0
+		inherited.FinishedAt = time.Time{}
+		inherited.Task = cmp.Or(existing.Task, base.Task)
+		inherited.StartedAt = cmp.Or(existing.StartedAt, base.StartedAt)
+		inherited.Provider = cmp.Or(existing.Provider, base.Provider)
+		inherited.Model = cmp.Or(existing.Model, base.Model)
+		base = inherited
 	}
 	if agentMode && base.Branch == "" {
 		base.Branch = os.Getenv("BEE_AGENT_BRANCH")
@@ -73,6 +64,27 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 	if agentMode && base.MergeState == "" {
 		base.MergeState = bgreg.MergeStateUnmerged
 	}
+	return base
+}
+
+// tokenTotals reads the cost tracker's running input/output totals.
+func tokenTotals(eng *loop.Engine) (in, out int) {
+	if eng.Costs == nil {
+		return 0, 0
+	}
+	t := eng.Costs.Total()
+	return t.Input, t.Output
+}
+
+// runBgLoop persists the engine across turns: write status sidecar on every
+// boundary, run a turn, write awaiting status with the assistant's final
+// text, then poll the inbox for follow-up messages. Exits on ctx cancel.
+// Each turn carries the transcript of the ones before it, and runs under the
+// same auto-resume wrapper as `bee run`.
+func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) error {
+	agentMode := os.Getenv("BEE_AGENT_WORKTREE") == "1"
+	repoRoot := os.Getenv("BEE_AGENT_REPO_ROOT")
+	base := inheritStatus(eng, sessID, firstMsg, agentMode)
 
 	if agentMode {
 		holdForLoad(ctx, eng.Cfg.Swarm.MaxLoadRatio, base)
@@ -86,15 +98,10 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 	hadCommit := false
 	for {
 		s := putStatus(base, bgreg.StateActive, "")
+		beforeIn, beforeOut := tokenTotals(eng)
 
-		// token snapshot before turn so we can compute deltas
-		var beforeIn, beforeOut int
-		if eng.Costs != nil {
-			t := eng.Costs.Total()
-			beforeIn, beforeOut = t.Input, t.Output
-		}
-
-		res, err := eng.Run(ctx, msg)
+		res, err := runWithResume(ctx, eng, msg)
+		carryHistory(eng, res, err)
 		if err != nil {
 			if ctx.Err() != nil {
 				writeStopped(s)
@@ -104,31 +111,17 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 			return err
 		}
 
-		// accumulate token totals from cost tracker delta
-		if eng.Costs != nil {
-			t := eng.Costs.Total()
-			base.InputTokens += t.Input - beforeIn
-			base.OutputTokens += t.Output - beforeOut
-		}
+		in, out := tokenTotals(eng)
+		base.InputTokens += in - beforeIn
+		base.OutputTokens += out - beforeOut
 
-		// agents mode: auto-commit any dirty tree from this turn. Surface
-		// failures loudly — a silent miss here corrupts merger state (agent
-		// signals DONE on a branch with no commit).
+		// agents mode: auto-commit any dirty tree from this turn
 		if agentMode && repoRoot != "" {
-			clean, ierr := zzz.IsClean(eng.Cwd)
-			if ierr != nil {
-				return failAgentCommit(base, "git status: "+ierr.Error())
+			committed, cerr := commitAgentTurn(eng, base, res.FinalText)
+			if cerr != nil {
+				return cerr
 			}
-			if !clean {
-				if cerr := zzz.AddAll(eng.Cwd); cerr != nil {
-					return failAgentCommit(base, "git add: "+cerr.Error())
-				}
-				commitMsg := zzz.CommitMessageFrom(res.FinalText, 1, base.InputTokens, base.OutputTokens)
-				if _, cerr := zzz.Commit(eng.Cwd, commitMsg, false, false); cerr != nil {
-					return failAgentCommit(base, "git commit: "+cerr.Error())
-				}
-				hadCommit = true
-			}
+			hadCommit = hadCommit || committed
 		}
 
 		// classify final text via shared sentinel package. Legacy bg
@@ -146,33 +139,8 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 			}
 			switch kind {
 			case sentinel.KindDone:
-				s = base
-				// zero-change run has nothing to merge — skip the unmerged limbo
-				// and tear down the worktree+branch right away.
-				// a DONE is the agent's handin: proof of life resets the
-				// resume budget, HEAD is what the merger will verify.
-				s.Resumes = 0
-				s.ConflictMsg = ""
-				s.HandinSHA, _ = zzz.HeadSHA(eng.Cwd)
-				// a resumed agent may only have rebased, so judge by commits
-				// ahead of the base, not by whether this process committed.
-				// when the count fails, keep the branch rather than tear
-				// down a worktree that may hold commits.
-				if n, aerr := agents.Ahead(eng.Cwd); aerr != nil || n > 0 {
-					hadCommit = true
-				}
-				if hadCommit {
-					s.MergeState = bgreg.MergeStateUnmerged
-				} else {
-					s.MergeState = bgreg.MergeStateMerged
-					s.FinishedAt = time.Now().UTC()
-					if repoRoot != "" && base.WorktreePath != "" {
-						_ = zzz.WorktreeRemove(repoRoot, base.WorktreePath, true)
-						s.WorktreePath = ""
-					}
-				}
-				// exit loop — the merger goroutine in the TUI picks it up
-				putStatus(s, bgreg.StateDone, final)
+				// exit loop: the merger goroutine in the TUI picks it up
+				finishAgent(eng, base, repoRoot, hadCommit, final)
 				return nil
 			case sentinel.KindBlocked:
 				putStatus(base, bgreg.StateFailed, final)
@@ -192,6 +160,55 @@ func runBgLoop(ctx context.Context, eng *loop.Engine, sessID, firstMsg string) e
 		}
 		msg = next
 	}
+}
+
+// commitAgentTurn commits a dirty worktree after a turn and reports whether it
+// did. Failures are surfaced loudly: a silent miss here corrupts merger state
+// (agent signals DONE on a branch with no commit).
+func commitAgentTurn(eng *loop.Engine, base bgreg.Status, final string) (bool, error) {
+	clean, err := zzz.IsClean(eng.Cwd)
+	if err != nil {
+		return false, failAgentCommit(base, "git status: "+err.Error())
+	}
+	if clean {
+		return false, nil
+	}
+	if err := zzz.AddAll(eng.Cwd); err != nil {
+		return false, failAgentCommit(base, "git add: "+err.Error())
+	}
+	msg := zzz.CommitMessageFrom(final, 1, base.InputTokens, base.OutputTokens)
+	if _, err := zzz.Commit(eng.Cwd, msg, false, false); err != nil {
+		return false, failAgentCommit(base, "git commit: "+err.Error())
+	}
+	return true, nil
+}
+
+// finishAgent records a DONE hand-in. A DONE is proof of life, so it resets
+// the resume budget; HEAD is what the merger will verify.
+func finishAgent(eng *loop.Engine, base bgreg.Status, repoRoot string, hadCommit bool, final string) {
+	s := base
+	s.Resumes = 0
+	s.ConflictMsg = ""
+	s.HandinSHA, _ = zzz.HeadSHA(eng.Cwd)
+	// a resumed agent may only have rebased, so judge by commits ahead of the
+	// base, not by whether this process committed. when the count fails, keep
+	// the branch rather than tear down a worktree that may hold commits.
+	if n, err := agents.Ahead(eng.Cwd); err != nil || n > 0 {
+		hadCommit = true
+	}
+	if hadCommit {
+		s.MergeState = bgreg.MergeStateUnmerged
+	} else {
+		// zero-change run has nothing to merge: skip the unmerged limbo and
+		// tear down the worktree+branch right away.
+		s.MergeState = bgreg.MergeStateMerged
+		s.FinishedAt = time.Now().UTC()
+		if repoRoot != "" && base.WorktreePath != "" {
+			_ = zzz.WorktreeRemove(repoRoot, base.WorktreePath, true)
+			s.WorktreePath = ""
+		}
+	}
+	putStatus(s, bgreg.StateDone, final)
 }
 
 // writeStopped records a cancelled run as done, unless `bee bg --kill` already

@@ -10,7 +10,9 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/elhenro/bee/internal/atomicfile"
 	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/flock"
 )
 
 // PersistAllowlistEntry appends key to sandbox.command_allowlist in the user's
@@ -25,6 +27,8 @@ func PersistAllowlistEntry(key string) error {
 		return nil
 	}
 	path := config.ConfigPath()
+	// same lock the settings picker takes, so toggles and grants don't lose each other's write
+	defer flock.Lock(path)()
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("read %s: %w", path, err)
@@ -131,36 +135,18 @@ func quoteTOML(s string) string {
 	return `"` + s + `"`
 }
 
+// atomicWriteApproval writes config.toml through atomicfile, keeping an
+// existing file's mode (0600 for a new one).
 func atomicWriteApproval(path string, out []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".config.toml.*")
-	if err != nil {
-		return fmt.Errorf("tmp: %w", err)
+	mode := os.FileMode(0o600)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
 	}
-	tmpName := tmp.Name()
-	defer func() {
-		if _, statErr := os.Stat(tmpName); statErr == nil {
-			_ = os.Remove(tmpName)
-		}
-	}()
-	if _, err := tmp.Write(out); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write tmp: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync tmp: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close tmp: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("rename: %w", err)
-	}
-	return nil
+	return atomicfile.Write(path, out, mode)
 }
 
 // persistVisionModel records the user's answer to "does this model accept
@@ -171,6 +157,7 @@ func persistVisionModel(model string, hasVision bool) error {
 		return nil
 	}
 	path := config.ConfigPath()
+	defer flock.Lock(path)()
 	root := map[string]any{}
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {

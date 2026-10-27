@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/elhenro/bee/internal/cost"
+	"github.com/elhenro/bee/internal/approval"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/loop"
 	"github.com/elhenro/bee/internal/remote"
@@ -28,13 +28,13 @@ func runRemoteControl(args []string) {
 	fs := flag.NewFlagSet("remote-control", flag.ContinueOnError)
 	port := fs.Int("port", 0, "listen port (0 = OS-assigned)")
 	lan := fs.Bool("lan", false, "bind all interfaces to expose on the LAN (default: loopback only). The bearer token rides in a cleartext-HTTP URL, so only expose on a trusted network.")
-	yes := fs.Bool("yes", false, "acknowledge LAN clients can run tools locally on this machine")
-	model := fs.String("model", "", "override config default_model")
-	providerName := fs.String("provider", "", "override config default_provider")
-	sandboxScope := fs.String("sandbox", "", "override sandbox scope (read-only|workspace-write|workspace-write-net|danger-full-access)")
+	yes := fs.Bool("yes", false, "acknowledge that clients can run tools locally on this machine (does not auto-approve commands)")
+	yolo := fs.Bool("yolo", false, "auto-approve dangerous shell commands from clients; without it they are asked on this terminal, or denied when stdin is not one")
+	var ef engineFlags
+	ef.register(fs)
 	parseFlags(fs, args)
 
-	cfg := mustConfig("bee remote-control", *model, *providerName, *sandboxScope)
+	cfg := ef.mustLoad("bee remote-control", "")
 
 	// trust gate: anyone on the LAN who reaches the URL can drive the agent
 	// and run tools locally. Refuse full-access without explicit --yes.
@@ -45,35 +45,33 @@ func runRemoteControl(args []string) {
 		exitf(2, "to proceed: re-run with --yes, or pick a tighter scope with --sandbox workspace-write.")
 	}
 	fmt.Fprintf(os.Stdout, "remote-control: clients execute locally under sandbox scope %s\n", scope)
+	if *yolo || cfg.Yolo {
+		fmt.Fprintln(os.Stdout, "remote-control: dangerous commands are auto-approved")
+	}
 
 	prov := mustProvider("bee remote-control", cfg)
 
 	cwd, _ := os.Getwd()
 	storeDir, _ := knowledge.StoreDir()
-	app := buildHeadlessApprover(cfg, *yes)
+	app := headlessApprover(cfg, *yolo, "--yolo")
+	if c, ok := app.(*approval.Cache); ok {
+		defer c.Flush()
+	}
 	reg, err := buildToolsWithApprover(cwd, cfg, prov, storeDir, app)
 	if err != nil {
 		exitf(1, "bee remote-control: tools: %v", err)
 	}
 
 	ensureFirstRun()
+	skillReg := newSkillRegistry()
+	registerSkillTools(reg, skillReg, cfg, cwd)
 	roll, err := session.Open(uuid.NewString())
 	if err != nil {
 		exitf(1, "bee remote-control: session: %v", err)
 	}
 	defer roll.Close()
 
-	eng := &loop.Engine{
-		Provider: prov,
-		Tools:    reg,
-		Skills:   newSkillRegistry(),
-		Memory:   newKnowledgeAdapter(prov, cfg),
-		Sessions: roll,
-		Cfg:      cfg,
-		Cwd:      cwd,
-		Stdout:   os.Stdout,
-		Costs:    cost.New(),
-	}
+	eng := newHeadlessEngine(prov, reg, skillReg, cfg, cwd, roll, os.Stdout)
 
 	adapter := &remoteEngine{eng: eng}
 	// bind loopback by default — the capability token travels in a cleartext

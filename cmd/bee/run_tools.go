@@ -118,6 +118,12 @@ func newShellTool(app approval.Approver, cfg config.Config, jm *jobs.Manager) to
 //	                from cfg.Sandbox.CommandAllowlist; AllowAlways picks append
 //	                to that list on disk via PersistAllowlistEntry.
 func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
+	return headlessApprover(cfg, autoYes, "--yes")
+}
+
+// headlessApprover is buildHeadlessApprover with the flag named in the
+// auto-deny notice, for commands where --yes means something else.
+func headlessApprover(cfg config.Config, autoYes bool, autoFlag string) approval.Approver {
 	// yolo toggle (config or --yolo/--yes flag) auto-approves every flagged
 	// command; hardline patterns still refuse upstream in the shell tool.
 	if autoYes || cfg.Yolo {
@@ -128,10 +134,14 @@ func buildHeadlessApprover(cfg config.Config, autoYes bool) approval.Approver {
 	// iterations with no operator-visible signal. warn once so the throttle is
 	// visible. keep the Cache wrapper — persistent allowlist grants still apply.
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintln(os.Stderr, "bee: stdin is not a terminal — dangerous-command prompts will auto-deny. pass --yes to auto-approve, or allowlist commands in config.")
+		fmt.Fprintf(os.Stderr, "bee: stdin is not a terminal — dangerous-command prompts will auto-deny. pass %s to auto-approve, or allowlist commands in config.\n", autoFlag)
 	}
 	cli := approval.NewCLI(os.Stdin, os.Stderr)
-	return approval.NewCache(herdr.WrapApprover(cli), cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
+	cache := approval.NewCache(herdr.WrapApprover(cli), cfg.Sandbox.CommandAllowlist, PersistAllowlistEntry)
+	cache.OnPersistError(func(key string, err error) {
+		fmt.Fprintf(os.Stderr, "bee: could not save allowlist entry %q: %v\n", key, err)
+	})
+	return cache
 }
 
 // buildToolsWithApprover is buildTools that wires app into the shell tool so

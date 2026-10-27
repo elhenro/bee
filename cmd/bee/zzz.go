@@ -40,15 +40,9 @@ func runZzz(args []string) {
 	gcKeep := fs.Int("gc-keep", 20, "with --gc: keep this many newest entries regardless of age")
 	gcWorktrees := fs.Bool("gc-worktrees", false, "with --gc: also `git worktree remove` pruned worktree runs (run from the main repo)")
 	gcStale := fs.Duration("gc-stale-running", 7*24*time.Hour, "with --gc: mark runs stuck in 'running' older than this as aborted (0 = never)")
-	model := fs.String("model", "", "override config default_model")
-	provider := fs.String("provider", "", "override config default_provider")
-	sandboxScope := fs.String("sandbox", "", "override sandbox scope")
-	safe := fs.Bool("safe", false, "shorthand for --sandbox workspace-write: confine writes to cwd+tmp, block network")
-	thinking := fs.String("thinking", "", "thinking level: auto|off|low|medium|high|max")
-	effort := fs.String("effort", "", "alias for --thinking")
-	cavemanLvl := fs.String("caveman", "", "force caveman level")
-	yes := fs.Bool("yes", false, "auto-approve dangerous shell commands")
-	yolo := fs.Bool("yolo", false, "alias for --yes")
+	var ef engineFlags
+	ef.register(fs)
+	ef.registerAutoApprove(fs)
 	plain := fs.Bool("plain", false, "force single-line status renderer (no full-screen TUI)")
 	maxFails := fs.Int("max-consecutive-fails", 0, "end run after N consecutive failed iters (0=default 3)")
 	retries := fs.Int("hard-error-retries", 0, "engine.Run retries per iter on transient errors (0=default 3)")
@@ -74,7 +68,7 @@ func runZzz(args []string) {
 		return
 	}
 
-	autoYes := *yes || *yolo
+	autoYes := ef.autoApprove()
 	objective := strings.Join(fs.Args(), " ")
 	isResume := *resumeID != "" || (objective == "" && !hasStdinPipe())
 	if objective == "" && !isResume {
@@ -87,7 +81,7 @@ func runZzz(args []string) {
 	// zzz runs unattended, so it confines to the workspace by default (--safe).
 	// An explicit --sandbox/--safe still wins; --sandbox danger-full-access opts
 	// back into unrestricted access.
-	cfg, prov, app, skillReg, err := buildZzzDeps(*model, *provider, resolveSafe(*sandboxScope, *safe, "workspace-write"), *thinking, *effort, *cavemanLvl, autoYes)
+	cfg, prov, app, skillReg, err := buildZzzDeps(ef)
 	if err != nil {
 		exitf(1, "zzz: setup: %v", err)
 	}
