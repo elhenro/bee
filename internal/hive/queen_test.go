@@ -347,3 +347,31 @@ func TestQueen_NoReviewersSkipsReview(t *testing.T) {
 		t.Errorf("expected no 'Critic review' header in synthesize prompt\nprompt=%s", planner.prompts[1])
 	}
 }
+
+type queenPanicRunner struct{}
+
+func (queenPanicRunner) Run(context.Context, string) (loop.RunResult, error) { panic("kaboom") }
+
+// a panicking worker bee fails its own sub-task; the swarm still synthesizes.
+func TestQueen_WorkerPanicFailsOnlyThatSubTask(t *testing.T) {
+	planner := &scriptedRunner{outputs: []string{`["t1", "t2"]`, "summary"}}
+	ok := &scriptedRunner{outputs: []string{"fine"}}
+	q := NewQueen(planner, []Runner{queenPanicRunner{}, ok})
+	res, err := q.Run(context.Background(), "task")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.WorkerResults) != 2 {
+		t.Fatalf("worker results = %d, want 2", len(res.WorkerResults))
+	}
+	bad, good := res.WorkerResults[0], res.WorkerResults[1]
+	if bad.Err == nil || !strings.Contains(bad.Err.Error(), "panicked: kaboom") {
+		t.Errorf("panic not recorded: %+v", bad)
+	}
+	if good.Err != nil || good.Final != "fine" {
+		t.Errorf("sibling disturbed: %+v", good)
+	}
+	if res.Final != "summary" {
+		t.Errorf("final = %q, want planner synthesis", res.Final)
+	}
+}

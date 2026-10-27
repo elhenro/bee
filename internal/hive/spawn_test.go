@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -241,5 +242,49 @@ func TestQueen_NoConcurrentSameWorker(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&max1); got > 1 {
 		t.Errorf("worker 1 driven concurrently: maxSeen=%d", got)
+	}
+}
+
+type panicRunner struct{}
+
+func (panicRunner) Run(context.Context, string) (loop.RunResult, error) {
+	panic("boom")
+}
+
+// one worker panicking must surface as that worker's error while its siblings
+// finish and the results channel still closes.
+func TestPool_WorkerPanicBecomesResultError(t *testing.T) {
+	var inflight, maxSeen int32
+	withRunnerHook(t, func(w *Worker) Runner {
+		if w.ID == "bad" {
+			return panicRunner{}
+		}
+		return &stubRunner{final: "fine", inflight: &inflight, maxSeen: &maxSeen}
+	})
+	p := NewPool(2)
+	for _, id := range []string{"ok1", "bad", "ok2"} {
+		p.Submit(&Worker{ID: id, Name: id, Task: "t"})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var bad *Result
+	good := 0
+	for _, r := range Collect(p.Run(ctx)) {
+		switch {
+		case r.WorkerID == "bad":
+			bad = &r
+		case r.Err == nil && r.Final == "fine":
+			good++
+		}
+	}
+	if good != 2 {
+		t.Errorf("siblings finished = %d, want 2", good)
+	}
+	if bad == nil || bad.Err == nil || !strings.Contains(bad.Err.Error(), "panicked: boom") {
+		t.Fatalf("panic not converted to a result error: %+v", bad)
+	}
+	if bad.Ended.IsZero() {
+		t.Error("panicked result has no end time")
 	}
 }

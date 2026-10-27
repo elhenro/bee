@@ -2,6 +2,7 @@ package agents
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -75,11 +76,16 @@ func firstLine(s string) string {
 	return s
 }
 
-// Ahead counts commits on dir's HEAD that MergeBase lacks. A DONE with work
-// ahead is unmerged even when this process made no commit itself (a resumed
-// agent may only have rebased).
+// Ahead counts commits on dir's HEAD that the agent's base branch (launch sets
+// BEE_AGENT_BASE, MergeBase when unset) lacks. A DONE with work ahead is
+// unmerged even when this process made no commit itself (a resumed agent may
+// only have rebased).
 func Ahead(dir string) (int, error) {
-	cmd := gitsafe.Command("rev-list", "--count", MergeBase+"..HEAD")
+	base := os.Getenv("BEE_AGENT_BASE")
+	if base == "" {
+		base = MergeBase
+	}
+	cmd := gitsafe.Command("rev-list", "--count", base+"..HEAD")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

@@ -11,16 +11,6 @@ import (
 // summaryLineChars truncates a worker's first line to keep the summary scannable.
 const summaryLineChars = 120
 
-// Collect drains ch into a slice. Returns when the channel is closed.
-// Order matches arrival order, not submission order.
-func Collect(ch <-chan Result) []Result {
-	out := make([]Result, 0, 8)
-	for r := range ch {
-		out = append(out, r)
-	}
-	return out
-}
-
 // Summary renders a human-readable summary block: counts, wall-clock,
 // and one line per worker. Wall-clock is min(Started)..max(Ended), so it
 // reflects actual parallel duration, not sum-of-bee-times.

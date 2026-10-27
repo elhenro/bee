@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -46,10 +47,10 @@ func Probe(ctx context.Context, repo, branch, currentSHA string) (Info, error) {
 		return Info{}, nil
 	}
 	if repo == "" {
-		repo = "elhenro/bee"
+		repo = defaultRepo
 	}
 	if branch == "" {
-		branch = "main"
+		branch = defaultBranch
 	}
 
 	var body struct {
@@ -144,22 +145,59 @@ func shortSHA(sha string) string {
 	return sha[:7]
 }
 
-// InstallURL is the canonical curl-piped installer script.
-const InstallURL = "https://raw.githubusercontent.com/elhenro/bee/main/install.sh"
+// defaults for the repo and branch Probe and the installer fall back to.
+const (
+	defaultRepo   = "elhenro/bee"
+	defaultBranch = "main"
+)
 
-// Apply runs the installer in a subprocess and returns its combined output.
-// The installer auto-detects platform, downloads the latest binary, and
-// installs over the current bee binary. Sudo is required when the install
-// dir isn't writable — this call will FAIL in that case (no tty available
-// inside the TUI), and the caller is expected to surface a "run manually"
-// hint with the same curl command shown in InstallCommand.
-func Apply(ctx context.Context) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "sh", "-c", "curl -fsSL "+InstallURL+" | sh")
-	return cmd.CombinedOutput()
+// InstallURL is the upstream curl-piped installer script.
+const InstallURL = "https://raw.githubusercontent.com/" + defaultRepo + "/" + defaultBranch + "/install.sh"
+
+// repo and branch end up in a URL inside a shell command, so they are
+// restricted to the characters git hosts allow in them; no leading dash or
+// "..", which keeps them from escaping the URL path.
+var (
+	repoRe   = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*$`)
+	branchRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/-]*$`)
+)
+
+// installCommand is the shell one-liner that installs from repo's branch;
+// empty arguments mean upstream.
+func installCommand(repo, branch string) (string, error) {
+	if repo == "" {
+		repo = defaultRepo
+	}
+	if branch == "" {
+		branch = defaultBranch
+	}
+	if !repoRe.MatchString(repo) || !branchRe.MatchString(branch) || strings.Contains(branch, "..") {
+		return "", fmt.Errorf("update: refusing install from repo %q branch %q", repo, branch)
+	}
+	return "curl -fsSL https://raw.githubusercontent.com/" + repo + "/" + branch + "/install.sh | sh", nil
 }
 
-// InstallCommand returns the shell one-liner the user can paste outside bee
-// when Apply fails (e.g. because /usr/local/bin needs sudo).
-func InstallCommand() string {
-	return "curl -fsSL " + InstallURL + " | sh"
+// ApplyFor runs the installer of repo's branch (what Probe checked; empty =
+// upstream) in a subprocess and returns its combined output. The installer
+// auto-detects platform, downloads the latest binary, and installs over the
+// current bee binary. Sudo is required when the install dir isn't writable,
+// so this call will FAIL in that case (no tty available inside the TUI), and
+// the caller is expected to surface a "run manually" hint with
+// InstallCommandFor.
+func ApplyFor(ctx context.Context, repo, branch string) ([]byte, error) {
+	line, err := installCommand(repo, branch)
+	if err != nil {
+		return nil, err
+	}
+	return exec.CommandContext(ctx, "sh", "-c", line).CombinedOutput()
+}
+
+// InstallCommandFor returns the shell one-liner the user can paste outside bee
+// when ApplyFor fails (e.g. because /usr/local/bin needs sudo).
+func InstallCommandFor(repo, branch string) string {
+	line, err := installCommand(repo, branch)
+	if err != nil {
+		return "(invalid update_repo/update_branch in config)"
+	}
+	return line
 }

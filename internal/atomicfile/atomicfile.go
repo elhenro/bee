@@ -10,7 +10,8 @@ import (
 // Write writes data to a unique temp file beside path, then renames it into
 // place: a concurrent reader never sees a half-written file, a crash mid-write
 // can't leave a torn one, and the unique name keeps goroutines or processes
-// writing the same target from clobbering each other's temp.
+// writing the same target from clobbering each other's temp. The data is
+// synced before the rename so a power loss can't leave an empty target.
 func Write(path string, data []byte, perm os.FileMode) error {
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp.*")
 	if err != nil {
@@ -18,6 +19,9 @@ func Write(path string, data []byte, perm os.FileMode) error {
 	}
 	tmp := f.Name()
 	_, werr := f.Write(data)
+	if werr == nil {
+		werr = f.Sync()
+	}
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}

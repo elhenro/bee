@@ -18,7 +18,7 @@ const secretName = `(?:API[_-]?KEY|SECRET(?:[_-]?KEY)?|ACCESS[_-]?TOKEN|AUTH[_-]
 
 // anyName is a case-insensitive secret-ish name; a bare `token` counts only as
 // the whole word so `token_limit: 100` is left alone.
-const anyName = `(?:[a-z][a-z0-9_]*)?` + secretName + `[a-z0-9_]*|token`
+const anyName = `(?:[a-z_][a-z0-9_]*)?` + secretName + `[a-z0-9_]*|token`
 
 var patterns = []pattern{
 	// anthropic before openai: sk-ant-… also matches the openai sk- prefix.
@@ -32,6 +32,11 @@ var patterns = []pattern{
 	{"stripe-key", regexp.MustCompile(`\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{24,}\b`)},
 	{"jwt", regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)},
 	{"bearer", regexp.MustCompile(`\bBearer\s+[A-Za-z0-9._-]{20,}`)},
+	{"gitlab-token", regexp.MustCompile(`\bglpat-[A-Za-z0-9_-]{20,}`)},
+	{"groq-key", regexp.MustCompile(`\bgsk_[A-Za-z0-9]{20,}\b`)},
+	{"npm-token", regexp.MustCompile(`\bnpm_[A-Za-z0-9]{30,}\b`)},
+	{"hf-token", regexp.MustCompile(`\bhf_[A-Za-z0-9]{30,}\b`)},
+	{"sendgrid-key", regexp.MustCompile(`\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}`)},
 	// PEM private key block (RSA/EC/OPENSSH/PGP) — redact the whole armored body
 	{"pem-private-key", regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`)},
 	// env-assign: UPPERCASE NAME=value, NAME="value", NAME='value', NAME: value.
@@ -46,6 +51,14 @@ var patterns = []pattern{
 	{"kv-assign", regexp.MustCompile(`(?i)\b(` + anyName + `)([ \t]*[:=][ \t]*)(?:"[^"\n]+"|'[^'\n]+')`)},
 	{"kv-assign", regexp.MustCompile(`(?im)\b(` + anyName + `)(=)[^\s()&;"'=][^\s()&;]*([\s&;]|$)`)},
 	{"kv-assign", regexp.MustCompile(`(?im)\b(` + anyName + `)([ \t]*:[ \t]*)[^\s#=("'][^\s(]*((?:[ \t]+#.*)?[ \t]*\r?)$`)},
+	// ini `name = value` alone on its line (~/.aws/credentials, .my.cnf). a
+	// value with brackets, parens or a trailing `;` is code and stays.
+	{"kv-assign", regexp.MustCompile(`(?im)^([ \t]*(?:` + anyName + `))([ \t]*=[ \t]*)[^\s()\[\]{};#=<"'][^\s()\[\]{};]*((?:[ \t]+[#;].*)?[ \t]*\r?)$`)},
+	// quoted key with a string value: json `"password": "x"`.
+	{"json-assign", regexp.MustCompile(`(?i)(["'](?:` + anyName + `)["'])([ \t]*:[ \t]*)(?:"(?:[^"\\\n]|\\.)+"|'[^'\n]+')`)},
+	// userinfo password in a url: scheme://user:pass@host.
+	{"url-assign", regexp.MustCompile(`\b([a-z][a-z0-9+.-]*://[^\s:/@]+)(:)[^\s/]+(@)`)},
+	{"basic-assign", regexp.MustCompile(`(?i)\b(Authorization)(:[ \t]*Basic[ \t]+)[A-Za-z0-9+/=_-]{8,}`)},
 }
 
 // Redact scans text for known secret shapes and replaces matches with a

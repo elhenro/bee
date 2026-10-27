@@ -47,8 +47,8 @@ Rules:
     BLOCKED: <reason>
 - If you need clarification mid-flight, end with:
     NEEDS-INPUT: <question>
-- Once you signal DONE the coordinator rebases your branch onto main, runs
-  the repo's verify commands and fast-forward merges it. If the rebase
+- Once you signal DONE the coordinator rebases your branch onto its base
+  branch, runs the repo's verify commands and fast-forward merges it. If the rebase
   conflicts or verify fails you are restarted with the details. Fix it,
   commit, and signal DONE again.
 
@@ -81,6 +81,11 @@ func Spawn(opts SpawnOpts) (SpawnResult, error) {
 	// remove a leftover dir if any (shouldn't exist for a fresh uuid)
 	_ = os.RemoveAll(wt)
 
+	// the worktree forks from HEAD, so that branch is where the work returns
+	base, _ := zzz.CurrentBranch(opts.RepoRoot)
+	if base == "HEAD" {
+		base = "" // detached: merger falls back to MergeBase
+	}
 	if err := zzz.WorktreeAdd(opts.RepoRoot, wt, branch); err != nil {
 		return SpawnResult{}, fmt.Errorf("worktree add: %w", err)
 	}
@@ -95,6 +100,7 @@ func Spawn(opts SpawnOpts) (SpawnResult, error) {
 		Cwd:          wt,
 		WorktreePath: wt,
 		Branch:       branch,
+		Base:         base,
 		MergeState:   bgreg.MergeStateUnmerged,
 		StartedAt:    time.Now().UTC(),
 		UpdatedAt:    time.Now().UTC(),
@@ -109,8 +115,14 @@ func Spawn(opts SpawnOpts) (SpawnResult, error) {
 		_ = zzz.WorktreeRemove(opts.RepoRoot, wt, true)
 		return SpawnResult{}, err
 	}
-	pre.PID = pid
-	_ = bgreg.Write(pre)
+	// pid only, and only if the child has not recorded itself: a whole-status
+	// write here would clobber whatever the child wrote since it started
+	_ = bgreg.Update(id, func(s *bgreg.Status) error {
+		if s.PID == 0 {
+			s.PID = pid
+		}
+		return nil
+	})
 
 	return SpawnResult{
 		SessionID:    id,
@@ -172,6 +184,7 @@ func launch(repoRoot string, st bgreg.Status, msg string) (int, string, error) {
 	cmd.Env = append(os.Environ(),
 		"BEE_AGENT_WORKTREE=1",
 		"BEE_AGENT_BRANCH="+st.Branch,
+		"BEE_AGENT_BASE="+baseOf(st),
 		"BEE_AGENT_REPO_ROOT="+repoRoot,
 	)
 	pid, err := startAgent(cmd)

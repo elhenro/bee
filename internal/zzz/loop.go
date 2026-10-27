@@ -202,6 +202,16 @@ func (d *driver) settle(res IterationResult, err error) (status, cause string) {
 		return StatusCompleted, "agent emitted DONE"
 	}
 
+	// a cancelled iteration is the operator stopping, not the model failing:
+	// it must not feed the fail/noop/stall streaks. a commit that landed
+	// before the cancel still counts.
+	if errors.Is(err, context.Canceled) {
+		if res.Status == IterCommitted {
+			d.recordCommit(res)
+		}
+		return StatusAborted, "context canceled mid-iter"
+	}
+
 	switch res.Status {
 	case IterCommitted:
 		d.fails, d.noops = 0, 0
@@ -231,9 +241,6 @@ func (d *driver) settle(res IterationResult, err error) (status, cause string) {
 	}
 	if d.replies.Observe(res.Subject) {
 		return StatusFailed, goal.StalledReason(d.replies.Count())
-	}
-	if errors.Is(err, context.Canceled) {
-		return StatusAborted, "context canceled mid-iter"
 	}
 	if d.cfg.StopWhen != "" && strings.Contains(res.Subject, d.cfg.StopWhen) {
 		return StatusCompleted, "stop-when matched"

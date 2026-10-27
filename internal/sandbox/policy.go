@@ -1,6 +1,7 @@
-// Package sandbox implements the two-axis sandbox model (Scope x ApprovalMode).
-// Scope is the OS-level confinement; ApprovalMode
-// is the agent-loop policy for when to ask the user.
+// Package sandbox implements OS-level confinement (Scope) for child processes
+// and the known-safe command list behind the untrusted approval mode. Scope is
+// the sandbox axis. ApprovalMode is a config value of which only Untrusted has
+// an effect (see ApprovalMode).
 //
 // The sandbox is best-effort hardening, not a security boundary. If the host
 // lacks the required helper (sandbox-exec on macOS, bwrap on Linux) Wrap
@@ -53,26 +54,30 @@ func (s Scope) known() bool {
 	return false
 }
 
-// ApprovalMode is the agent-loop policy for escalation prompts.
+// ApprovalMode is the config value behind sandbox.approval. Only Untrusted
+// changes behavior; the other values are accepted so existing config files
+// keep loading. Dangerous-command prompts are driven by the approver
+// (--yes/--yolo auto-approve), never by this value.
 type ApprovalMode string
 
 const (
-	// Untrusted: auto-run only known-safe commands; ask for everything else.
+	// Untrusted: the shell tool auto-runs only commands IsAllowed vouches for
+	// and asks about every other one.
 	Untrusted ApprovalMode = "untrusted"
-	// OnRequest: model decides when to ask via request_permissions (default).
+	// OnRequest is the default. No effect.
 	OnRequest ApprovalMode = "on-request"
-	// OnFailure: run optimistically; ask only when sandbox blocks.
+	// OnFailure: no effect.
 	OnFailure ApprovalMode = "on-failure"
-	// Never: fully autonomous; never ask.
+	// Never: no effect.
 	Never ApprovalMode = "never"
 )
 
 // Policy is the resolved sandbox configuration for one tool invocation.
 type Policy struct {
-	Scope     Scope
-	Approval  ApprovalMode
-	Cwd       string
-	AllowList []string // extra known-safe prefixes for Untrusted mode
+	Scope Scope
+	// Approval is carried for callers; nothing in this package reads it.
+	Approval ApprovalMode
+	Cwd      string
 }
 
 // defaultSafe is the built-in allowlist of read-only / inspection commands
@@ -92,7 +97,7 @@ var defaultSafe = []string{
 }
 
 // IsAllowed reports whether every command in cmd matches a built-in safe
-// prefix or the policy's per-invocation AllowList. cmd is tokenized first: a
+// prefix. cmd is tokenized first: a
 // compound line is safe only when each simple command is, and redirections,
 // substitutions and flags that turn a read-only tool into a writer (find
 // -exec, git branch -D, ...) are refused. The list is matched per simple
@@ -118,11 +123,6 @@ func (p Policy) segmentAllowed(argv []string) bool {
 	argv = append([]string{safety.CommandName(argv[0])}, argv[1:]...)
 	line := strings.Join(argv, " ")
 	for _, prefix := range defaultSafe {
-		if hasCmdPrefix(line, prefix) {
-			return true
-		}
-	}
-	for _, prefix := range p.AllowList {
 		if hasCmdPrefix(line, prefix) {
 			return true
 		}

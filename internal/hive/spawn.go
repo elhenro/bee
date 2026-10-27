@@ -6,6 +6,7 @@ package hive
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -120,15 +121,23 @@ func (p *Pool) rowLabel(w *Worker) string {
 // runOne executes a single worker's Engine.Run, capturing timing, the final
 // assistant text and the exit report, and keeps the worker's row on the
 // shared card current. A nil Engine is a programmer error and produces an
-// error Result rather than panicking. Tests inject a Runner via runnerHook
+// error Result rather than panicking, and so does a panic in the runner. Tests inject a Runner via runnerHook
 // (see spawn_test.go).
-func runOne(ctx context.Context, w *Worker, idx int, ph *Pheromone) Result {
-	r := Result{
+func runOne(ctx context.Context, w *Worker, idx int, ph *Pheromone) (r Result) {
+	r = Result{
 		WorkerID: w.ID,
 		Name:     w.Name,
 		Task:     w.Task,
 		Started:  time.Now().UTC(),
 	}
+	// one worker's panic must not take down the whole fan/swarm process or
+	// skip the caller's worktree cleanup: it becomes this worker's error
+	defer func() {
+		if p := recover(); p != nil {
+			workerPanicked(&r, p)
+			ph.Finish(idx, r)
+		}
+	}()
 	var runner Runner
 	if runnerHook != nil {
 		runner = runnerHook(w)
@@ -154,6 +163,12 @@ func runOne(ctx context.Context, w *Worker, idx int, ph *Pheromone) Result {
 	r.Report = reportFor(ctx, runner, run, err)
 	ph.Finish(idx, r)
 	return r
+}
+
+// workerPanicked records a recovered runner panic as the result's error.
+func workerPanicked(r *Result, p any) {
+	r.Err = fmt.Errorf("hive: worker %s panicked: %v", r.Name, p)
+	r.Ended = time.Now().UTC()
 }
 
 // runnerHook is a test-only seam: it supplies a stub Runner in place of the

@@ -27,8 +27,8 @@ func gitOut(dir string, args ...string) (string, error) {
 // case (a case-insensitive filesystem maps .BEE onto .bee). Once merged, such
 // a change would govern every later merge, so a human decides. Fails closed:
 // a git error counts as touched.
-func touchesGate(dir string) bool {
-	out, err := gitOut(dir, "diff", "--name-only", MergeBase+"...HEAD", "--", ":(icase)"+filepath.Dir(gate.File))
+func touchesGate(dir, base string) bool {
+	out, err := gitOut(dir, "diff", "--name-only", base+"...HEAD", "--", ":(icase)"+filepath.Dir(gate.File))
 	return err != nil || out != ""
 }
 
@@ -50,7 +50,8 @@ func gateLinked(repoRoot string) bool {
 // merged: no untracked or ignored leftovers from the agent. The gate must
 // therefore bring its own dependencies. The checkout lives in a private dir
 // under bee home, outside every agent's sandbox write roots (tmp is shared
-// with them), so no other agent can edit it while verify runs.
+// with them), so no other agent can edit it while verify runs. A merger killed
+// mid-verify skips the cleanup; MergerLoop sweeps what it left (sweepVerify).
 func pristine(repoRoot, sha string) (string, func(), error) {
 	base, err := beehome.Join("verify")
 	if err != nil {
@@ -63,15 +64,18 @@ func pristine(repoRoot, sha string) (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
+	writeOwner(dir)
 	cmd := gitsafe.Command("worktree", "add", "--detach", "-q", dir, sha)
 	cmd.Dir = repoRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.RemoveAll(dir)
+		_ = os.Remove(dir + ownerExt)
 		return "", nil, fmt.Errorf("verify checkout: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	cleanup := func() {
 		_, _ = gitOut(repoRoot, "worktree", "remove", "--force", dir)
 		_ = os.RemoveAll(dir)
+		_ = os.Remove(dir + ownerExt)
 	}
 	return dir, cleanup, nil
 }

@@ -14,8 +14,17 @@ import (
 	"github.com/elhenro/bee/internal/zzz"
 )
 
-// MergeBase is the branch every agent rebases onto. Hardcoded for v1.
+// MergeBase is the branch an agent merges into when its status records none
+// (spawned detached, or by a build that predates Status.Base).
 const MergeBase = "main"
+
+// baseOf is the branch st rebases onto and fast-forwards.
+func baseOf(st bgreg.Status) string {
+	if st.Base != "" {
+		return st.Base
+	}
+	return MergeBase
+}
 
 // MergeAttempt is the outcome of one merge pass.
 type MergeAttempt struct {
@@ -27,8 +36,9 @@ type MergeAttempt struct {
 	Output    string
 }
 
-// TryMerge rebases an agent's branch onto MergeBase, runs the repo's verify
-// gate on the rebased tree, and fast-forwards MergeBase. The merge lock is
+// TryMerge rebases an agent's branch onto its base branch (the one it was
+// forked from), runs the repo's verify gate on the rebased tree, and
+// fast-forwards that base. The merge lock is
 // held for the whole window so agents serialize, like a single merge queue.
 //
 // Bounces go back to the agent through Resume:
@@ -39,6 +49,7 @@ type MergeAttempt struct {
 //     skipped and the next tick verifies again. Free.
 func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.SwarmConfig) MergeAttempt {
 	res := MergeAttempt{SessionID: st.SessionID}
+	base := baseOf(st)
 	if st.Branch == "" || st.WorktreePath == "" {
 		res.Err = errors.New("missing branch or worktree")
 		return res
@@ -67,7 +78,7 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 		res.Conflict = true
 		return res
 	}
-	if rebaseErr := zzz.Rebase(st.WorktreePath, MergeBase); rebaseErr != nil {
+	if rebaseErr := zzz.Rebase(st.WorktreePath, base); rebaseErr != nil {
 		// git prints CONFLICT lines on stdout, which the error does not carry,
 		// so ask for the unmerged paths before the abort clears them.
 		files := unmergedFiles(st.WorktreePath)
@@ -92,7 +103,7 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 		Block(st.SessionID, gate.File+" is a symlink in the main checkout, make it a regular file")
 		return res
 	}
-	if touchesGate(st.WorktreePath) {
+	if touchesGate(st.WorktreePath, base) {
 		Block(st.SessionID, "branch edits "+filepath.Dir(gate.File)+", a human must review the gate change")
 		return res
 	}
@@ -122,7 +133,7 @@ func TryMerge(ctx context.Context, repoRoot string, st bgreg.Status, sw config.S
 	}
 
 	// FF-merge the verified commit itself, not whatever the branch names now.
-	if err := zzz.MergeFF(repoRoot, MergeBase, pinned); err != nil {
+	if err := zzz.MergeFF(repoRoot, base, pinned); err != nil {
 		// usually base advanced between rebase and merge, so retry next tick.
 		// but a base checked out elsewhere or a dirty main fails every tick and
 		// re-verifies each time: spend a hop per failure, then park for a human.
@@ -166,7 +177,7 @@ func bounceRed(repoRoot string, st bgreg.Status, summary string, sw config.Swarm
 	}
 	st.Hops = hops
 	msg := fmt.Sprintf("Your branch %s was rebased onto %s and the verify gate failed (hop %d/%d):\n\n%s\n\nFix it in your worktree (%s), commit, and end your reply with DONE: <summary>.",
-		st.Branch, MergeBase, hops, sw.Hops(), summary, st.WorktreePath)
+		st.Branch, baseOf(st), hops, sw.Hops(), summary, st.WorktreePath)
 	_, err := Resume(repoRoot, st, msg, sw.Resumes())
 	return err
 }
@@ -180,9 +191,10 @@ func conflictFeedback(st bgreg.Status, files []string) string {
 	if len(files) > 0 {
 		fileList = " Conflicting files:\n- " + strings.Join(files, "\n- ")
 	}
+	base := baseOf(st)
 	return fmt.Sprintf(
 		"Your branch %s could not rebase onto %s.%s\n\nRebase it onto %s in your worktree (%s), resolve the conflicts, commit, and end your reply with DONE: <summary>. The coordinator retries the merge automatically.",
-		st.Branch, MergeBase, fileList, MergeBase, st.WorktreePath,
+		st.Branch, base, fileList, base, st.WorktreePath,
 	)
 }
 
@@ -218,6 +230,7 @@ func MergerLoop(ctx context.Context, repoRoot string, interval time.Duration, sw
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
+	sweepVerify(repoRoot)
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {

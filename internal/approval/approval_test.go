@@ -3,8 +3,11 @@ package approval
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type recordingApprover struct {
@@ -113,5 +116,52 @@ func TestStatic_AlwaysReturnsVerdict(t *testing.T) {
 	d, _ := s.Request(context.Background(), "x", "k", "d")
 	if d != AllowOnce {
 		t.Fatalf("got %v", d)
+	}
+}
+
+func TestCache_PersistSerialized(t *testing.T) {
+	rec := &recordingApprover{verdict: AllowAlways}
+	var running, overlap atomic.Int32
+	c := NewCache(rec, nil, func(string) error {
+		if running.Add(1) > 1 {
+			overlap.Add(1)
+		}
+		time.Sleep(5 * time.Millisecond)
+		running.Add(-1)
+		return nil
+	})
+	for _, k := range []string{"a", "b", "c", "d"} {
+		c.Request(context.Background(), "x", k, "")
+	}
+	if err := c.Flush(); err != nil {
+		t.Fatalf("Flush = %v", err)
+	}
+	if overlap.Load() != 0 {
+		t.Fatal("persist calls overlapped; read-modify-write would race")
+	}
+}
+
+func TestCache_PersistErrorSurfaced(t *testing.T) {
+	rec := &recordingApprover{verdict: AllowAlways}
+	boom := errors.New("disk full")
+	c := NewCache(rec, nil, func(string) error { return boom })
+	var mu sync.Mutex
+	var heard []string
+	c.OnPersistError(func(key string, err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		heard = append(heard, key+":"+err.Error())
+	})
+	d, err := c.Request(context.Background(), "x", "rm-recursive", "")
+	if d != AllowAlways || err != nil {
+		t.Fatalf("grant must still hold, got %v, %v", d, err)
+	}
+	if ferr := c.Flush(); !errors.Is(ferr, boom) {
+		t.Fatalf("Flush = %v; want wrapped %v", ferr, boom)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(heard) != 1 || !strings.HasPrefix(heard[0], "rm-recursive:") {
+		t.Fatalf("handler heard %v", heard)
 	}
 }

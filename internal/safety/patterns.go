@@ -16,13 +16,17 @@ var dangerousPatterns = []DangerousPattern{
 	{regexp.MustCompile(`\brm\s+(-[^\s]*\s+)*(-[^\s]*[rR]|--recursive\b)`), "rm-recursive", "recursive delete"},
 	{regexp.MustCompile(`\bchmod\s+(-[^\s]*\s+)*(?:[0-7]?[0-7][0-7][2367]|(?:[ug]*o|a)[+=][rwx]*w[rwx]*)\b`), "chmod-world-write", "world-writable permissions"},
 	{regexp.MustCompile(`\bchown\s+(-[^\s]*)?R\s+root\b`), "chown-root", "recursive chown to root"},
+	// own key so an allow-always on rm-recursive never covers the home dir
+	{regexp.MustCompile(`\brm\s+(?:-\S+\s+)*(?:-[^\s-]*[rR][^\s-]*|--recursive)\s+(?:-\S+\s+)*(?:--\s+)?["']?(?:~|\$HOME|\$\{HOME\})/?\*?["']?(?:\s|$|[;&|)])`), "rm-home", "recursive delete of the home directory"},
 	{regexp.MustCompile(`\bxargs\b.*\brm\b`), "xargs-rm", "xargs piped into rm"},
 	{regexp.MustCompile(`\bfind\b.*-exec(?:dir)?\s+(/\S*/)?rm\b`), "find-exec-rm", "find -exec rm"},
 	{regexp.MustCompile(`\bfind\b.*-delete\b`), "find-delete", "find -delete"},
 
 	// network -> shell
-	{regexp.MustCompile(`\b(curl|wget)\b.*\|\s*(?:sudo\s+(?:-\S+\s+)*|env\s+(?:\w+=\S+\s+)*)?(?:ba|z|k)?sh\b`), "pipe-to-shell", "pipe remote content into shell"},
-	{regexp.MustCompile(`\b(bash|sh|zsh|ksh)\s+<\s*<?\s*\(\s*(curl|wget)\b`), "exec-remote-procsub", "execute remote script via process substitution"},
+	{regexp.MustCompile(`\b(curl|wget)\b.*\|\s*(?:sudo\s+(?:-\S+\s+)*|env\s+(?:\w+=\S+\s+)*)?(?:ba|z|k|da)?sh\b`), "pipe-to-shell", "pipe remote content into shell"},
+	// only an interpreter reading its script from stdin: `| python3 -m json.tool` stays quiet
+	{regexp.MustCompile(`\b(curl|wget)\b.*\|\s*(?:sudo\s+(?:-\S+\s+)*|env\s+(?:\w+=\S+\s+)*)?(?:python[0-9.]*|perl|ruby|node|php)(?:\s+-[A-Za-z]+)*(?:\s+-)?\s*(?:$|[;&|)<>])`), "pipe-to-interpreter", "pipe remote content into an interpreter"},
+	{regexp.MustCompile(`(?:\b(?:(?:ba|z|k|da)?sh|source|eval|exec)|(?:^|[;&|(])\s*\.)\s+(?:-\S+\s+)*["']?(?:<\s*<?\s*\(|\$\(|` + "`" + `)\s*(curl|wget)\b`), "exec-remote-procsub", "execute remote script via process/command substitution"},
 
 	// sudo with non-interactive privilege flags
 	{regexp.MustCompile(`\bsudo\b[^;|&\n]*?\s+(-[sSaA]\b|--stdin\b|--askpass\b)`), "sudo-priv-flag", "sudo with stdin/askpass/shell flag"},
@@ -43,7 +47,8 @@ var dangerousPatterns = []DangerousPattern{
 	{regexp.MustCompile(`\bgit\s+push\b.*--force\b`), "git-push-force", "git force push"},
 	{regexp.MustCompile(`\bgit\s+push\b.*\s-[a-zA-Z]*f[a-zA-Z]*\b`), "git-push-force-short", "git force push (-f)"},
 	{regexp.MustCompile(`\bgit\s+push\b.*\s\+\S`), "git-push-force-refspec", "git force push (+refspec)"},
-	{regexp.MustCompile(`\bgit\s+clean\s+-[^\s]*f`), "git-clean-force", "git clean with force"},
+	{regexp.MustCompile(`\bgit\s+push\b[^;&|\n]*(?:\s:\S|\s--(?:delete|mirror)\b|\s-[a-zA-Z]*d[a-zA-Z]*\b)`), "git-push-delete", "git push deleting or mirroring remote refs"},
+	{regexp.MustCompile(`\bgit\s+clean\s+(?:-\S+\s+)*(?:-[a-zA-Z]*f|--force\b)`), "git-clean-force", "git clean with force"},
 	{regexp.MustCompile(`\bgit\s+branch\s+-D\b`), "git-branch-delete", "git branch force delete"},
 	{regexp.MustCompile(`\bgit\s+checkout\s+(?:[^\s]+\s+)*(--(\s|$)|\.(\s|$)|-f\b|--force\b)`), "git-checkout-discard", "git checkout discarding local changes"},
 	{regexp.MustCompile(`\bgit\s+restore\s+(?:[^\s]+\s+)*(\.(\s|$)|--worktree\b)`), "git-restore-discard", "git restore discarding working-tree changes"},

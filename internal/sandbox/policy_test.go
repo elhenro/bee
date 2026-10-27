@@ -45,23 +45,6 @@ func TestIsKnownSafe(t *testing.T) {
 	}
 }
 
-func TestPolicyIsAllowed_AllowList(t *testing.T) {
-	p := Policy{AllowList: []string{"npm test", "make"}}
-	cases := map[string]bool{
-		"ls":            true,  // built-in safe
-		"npm test":      true,  // custom
-		"npm test -- a": true,  // custom prefix
-		"npm install":   false, // not on list
-		"make build":    true,
-		"makefile":      false, // word boundary
-	}
-	for cmd, want := range cases {
-		if got := p.IsAllowed(cmd); got != want {
-			t.Errorf("Policy.IsAllowed(%q) = %v, want %v", cmd, got, want)
-		}
-	}
-}
-
 func TestScopeAndApprovalConsts(t *testing.T) {
 	// guard against accidental rename — these strings are part of the
 	// config-file surface area and must remain stable.
@@ -191,29 +174,28 @@ func TestIsKnownSafe_RejectsCompoundAndMutating(t *testing.T) {
 	}
 }
 
-// a broad user allow-list entry must not open go's flag space.
-func TestPolicyAllowList_GoUnknownSubcommandNoFlags(t *testing.T) {
-	p := Policy{AllowList: []string{"go run", "go mod tidy", "go install"}}
+// a built-in entry must not open the tool's flag space.
+func TestPolicyIsAllowed_BuiltinsNoToolexecFlags(t *testing.T) {
 	for cmd, want := range map[string]bool{
-		"go run ./cmd/bee":                 true,
-		"go run -toolexec=x ./cmd/bee":     false,
-		"go install -toolexec=x ./cmd/bee": false,
-		"go mod tidy":                      true,
-		"go mod tidy -modfile=x.mod":       false,
-		"go mod edit -replace=a=../b":      false,
+		"go build ./cmd/bee":             true,
+		"go build -toolexec=x ./cmd/bee": false,
+		"go mod download":                true,
+		"go mod download -modfile=x.mod": false,
+		"go mod edit -replace=a=../b":    false,
+		"go test -exec=x ./...":          false,
+		"go vet -vettool=x ./...":        false,
 	} {
-		if got := p.IsAllowed(cmd); got != want {
+		if got := isKnownSafe(cmd); got != want {
 			t.Errorf("IsAllowed(%q) = %v, want %v", cmd, got, want)
 		}
 	}
 }
 
-func TestPolicyAllowList_MatchesPerSegment(t *testing.T) {
-	p := Policy{AllowList: []string{"make"}}
-	if p.IsAllowed("make build; rm -rf x") {
-		t.Error("allowlist entry must not vouch for a second command")
+func TestPolicyIsAllowed_MatchesPerSegment(t *testing.T) {
+	if isKnownSafe("go build ./...; rm -rf x") {
+		t.Error("a safe entry must not vouch for a second command")
 	}
-	if !p.IsAllowed("make build && ls") {
-		t.Error("allowlisted + safe sequence should pass")
+	if !isKnownSafe("go build ./... && ls") {
+		t.Error("safe + safe sequence should pass")
 	}
 }

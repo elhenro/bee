@@ -57,19 +57,36 @@ func CheckShellCommand(cmd string) error {
 }
 
 // matchForms returns the strings a denylist/hardline regex should be tested
-// against: the trimmed raw command plus a shell-normalized view. Both are
-// returned so normalization only ever ADDS matches and can never mask a command
-// that already matches in raw form. Empty results are dropped.
+// against: the trimmed raw command plus a shell-normalized view, each also
+// without git global options. Every extra form only ADDS matches and can never
+// mask a command that already matches in raw form. Empty results are dropped.
 func matchForms(cmd string) []string {
 	raw := strings.TrimSpace(cmd)
 	if raw == "" {
 		return nil
 	}
-	norm := strings.TrimSpace(normalizeForMatch(raw))
-	if norm == "" || norm == raw {
-		return []string{raw}
+	forms := []string{raw}
+	if norm := strings.TrimSpace(normalizeForMatch(raw)); norm != "" && norm != raw {
+		forms = append(forms, norm)
 	}
-	return []string{raw, norm}
+	for _, f := range forms {
+		if bare := stripGitOpts(f); bare != f {
+			forms = append(forms, bare)
+		}
+	}
+	return forms
+}
+
+const gitOptArg = `(?:"[^"]*"|'[^']*'|[^\s"']+)`
+
+// gitGlobalOpts matches the options git accepts before its subcommand, so
+// `git -C repo reset --hard` is judged as `git reset --hard`.
+var gitGlobalOpts = regexp.MustCompile(`\bgit((?:\s+(?:-[Cc]\s+` + gitOptArg +
+	`|--(?:git-dir|work-tree|namespace|config-env|super-prefix)(?:=|\s+)` + gitOptArg +
+	`|-[pP]\b|--[a-z][a-z-]*(?:=` + gitOptArg + `)?))+)(\s+|$)`)
+
+func stripGitOpts(s string) string {
+	return gitGlobalOpts.ReplaceAllString(s, "git${2}")
 }
 
 // normalizeForMatch approximates bash's own normalization, for matching only:

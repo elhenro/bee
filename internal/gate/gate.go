@@ -6,7 +6,6 @@ package gate
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +24,10 @@ const File = ".bee/verify"
 
 // outputTail caps how much failing output travels back to the author.
 const outputTail = 4000
+
+// captureMax caps the output kept per command. A runaway command can print
+// gigabytes before its timeout; only the tail ever travels back.
+const captureMax = 64 << 10
 
 // pipeGrace bounds how long Run waits for output pipes to close after a
 // command exits or is killed.
@@ -58,7 +61,7 @@ func Commands(repoRoot string, fallback []string) []string {
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		line = strings.TrimSpace(strings.TrimPrefix(line, "$"))
+		line = strings.TrimSpace(strings.TrimPrefix(line, "$ ")) // not a bare $: `$GOBIN/x` is a command
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -117,9 +120,9 @@ func runOne(ctx context.Context, dir, command string, o Opts) ([]byte, error) {
 	defer cancel()
 	cmd := shellCommand(cctx, dir, command, o.Scope)
 	cmd.Dir = dir
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	buf := &tailBuffer{max: captureMax}
+	cmd.Stdout = buf
+	cmd.Stderr = buf
 	// a descendant in its own session survives the group kill and keeps the
 	// output pipe open; without a bound Wait never returns and the heavy lock
 	// stays held
@@ -151,10 +154,34 @@ func tail(out []byte, err error) string {
 // for the agent's own shell (sandbox is hardening, see internal/sandbox).
 func shellCommand(ctx context.Context, dir, command string, scope sandbox.Scope) *exec.Cmd {
 	argv := []string{"sh", "-c", command}
-	if scope != "" && scope != sandbox.DangerFullAccess {
-		argv, _ = sandbox.Wrap(sandbox.Policy{Scope: scope, Cwd: dir}, argv)
+	// WrapFunc degrades only for a missing helper; any other failure refuses
+	// the command rather than running it unconfined
+	if wrap := sandbox.WrapFunc(sandbox.Policy{Scope: scope, Cwd: dir}); wrap != nil {
+		argv = wrap(argv)
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	setGroupKill(cmd)
 	return cmd
+}
+
+// tailBuffer is an io.Writer that keeps only the last max bytes written.
+type tailBuffer struct {
+	max int
+	b   []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.b = append(t.b, p...)
+	// trim at twice the cap so the copy happens once per max bytes, not per write
+	if len(t.b) > 2*t.max {
+		t.b = append(t.b[:0], t.b[len(t.b)-t.max:]...)
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) Bytes() []byte {
+	if len(t.b) > t.max {
+		return t.b[len(t.b)-t.max:]
+	}
+	return t.b
 }

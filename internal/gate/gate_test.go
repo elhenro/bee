@@ -143,3 +143,61 @@ func TestRunConfinedScopeBlocksOutsideWrites(t *testing.T) {
 		t.Fatalf("confined gate wrote outside the workspace (res=%+v)", res)
 	}
 }
+
+func TestCommandsStripsOnlyDollarSpace(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dir, ".bee"), 0o755)
+	body := "$ go vet ./...\n$GOBIN/lint --fast\n$HOME/bin/check\n"
+	if err := os.WriteFile(filepath.Join(dir, File), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := Commands(dir, nil)
+	if strings.Join(got, "|") != "go vet ./...|$GOBIN/lint --fast|$HOME/bin/check" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRunKeepsOnlyOutputTail(t *testing.T) {
+	unixOnly(t)
+	// ~3 MB, far past the capture cap, ending in a marker
+	cmd := `i=0; while [ $i -lt 30000 ]; do echo "line $i xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; i=$((i+1)); done; echo THE-END; exit 1`
+	res, err := Run(context.Background(), t.TempDir(), []string{cmd}, Opts{Timeout: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.OK || !strings.Contains(res.Output, "THE-END") {
+		t.Fatalf("tail lost: ok=%v out=%q", res.OK, res.Output[max(0, len(res.Output)-80):])
+	}
+	if len(res.Output) > outputTail+100 {
+		t.Fatalf("output %d bytes, want about %d", len(res.Output), outputTail)
+	}
+}
+
+func TestTailBufferBounded(t *testing.T) {
+	b := &tailBuffer{max: 10}
+	for i := 0; i < 100; i++ {
+		_, _ = b.Write([]byte("0123456789"))
+		if len(b.b) > 30 {
+			t.Fatalf("buffer grew to %d", len(b.b))
+		}
+	}
+	_, _ = b.Write([]byte("abc"))
+	if got := string(b.Bytes()); got != "3456789abc" {
+		t.Fatalf("tail = %q", got)
+	}
+}
+
+func TestRunRefusesWhenScopeCannotBeApplied(t *testing.T) {
+	unixOnly(t)
+	dir := t.TempDir()
+	res, err := Run(context.Background(), dir, []string{"touch ran"}, Opts{Timeout: time.Minute, Scope: "bogus-scope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.OK {
+		t.Fatal("an unappliable scope must fail the gate, not run unconfined")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ran")); err == nil {
+		t.Fatal("command ran despite the unknown scope")
+	}
+}

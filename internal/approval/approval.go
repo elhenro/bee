@@ -7,6 +7,8 @@ package approval
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -41,6 +43,11 @@ type Cache struct {
 	// persistWG tracks in-flight async persist goroutines so Flush can wait
 	// for them on shutdown.
 	persistWG sync.WaitGroup
+	// persistMu serializes persistFunc: each call is a read-modify-write of
+	// one file, so two grants must not interleave.
+	persistMu    sync.Mutex
+	persistErrs  []error
+	onPersistErr func(key string, err error)
 }
 
 // NewCache builds a Cache around inner. seed contains pattern keys already in
@@ -57,6 +64,14 @@ func NewCache(inner Approver, seed []string, persist func(key string) error) *Ca
 		c.persistent[k] = true
 	}
 	return c
+}
+
+// OnPersistError registers fn to hear about a failed AllowAlways write. The
+// grant still holds for the session; only the next run would ask again.
+func (c *Cache) OnPersistError(fn func(key string, err error)) {
+	c.mu.Lock()
+	c.onPersistErr = fn
+	c.mu.Unlock()
 }
 
 // Request consults the caches first, then defers to the inner Approver.
@@ -93,19 +108,40 @@ func (c *Cache) Request(ctx context.Context, cmd, key, desc string) (Decision, e
 		c.persistWG.Add(1)
 		go func() {
 			defer c.persistWG.Done()
-			_ = pf(key)
+			c.persist(pf, key)
 		}()
 	}
 	return d, nil
 }
 
-// Flush blocks until all in-flight persistFunc goroutines complete. Call
-// from the shutdown path so config.toml writes aren't lost on exit.
-func (c *Cache) Flush() {
-	if c == nil {
+func (c *Cache) persist(pf func(string) error, key string) {
+	c.persistMu.Lock()
+	err := pf(key)
+	c.persistMu.Unlock()
+	if err == nil {
 		return
 	}
+	err = fmt.Errorf("persist allowlist %q: %w", key, err)
+	c.mu.Lock()
+	c.persistErrs = append(c.persistErrs, err)
+	fn := c.onPersistErr
+	c.mu.Unlock()
+	if fn != nil {
+		fn(key, err)
+	}
+}
+
+// Flush blocks until all in-flight persistFunc goroutines complete and
+// returns every persist failure so far. Call from the shutdown path so
+// config.toml writes aren't lost on exit.
+func (c *Cache) Flush() error {
+	if c == nil {
+		return nil
+	}
 	c.persistWG.Wait()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return errors.Join(c.persistErrs...)
 }
 
 // Static is a fixed-verdict Approver for headless / test use. Always returns

@@ -8,6 +8,15 @@ import (
 	"unicode/utf8"
 )
 
+// Collect drains ch into a slice in arrival order, not submission order.
+func Collect(ch <-chan Result) []Result {
+	out := make([]Result, 0, 8)
+	for r := range ch {
+		out = append(out, r)
+	}
+	return out
+}
+
 func TestCollect_Drains(t *testing.T) {
 	ch := make(chan Result, 3)
 	ch <- Result{Name: "a"}

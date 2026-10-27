@@ -7,6 +7,7 @@ package bgreg
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,6 +61,7 @@ type Status struct {
 	// agent-mode fields. Empty / zero on legacy bg sessions.
 	WorktreePath string     `json:"worktree_path,omitempty"`
 	Branch       string     `json:"branch,omitempty"`
+	Base         string     `json:"base,omitempty"` // branch the agent was forked from and merges back into
 	MergeState   MergeState `json:"merge_state,omitempty"`
 	ConflictMsg  string     `json:"conflict_msg,omitempty"`
 	InputTokens  int        `json:"input_tokens,omitempty"`
@@ -151,6 +153,9 @@ func writeRaw(s Status) error {
 // commits the change with a bumped Version. The status file is locked via a
 // per-session sidecar (.lock) so concurrent Update calls — even across
 // processes — serialize. fn returning a non-nil error aborts the write.
+// A session without a sidecar (never written, or removed) fails with an
+// error wrapping os.ErrNotExist: Update never creates one, so a late write
+// cannot resurrect a removed agent. Use Write to create.
 //
 // ErrStaleUpdate is returned if the on-disk Version advanced while fn ran
 // (only possible if fn took longer than the lock acquisition retry window or
@@ -171,6 +176,10 @@ func updateOnce(sessionID string, fn func(*Status) error) error {
 	if sessionID == "" {
 		return errors.New("bgreg.Update: empty sessionID")
 	}
+	// checked before locking too, so a missing session leaves no lock file
+	if _, err := Read(sessionID); errors.Is(err, os.ErrNotExist) {
+		return noStatus(sessionID, err)
+	}
 	lock, err := acquireSessionLock(sessionID)
 	if err != nil {
 		return err
@@ -178,7 +187,11 @@ func updateOnce(sessionID string, fn func(*Status) error) error {
 	defer lock.release()
 
 	cur, rerr := Read(sessionID)
-	if rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+	if errors.Is(rerr, os.ErrNotExist) {
+		_ = os.Remove(lock.path) // removed while waiting: nobody else needs this lock
+		return noStatus(sessionID, rerr)
+	}
+	if rerr != nil {
 		return rerr
 	}
 	if cur.SessionID == "" {
@@ -200,6 +213,10 @@ func updateOnce(sessionID string, fn func(*Status) error) error {
 	next.Version = before + 1
 	next.UpdatedAt = time.Now().UTC()
 	return writeRaw(next)
+}
+
+func noStatus(id string, err error) error {
+	return fmt.Errorf("bgreg.Update: no status for %s: %w", id, err)
 }
 
 // ErrStaleUpdate signals that the status changed during an Update callback —
