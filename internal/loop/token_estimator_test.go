@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -69,5 +70,43 @@ func TestTokenEstimatorNoProviderImport(t *testing.T) {
 	}
 	if strings.Contains(string(src), "internal/llm") {
 		t.Fatalf("token_estimator.go must not import an internal/llm provider package:\n%s", src)
+	}
+}
+
+// the wire drops unsigned reasoning, so it must not count toward compaction;
+// a signed block is sent back and does.
+func TestEstimateThinkingOnlyCountsWhenSigned(t *testing.T) {
+	think := strings.Repeat("reasoning ", 400)
+	msg := func(sig string) types.Message {
+		return types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{
+			{Type: types.BlockThinking, Text: think, Signature: sig},
+		}}
+	}
+	if got := estimateMessageTokens(msg("")); got != 0 {
+		t.Errorf("unsigned thinking = %d tokens, want 0", got)
+	}
+	if got, want := estimateMessageTokens(msg("sig")), len(think)/4; got != want {
+		t.Errorf("signed thinking = %d tokens, want %d", got, want)
+	}
+}
+
+// the walk stays close to the size of the encoded input, without allocating.
+func TestEstimateToolUseMatchesEncodedSize(t *testing.T) {
+	use := &types.ToolUse{ID: "u1", Name: "apply_patch", Input: map[string]any{
+		"patch": strings.Repeat("--- a/x\n+++ b/x\n", 100),
+		"opts":  map[string]any{"dry": true, "ctx": 3.0, "files": []any{"a.go", "b.go"}},
+	}}
+	m := types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockToolUse, Use: use}}}
+	enc, err := json.Marshal(use.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := (len(enc) + len(use.Name)) / 4
+	got := estimateMessageTokens(m)
+	if got < want*9/10 || got > want*11/10 {
+		t.Errorf("estimate = %d, want within 10%% of %d", got, want)
+	}
+	if allocs := testing.AllocsPerRun(50, func() { estimateMessageTokens(m) }); allocs != 0 {
+		t.Errorf("estimate allocates %v times per call, want 0", allocs)
 	}
 }

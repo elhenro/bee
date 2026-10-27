@@ -17,8 +17,20 @@ func baseCfg() config.Config {
 	return c
 }
 
+// assemble returns the full prompt for the process cwd, dropping the dynamic tail.
+func assemble(
+	cfg config.Config,
+	specs []llm.ToolSpec,
+	skillManifest string,
+	recs []knowledge.Record,
+	ctxFiles []ContextFile,
+) string {
+	full, _ := AssembleWithDynamic(cfg, "", specs, skillManifest, recs, ctxFiles)
+	return full
+}
+
 func TestNoTinyDiscipline(t *testing.T) {
-	out := Assemble(baseCfg(), nil, "", nil, nil)
+	out := assemble(baseCfg(), nil, "", nil, nil)
 	if strings.Contains(out, "## Discipline") {
 		t.Errorf("no profile gets a Discipline section: %q", out)
 	}
@@ -36,7 +48,7 @@ func TestAssembleSectionOrder(t *testing.T) {
 		Body:  "prefer pnpm",
 	}}
 
-	out := Assemble(cfg, specs, skills, recs, nil)
+	out := assemble(cfg, specs, skills, recs, nil)
 
 	want := []string{
 		"bee coding agent",
@@ -75,7 +87,7 @@ func TestAssembleStalenessNoteOnExpired(t *testing.T) {
 		},
 		Body: "old fact",
 	}}
-	out := Assemble(cfg, nil, "", recs, nil)
+	out := assemble(cfg, nil, "", recs, nil)
 	if !strings.Contains(out, "expired") {
 		t.Errorf("expected staleness note for expired record; got:\n%s", out)
 	}
@@ -92,7 +104,7 @@ func TestAssembleNoStalenessForLive(t *testing.T) {
 		},
 		Body: "today fact",
 	}}
-	out := Assemble(cfg, nil, "", recs, nil)
+	out := assemble(cfg, nil, "", recs, nil)
 	if strings.Contains(out, "expired") {
 		t.Errorf("unexpected staleness note for live record:\n%s", out)
 	}
@@ -103,7 +115,7 @@ func TestAssembleTruncatesToolDesc(t *testing.T) {
 	cfg.ToolDescChars = 80
 	long := strings.Repeat("x", 500)
 	specs := []llm.ToolSpec{{Name: "shell", Description: long}}
-	out := Assemble(cfg, specs, "", nil, nil)
+	out := assemble(cfg, specs, "", nil, nil)
 	if !strings.Contains(out, "…") {
 		t.Errorf("expected truncation ellipsis in:\n%s", out)
 	}
@@ -123,7 +135,7 @@ func TestAssembleBudgetDropsMemoriesFirst(t *testing.T) {
 		{Entry: knowledge.Entry{Name: "b", Modified: time.Now(), Priority: 3}, Body: bigBody},
 	}
 	skills := "calc: commit (prompt)"
-	out := Assemble(cfg, nil, skills, recs, nil)
+	out := assemble(cfg, nil, skills, recs, nil)
 	if strings.Contains(out, bigBody) {
 		t.Errorf("expected records trimmed under tight budget; got:\n%s", out)
 	}
@@ -131,7 +143,7 @@ func TestAssembleBudgetDropsMemoriesFirst(t *testing.T) {
 
 func TestAssembleEmptySections(t *testing.T) {
 	cfg := baseCfg()
-	out := Assemble(cfg, nil, "", nil, nil)
+	out := assemble(cfg, nil, "", nil, nil)
 	if strings.Contains(out, "## Tools") {
 		t.Errorf("empty tools should not render a Tools header")
 	}
@@ -154,7 +166,7 @@ func TestAssembleTruncatesRecordBody(t *testing.T) {
 		Entry: knowledge.Entry{Name: "big", Modified: time.Now(), Priority: 3},
 		Body:  body,
 	}}
-	out := Assemble(cfg, nil, "", recs, nil)
+	out := assemble(cfg, nil, "", recs, nil)
 
 	start := strings.Index(out, "## Memory")
 	if start < 0 {
@@ -181,7 +193,7 @@ func TestAssembleKeepsFullRecordBodyUnbounded(t *testing.T) {
 		Entry: knowledge.Entry{Name: "big", Modified: time.Now(), Priority: 3},
 		Body:  body,
 	}}
-	out := Assemble(cfg, nil, "", recs, nil)
+	out := assemble(cfg, nil, "", recs, nil)
 	if !strings.Contains(out, strings.TrimSpace(body)) {
 		t.Errorf("unbounded body cap should keep full body")
 	}
@@ -193,7 +205,7 @@ func TestAssembleDropsSkillsManifestWhenOmitted(t *testing.T) {
 	manifest := "calc: stage-and-commit one-shot flow (prompt)\n" +
 		"hermes: daily-driver agent (exec)\n" +
 		"strudel: live-coding music tool (prompt)"
-	out := Assemble(cfg, nil, manifest, nil, nil)
+	out := assemble(cfg, nil, manifest, nil, nil)
 	if strings.Contains(out, "calc:") || strings.Contains(out, "strudel:") {
 		t.Errorf("-1 must drop skills section entirely, got:\n%s", out)
 	}
@@ -206,7 +218,7 @@ func TestAssembleKeepsFullSkillsManifest(t *testing.T) {
 	cfg := baseCfg()
 	cfg.SkillManifestChars = 200
 	manifest := "calc: stage-and-commit (prompt)\nhermes: daily-driver (exec)"
-	out := Assemble(cfg, nil, manifest, nil, nil)
+	out := assemble(cfg, nil, manifest, nil, nil)
 	if !strings.Contains(out, "calc:") || !strings.Contains(out, "hermes:") {
 		t.Errorf("manifest under the cap should be kept, got:\n%s", out)
 	}
@@ -225,8 +237,5 @@ func TestTruncateBody_runeBoundary(t *testing.T) {
 	got := truncateBody("ééééééééé", 5)
 	if !utf8.ValidString(got) {
 		t.Fatalf("split rune: %q", got)
-	}
-	if d := runeBoundary("aé", 2); d != 1 {
-		t.Fatalf("runeBoundary = %d, want 1", d)
 	}
 }

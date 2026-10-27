@@ -81,4 +81,6 @@ type GeminiUsage struct {
 	// ThoughtsTokenCount is billed as output but reported outside
 	// candidatesTokenCount.
 	ThoughtsTokenCount int `json:"thoughtsTokenCount"`
+	// CachedContentTokenCount is the cached share of PromptTokenCount.
+	CachedContentTokenCount int `json:"cachedContentTokenCount"`
 }

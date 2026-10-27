@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -20,7 +21,7 @@ const handoffPreamble = "you're a stronger model taking over a coding task a sma
 // switching to the big model so the cheap, already-warm provider does the
 // distillation — never the slow big model on the full confused history.
 func (e *Engine) Handoff(ctx context.Context, msgs []types.Message, partial, stall string) (string, error) {
-	return BuildHandoff(ctx, e.Provider, compactionModel(e.Cfg), msgs, partial, stall)
+	return BuildHandoff(ctx, e.Provider, config.FastModelOf(e.Cfg), msgs, partial, stall)
 }
 
 // BuildHandoff renders the prompt a bigger model receives when taking over a

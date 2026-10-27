@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeStoreRec(t *testing.T, dir, name string) {
@@ -60,5 +61,31 @@ func TestScanStoreUnreadableEntryNotCached(t *testing.T) {
 	got, err = ScanStore(context.Background(), dir)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("second scan = %d entries, err %v; want 2", len(got), err)
+	}
+}
+
+// an in-place edit leaves the dir mtime alone; the cache must still notice it,
+// otherwise tags and priority stay stale until the next bee write.
+func TestScanStoreSeesInPlaceEdit(t *testing.T) {
+	dir := t.TempDir()
+	writeStoreRec(t, dir, "a") // priority: 3
+	first, err := ScanStore(context.Background(), dir)
+	if err != nil || len(first) != 1 || first[0].Priority != 3 {
+		t.Fatalf("first scan = %+v, err %v", first, err)
+	}
+
+	p := filepath.Join(dir, "a.md")
+	edited := "---\nname: a\ndescription: d\npriority: 5\n---\n\nbody\n" // same size
+	if err := os.WriteFile(p, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(p, later, later); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := ScanStore(context.Background(), dir)
+	if err != nil || len(second) != 1 || second[0].Priority != 5 {
+		t.Fatalf("in-place edit not seen: %+v, err %v", second, err)
 	}
 }

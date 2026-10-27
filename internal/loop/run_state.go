@@ -64,9 +64,11 @@ type runState struct {
 	// bounds total spend at ~(maxBudgetRecoveries+1)×budget. reset per Run.
 	budgetRecoveries int
 	// spec is the background compaction summary for this Run (turn_compact_spec.go);
-	// specFailed stops a failed one from restarting every iteration.
-	spec       *specCompact
-	specFailed bool
+	// specFailed stops a failed one from restarting every iteration;
+	// compactFailed does the same for the inline summary.
+	spec          *specCompact
+	specFailed    bool
+	compactFailed bool
 	// harness gauge (turn_gauge.go): wall time the harness itself spends between
 	// a trigger (Run start, stream end) and the next provider request.
 	gaugeFrom    time.Time

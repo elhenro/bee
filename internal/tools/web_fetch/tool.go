@@ -3,10 +3,10 @@ package web_fetch
 import (
 	"context"
 	"fmt"
-	"unicode/utf8"
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/types"
 )
 
 // Config holds web_fetch configuration
@@ -79,7 +79,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 
 	// Fetch the URL. Confined drives the SSRF guard: on under a confined scope,
 	// off under danger-full-access (localhost/LAN reachable, same as shell curl).
-	result, err := FetchURL(rawURL, policy, t.config.Confined)
+	result, err := FetchURLContext(ctx, rawURL, policy, t.config.Confined)
 	if err != nil {
 		return tools.Result{Content: fmt.Sprintf("Error fetching URL: %v", err), IsError: true}, nil
 	}
@@ -87,11 +87,7 @@ func (t *Tool) Run(ctx context.Context, input map[string]any) (tools.Result, err
 	// Truncate if too long, backing off to a rune boundary so the cut never
 	// splits a UTF-8 sequence.
 	if t.config.MaxContentLen > 0 && len(result.Markdown) > t.config.MaxContentLen {
-		cut := t.config.MaxContentLen
-		for cut > 0 && !utf8.RuneStart(result.Markdown[cut]) {
-			cut--
-		}
-		result.Markdown = result.Markdown[:cut] + "\n\n[…truncated]"
+		result.Markdown = types.CutBytes(result.Markdown, t.config.MaxContentLen) + "\n\n[…truncated]"
 	}
 
 	// Format result

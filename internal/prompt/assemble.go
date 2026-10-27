@@ -11,18 +11,19 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/elhenro/bee/internal/caveman"
 	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/knowledge"
 	"github.com/elhenro/bee/internal/llm"
+	"github.com/elhenro/bee/internal/types"
 )
 
 // no separate behavioral nudge — caveman rules cover terseness and the
 // tools section is self-explanatory. every extra line costs tokens.
 
-// Assemble builds the full system prompt.
+// AssembleWithDynamic builds the full system prompt and returns the volatile
+// memory tail as a separate string.
 //
 // section order:
 //  1. caveman rules (per cfg.Caveman level)
@@ -39,24 +40,13 @@ import (
 //  2. trim the skills manifest
 //  3. drop context files from the tail (deepest first)
 //  4. log a warning if still over.
-func Assemble(
-	cfg config.Config,
-	regToolSpecs []llm.ToolSpec,
-	skillManifest string,
-	selectedRecords []knowledge.Record,
-	ctxFiles []ContextFile,
-) string {
-	full, _ := AssembleWithDynamic(cfg, "", regToolSpecs, skillManifest, selectedRecords, ctxFiles)
-	return full
-}
-
-// AssembleWithDynamic is Assemble that also returns the volatile memory tail as
-// a separate string. The memory section is the only part that changes turn over
-// turn (top-k is re-queried against the user's latest message), so callers can
-// hand the wire layer a stable static prefix + this dynamic tail and place the
-// prompt-cache breakpoint at the boundary — keeping the expensive static prefix
-// cached even when memory changes. dynamic is "" when there is no memory section
-// (then the whole prompt is static). full always ends with dynamic when non-empty.
+//
+// The memory section is the only part that changes turn over turn (top-k is
+// re-queried against the user's latest message), so callers can hand the wire
+// layer a stable static prefix + this dynamic tail and place the prompt-cache
+// breakpoint at the boundary — keeping the expensive static prefix cached even
+// when memory changes. dynamic is "" when there is no memory section (then the
+// whole prompt is static). full always ends with dynamic when non-empty.
 //
 // cwd is the directory the agent works in, named in the identity block; empty
 // means the process cwd. A worker confined to its own worktree passes that path.
@@ -115,7 +105,7 @@ func AssembleWithDynamic(
 func EstimateTokens(s string) int { return len(s) / 4 }
 
 // identityCache memoizes (cwd, git-root) per cwd. gitRootFor shells out to
-// git so we'd pay that cost on every Assemble call without this.
+// git so we'd pay that cost on every assembly without this.
 type identityCacheEntry struct {
 	gitRoot string
 }
@@ -178,7 +168,7 @@ func toolsManifest(specs []llm.ToolSpec, descBudget int) string {
 			desc = firstLine(s.Description)
 		}
 		if descBudget > 0 && len(desc) > descBudget {
-			desc = desc[:runeBoundary(desc, descBudget)] + "…"
+			desc = types.CutBytes(desc, descBudget) + "…"
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", s.Name, desc)
 	}
@@ -253,24 +243,12 @@ func truncateBody(s string, cap int) string {
 	if cap <= 0 || len(s) <= cap {
 		return s
 	}
-	cap = runeBoundary(s, cap)
-	cut := strings.LastIndexByte(s[:cap], ' ')
+	head := types.CutBytes(s, cap)
+	cut := strings.LastIndexByte(head, ' ')
 	if cut <= 0 {
-		cut = cap
+		cut = len(head)
 	}
 	return s[:cut] + "…"
-}
-
-// runeBoundary returns the largest index <= n that does not split a UTF-8
-// sequence in s.
-func runeBoundary(s string, n int) int {
-	if n >= len(s) {
-		return len(s)
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return n
 }
 
 // join concatenates non-empty sections separated by a blank line.

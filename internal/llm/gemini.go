@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -68,10 +67,8 @@ func (p *GeminiProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("gemini %d: %s", resp.StatusCode, string(raw))
+	if err := checkStatus(resp, p.Name()); err != nil {
+		return nil, err
 	}
 
 	ch := make(chan Event, 16)
@@ -119,6 +116,7 @@ func (p *GeminiProvider) streamLoop(ctx context.Context, resp *http.Response, ou
 			usage = &Usage{
 				InputTokens:  m.PromptTokenCount,
 				OutputTokens: m.CandidatesTokenCount + m.ThoughtsTokenCount,
+				CachedTokens: m.CachedContentTokenCount,
 			}
 		}
 		return nil

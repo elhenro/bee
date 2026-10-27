@@ -86,7 +86,7 @@ func runReadPicture(t *testing.T, model string) ([]byte, []llm.Request) {
 	}
 
 	reg := tools.NewRegistry()
-	if err := reg.Register(read.New()); err != nil {
+	if err := reg.Register(read.NewWithLimits(0, 0, true)); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Defaults()

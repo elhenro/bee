@@ -28,9 +28,6 @@ func (p *OpenAICompatProvider) applyHeaders(r *http.Request, streaming bool) {
 			r.Header.Set("Authorization", "Bearer "+key)
 		}
 	}
-	for k, v := range p.cfg.ExtraHeaders {
-		r.Header.Set(k, v)
-	}
 }
 
 // loadAuthToken returns the OAuth token saved by /login for provider, or nil

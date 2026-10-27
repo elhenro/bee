@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 
 func TestTruncate_UnderCapPassthrough(t *testing.T) {
 	in := "small output\nwith two lines"
-	out, ok := Truncate("shell", in)
+	out, ok := TruncateWithLimit("shell", in, 0)
 	if ok {
 		t.Fatalf("expected ok=false, got true")
 	}
@@ -38,7 +38,7 @@ func TestTruncate_OverCapAppendsTrailer(t *testing.T) {
 	// shell cap = 50_000 tokens => 200_000 chars. Build > 200_001 chars.
 	line := strings.Repeat("x", 99) + "\n" // 100 chars
 	in := strings.Repeat(line, 2100)       // 210_000 chars
-	out, ok := Truncate("shell", in)
+	out, ok := TruncateWithLimit("shell", in, 0)
 	if !ok {
 		t.Fatalf("expected truncation, got ok=false")
 	}
@@ -67,7 +67,7 @@ func TestTruncate_CutLandsOnNewline(t *testing.T) {
 	// build input > webfetch cap (10k tokens = 40k chars) with regular newlines
 	line := strings.Repeat("a", 79) + "\n"
 	in := strings.Repeat(line, 600) // 48_000 chars > 40_000
-	out, ok := Truncate("webfetch", in)
+	out, ok := TruncateWithLimit("webfetch", in, 0)
 	if !ok {
 		t.Fatalf("expected truncation")
 	}
@@ -97,7 +97,7 @@ func TestTruncate_CutLandsOnNewline(t *testing.T) {
 func TestTruncate_SingleGiantLineHardCut(t *testing.T) {
 	// no newlines at all, longer than webfetch cap (40k chars)
 	in := strings.Repeat("z", 50_000)
-	out, ok := Truncate("webfetch", in)
+	out, ok := TruncateWithLimit("webfetch", in, 0)
 	if !ok {
 		t.Fatalf("expected truncation")
 	}
@@ -119,7 +119,7 @@ func TestTruncate_SingleGiantLineMultibyteStaysValidUTF8(t *testing.T) {
 	// one giant line of 3-byte runes, no newline: a raw byte cut at maxChars
 	// would land mid-rune. result must remain valid UTF-8.
 	in := strings.Repeat("世", 20_000) // 60k bytes, over webfetch 40k cap
-	out, ok := Truncate("webfetch", in)
+	out, ok := TruncateWithLimit("webfetch", in, 0)
 	if !ok {
 		t.Fatalf("expected truncation")
 	}
@@ -186,7 +186,7 @@ func TestLimitFor_PerToolCaps(t *testing.T) {
 }
 
 func TestTruncate_EmptyContentNoop(t *testing.T) {
-	out, ok := Truncate("shell", "")
+	out, ok := TruncateWithLimit("shell", "", 0)
 	if ok {
 		t.Fatalf("empty content should not be flagged as truncated")
 	}

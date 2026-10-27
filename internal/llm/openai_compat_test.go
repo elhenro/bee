@@ -279,27 +279,6 @@ func TestOpenAICompat_NameDefault(t *testing.T) {
 	}
 }
 
-func TestOpenAICompat_ExtraHeaders(t *testing.T) {
-	var got string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Get("X-Custom")
-		fmt.Fprint(w, `{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}`)
-	}))
-	defer srv.Close()
-	p := NewOpenAICompat(OpenAICompatConfig{
-		BaseURL:      srv.URL,
-		ExtraHeaders: map[string]string{"X-Custom": "yes"},
-	})
-	ch, err := p.Stream(context.Background(), Request{Model: "m"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	drain(t, ch, time.Second)
-	if got != "yes" {
-		t.Errorf("custom header: %q", got)
-	}
-}
-
 func TestOpenAICompat_ReasoningEffort(t *testing.T) {
 	cases := []struct {
 		name  string

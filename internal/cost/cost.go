@@ -7,24 +7,18 @@ package cost
 import (
 	"maps"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 )
-
-// Price is per-million-token rates for one model.
-type Price struct {
-	InputPerM  float64
-	OutputPerM float64
-}
 
 // Event is a single usage record produced after a provider stream finishes.
 type Event struct {
 	Time     time.Time
 	Provider string
 	Model    string
-	Input    int
+	Input    int // includes Cached
 	Output   int
+	Cached   int // cache-read share of Input
 	USD      float64
 }
 
@@ -40,6 +34,7 @@ type Summary struct {
 type Tracker struct {
 	mu     sync.RWMutex
 	events []Event
+	total  Summary // running rollup of events, so Total is O(1)
 	// estimatedInput overrides LastInput when non-zero so callers can reflect
 	// a post-/compact size drop in the context-fill indicator before the next
 	// real provider event lands. Cleared by Record and Reset.
@@ -53,15 +48,21 @@ func New() *Tracker { return &Tracker{} }
 // Unknown models fall back to zero-cost so unpriced local models still log
 // token totals without polluting the dollar figure.
 func (t *Tracker) Record(provider, model string, in, out int) Event {
-	return t.RecordReported(provider, model, in, out, 0)
+	return t.RecordCached(provider, model, in, 0, out, 0)
 }
 
 // RecordReported is Record for a provider that reports its own spend: a
 // positive reportedUSD replaces the table estimate, so routed models missing
 // from the pricing table still show a real dollar figure.
 func (t *Tracker) RecordReported(provider, model string, in, out int, reportedUSD float64) Event {
+	return t.RecordCached(provider, model, in, 0, out, reportedUSD)
+}
+
+// RecordCached is RecordReported for a request whose input (in) includes
+// cached tokens read from the prompt cache; those bill at the cached rate.
+func (t *Tracker) RecordCached(provider, model string, in, cached, out int, reportedUSD float64) Event {
 	p, _ := Lookup(provider, model)
-	usd := (float64(in)/1_000_000)*p.InputPerM + (float64(out)/1_000_000)*p.OutputPerM
+	usd := p.usd(model, in, cached, out)
 	if reportedUSD > 0 {
 		usd = reportedUSD
 	}
@@ -71,10 +72,12 @@ func (t *Tracker) RecordReported(provider, model string, in, out int, reportedUS
 		Model:    model,
 		Input:    in,
 		Output:   out,
+		Cached:   cached,
 		USD:      usd,
 	}
 	t.mu.Lock()
 	t.events = append(t.events, ev)
+	t.total.add(in, out, usd)
 	t.estimatedInput = 0
 	t.mu.Unlock()
 	return ev
@@ -85,6 +88,7 @@ func (t *Tracker) RecordReported(provider, model string, in, out int, reportedUS
 func (t *Tracker) Reset() {
 	t.mu.Lock()
 	t.events = nil
+	t.total = Summary{}
 	t.estimatedInput = 0
 	t.mu.Unlock()
 }
@@ -128,11 +132,7 @@ func (t *Tracker) LastInput() int {
 func (t *Tracker) Total() Summary {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	var s Summary
-	for _, e := range t.events {
-		s.add(e.Input, e.Output, e.USD)
-	}
-	return s
+	return t.total
 }
 
 func (s *Summary) add(in, out int, usd float64) {
@@ -189,57 +189,3 @@ func addTo(m map[string]Summary, key string, in, out int, usd float64) {
 // SortedKeys returns map keys sorted alphabetically — convenience for
 // deterministic rendering in the TUI pane.
 func SortedKeys[V any](m map[string]V) []string { return slices.Sorted(maps.Keys(m)) }
-
-// Lookup returns pricing for (provider, model). Tries the most specific key
-// first (provider+model), then bare model, then a stripped path-suffix
-// (openrouter returns "vendor/model" ids). Returns false when nothing
-// matches — caller treats that as zero-cost.
-func Lookup(provider, model string) (Price, bool) {
-	if p, ok := prices[provider+"|"+model]; ok {
-		return p, true
-	}
-	if idx := strings.LastIndex(model, "/"); idx >= 0 {
-		model = model[idx+1:]
-	}
-	if p, ok := prices[model]; ok {
-		return p, true
-	}
-	// routed ids spell versions with dots (claude-sonnet-4.5), the table with dashes
-	p, ok := prices[strings.ReplaceAll(model, ".", "-")]
-	return p, ok
-}
-
-// prices is the embedded pricing table (USD per million tokens).
-// Numbers reflect public list prices as of early 2026. The TUI marks
-// unpriced models with a "—" so the user knows the dollar number isn't
-// gospel.
-var prices = map[string]Price{
-	// OpenAI
-	"gpt-4o-mini": {0.15, 0.60},
-	"gpt-4o":      {2.50, 10.00},
-	"o1":          {15.00, 60.00},
-	"o1-mini":     {3.00, 12.00},
-	"o3-mini":     {1.10, 4.40},
-	// Anthropic
-	"claude-haiku-4-5":  {1.00, 5.00},
-	"claude-sonnet-4-5": {3.00, 15.00},
-	"claude-sonnet-4-6": {3.00, 15.00},
-	"claude-opus-4-7":   {15.00, 75.00},
-	// DeepSeek
-	"deepseek-v4-flash": {0.07, 1.10},
-	"deepseek-chat":     {0.27, 1.10},
-	"deepseek-reasoner": {0.55, 2.19},
-	// Google
-	"gemini-2.0-flash": {0.10, 0.40},
-	"gemini-2.5-pro":   {1.25, 10.00},
-	"gemini-2.5-flash": {0.30, 2.50},
-	// Groq (Llama variants are routed via groq.com)
-	"llama-3.3-70b-versatile": {0.59, 0.79},
-	"llama-3.1-8b-instant":    {0.05, 0.08},
-	// Moonshot Kimi K2 — public list rates (USD/M). OpenRouter ids in the
-	// `moonshotai/kimi-k2*` family strip to `kimi-k2*` via Lookup's path-
-	// suffix fallback, so the bare slugs cover both direct and routed use.
-	"kimi-k2":   {0.60, 2.50},
-	"kimi-k2.5": {0.60, 2.50},
-	"kimi-k2.6": {0.60, 2.50},
-}

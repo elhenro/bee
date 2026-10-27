@@ -15,10 +15,11 @@ var (
 type thinkSplitter struct {
 	inThink bool
 	hold    string
-	// inCall, when set, reports whether the answer text so far ends inside an
-	// open tool call; a think tag there is file content, not reasoning.
-	inCall func(answer string) bool
-	answer strings.Builder
+	// inCall, when set, reports whether the answer ends inside an open tool
+	// call; a think tag there is file content, not reasoning. pending is the
+	// answer text of the current feed before the tag. the splitter keeps no
+	// copy of earlier answer text, the caller owns that.
+	inCall func(pending string) bool
 }
 
 // feed consumes one delta and returns the answer and reasoning parts of
@@ -40,7 +41,7 @@ func (s *thinkSplitter) feed(delta string) (text, think string) {
 			break
 		}
 		dst.WriteString(in[:idx])
-		if !s.inThink && s.inCall != nil && s.inCall(s.answer.String()+tb.String()) {
+		if !s.inThink && s.inCall != nil && s.inCall(tb.String()) {
 			dst.WriteString(in[idx : idx+n])
 			in = in[idx+n:]
 			continue
@@ -48,7 +49,6 @@ func (s *thinkSplitter) feed(delta string) (text, think string) {
 		in = in[idx+n:]
 		s.inThink = !s.inThink
 	}
-	s.answer.WriteString(tb.String())
 	return tb.String(), kb.String()
 }
 

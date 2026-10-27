@@ -58,7 +58,4 @@ func (p *ChatGPTProvider) applyHeaders(r *http.Request, streaming bool) {
 			r.Header.Set(p.cfg.AccountIDHeader, tok.AccountID)
 		}
 	}
-	for k, v := range p.cfg.ExtraHeaders {
-		r.Header.Set(k, v)
-	}
 }

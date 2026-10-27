@@ -21,7 +21,6 @@ import (
 	"encoding/binary"
 	"math/bits"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -43,22 +42,6 @@ func Tag(line string, lineNumber int) string {
 	h := xxh32([]byte(stripped), seed)
 	idx := h % 4096
 	return string(hashAlphabet[idx/256]) + string(hashAlphabet[(idx/16)%16]) + string(hashAlphabet[idx%16])
-}
-
-// Ref renders the standard "<lineNumber>#<tag>" anchor format.
-func Ref(line string, lineNumber int) string {
-	return strconv.Itoa(lineNumber) + "#" + Tag(line, lineNumber)
-}
-
-// TagAll returns Tag for every line in src (split on \n). Index i+1 is
-// the 1-based line number passed to Tag.
-func TagAll(src string) []string {
-	lines := strings.Split(src, "\n")
-	out := make([]string, len(lines))
-	for i, l := range lines {
-		out[i] = Tag(l, i+1)
-	}
-	return out
 }
 
 func normalizeLine(line string) string {

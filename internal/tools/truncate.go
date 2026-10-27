@@ -46,18 +46,12 @@ func limitFor(toolName string) int {
 	return MaxOutputTokens
 }
 
-// Truncate caps content to limitFor(toolName) tokens (chars/4 heuristic). When
-// the content exceeds the cap, the head is kept and a trailer is appended.
-// Returns the (possibly modified) content and a bool indicating whether
-// truncation occurred.
-func Truncate(toolName, content string) (string, bool) {
-	return TruncateWithLimit(toolName, content, 0)
-}
-
-// TruncateWithLimit is Truncate with an explicit config-provided cap in
-// tokens (chars/4 heuristic). limitTokens<=0 → fall back to the per-tool
-// default. The smaller of (limitTokens, per-tool default) wins so a config
-// override cannot accidentally raise a webfetch-style tight ceiling.
+// TruncateWithLimit caps content to the per-tool limit (limitFor) in tokens
+// (chars/4 heuristic); limitTokens>0 is an explicit config cap. The smaller of
+// (limitTokens, per-tool default) wins so a config override cannot accidentally
+// raise a webfetch-style tight ceiling. When the content exceeds the cap, the
+// head is kept and a trailer is appended. Returns the (possibly modified)
+// content and whether truncation occurred.
 //
 // When truncation occurs and a spill directory can be resolved (via
 // $BEE_HOME/spill or os.UserHomeDir()+/.bee/spill), the full untruncated
@@ -240,8 +234,9 @@ func TruncateHeadTailWithLimit(toolName, content string, limitTokens int, tailCh
 	head := snapHead(content[:maxChars])
 	tailStart := strings.Index(content[total-tailChars:], "\n")
 	if tailStart < 0 {
-		// tail portion starts from beginning — no tail to show (pathological)
-		return trimPartialRune(content[:maxChars]), true
+		// no line boundary in the tail window (one giant line): head only, but
+		// still say so, this is the last guard before the model sees the result.
+		return head + fmt.Sprintf("\n...\n(truncated: kept first %d chars of %d; full output not retained)", len(head), total), true
 	}
 	tail := content[tailStart+total-tailChars:]
 	skipped := total - len(head) - len(tail)

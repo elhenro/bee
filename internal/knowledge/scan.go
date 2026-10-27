@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 )
 
 // MaxEntries caps how many entries ScanStore will return per call. larger
@@ -18,11 +17,32 @@ const MaxEntries = 200
 // INDEX.md or in-progress rename never surfaces as a read error.
 var storeMu sync.RWMutex
 
-// scanCacheEntry holds a parsed snapshot plus the dir mtime at scan time.
-// callers receive a defensive copy so mutations cannot poison the cache.
+// fileSig fingerprints one record file. an in-place edit leaves the dir mtime
+// alone, so the cache validates against per-file mtime and size instead.
+type fileSig struct {
+	path  string
+	mtime int64
+	size  int64
+}
+
+// scanCacheEntry holds a parsed snapshot plus the store fingerprint at scan
+// time. callers receive a defensive copy so mutations cannot poison the cache.
 type scanCacheEntry struct {
-	dirMtime time.Time
-	entries  []Entry
+	sig     []fileSig
+	entries []Entry
+}
+
+// signature stats every path; a vanished file keeps a zero fingerprint, which
+// differs from any real one.
+func signature(paths []string) []fileSig {
+	sig := make([]fileSig, len(paths))
+	for i, p := range paths {
+		sig[i].path = p
+		if fi, err := os.Stat(p); err == nil {
+			sig[i].mtime, sig[i].size = fi.ModTime().UnixNano(), fi.Size()
+		}
+	}
+	return sig
 }
 
 var (
@@ -31,7 +51,7 @@ var (
 )
 
 // invalidateScanCache drops the cached snapshot for dir. write paths call
-// this so the next ScanStore rescans regardless of dir mtime resolution.
+// this so the next ScanStore rescans regardless of mtime resolution.
 func invalidateScanCache(dir string) {
 	if dir == "" {
 		return
@@ -44,23 +64,17 @@ func invalidateScanCache(dir string) {
 // ScanStore walks dir for *.md files, parses each frontmatter in parallel,
 // and returns entries sorted mtime desc, capped at MaxEntries. INDEX.md is
 // excluded. a missing dir returns (nil, nil) so callers can fall through.
-// repeat calls return a cached slice when the dir mtime is unchanged.
+// repeat calls return a cached slice while every record's name, mtime and size
+// is unchanged; only a changed store pays for parsing. the fingerprint is taken
+// before parsing, so an edit racing the parse just forces one more rescan.
 func ScanStore(ctx context.Context, dir string) ([]Entry, error) {
-	info, err := os.Stat(dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	dirMtime := info.ModTime()
-	if cached, ok := lookupScanCache(dir, dirMtime); ok {
-		return cached, nil
-	}
-
 	paths, err := ListEntries(dir)
 	if err != nil {
 		return nil, err
+	}
+	sig := signature(paths)
+	if cached, ok := lookupScanCache(dir, sig); ok {
+		return cached, nil
 	}
 
 	entries := make([]Entry, len(paths))
@@ -89,24 +103,24 @@ func ScanStore(ctx context.Context, dir string) ([]Entry, error) {
 	out = out[:min(len(out), MaxEntries)]
 	// a listing that skipped unreadable files is not authoritative: rescan next time.
 	if complete {
-		storeScanCache(dir, dirMtime, out)
+		storeScanCache(dir, sig, out)
 	}
 	return slices.Clone(out), nil
 }
 
-func lookupScanCache(dir string, dirMtime time.Time) ([]Entry, bool) {
+func lookupScanCache(dir string, sig []fileSig) ([]Entry, bool) {
 	scanCacheMu.RLock()
 	c, ok := scanCache[dir]
 	scanCacheMu.RUnlock()
-	if !ok || !c.dirMtime.Equal(dirMtime) {
+	if !ok || !slices.Equal(c.sig, sig) {
 		return nil, false
 	}
 	return slices.Clone(c.entries), true
 }
 
-func storeScanCache(dir string, dirMtime time.Time, entries []Entry) {
+func storeScanCache(dir string, sig []fileSig, entries []Entry) {
 	scanCacheMu.Lock()
-	scanCache[dir] = scanCacheEntry{dirMtime: dirMtime, entries: slices.Clone(entries)}
+	scanCache[dir] = scanCacheEntry{sig: sig, entries: slices.Clone(entries)}
 	scanCacheMu.Unlock()
 }
 

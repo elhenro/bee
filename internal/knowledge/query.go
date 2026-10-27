@@ -160,7 +160,7 @@ func trimQuery(s string) string {
 	if len(s) <= limit {
 		return s
 	}
-	return s[:limit] + "…"
+	return types.CutBytes(s, limit) + "…"
 }
 
 func parseTagLines(s string) []string {

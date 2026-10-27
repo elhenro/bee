@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestQueryDeterministicScoring(t *testing.T) {
@@ -273,4 +274,20 @@ func slicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestTrimQueryKeepsRunesWhole(t *testing.T) {
+	long := strings.Repeat("é", 300) // 600 bytes, limit 400 falls on a rune start here
+	for _, s := range []string{long, "x" + long} {
+		got := trimQuery(s)
+		if !utf8.ValidString(got) {
+			t.Fatalf("trimQuery split a rune: %q", got)
+		}
+		if !strings.HasSuffix(got, "…") || len(got) > 400+len("…") {
+			t.Fatalf("trimQuery = %d bytes, want <= 400 plus marker", len(got))
+		}
+	}
+	if got := trimQuery("short"); got != "short" {
+		t.Fatalf("short query altered: %q", got)
+	}
 }

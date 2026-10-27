@@ -34,8 +34,6 @@ type ClaudeConfig struct {
 	EnvKey string
 	// HTTPClient is overridable for tests. Defaults to a long-timeout client.
 	HTTPClient *http.Client
-	// ExtraHeaders are merged into every request.
-	ExtraHeaders map[string]string
 }
 
 // ClaudeProvider implements Provider against Anthropic's native Messages API.
@@ -60,13 +58,7 @@ func (p *ClaudeProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	if err != nil {
 		return nil, err
 	}
-	out := make(chan Event, 16)
-	if req.Stream {
-		go p.streamLoop(ctx, resp, out)
-	} else {
-		go p.nonStreamLoop(resp, out)
-	}
-	return out, nil
+	return startStream(ctx, resp, req.Stream, p.streamLoop, p.nonStreamLoop), nil
 }
 
 func (p *ClaudeProvider) do(ctx context.Context, req Request) (*http.Response, error) {
@@ -100,15 +92,12 @@ func (p *ClaudeProvider) applyHeaders(r *http.Request, streaming bool) {
 	} else if key := loadAuthAPIKey(p.cfg.Name); key != "" {
 		r.Header.Set("x-api-key", key)
 	}
-	for k, v := range p.cfg.ExtraHeaders {
-		r.Header.Set(k, v)
-	}
 }
 
 // nonStreamLoop decodes a single Messages response and emits the equivalent
 // events. Used when req.Stream is false (rare for interactive use, common
 // for one-shot scripts).
-func (p *ClaudeProvider) nonStreamLoop(resp *http.Response, out chan<- Event) {
+func (p *ClaudeProvider) nonStreamLoop(ctx context.Context, resp *http.Response, out chan<- Event) {
 	defer resp.Body.Close()
 	defer close(out)
 
@@ -124,21 +113,22 @@ func (p *ClaudeProvider) nonStreamLoop(resp *http.Response, out chan<- Event) {
 		Usage      *wire.AnthropicUsage `json:"usage,omitempty"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		out <- Event{Type: EventError, Err: fmt.Errorf("decode non-stream body: %w", err)}
+		emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("decode non-stream body: %w", err)})
 		return
 	}
+	var evs []Event
 	for _, c := range body.Content {
 		switch c.Type {
 		case "text":
 			if c.Text != "" {
-				out <- Event{Type: EventTextDelta, Delta: c.Text}
+				evs = append(evs, Event{Type: EventTextDelta, Delta: c.Text})
 			}
 		case "tool_use":
 			if c.Input == nil {
 				c.Input = map[string]any{}
 			}
-			out <- newToolUse(c.ID, c.Name, c.Input)
+			evs = append(evs, newToolUse(c.ID, c.Name, c.Input))
 		}
 	}
-	out <- Event{Type: EventDone, StopReason: body.StopReason, Usage: anthropicUsage(body.Usage)}
+	emitAll(ctx, out, append(evs, Event{Type: EventDone, StopReason: body.StopReason, Usage: anthropicUsage(body.Usage)})...)
 }

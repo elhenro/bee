@@ -188,7 +188,7 @@ func TestCache(t *testing.T) {
 
 func TestFetchURL(t *testing.T) {
 	// Test with invalid URL
-	_, err := FetchURL("not-a-url", DefaultDomainPolicy(), true)
+	_, err := FetchURL("not-a-url", &DomainPolicy{}, true)
 	if err == nil {
 		t.Error("expected error for invalid URL")
 	}
@@ -203,7 +203,7 @@ func TestFetchURL(t *testing.T) {
 			"gopher://example.com/",
 			"data:text/plain,hi",
 		} {
-			_, err := FetchURL(u, DefaultDomainPolicy(), confined)
+			_, err := FetchURL(u, &DomainPolicy{}, confined)
 			if err == nil || !strings.Contains(err.Error(), "unsupported URL scheme") {
 				t.Errorf("expected scheme rejection for %q (confined=%v), got %v", u, confined, err)
 			}
@@ -211,7 +211,7 @@ func TestFetchURL(t *testing.T) {
 	}
 
 	// Confined scope: localhost resolves to loopback → SSRF guard blocks it.
-	_, err = FetchURL("https://localhost/test", DefaultDomainPolicy(), true)
+	_, err = FetchURL("https://localhost/test", &DomainPolicy{}, true)
 	if err == nil {
 		t.Error("expected SSRF block for loopback host under confined scope")
 	}
@@ -219,7 +219,7 @@ func TestFetchURL(t *testing.T) {
 	// danger-full-access (confined=false): the SSRF guard is off, so localhost
 	// is reachable. We expect a connection error to the closed port, never the
 	// blocked-IP guard.
-	_, err = FetchURL("http://127.0.0.1:1/", DefaultDomainPolicy(), false)
+	_, err = FetchURL("http://127.0.0.1:1/", &DomainPolicy{}, false)
 	if err != nil && strings.Contains(err.Error(), "blocked IP") {
 		t.Errorf("unconfined fetch must not hit the SSRF guard: %v", err)
 	}

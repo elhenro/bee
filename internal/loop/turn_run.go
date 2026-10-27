@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elhenro/bee/internal/cost"
 	"github.com/elhenro/bee/internal/herdr"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -32,6 +33,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	if e.Sessions != nil {
 		defer func() { _ = e.Sessions.Flush() }()
 	}
+	// usage and lifetime writes are queued off the turn path; land them before
+	// the Run returns so a process exit right after loses nothing
+	defer cost.Flush()
 	defer e.cancelSpecCompact()
 	defer e.earlyDrain()
 	// reset per-Run state. freshRunState allocates the dedupe/streak maps;
@@ -88,8 +92,9 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 	// config.Defaults() seeds config.DefaultMaxIterations, so 0 only appears when the user explicitly
 	// lifted the cap (/iterations 0 or max_iterations = 0).
 	maxIter := e.Cfg.MaxIterations
-	tokenBudget := computeTokenBudget(e.Cfg)
 	for i := 0; maxIter <= 0 || i < maxIter; i++ {
+		// per iteration: a hosted window probe can land mid-Run
+		tokenBudget := computeTokenBudget(e.Cfg)
 		if err := e.handleBudgetCaps(ctx, &res.Messages, i, tokenBudget); err != nil {
 			return res, err
 		}
@@ -104,7 +109,7 @@ func (e *Engine) RunWithContentDisplay(ctx context.Context, content []types.Cont
 		// background summary started below the trigger makes the swap free.
 		res.Messages = e.autoCompactStep(ctx, res.Messages, pl.sys)
 
-		assistantMsg, finalText, toolUses, err := e.streamOnce(ctx, e.buildRequest(ctx, pl, res.Messages))
+		assistantMsg, finalText, toolUses, err := e.streamRecovering(ctx, pl, &res)
 		if err != nil {
 			return res, err
 		}

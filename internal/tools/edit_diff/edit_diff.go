@@ -29,10 +29,6 @@ type Tool struct {
 	pathRe *regexp.Regexp
 }
 
-// New returns an edit_diff tool rooted at root. Root is currently informational —
-// callers pass absolute paths.
-func New(root string) *Tool { return NewWithFilter(root, nil) }
-
 // NewWithFilter constructs the edit_diff tool with an optional path regex.
 // When pathRe is nil, all paths are allowed. When non-nil, edits to paths
 // (relative to root when possible) that do NOT match are rejected before

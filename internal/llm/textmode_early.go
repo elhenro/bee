@@ -2,15 +2,22 @@ package llm
 
 import "strings"
 
-// hasAnyCloseTag is a cheap substring scan: returns true when s contains a
-// closing tag for any known tool. Cheaper than firing the regex extractor
-// on every token-sized delta.
-func hasAnyCloseTag(s string, known map[string]bool) bool {
-	if len(s) == 0 || len(known) == 0 {
-		return false
-	}
+// closeTagsOf lists the closing tag of every known tool.
+func closeTagsOf(known map[string]bool) []string {
+	tags := make([]string, 0, len(known))
 	for name := range known {
-		if strings.Contains(s, "</"+name+">") {
+		tags = append(tags, "</"+name+">")
+	}
+	return tags
+}
+
+// hasCloseTagSince reports whether a closing tag in tags ends inside s[from:].
+// Cheaper than firing the regex extractor on every token-sized delta, and it
+// scans only the new bytes plus the overlap a tag split across deltas needs,
+// so a whole stream costs O(total) instead of O(total^2).
+func hasCloseTagSince(s string, from int, tags []string) bool {
+	for _, tag := range tags {
+		if strings.Contains(s[max(from-(len(tag)-1), 0):], tag) {
 			return true
 		}
 	}

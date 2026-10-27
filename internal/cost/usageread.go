@@ -26,6 +26,7 @@ type UsageWindow struct {
 // partial trailing line from a crash) are skipped. Past the soft cap only the
 // tail is read.
 func ReadUsage() ([]UsageRecord, error) {
+	Flush() // queued lines are part of the log
 	path := usagePath()
 	if path == "" {
 		return nil, nil

@@ -23,7 +23,8 @@ type lifetimeFile struct {
 var (
 	lifeMu     sync.Mutex
 	lifeLoaded bool
-	lifeData   lifetimeFile
+	lifeData   lifetimeFile // persisted totals as of the last read or write
+	lifePend   lifetimeFile // added since, not yet written
 	lifePath   string
 )
 
@@ -41,9 +42,11 @@ func statePath(env, name string) string {
 // ResetLifetimeForTest clears the cached load so the next call re-reads from
 // disk. Test-only; production never hot-reloads.
 func ResetLifetimeForTest() {
+	Flush()
 	lifeMu.Lock()
 	lifeLoaded = false
 	lifeData = lifetimeFile{}
+	lifePend = lifetimeFile{}
 	lifePath = ""
 	lifeMu.Unlock()
 }
@@ -61,6 +64,8 @@ func (f *lifetimeFile) add(in, out int) {
 	f.Output += int64(max(out, 0))
 }
 
+func (f lifetimeFile) zero() bool { return f.Input == 0 && f.Output == 0 }
+
 // ensureLifetimeLoaded is a lazy one-shot load. Caller holds lifeMu.
 func ensureLifetimeLoaded() {
 	if lifeLoaded {
@@ -74,44 +79,84 @@ func ensureLifetimeLoaded() {
 }
 
 // LifetimeTotals returns persisted input/output token totals across every
-// bee session that ever called AddLifetime.
+// bee session that ever called AddLifetime. It waits for the background
+// writer, so it counts deltas still queued; callers are banner and pane
+// renders, never the turn path.
 func LifetimeTotals() (in, out int64) {
+	Flush()
 	lifeMu.Lock()
 	defer lifeMu.Unlock()
 	ensureLifetimeLoaded()
 	return lifeData.Input, lifeData.Output
 }
 
-// AddLifetime bumps persisted totals and writes the file atomically. I/O
-// errors are swallowed: a missing or unwritable home should never crash a
-// turn, and on next start the counter just stays at the last successful sum.
+// AddLifetime queues a bump of the persisted totals for the background writer
+// (Flush waits for it). I/O errors are swallowed: a missing or unwritable home
+// should never crash a turn, and on next start the counter just stays at the
+// last successful sum.
 func AddLifetime(in, out int) {
 	if in <= 0 && out <= 0 {
 		return
 	}
 	lifeMu.Lock()
+	lifePend.add(in, out)
+	lifeMu.Unlock()
+	kickWriter()
+}
+
+// lifetimeDirty reports whether a delta still waits for the writer.
+func lifetimeDirty() bool {
+	lifeMu.Lock()
 	defer lifeMu.Unlock()
+	return !lifePend.zero()
+}
+
+// flushLifetime writes the queued delta, off the turn path. A failed write
+// drops the delta from the file but keeps it in the in-memory tally.
+func flushLifetime() {
+	lifeMu.Lock()
 	ensureLifetimeLoaded()
-	if lifePath == "" {
-		// no persistence target; keep the in-memory tally for the banner.
-		lifeData.add(in, out)
+	p, path := lifePend, lifePath
+	lifeMu.Unlock()
+	if p.zero() {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(lifePath), 0o755); err != nil {
+	merged, ok := lifetimeFile{}, false
+	if path != "" {
+		merged, ok = mergeLifetime(path, p)
+	}
+	lifeMu.Lock()
+	defer lifeMu.Unlock()
+	lifePend.Input -= p.Input
+	lifePend.Output -= p.Output
+	if ok {
+		lifeData = merged
 		return
 	}
-	// merge-on-write under a cross-process flock: concurrent bee processes
-	// (fan, swarm, parallel headless runs) each re-read the file before
-	// adding their delta, so nobody's counts get silently dropped by a
-	// last-writer-wins overwrite.
-	defer flock.Lock(lifePath)()
-	lifeData = readLifetime(lifePath)
-	lifeData.add(in, out)
-	b, err := json.Marshal(lifeData)
+	lifeData.Input += p.Input
+	lifeData.Output += p.Output
+}
+
+// mergeLifetime adds p to the file under a cross-process flock: concurrent bee
+// processes (fan, swarm, parallel headless runs) each re-read the file before
+// adding their delta, so nobody's counts get silently dropped by a
+// last-writer-wins overwrite.
+func mergeLifetime(path string, p lifetimeFile) (lifetimeFile, bool) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return lifetimeFile{}, false
+	}
+	defer flock.Lock(path)()
+	f := readLifetime(path)
+	f.Input += p.Input
+	f.Output += p.Output
+	b, err := json.Marshal(f)
 	if err != nil {
-		return
+		return lifetimeFile{}, false
 	}
-	_ = atomicfile.Write(lifePath, b, 0o600)
+	if atomicfile.Write(path, b, 0o600) != nil {
+		return lifetimeFile{}, false
+	}
+	return f, true
 }
 
 // FormatLifetimeTokens compacts a token count for banner display: thousands

@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -38,7 +39,7 @@ func (s *specCompact) matches(msgs []types.Message) bool {
 // without one does it summarize inline. Between specStartRatio and the trigger
 // it starts that background summary.
 func (e *Engine) autoCompactStep(ctx context.Context, msgs []types.Message, sys string) []types.Message {
-	if !e.compactionEnabled() {
+	if !e.compactionEnabled() || e.run.compactFailed {
 		return msgs
 	}
 	budget, threshold := e.compactLimits()
@@ -58,17 +59,30 @@ func (e *Engine) autoCompactStep(ctx context.Context, msgs []types.Message, sys 
 }
 
 // compactInline summarizes msgs on the spot and returns the shorter history
-// with its notice. a failure keeps msgs.
+// with its notice. a failure keeps msgs and latches for the rest of the Run, so
+// a summarizer that stays down costs one request, not one per iteration.
 func (e *Engine) compactInline(ctx context.Context, msgs []types.Message) []types.Message {
+	if e.run.compactFailed {
+		return msgs
+	}
+	out, _ := e.compactNow(ctx, msgs)
+	return out
+}
+
+// compactNow is compactInline without the latch check, for callers that must
+// try regardless (overflow recovery). shrunk reports whether the history got
+// smaller; a failure keeps msgs and sets the latch.
+func (e *Engine) compactNow(ctx context.Context, msgs []types.Message) (out []types.Message, shrunk bool) {
 	compacted, stats, err := e.compact(ctx, msgs)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "loop: auto-compact failed: %v\n", err)
-		return msgs
+		e.run.compactFailed = true
+		return msgs, false
 	}
 	// post-compact: reset lastInputTokens so the next iteration re-evaluates
 	// against the smaller history.
 	e.run.lastInputTokens = 0
-	return e.emitCompactNotice(compacted, stats)
+	return e.emitCompactNotice(compacted, stats), stats.AfterTokens < stats.BeforeTokens
 }
 
 // startSpecCompact summarizes the current history in the background. No-op while
@@ -87,7 +101,7 @@ func (e *Engine) startSpecCompact(ctx context.Context, msgs []types.Message) {
 		lastID:  msgs[len(msgs)-1].ID,
 	}
 	snap := dropEphemeral(append([]types.Message(nil), msgs...))
-	prov, model := e.Provider, compactionModel(e.Cfg)
+	prov, model := e.Provider, config.FastModelOf(e.Cfg)
 	e.run.spec = s
 	go func() {
 		defer close(s.done)

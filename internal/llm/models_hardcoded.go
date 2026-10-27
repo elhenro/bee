@@ -3,74 +3,20 @@ package llm
 import (
 	"slices"
 	"strings"
-	"sync"
 )
-
-// ctxCache holds live-learned context lengths for model ids. Populated by
-// RememberContextLength (called from ListModels' storeCache and the ollama
-// /api/show prewarm goroutine). RLock-cheap reads keep ContextWindow on the
-// hot path for every token-budget check the loop runs.
-var ctxCache = struct {
-	sync.RWMutex
-	m map[string]int
-}{m: map[string]int{}}
-
-// modelTail is the last path segment of a model id, so routed ids
-// ("vendor/model-name") resolve to the bare model name.
-func modelTail(modelID string) string {
-	return modelID[strings.LastIndex(modelID, "/")+1:]
-}
-
-// RememberContextLength records a live-learned context window for modelID.
-// Both the raw id and its trailing path segment are stored so future
-// lookups resolve regardless of which form ContextWindow gets.
-func RememberContextLength(modelID string, n int) {
-	if modelID == "" || n <= 0 {
-		return
-	}
-	ctxCache.Lock()
-	defer ctxCache.Unlock()
-	ctxCache.m[modelID] = n
-	ctxCache.m[modelTail(modelID)] = n
-}
-
-// ResetLiveContextLengths drops every learned entry. Tests call this.
-func ResetLiveContextLengths() {
-	ctxCache.Lock()
-	defer ctxCache.Unlock()
-	ctxCache.m = map[string]int{}
-}
-
-// ContextWindow returns a best-effort context length (in tokens) for the
-// given model id. Live API-learned values win over the hardcoded table.
-// Tries the exact id, then the trailing path segment. Returns 0 when unknown —
-// TUI treats that as "no fill indicator".
-func ContextWindow(modelID string) int {
-	if modelID == "" {
-		return 0
-	}
-	tail := modelTail(modelID)
-	ctxCache.RLock()
-	c, ok := lookupBoth(ctxCache.m, modelID, tail)
-	ctxCache.RUnlock()
-	if !ok {
-		c, _ = lookupBoth(contextLengths, modelID, tail)
-	}
-	return c
-}
-
-func lookupBoth(m map[string]int, id, tail string) (int, bool) {
-	if c, ok := m[id]; ok {
-		return c, true
-	}
-	c, ok := m[tail]
-	return c, ok
-}
 
 // contextLengths is a curated table of known model context windows. Keep in
 // sync with cost.prices and the picker's /models output.
 var contextLengths = map[string]int{
-	// Anthropic
+	// Anthropic. Ids not listed (dated snapshots, new releases) resolve through
+	// ContextWindow's family prefix and claude default.
+	"claude-fable-5-1":  1000000,
+	"claude-fable-5":    1000000,
+	"claude-opus-5-5":   1000000,
+	"claude-opus-5":     1000000,
+	"claude-sonnet-5-5": 1000000,
+	"claude-sonnet-5":   1000000,
+	"claude-haiku-5-5":  1000000,
 	"claude-haiku-4-5":  200000,
 	"claude-sonnet-4-5": 200000,
 	"claude-sonnet-4-6": 200000,
@@ -119,6 +65,8 @@ var thinkingModelSubstrings = []string{
 	"gpt-5",
 	// Anthropic 4.x extended thinking.
 	"claude-opus-4", "claude-sonnet-4", "claude-haiku-4",
+	// Anthropic 5.x: adaptive thinking.
+	"claude-opus-5", "claude-sonnet-5", "claude-haiku-5", "claude-fable-5", "claude-mythos-5",
 	// DeepSeek reasoners (reasoner, v3.1+, v4 flash/full).
 	"deepseek-reasoner", "deepseek-r1", "deepseek-v3.1", "deepseek-v3.2", "deepseek-v4",
 	// Gemini 2.5 / 3.x families (thinkingBudget).
@@ -147,6 +95,10 @@ func SupportsThinking(modelID string) bool {
 // endpoint is unavailable or gated.
 func anthropicModels() []Model {
 	return []Model{
+		{ID: "claude-fable-5-1", Name: "Claude Fable 5.1", ContextLength: 1000000},
+		{ID: "claude-opus-5-5", Name: "Claude Opus 5.5", ContextLength: 1000000},
+		{ID: "claude-sonnet-5-5", Name: "Claude Sonnet 5.5", ContextLength: 1000000},
+		{ID: "claude-haiku-5-5", Name: "Claude Haiku 5.5", ContextLength: 1000000},
 		{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", ContextLength: 200000},
 		{ID: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5", ContextLength: 200000},
 		{ID: "claude-haiku-4-5", Name: "Claude Haiku 4.5", ContextLength: 200000},

@@ -11,7 +11,7 @@ import (
 )
 
 // nonStreamLoop drains a single JSON body and emits the equivalent events.
-func (p *OpenAICompatProvider) nonStreamLoop(resp *http.Response, out chan<- Event) {
+func (p *OpenAICompatProvider) nonStreamLoop(ctx context.Context, resp *http.Response, out chan<- Event) {
 	defer resp.Body.Close()
 	defer close(out)
 
@@ -26,16 +26,17 @@ func (p *OpenAICompatProvider) nonStreamLoop(resp *http.Response, out chan<- Eve
 		Usage *wire.StreamUsage `json:"usage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		out <- Event{Type: EventError, Err: fmt.Errorf("decode non-stream body: %w", err)}
+		emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("decode non-stream body: %w", err)})
 		return
 	}
 	if len(body.Choices) == 0 {
-		out <- Event{Type: EventDone, StopReason: "stop"}
+		emit(ctx, out, Event{Type: EventDone, StopReason: "stop"})
 		return
 	}
 	choice := body.Choices[0]
+	var evs []Event
 	if choice.Message.Content != "" {
-		out <- Event{Type: EventTextDelta, Delta: choice.Message.Content}
+		evs = append(evs, Event{Type: EventTextDelta, Delta: choice.Message.Content})
 	}
 	for _, tc := range choice.Message.ToolCalls {
 		name := cmp.Or(wire.SanitizeToolName(tc.Function.Name), tc.Function.Name)
@@ -47,9 +48,9 @@ func (p *OpenAICompatProvider) nonStreamLoop(resp *http.Response, out chan<- Eve
 				wire.StripMarkupInValues(input)
 			}
 		}
-		out <- newToolUse(tc.ID, name, input)
+		evs = append(evs, newToolUse(tc.ID, name, input))
 	}
-	out <- Event{Type: EventDone, StopReason: choice.FinishReason, Usage: usageFromWire(body.Usage)}
+	emitAll(ctx, out, append(evs, Event{Type: EventDone, StopReason: choice.FinishReason, Usage: usageFromWire(body.Usage)})...)
 }
 
 // compatStream accumulates a chat-completions SSE stream: tool-call deltas
@@ -138,7 +139,7 @@ func (p *OpenAICompatProvider) streamLoop(ctx context.Context, resp *http.Respon
 	// inactivity watchdog: cancels the request when no SSE line arrives for
 	// the configured stall window. Without this, a read blocks indefinitely on
 	// a live-but-quiet connection while the TUI loader spins.
-	stall := cmp.Or(p.cfg.StallTimeout, effectiveStallTimeout())
+	stall := effectiveStallTimeout()
 	if !readSSE(ctx, resp, p.cfg.Name, stall, out, func(payload []byte, bump func()) error {
 		return s.handle(ctx, out, payload, bump)
 	}) {

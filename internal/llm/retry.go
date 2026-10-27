@@ -7,18 +7,24 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 // retry policy for the pre-stream request: network errors and 408/429/5xx
-// trigger an exp-backoff retry. Once the stream starts emitting deltas we
-// no longer retry. replaying would duplicate tokens.
+// trigger an exp-backoff retry, stretched to the server's Retry-After. Once
+// the stream starts emitting deltas we no longer retry. replaying would
+// duplicate tokens.
 const (
 	maxRetryAttempts     = 3
 	maxRetryAttemptsRate = 5
 	retryBaseDelay       = 800 * time.Millisecond
 	retryMinDelay        = 200 * time.Millisecond
+	// retryAfterCap bounds a server-requested wait so one hostile or buggy
+	// header cannot park the turn for minutes.
+	retryAfterCap = 30 * time.Second
 )
 
 // retryRand drives the backoff jitter. seeded once per process. jitter does
@@ -58,6 +64,22 @@ func retryBackoff(attempt int) time.Duration {
 // shrink it.
 var retryDelay = retryBackoff
 
+// retryAfter reads the Retry-After header, either delta-seconds or an HTTP
+// date, capped at retryAfterCap. Zero when absent, unparsable or in the past.
+func retryAfter(h http.Header, now time.Time) time.Duration {
+	v := strings.TrimSpace(h.Get("Retry-After"))
+	if v == "" {
+		return 0
+	}
+	var d time.Duration
+	if secs, err := strconv.Atoi(v); err == nil {
+		d = time.Duration(secs) * time.Second
+	} else if at, err := http.ParseTime(v); err == nil {
+		d = at.Sub(now)
+	}
+	return min(max(d, 0), retryAfterCap)
+}
+
 // postJSON is postWithRetry for a JSON body; apply sets the provider's headers
 // on every attempt.
 func postJSON(ctx context.Context, client *http.Client, name, url string, body []byte, apply func(*http.Request)) (*http.Response, error) {
@@ -78,6 +100,7 @@ func postJSON(ctx context.Context, client *http.Client, name, url string, body [
 func postWithRetry(ctx context.Context, client *http.Client, name string, build func() (*http.Request, error)) (*http.Response, error) {
 	var lastErr error
 	lastWasRate := false
+	var hint time.Duration
 	for attempt := 0; attempt < maxRetryAttemptsRate; attempt++ {
 		if attempt >= maxRetryAttempts && !lastWasRate {
 			break
@@ -86,7 +109,7 @@ func postWithRetry(ctx context.Context, client *http.Client, name string, build 
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(retryDelay(attempt)):
+			case <-time.After(max(retryDelay(attempt), hint)):
 			}
 		}
 		req, err := build()
@@ -99,12 +122,13 @@ func postWithRetry(ctx context.Context, client *http.Client, name string, build 
 				return nil, ctx.Err()
 			}
 			lastErr = fmt.Errorf("post: %w", err)
-			lastWasRate = false
+			lastWasRate, hint = false, 0
 			continue
 		}
 		if !retryableStatus(resp.StatusCode) {
 			return resp, nil
 		}
+		hint = retryAfter(resp.Header, time.Now())
 		lastErr = checkStatus(resp, name)
 		lastWasRate = rateLimitedStatus(resp.StatusCode)
 	}

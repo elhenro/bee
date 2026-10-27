@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/elhenro/bee/internal/llm/wire"
 )
@@ -31,13 +30,6 @@ type OpenAICompatConfig struct {
 	EnvKey string
 	// HTTPClient is overridable for tests. Defaults to a long-timeout client.
 	HTTPClient *http.Client
-	// ExtraHeaders are merged into every request. Useful for OpenRouter's
-	// HTTP-Referer + X-Title attribution headers.
-	ExtraHeaders map[string]string
-	// StallTimeout overrides the per-chunk SSE inactivity timer. 0 falls back
-	// to the package default (streamStallTimeout). Negative disables the
-	// watchdog (test-only).
-	StallTimeout time.Duration
 	// ChatTemplateKwargs flows into the MLX/vllm `chat_template_kwargs` body
 	// field. Lets local servers flip Qwen3 template switches that change tool
 	// emission shape. Nil = omit. Per-provider (TOML `chat_template_kwargs`).
@@ -202,13 +194,7 @@ func (p *OpenAICompatProvider) Stream(ctx context.Context, req Request) (<-chan 
 		}
 	}
 
-	out := make(chan Event, 16)
-	if req.Stream {
-		go p.streamLoop(ctx, resp, out)
-	} else {
-		go p.nonStreamLoop(resp, out)
-	}
-	return out, nil
+	return startStream(ctx, resp, req.Stream, p.streamLoop, p.nonStreamLoop), nil
 }
 
 func (p *OpenAICompatProvider) buildWireRequest(req Request) wire.ChatRequest {

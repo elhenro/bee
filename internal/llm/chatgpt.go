@@ -24,8 +24,6 @@ type ChatGPTConfig struct {
 	AccountIDHeader string
 	// HTTPClient is overridable for tests. Defaults to a long-timeout client.
 	HTTPClient *http.Client
-	// ExtraHeaders are merged into every request.
-	ExtraHeaders map[string]string
 }
 
 // ChatGPTProvider implements Provider against OpenAI's Responses API on the
@@ -52,11 +50,5 @@ func (p *ChatGPTProvider) Stream(ctx context.Context, req Request) (<-chan Event
 		return nil, err
 	}
 
-	out := make(chan Event, 16)
-	if req.Stream {
-		go p.streamLoop(ctx, resp, out)
-	} else {
-		go p.nonStreamLoop(resp, out)
-	}
-	return out, nil
+	return startStream(ctx, resp, req.Stream, p.streamLoop, p.nonStreamLoop), nil
 }

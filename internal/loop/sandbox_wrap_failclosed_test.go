@@ -32,7 +32,7 @@ func TestWrapShellInput_FailsClosedOnUnapplicableScope(t *testing.T) {
 			if got["command"] == input["command"] {
 				t.Fatalf("command passed through unwrapped: %v", got["command"])
 			}
-			res, _ := shell.New().Run(context.Background(), got)
+			res, _ := shell.NewWithApprover(nil).Run(context.Background(), got)
 			if !res.IsError || !strings.Contains(res.Content, "exit 126") {
 				t.Errorf("expected refusal (exit 126), got %+v", res)
 			}

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"regexp"
 	"strings"
+
+	"github.com/elhenro/bee/internal/types"
 )
 
 // modelMarkupRe matches the DeepSeek / chat-template "special token" leaks
@@ -159,5 +161,5 @@ func truncForErr(b []byte) string {
 	if len(b) <= max {
 		return string(b)
 	}
-	return string(b[:max]) + "…"
+	return types.CutBytes(string(b), max) + "…"
 }

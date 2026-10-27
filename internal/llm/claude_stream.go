@@ -82,8 +82,15 @@ func (s *claudeStream) handle(ctx context.Context, out chan<- Event, payload []b
 				s.usage = u
 			} else {
 				s.usage.OutputTokens = u.OutputTokens
+				// later API versions repeat the input and cache tallies here
 				if u.InputTokens > 0 {
 					s.usage.InputTokens = u.InputTokens
+				}
+				if u.CacheReadInputTokens > 0 {
+					s.usage.CacheReadInputTokens = u.CacheReadInputTokens
+				}
+				if u.CacheCreationInputTokens > 0 {
+					s.usage.CacheCreationInputTokens = u.CacheCreationInputTokens
 				}
 			}
 		}

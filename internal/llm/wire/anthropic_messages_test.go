@@ -190,7 +190,7 @@ func TestBuildAnthropicMessages_ThinkingBudget(t *testing.T) {
 
 func TestBuildAnthropicMessages_AdaptiveThinking(t *testing.T) {
 	// Sonnet 4.6 / Opus 4.6+ must use adaptive thinking (no budget_tokens).
-	for _, m := range []string{"claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4-6"} {
+	for _, m := range []string{"claude-sonnet-4-6", "claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-8", "claude-fable-5-1", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"} {
 		req := BuildAnthropicMessagesRequest(m, "", "", nil, nil, 0, 0, false, 4096)
 		if req.Thinking == nil || req.Thinking.Type != "adaptive" {
 			t.Errorf("%s: want adaptive thinking, got %+v", m, req.Thinking)

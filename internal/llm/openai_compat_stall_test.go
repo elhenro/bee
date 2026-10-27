@@ -12,9 +12,10 @@ import (
 )
 
 // TestOpenAICompat_StallTimeout: server opens an SSE response then never
-// sends a chunk. With a short StallTimeout the provider must surface a
+// sends a chunk. With a short stall window the provider must surface a
 // "stream stalled" error before the test deadline.
 func TestOpenAICompat_StallTimeout(t *testing.T) {
+	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -22,19 +23,20 @@ func TestOpenAICompat_StallTimeout(t *testing.T) {
 			f.Flush()
 		}
 		// hold the connection open without writing anything
-		time.Sleep(2 * time.Second)
+		<-release
 	}))
 	defer srv.Close()
+	defer close(release)
 	t.Setenv("STALL_KEY", "sk")
+	t.Setenv("BEE_STREAM_STALL_SECONDS", "1")
 
 	p := NewOpenAICompat(OpenAICompatConfig{
-		Name:         "stall",
-		BaseURL:      srv.URL,
-		EnvKey:       "STALL_KEY",
-		StallTimeout: 200 * time.Millisecond,
+		Name:    "stall",
+		BaseURL: srv.URL,
+		EnvKey:  "STALL_KEY",
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	ch, err := p.Stream(ctx, Request{
 		Model:    "test",
@@ -45,7 +47,7 @@ func TestOpenAICompat_StallTimeout(t *testing.T) {
 		t.Fatalf("Stream returned err: %v", err)
 	}
 
-	deadline := time.NewTimer(800 * time.Millisecond)
+	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	for {
 		select {
@@ -65,7 +67,7 @@ func TestOpenAICompat_StallTimeout(t *testing.T) {
 				return
 			}
 		case <-deadline.C:
-			t.Fatalf("watchdog did not fire within 800ms (timeout was 200ms)")
+			t.Fatalf("watchdog did not fire within 3s (timeout was 1s)")
 		}
 	}
 }

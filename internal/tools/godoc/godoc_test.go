@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // helper: skip if `go` binary unavailable in CI sandbox.
@@ -98,5 +99,27 @@ func TestGodoc_RejectShellMeta(t *testing.T) {
 		if !res.IsError {
 			t.Errorf("expected reject for %q, got success: %s", bad, res.Content)
 		}
+	}
+}
+
+func TestTruncate_NoNewlineKeepsRunesWhole(t *testing.T) {
+	// one long line, no newline to snap to: the raw byte cut lands mid-rune.
+	in := strings.Repeat("世", 100)
+	got := truncate(in, 100)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncate split a rune: %q", got)
+	}
+	if !strings.HasSuffix(got, truncMarker) {
+		t.Fatalf("missing truncation marker: %q", got)
+	}
+	if body := strings.TrimSuffix(got, truncMarker); len(body) > 100 {
+		t.Fatalf("kept %d bytes, cap 100", len(body))
+	}
+}
+
+func TestTruncate_CutsAtNewline(t *testing.T) {
+	got := truncate("line one\nline two\nline three", 20)
+	if got != "line one\nline two"+truncMarker {
+		t.Fatalf("got %q", got)
 	}
 }

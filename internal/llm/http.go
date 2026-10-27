@@ -19,7 +19,7 @@ import (
 //
 // Total wall-clock is intentionally unbounded — a long reasoning trace is
 // legitimate. The watchdog only cares about *silence*. Override globally with
-// BEE_STREAM_STALL_SECONDS, or per-call via OpenAICompatConfig.StallTimeout.
+// BEE_STREAM_STALL_SECONDS.
 const streamStallTimeout = 10 * time.Minute
 
 // effectiveStallTimeout returns the default stall window, overridden by

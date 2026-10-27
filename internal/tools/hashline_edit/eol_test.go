@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/elhenro/bee/internal/tools/apply_patch"
 )
 
 func TestCRLFAndNoTrailingNewlinePreserved(t *testing.T) {
@@ -23,7 +21,7 @@ func TestCRLFAndNoTrailingNewlinePreserved(t *testing.T) {
 			res, err := New(filepath.Dir(path)).Run(context.Background(), map[string]any{
 				"path": path,
 				"edits": []any{map[string]any{
-					"pos": apply_patch.Ref(lines[1], 2), "op": "replace", "lines": []any{"TWO", "2b"},
+					"pos": ref(lines[1], 2), "op": "replace", "lines": []any{"TWO", "2b"},
 				}},
 			})
 			if err != nil || res.IsError {

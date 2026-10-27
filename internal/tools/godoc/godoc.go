@@ -16,6 +16,7 @@ import (
 
 	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/tools"
+	"github.com/elhenro/bee/internal/types"
 )
 
 const (
@@ -144,9 +145,10 @@ func truncate(s string, maxBytes int) string {
 	if len(s) <= maxBytes {
 		return s
 	}
-	cut := strings.LastIndexByte(s[:maxBytes], '\n')
+	head := types.CutBytes(s, maxBytes)
+	cut := strings.LastIndexByte(head, '\n')
 	if cut <= 0 {
-		cut = maxBytes
+		cut = len(head)
 	}
 	return s[:cut] + truncMarker
 }

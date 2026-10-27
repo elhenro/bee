@@ -167,7 +167,7 @@ func anthropicMaxTokens(model string, n int) int {
 // families are future-proofing.
 func isAdaptiveThinkingModel(model string) bool {
 	m := strings.ToLower(model)
-	return slices.ContainsFunc([]string{"sonnet-4-6", "opus-4-6", "opus-4-7", "opus-5", "sonnet-5"}, func(s string) bool {
+	return slices.ContainsFunc([]string{"sonnet-4-6", "opus-4-6", "opus-4-7", "opus-4-8", "opus-5", "sonnet-5", "fable-5", "haiku-5", "mythos-5"}, func(s string) bool {
 		return strings.Contains(m, s)
 	})
 }

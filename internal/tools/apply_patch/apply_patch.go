@@ -25,10 +25,6 @@ type Tool struct {
 	pathRe *regexp.Regexp
 }
 
-// New returns an apply_patch tool rooted at root (the workspace). Every patch
-// target is contained to root.
-func New(root string) tools.Tool { return NewWithFilter(root, nil) }
-
 // NewWithFilter constructs the apply_patch tool with an optional path regex.
 // When pathRe is nil, all in-root paths are allowed. When non-nil, the whole
 // batch is rejected if ANY file path in the patch fails the match. Either way,

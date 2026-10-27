@@ -43,10 +43,6 @@ type Tool struct {
 	confine      bool // when true, apply CheckReadable secret-path blocking
 }
 
-// New returns a fresh read tool with package-default limits (2000 default,
-// 10000 max) and secret-path blocking on.
-func New() tools.Tool { return NewWithLimits(defaultLimit, maxLimit, true) }
-
 // NewWithLimits returns a read tool with custom default/max line caps; zero
 // falls back to the package defaults.
 // confine gates the CheckReadable secret-path guard: true under a confined

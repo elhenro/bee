@@ -107,3 +107,81 @@ func TestRecordReportedPrefersProviderCost(t *testing.T) {
 		t.Errorf("zero reported must fall back to table estimate, got %v", est.USD)
 	}
 }
+
+// cache reads bill at the cached share of the input rate; in includes them.
+func TestRecordCachedDiscountsCacheReads(t *testing.T) {
+	tr := New()
+	// claude-sonnet-4-5 input 3.00/M: 100k fresh + 900k cached at 0.1x, 10k out at 15/M
+	ev := tr.RecordCached("anthropic", "claude-sonnet-4-5", 1_000_000, 900_000, 10_000, 0)
+	want := 0.1*3.00 + 0.9*3.00*0.1 + 0.01*15.00
+	if math.Abs(ev.USD-want) > 1e-9 {
+		t.Fatalf("usd: got %f want %f", ev.USD, want)
+	}
+	if ev.Cached != 900_000 || tr.Total().Input != 1_000_000 {
+		t.Fatalf("event %+v total %+v", ev, tr.Total())
+	}
+}
+
+// a family without a documented discount pays the full rate on cached tokens.
+func TestRecordCachedUnknownFamilyPaysFullRate(t *testing.T) {
+	tr := New()
+	a := tr.RecordCached("deepseek", "deepseek-chat", 1_000_000, 800_000, 0, 0)
+	b := tr.Record("deepseek", "deepseek-chat", 1_000_000, 0)
+	if a.USD != b.USD {
+		t.Fatalf("cached %f != uncached %f for a model with no known discount", a.USD, b.USD)
+	}
+}
+
+// bogus cached counts are clamped into [0, in].
+func TestRecordCachedClamps(t *testing.T) {
+	tr := New()
+	over := tr.RecordCached("anthropic", "claude-sonnet-4-5", 1000, 5000, 0, 0)
+	all := tr.RecordCached("anthropic", "claude-sonnet-4-5", 1000, 1000, 0, 0)
+	neg := tr.RecordCached("anthropic", "claude-sonnet-4-5", 1000, -5, 0, 0)
+	full := tr.Record("anthropic", "claude-sonnet-4-5", 1000, 0)
+	if over.USD != all.USD || neg.USD != full.USD {
+		t.Fatalf("over %f all %f neg %f full %f", over.USD, all.USD, neg.USD, full.USD)
+	}
+}
+
+func TestLookupStripsSnapshotAndLatest(t *testing.T) {
+	want, _ := Lookup("anthropic", "claude-sonnet-4-5")
+	for _, id := range []string{
+		"claude-sonnet-4-5-20250929",
+		"claude-sonnet-4-5-latest",
+		"anthropic/claude-sonnet-4.5",
+		"anthropic/claude-sonnet-4.5-20250929",
+	} {
+		got, ok := Lookup("anthropic", id)
+		if !ok || got != want {
+			t.Errorf("Lookup(%q) = %+v, %v; want %+v", id, got, ok, want)
+		}
+	}
+	if want, _ := Lookup("openai", "gpt-4o-mini"); true {
+		if got, ok := Lookup("openai", "gpt-4o-mini-2024-07-18"); !ok || got != want {
+			t.Errorf("dated openai id = %+v, %v; want %+v", got, ok, want)
+		}
+	}
+	// a suffix strip must not invent a price for an unlisted model
+	if _, ok := Lookup("anthropic", "claude-unlisted-9-20250929"); ok {
+		t.Error("unlisted dated model priced")
+	}
+}
+
+// the running rollup agrees with the event log through records and a reset.
+func TestTotalIsIncremental(t *testing.T) {
+	tr := New()
+	tr.Record("openai", "gpt-4o-mini", 1000, 500)
+	tr.RecordReported("openrouter", "vendor/unpriced", 200, 100, 0.5)
+	var sum Summary
+	for _, e := range tr.Events() {
+		sum.add(e.Input, e.Output, e.USD)
+	}
+	if got := tr.Total(); got != sum {
+		t.Fatalf("Total %+v != event sum %+v", got, sum)
+	}
+	tr.Reset()
+	if got := tr.Total(); got != (Summary{}) {
+		t.Fatalf("Total after Reset = %+v", got)
+	}
+}

@@ -6,7 +6,7 @@ import (
 )
 
 func TestLearnRules_InPrompt(t *testing.T) {
-	out := Assemble(baseCfg(), nil, "", nil, nil)
+	out := assemble(baseCfg(), nil, "", nil, nil)
 	if !strings.Contains(out, "## Reasons") || !strings.Contains(out, "`why`") {
 		t.Errorf("missing the Reasons block: %q", out)
 	}

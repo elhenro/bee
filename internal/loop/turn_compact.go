@@ -31,18 +31,6 @@ func (e *Engine) Compact(ctx context.Context) ([]types.Message, CompactStats, er
 	return e.compact(ctx, msgs)
 }
 
-// compactionModel picks the model used for summarization. FastModel (a cheap
-// side-eval model) is preferred so resuming or recovering a huge history
-// doesn't pay full prompt-processing on the primary model — critical for slow
-// local models where summarizing 190k tokens on the main model can take many
-// minutes. Empty FastModel falls back to the default.
-func compactionModel(cfg config.Config) string {
-	if cfg.FastModel != "" {
-		return cfg.FastModel
-	}
-	return cfg.DefaultModel
-}
-
 // compact summarizes msgs with the compaction model and, on success, persists a
 // checkpoint to the rollout so a later `bee back` reconstructs the shortened
 // history instead of replaying the full raw log. Returns the in-memory result
@@ -51,7 +39,10 @@ func (e *Engine) compact(ctx context.Context, msgs []types.Message) ([]types.Mes
 	// ephemeral UI notices are never persisted, so one landing at the preserve
 	// boundary would write an unresolvable PreserveFrom id.
 	msgs = dropEphemeral(msgs)
-	out, stats, err := Compact(ctx, e.Provider, compactionModel(e.Cfg), msgs)
+	// FastModel (a cheap side-eval model) is preferred so resuming or recovering
+	// a huge history doesn't pay full prompt-processing on the primary model,
+	// which on slow local models can take many minutes.
+	out, stats, err := Compact(ctx, e.Provider, config.FastModelOf(e.Cfg), msgs)
 	if err != nil {
 		return out, stats, err
 	}

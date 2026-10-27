@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 
+	"github.com/elhenro/bee/internal/config"
 	"github.com/elhenro/bee/internal/types"
 )
 
@@ -17,7 +18,7 @@ func (e *Engine) SetPromptTail(f func() string) { e.PromptTail = f }
 // a dead bee's learning reaches the queen instead of evaporating with its
 // transcript. Uses the fast/compaction model on the current provider.
 func (e *Engine) DeathReport(ctx context.Context, msgs []types.Message, cause error) (string, error) {
-	return BuildDeathReport(ctx, e.Provider, compactionModel(e.Cfg), msgs, cause)
+	return BuildDeathReport(ctx, e.Provider, config.FastModelOf(e.Cfg), msgs, cause)
 }
 
 // appendPromptTail appends tail to the system prompt and to its volatile

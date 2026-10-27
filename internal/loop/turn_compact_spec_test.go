@@ -130,7 +130,9 @@ func TestAutoCompactSpecFailureFallsBackInline(t *testing.T) {
 	if _, err := eng.Run(context.Background(), "go"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if p.compactCalls < 2 {
-		t.Errorf("summarizer calls = %d, want the failed background try plus an inline retry", p.compactCalls)
+	// the failed background try plus one inline retry, then the failure latches:
+	// a summarizer that stays down must not cost a request per iteration.
+	if p.compactCalls != 2 {
+		t.Errorf("summarizer calls = %d, want 2", p.compactCalls)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sync"
 	"time"
 )
 
@@ -28,9 +29,6 @@ func (p *DomainPolicy) IsAllowed(domain string) bool {
 	}
 	return len(p.Allow) == 0 || slices.ContainsFunc(p.Allow, matches)
 }
-
-// DefaultDomainPolicy returns a default policy that allows all domains
-func DefaultDomainPolicy() *DomainPolicy { return &DomainPolicy{} }
 
 // FetchResult contains the result of a web fetch operation
 type FetchResult struct {
@@ -100,9 +98,32 @@ func vetURL(rawURL string, policy *DomainPolicy, confined bool) error {
 	return nil
 }
 
+// one transport per scope: the dialer is the only scope-dependent part, so
+// connections are reused across calls instead of rebuilt per request.
+var (
+	openTransport     = sync.OnceValue(func() *http.Transport { return newTransport(false) })
+	confinedTransport = sync.OnceValue(func() *http.Transport { return newTransport(true) })
+)
+
+func newTransport(confined bool) *http.Transport {
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialContext(confined),
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
+
 // newClient builds the HTTP client: timeout, redirect cap, per-hop policy
-// re-check and the scope-dependent dialer.
+// re-check and the shared scope-dependent transport.
 func newClient(policy *DomainPolicy, confined bool) *http.Client {
+	transport := openTransport()
+	if confined {
+		transport = confinedTransport()
+	}
 	return &http.Client{
 		Timeout: 20 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -116,22 +137,20 @@ func newClient(policy *DomainPolicy, confined bool) *http.Client {
 			}
 			return nil
 		},
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           dialContext(confined),
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
+		Transport: transport,
 	}
 }
 
-// FetchURL fetches content from a URL and converts it to markdown. confined
-// enables the SSRF guard (reject loopback/private/metadata hosts); under
-// danger-full-access it is false and any reachable host is allowed.
+// FetchURL is FetchURLContext without cancellation.
 func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult, error) {
+	return FetchURLContext(context.Background(), rawURL, policy, confined)
+}
+
+// FetchURLContext fetches content from a URL and converts it to markdown;
+// cancelling ctx aborts the request and the body read. confined enables the
+// SSRF guard (reject loopback/private/metadata hosts); under danger-full-access
+// it is false and any reachable host is allowed.
+func FetchURLContext(ctx context.Context, rawURL string, policy *DomainPolicy, confined bool) (*FetchResult, error) {
 	start := time.Now()
 	if err := vetURL(rawURL, policy, confined); err != nil {
 		return nil, err
@@ -140,7 +159,7 @@ func FetchURL(rawURL string, policy *DomainPolicy, confined bool) (*FetchResult,
 		return entry.result(rawURL, start), nil
 	}
 
-	req, err := http.NewRequest("GET", rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

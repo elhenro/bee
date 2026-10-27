@@ -88,45 +88,6 @@ func TestTagShapeAndAlphabet(t *testing.T) {
 	}
 }
 
-func TestTagAllLength(t *testing.T) {
-	src := "one\ntwo\nthree\nfour\nfive"
-	tags := TagAll(src)
-	if len(tags) != 5 {
-		t.Fatalf("want 5 tags, got %d", len(tags))
-	}
-	for i, tg := range tags {
-		if len(tg) != 3 {
-			t.Fatalf("tag %d = %q, want len 3", i, tg)
-		}
-	}
-}
-
-func TestTagAllMatchesTag(t *testing.T) {
-	src := "alpha\nbeta\n\n  \nzeta"
-	tags := TagAll(src)
-	lines := strings.Split(src, "\n")
-	for i, l := range lines {
-		want := Tag(l, i+1)
-		if tags[i] != want {
-			t.Fatalf("line %d: TagAll=%q Tag=%q", i+1, tags[i], want)
-		}
-	}
-}
-
-func TestRefFormat(t *testing.T) {
-	r := Ref("hello world", 42)
-	if !strings.HasPrefix(r, "42#") {
-		t.Fatalf("Ref prefix wrong: %q", r)
-	}
-	if len(r) != len("42#")+3 {
-		t.Fatalf("Ref length wrong: %q", r)
-	}
-	tag := Tag("hello world", 42)
-	if r != "42#"+tag {
-		t.Fatalf("Ref = %q, want %q", r, "42#"+tag)
-	}
-}
-
 func TestTagLongLineNoPanic(t *testing.T) {
 	// >16 bytes exercises the 4-lane main loop in xxh32.
 	long := strings.Repeat("abcdefgh", 8)

@@ -21,7 +21,7 @@ func (e *Engine) recordDone(model string, u *llm.Usage) {
 	}
 	if e.Costs != nil {
 		// prefer provider-reported spend over the static estimate.
-		cev := e.Costs.RecordReported(e.Cfg.DefaultProvider, model, u.InputTokens, u.OutputTokens, u.CostUSD)
+		cev := e.Costs.RecordCached(e.Cfg.DefaultProvider, model, u.InputTokens, u.CachedTokens, u.OutputTokens, u.CostUSD)
 		cost.AppendUsage(cost.UsageRecord{
 			Time:         cev.Time,
 			Provider:     e.Cfg.DefaultProvider,
@@ -38,6 +38,7 @@ func (e *Engine) recordDone(model string, u *llm.Usage) {
 	// process-local Costs tracker (which resets on /new), and
 	// hooked here so unit tests using cost.New() directly stay
 	// hermetic — production has exactly one place tokens enter.
+	// Queued for a background writer; Run flushes it on return.
 	cost.AddLifetime(u.InputTokens, u.OutputTokens)
 	if u.InputTokens > 0 {
 		e.run.lastInputTokens = u.InputTokens

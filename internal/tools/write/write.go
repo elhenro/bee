@@ -30,9 +30,6 @@ type Tool struct {
 	pathRe *regexp.Regexp
 }
 
-// New returns a write tool rooted at root. Writes outside root are refused.
-func New(root string) *Tool { return NewWithFilter(root, nil) }
-
 // NewWithFilter constructs the write tool with an optional path regex.
 // When pathRe is nil, all paths are allowed (existing behavior).
 // When pathRe is non-nil, writes to paths that do NOT match the regex

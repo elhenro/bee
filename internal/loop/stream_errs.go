@@ -32,7 +32,7 @@ func isTransientStreamErr(err error) bool {
 // of succeeding. ErrProviderReject is the signal the resume path uses to
 // trigger that cleanup.
 func isProviderRejectErr(err error) bool {
-	if err == nil {
+	if err == nil || isContextOverflowErr(err) {
 		return false
 	}
 	s := err.Error()
@@ -40,16 +40,39 @@ func isProviderRejectErr(err error) bool {
 	// error as "provider <name> status 400: <body>". look for the 400 +
 	// a body shape that names the bad field. be conservative: prefer
 	// phrases that explicitly finger tool arguments, not generic 400s
-	// (auth/quota/etc). when in doubt, fall through and treat as
-	// non-recoverable so the user sees the raw error.
+	// (auth/quota/context size/etc), and not the bare error envelope names,
+	// which wrap those unrelated 400s too. when in doubt, fall through and
+	// treat as non-recoverable so the user sees the raw error.
 	return strings.Contains(s, "status 400") && containsAny(s,
 		"invalid function arguments", // openai-compat openrouter / minimax
 		"invalid tool_call",          // openai responses API
 		"invalid tool call",          // anthropic
 		"tool_call_id",               // minimax: "<phrase>, tool_call_id: <id>"
-		"invalid_request_error",      // anthropic envelope
-		"invalid parameters",         // openai envelope
+		"tool_use.input",             // anthropic: "messages.N.content.M.tool_use.input: ..."
 		"tools.0.function.arguments", // openai strict mode
-		"invalid_argument",           // generic
+	)
+}
+
+// isContextOverflowErr reports whether err says the request exceeded the
+// model's context window (or the request size limit). Distinct from a
+// malformed-payload reject: stripping the last tool call cannot help, the
+// history has to shrink.
+func isContextOverflowErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	if !strings.Contains(s, "status 400") && !strings.Contains(s, "status 413") {
+		return false
+	}
+	return containsAny(s,
+		"context_length_exceeded",
+		"prompt is too long",
+		"maximum context length",
+		"exceeds the context window",
+		"too many tokens",
+		"request_too_large",
+		"exceed context limit",
+		"exceeds the maximum number of tokens",
 	)
 }

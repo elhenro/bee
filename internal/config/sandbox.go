@@ -1,9 +1,10 @@
 package config
 
-// SandboxConfig is a two-axis sandbox policy.
+// SandboxConfig is the sandbox policy: a scope axis plus an approval switch.
 //
 // Scope: read-only | workspace-write | workspace-write-net | danger-full-access.
-// Approval: untrusted | on-request | on-failure | never.
+// Approval: "untrusted" gates every shell command not on the known-safe list;
+// any other value (on-request, on-failure, never) parses but changes nothing.
 //
 // CommandAllowlist holds safety.DangerousPattern keys the user has granted
 // AllowAlways. Loaded into the approval.Cache at startup; appended via

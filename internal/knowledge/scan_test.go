@@ -102,28 +102,16 @@ func TestScanStoreCacheHit(t *testing.T) {
 	if len(first) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(first))
 	}
-	// remove file on disk: a cache miss would now return zero entries,
-	// while a cache hit returns the original snapshot.
-	if err := os.Remove(p); err != nil {
-		t.Fatal(err)
-	}
-	// dir mtime would update on remove. force the cache mtime to match
-	// the post-remove dir so the lookup hits.
-	info, err := os.Stat(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// tag the cached snapshot: a hit returns the tag, a rescan would not.
 	scanCacheMu.Lock()
-	c := scanCache[dir]
-	c.dirMtime = info.ModTime()
-	scanCache[dir] = c
+	scanCache[dir].entries[0].Name = "from-cache"
 	scanCacheMu.Unlock()
 	second, err := ScanStore(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("second scan: %v", err)
 	}
-	if len(second) != 1 {
-		t.Fatalf("cache hit expected to return cached entry, got %d", len(second))
+	if len(second) != 1 || second[0].Name != "from-cache" {
+		t.Fatalf("cache hit expected to return cached entry, got %+v", second)
 	}
 	// mutating the returned slice must not poison the cache.
 	second[0].Name = "mutated"
@@ -131,14 +119,14 @@ func TestScanStoreCacheHit(t *testing.T) {
 	if len(third) != 1 || third[0].Name == "mutated" {
 		t.Fatalf("cache returned aliased slice: %+v", third)
 	}
-	// explicit invalidation forces a rescan: file is gone, so empty.
+	// explicit invalidation forces a rescan from disk.
 	invalidateScanCache(dir)
 	fourth, err := ScanStore(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("fourth scan: %v", err)
 	}
-	if len(fourth) != 0 {
-		t.Fatalf("post-invalidate want 0 entries, got %d", len(fourth))
+	if len(fourth) != 1 || fourth[0].Name == "from-cache" || fourth[0].Name == "mutated" {
+		t.Fatalf("post-invalidate want a fresh entry, got %+v", fourth)
 	}
 }
 

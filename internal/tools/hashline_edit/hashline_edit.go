@@ -32,10 +32,6 @@ type Tool struct {
 	pathRe *regexp.Regexp
 }
 
-// New returns a hashline_edit tool rooted at root (the workspace). Edits are
-// contained to root.
-func New(root string) tools.Tool { return NewWithFilter(root, nil) }
-
 // NewWithFilter constructs the hashline_edit tool with an optional path regex.
 // When pathRe is nil, all in-root paths are allowed. When non-nil, edits to
 // paths that do NOT match are rejected and the file is left untouched. Either

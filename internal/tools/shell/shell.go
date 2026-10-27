@@ -65,10 +65,6 @@ type Tool struct {
 	opts     Options
 }
 
-// New returns a shell tool with no approval gating. Use NewWithApprover to
-// enable the dangerous-pattern prompt flow.
-func New() tools.Tool { return &Tool{} }
-
 // NewWithApprover returns a shell tool that consults app before running any
 // command flagged by safety.DetectDangerous. A Deny verdict aborts execution
 // and returns an explanatory IsError result.

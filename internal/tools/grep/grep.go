@@ -2,7 +2,6 @@
 package grep
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -148,7 +147,7 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		case ctxLines == 0:
 			eachLine(f, func(ln int, line []byte) bool {
 				if re.Match(line) {
-					out = append(out, fmt.Sprintf("%s:%d:%s", rel, ln, line))
+					out = append(out, fmt.Sprintf("%s:%d:%s", rel, ln, clipLine(line)))
 				}
 				return len(out) < t.max
 			})
@@ -164,52 +163,4 @@ func (t *Tool) Run(ctx context.Context, in map[string]any) (tools.Result, error)
 		return tools.Result{Content: err.Error(), IsError: true}, nil
 	}
 	return tools.LinesResult(out), nil
-}
-
-// eachLine calls fn with every line of f and its 1-based number until fn
-// returns false. A scan error just ends the file.
-func eachLine(f *os.File, fn func(n int, line []byte) bool) {
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for n := 1; sc.Scan(); n++ {
-		if !fn(n, sc.Bytes()) {
-			return
-		}
-	}
-}
-
-// scanWithContext emits up to budget result strings with ctxN surrounding
-// lines per match. Match lines use ':' separator; context lines use '-'.
-// Adjacent windows merge naturally because each line is emitted at most once.
-func scanWithContext(f *os.File, re *regexp.Regexp, path string, ctxN, budget int) []string {
-	if budget <= 0 {
-		return nil
-	}
-	var lines []string
-	eachLine(f, func(_ int, line []byte) bool {
-		lines = append(lines, string(line))
-		return true
-	})
-	emitted := make(map[int]bool, 16)
-	var out []string
-	for i, line := range lines {
-		if !re.MatchString(line) {
-			continue
-		}
-		for j := max(i-ctxN, 0); j <= min(i+ctxN, len(lines)-1); j++ {
-			if emitted[j] {
-				continue
-			}
-			emitted[j] = true
-			sep := "-"
-			if j == i {
-				sep = ":"
-			}
-			out = append(out, fmt.Sprintf("%s:%d%s%s", path, j+1, sep, lines[j]))
-			if len(out) >= budget {
-				return out
-			}
-		}
-	}
-	return out
 }

@@ -17,32 +17,37 @@ func responsesUsage(u *wire.ResponsesUsage) *Usage {
 	if u == nil {
 		return nil
 	}
-	return &Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
+	out := &Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
+	if d := u.InputTokensDetails; d != nil {
+		out.CachedTokens = d.CachedTokens
+	}
+	return out
 }
 
 // nonStreamLoop reads a single JSON body and emits the equivalent events.
-func (p *ChatGPTProvider) nonStreamLoop(resp *http.Response, out chan<- Event) {
+func (p *ChatGPTProvider) nonStreamLoop(ctx context.Context, resp *http.Response, out chan<- Event) {
 	defer resp.Body.Close()
 	defer close(out)
 
 	var body wire.ResponsesEventBody
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		out <- Event{Type: EventError, Err: fmt.Errorf("decode non-stream body: %w", err)}
+		emit(ctx, out, Event{Type: EventError, Err: fmt.Errorf("decode non-stream body: %w", err)})
 		return
 	}
+	var evs []Event
 	for _, item := range body.Output {
 		switch item.Type {
 		case "message":
 			for _, c := range item.Content {
 				if c.Type == "output_text" && c.Text != "" {
-					out <- Event{Type: EventTextDelta, Delta: c.Text}
+					evs = append(evs, Event{Type: EventTextDelta, Delta: c.Text})
 				}
 			}
 		case "function_call":
-			out <- newToolUse(item.CallID, item.Name, decodeToolArgs(item.Arguments))
+			evs = append(evs, newToolUse(item.CallID, item.Name, decodeToolArgs(item.Arguments)))
 		}
 	}
-	out <- Event{Type: EventDone, StopReason: body.Status, Usage: responsesUsage(body.Usage)}
+	emitAll(ctx, out, append(evs, Event{Type: EventDone, StopReason: body.Status, Usage: responsesUsage(body.Usage)})...)
 }
 
 // respCall is one function call being assembled from stream events.

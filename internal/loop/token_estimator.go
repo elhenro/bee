@@ -3,8 +3,6 @@
 package loop
 
 import (
-	"encoding/json"
-
 	"github.com/elhenro/bee/internal/prompt"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -32,14 +30,17 @@ func estimateMessageTokens(m types.Message) int {
 	total := 0
 	for _, c := range m.Content {
 		switch c.Type {
-		case types.BlockText, types.BlockThinking:
+		case types.BlockText:
 			total += prompt.EstimateTokens(c.Text)
+		case types.BlockThinking:
+			// only a signed block reaches the wire (the wire drops the rest),
+			// so reasoning-heavy unsigned history must not trip compaction
+			if c.Signature != "" {
+				total += prompt.EstimateTokens(c.Text)
+			}
 		case types.BlockToolUse:
 			if c.Use != nil {
-				if b, err := json.Marshal(c.Use.Input); err == nil {
-					total += prompt.EstimateTokens(string(b))
-				}
-				total += prompt.EstimateTokens(c.Use.Name)
+				total += (inputChars(c.Use.Input) + len(c.Use.Name)) / 4
 			}
 		case types.BlockToolResult:
 			if c.Result != nil {
@@ -50,4 +51,30 @@ func estimateMessageTokens(m types.Message) int {
 		}
 	}
 	return total
+}
+
+// inputChars sizes a tool-call input as its JSON would be, without encoding
+// it: the estimate runs over the whole history every iteration, and
+// marshaling each call there allocates for nothing.
+func inputChars(v any) int {
+	switch x := v.(type) {
+	case string:
+		return len(x) + 2
+	case map[string]any:
+		n := 2
+		for k, e := range x {
+			n += len(k) + 4 + inputChars(e)
+		}
+		return n
+	case []any:
+		n := 2
+		for _, e := range x {
+			n += 1 + inputChars(e)
+		}
+		return n
+	case nil:
+		return 4
+	default:
+		return 8 // numbers and bools
+	}
 }

@@ -101,7 +101,10 @@ func (p *TextModeProvider) Stream(ctx context.Context, req Request) (<-chan Even
 func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<- Event, known map[string]bool, canonical map[string]string, kinds map[string]map[string]string) {
 	defer close(out)
 	var buf strings.Builder
-	think := thinkSplitter{inCall: func(answer string) bool { return openCallPending(answer, known) }}
+	// pending is this feed's answer text so far; buf holds the rest
+	think := thinkSplitter{inCall: func(pending string) bool { return openCallPending(buf.String()+pending, known) }}
+	closeTags := closeTagsOf(known)
+	scanned := 0 // buf bytes already checked for a closing tag
 	emitThought := func(thought string) {
 		if thought != "" {
 			emit(ctx, out, Event{Type: EventThinkingDelta, Delta: thought})
@@ -131,9 +134,10 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 		// withheld content still counts as generation progress.
 		emit(ctx, out, Event{Type: EventProgress, N: len(ev.Delta)})
 		// only attempt early dispatch when a closing tag for ANY known
-		// tool is present — cheap substring scan, avoids invoking the
-		// full regex extractor on every token.
-		if hasAnyCloseTag(buf.String(), known) {
+		// tool just arrived: a cheap scan of the new bytes, avoids invoking
+		// the full regex extractor on every token. a close tag the extractor
+		// left unconsumed is not rescanned until another one shows up.
+		if hasCloseTagSince(buf.String(), scanned, closeTags) {
 			early, remaining := extractIncremental(buf.String(), known, canonical)
 			for _, c := range early {
 				dispatch(c)
@@ -143,6 +147,7 @@ func (p *TextModeProvider) relay(ctx context.Context, in <-chan Event, out chan<
 				buf.WriteString(remaining)
 			}
 		}
+		scanned = buf.Len()
 	}, func(ev Event) {
 		// inner provider also emits native tool_use (e.g. when the model
 		// surprises us). pass through verbatim so we don't drop signal.

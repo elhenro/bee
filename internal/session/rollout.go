@@ -13,6 +13,13 @@ import (
 // content can be sizable; 8 MiB is a safe ceiling.
 const maxLineBytes = 8 * 1024 * 1024
 
+// rolloutFile is the slice of *os.File a Rollout uses once opened.
+type rolloutFile interface {
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
+}
+
 // Rollout is an append-only JSONL writer for one session.
 // Single open handle; fsync runs on a background syncer (rollout_sync.go), never
 // on the Append path. Not safe for cross-process use; callers are expected to
@@ -21,7 +28,8 @@ type Rollout struct {
 	id string
 
 	mu      sync.Mutex
-	f       *os.File
+	f       rolloutFile
+	torn    bool    // a failed write may have left a partial line
 	dirty   bool    // written since the last fsync
 	closing bool    // Close started: no new syncer
 	sy      *syncer // lazily started on the first Append
@@ -88,9 +96,15 @@ func (r *Rollout) Append(ctx context.Context, msg types.Message) error {
 	if r.f == nil {
 		return errors.New("session: rollout closed")
 	}
-	if _, err := r.f.Write(b); err != nil {
+	if r.torn {
+		// end the fragment a failed write left, or this line glues onto it
+		b = append([]byte{'\n'}, b...)
+	}
+	if n, err := r.f.Write(b); err != nil {
+		r.torn = r.torn || n > 0
 		return err
 	}
+	r.torn = false
 	r.dirty = true
 	r.kickLocked()
 	return nil
@@ -116,11 +130,12 @@ func (r *Rollout) Close() error {
 	if r.f == nil {
 		return nil
 	}
+	var syncErr error
 	if r.dirty {
-		_ = r.f.Sync()
+		syncErr = r.f.Sync()
 		r.dirty = false
 	}
-	err := r.f.Close()
+	closeErr := r.f.Close()
 	r.f = nil
-	return err
+	return errors.Join(syncErr, closeErr)
 }

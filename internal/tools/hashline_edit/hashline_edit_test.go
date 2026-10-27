@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -22,10 +23,15 @@ func writeFile(t *testing.T, content string) string {
 	return path
 }
 
+// ref renders the "<n>#<tag>" anchor for one line.
+func ref(line string, lineNum int) string {
+	return strconv.Itoa(lineNum) + "#" + apply_patch.Tag(line, lineNum)
+}
+
 // anchor returns "<n>#<tag>" for the given live content's lineNum.
 func anchor(content string, lineNum int) string {
 	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
-	return apply_patch.Ref(lines[lineNum-1], lineNum)
+	return ref(lines[lineNum-1], lineNum)
 }
 
 func runTool(t *testing.T, in map[string]any) (string, bool) {

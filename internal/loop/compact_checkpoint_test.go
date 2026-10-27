@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/elhenro/bee/internal/config"
+	"github.com/elhenro/bee/internal/llm"
 	"github.com/elhenro/bee/internal/session"
+	"github.com/elhenro/bee/internal/tools"
 	"github.com/elhenro/bee/internal/types"
 	"github.com/google/uuid"
 )
@@ -16,13 +18,39 @@ func idMsg(id string, role types.Role, text string) types.Message {
 	return m
 }
 
-func TestCompactionModel_PrefersFast(t *testing.T) {
-	if got := compactionModel(config.Config{DefaultModel: "big", FastModel: "small"}); got != "small" {
-		t.Errorf("want small, got %q", got)
+// the summarizer runs on the fast model, falling back to the default when it is
+// unset or blank.
+func TestCompact_UsesFastModel(t *testing.T) {
+	cases := []struct{ fast, want string }{{"small", "small"}, {"", "big"}, {"  ", "big"}}
+	for _, c := range cases {
+		p := &modelSpy{}
+		eng, _ := newEngine(p, tools.NewRegistry())
+		eng.Cfg.DefaultModel, eng.Cfg.FastModel = "big", c.fast
+		msgs := make([]types.Message, 0, 8)
+		for range 8 {
+			msgs = append(msgs, mkMsg(types.RoleUser, "x"))
+		}
+		if _, _, err := eng.compact(context.Background(), msgs); err != nil {
+			t.Fatalf("compact: %v", err)
+		}
+		if p.model != c.want {
+			t.Errorf("fast=%q: summarizer model = %q, want %q", c.fast, p.model, c.want)
+		}
 	}
-	if got := compactionModel(config.Config{DefaultModel: "big"}); got != "big" {
-		t.Errorf("empty FastModel should fall back to default, got %q", got)
-	}
+}
+
+// modelSpy records the model of the last request and answers a canned summary.
+type modelSpy struct{ model string }
+
+func (p *modelSpy) Name() string { return "spy" }
+
+func (p *modelSpy) Stream(_ context.Context, req llm.Request) (<-chan llm.Event, error) {
+	p.model = req.Model
+	ch := make(chan llm.Event, 2)
+	ch <- llm.Event{Type: llm.EventTextDelta, Delta: "sum"}
+	ch <- llm.Event{Type: llm.EventDone}
+	close(ch)
+	return ch, nil
 }
 
 func TestCompact_PersistsCheckpoint(t *testing.T) {

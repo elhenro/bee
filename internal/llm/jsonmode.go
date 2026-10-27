@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+
+	"github.com/elhenro/bee/internal/types"
 )
 
 // JSONModeProvider wraps an inner Provider to route tool calls through
@@ -161,7 +163,7 @@ func truncateForNudge(s string) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "…"
+	return types.CutBytes(s, max) + "…"
 }
 
 // buildUnionSchema renders the response_format schema: a "done" terminal

@@ -3,6 +3,8 @@ package prompt
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/elhenro/bee/internal/types"
 )
 
 // ContextFile is one loaded AGENTS.md/CLAUDE.md.
@@ -79,7 +81,7 @@ func renderContextSection(files []ContextFile) string {
 	for _, f := range files {
 		body := f.Body
 		if len(body) > maxContextFileBytes {
-			body = body[:runeBoundary(body, maxContextFileBytes)] + "\n…[truncated, use view to read full]"
+			body = types.CutBytes(body, maxContextFileBytes) + "\n…[truncated, use view to read full]"
 		}
 		s += "<context path=\"" + f.Path + "\">\n" + body + "\n</context>\n"
 	}

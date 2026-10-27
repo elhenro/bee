@@ -25,20 +25,24 @@ var usageMu sync.Mutex
 
 func usagePath() string { return statePath("BEE_USAGE_LOG", "usage.jsonl") }
 
-// AppendUsage appends one usage line. Unlike the lifetime counter this log is
-// append-only — a single O_APPEND write of a short line is atomic on local
-// filesystems, so a crash mid-write can at worst leave one trailing partial
-// line, which the reader skips. I/O errors are swallowed: a missing or
-// unwritable home must never crash a turn.
+// AppendUsage queues one usage line for the background writer (Flush waits for
+// it). Unlike the lifetime counter this log is append-only — a single O_APPEND
+// write of a short line is atomic on local filesystems, so a crash mid-write
+// can at worst leave one trailing partial line, which the reader skips. I/O
+// errors are swallowed: a missing or unwritable home must never crash a turn.
 func AppendUsage(r UsageRecord) {
 	if r.Input <= 0 && r.Output <= 0 {
 		return
 	}
-	path := usagePath()
+	path := usagePath() // resolved now: the env may change before the write lands
 	if path == "" {
 		return
 	}
 	r.Time = r.Time.UTC()
+	enqueueUsage(path, r)
+}
+
+func writeUsage(path string, r UsageRecord) {
 	usageMu.Lock()
 	defer usageMu.Unlock()
 	_ = jsonl.Append(path, r)
@@ -47,6 +51,7 @@ func AppendUsage(r UsageRecord) {
 // ResetUsageForTest removes the usage log so a test starts from empty. Test-
 // only; resolves the same path AppendUsage writes to.
 func ResetUsageForTest() {
+	Flush()
 	usageMu.Lock()
 	defer usageMu.Unlock()
 	if path := usagePath(); path != "" {

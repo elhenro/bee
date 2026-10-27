@@ -74,14 +74,14 @@ func TestChatGPT_NonStreamLoop(t *testing.T) {
 		`{"type":"function_call","call_id":"c1","name":"bash","arguments":"{\"a\":1}"}],` +
 		`"usage":{"input_tokens":3,"output_tokens":4}}`
 	p := &ChatGPTProvider{}
-	evs := collectEvents(func(out chan<- Event) { p.nonStreamLoop(sseResp(body), out) })
+	evs := collectEvents(func(out chan<- Event) { p.nonStreamLoop(context.Background(), sseResp(body), out) })
 	if len(evs) != 3 || evs[0].Delta != "hi" || evs[1].ToolUse.ID != "c1" || evs[1].ToolUse.Input["a"] != float64(1) {
 		t.Fatalf("events = %+v", evs)
 	}
 	if evs[2].Type != EventDone || evs[2].StopReason != "completed" || evs[2].Usage.InputTokens != 3 {
 		t.Errorf("done = %+v", evs[2])
 	}
-	if evs := collectEvents(func(out chan<- Event) { p.nonStreamLoop(sseResp("not json"), out) }); len(evs) != 1 || evs[0].Type != EventError {
+	if evs := collectEvents(func(out chan<- Event) { p.nonStreamLoop(context.Background(), sseResp("not json"), out) }); len(evs) != 1 || evs[0].Type != EventError {
 		t.Errorf("bad body events = %+v", evs)
 	}
 }

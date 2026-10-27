@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/elhenro/bee/internal/llm/wire"
+	"github.com/elhenro/bee/internal/types"
 )
 
 // parsedCall is one extracted tool invocation. Order preserved from text.
@@ -249,5 +250,5 @@ func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "..."
+	return types.CutBytes(s, n) + "..."
 }

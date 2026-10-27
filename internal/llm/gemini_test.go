@@ -245,7 +245,7 @@ func TestGeminiStream_ErrorStatus(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 400")
 	}
-	if !strings.Contains(err.Error(), "gemini 400") {
+	if !strings.Contains(err.Error(), "provider gemini status 400:") {
 		t.Errorf("error message wrong: %v", err)
 	}
 }
