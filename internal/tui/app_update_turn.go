@@ -123,8 +123,7 @@ func (m Model) onTurnDone(msg turnDoneMsg) (tea.Model, tea.Cmd) {
 		m.thinkPartial = ""
 		m.partial = ""
 		m.state = StateIdle
-		var esc *loop.EscalateError
-		if errors.As(msg.err, &esc) {
+		if esc, ok := errors.AsType[*loop.EscalateError](msg.err); ok {
 			m.escalate.Show(esc.Options)
 		}
 	case msg.err != nil:

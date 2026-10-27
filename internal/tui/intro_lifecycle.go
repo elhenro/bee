@@ -7,7 +7,7 @@ import "math"
 func lifecycleFrames(cw, h int) []IntroFrame {
 	var frames []IntroFrame
 	add := func(n int, sub string, mk func(i, total int) *DrawilleCanvas) {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			c := mk(i, n)
 			frames = append(frames, IntroFrame{Text: c.ToBraille(), Subtitle: sub})
 		}
@@ -26,7 +26,7 @@ func makeEggFrame(cw, h, idx, total int) *DrawilleCanvas {
 	cx := cw / 2
 	rx := int(4 + t*8)
 	ry := int(6 + t*4)
-	for a := 0; a < 20; a++ {
+	for a := range 20 {
 		ang := float64(a) / 20.0 * 2 * math.Pi
 		x := cx + int(float64(rx)*math.Cos(ang))
 		y := h/2 + int(float64(ry)*math.Sin(ang))
@@ -37,7 +37,7 @@ func makeEggFrame(cw, h, idx, total int) *DrawilleCanvas {
 
 func makeLarvaFrame(cw, h, idx int) *DrawilleCanvas {
 	c := NewDrawilleCanvas(cw, h)
-	for s := 0; s < 5; s++ {
+	for s := range 5 {
 		pt := float64(idx-s*3) * 0.5
 		x := int((math.Sin(pt*0.3)+1)*0.5*float64(cw-4)) + 2
 		amp := float64(s) / 5.0 * 0.5
@@ -55,7 +55,7 @@ func makePupaFrame(cw, h, idx, total int) *DrawilleCanvas {
 	ry := int(7 - t*1.5)
 	rx = max(rx, 3)
 	ry = max(ry, 3)
-	for a := 0; a < 24; a++ {
+	for a := range 24 {
 		ang := float64(a) / 24.0 * 2 * math.Pi
 		x := cx + int(float64(rx)*math.Cos(ang))
 		y := h/2 + int(float64(ry)*math.Sin(ang))
@@ -68,7 +68,7 @@ func makeEmergeFrame(cw, h, idx, total int) *DrawilleCanvas {
 	t := float64(idx) / float64(total)
 	c := NewDrawilleCanvas(cw, h)
 	cx := cw / 2
-	for a := 0; a < 24; a++ {
+	for a := range 24 {
 		if t > 0.3 && a > 8 && a < 16 {
 			continue
 		}

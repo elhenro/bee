@@ -71,7 +71,7 @@ func (r *StreamRenderer) thoughtRows(s string) []string {
 func (r *StreamRenderer) styleThought(s string, w int) []string {
 	clean := expandTabs(ansi.Strip(strings.TrimRight(s, "\n")))
 	var rows []string
-	for _, ln := range strings.Split(clean, "\n") {
+	for ln := range strings.SplitSeq(clean, "\n") {
 		ln = sanitizeControl(ln)
 		if strings.TrimSpace(ln) == "" {
 			continue

@@ -56,7 +56,7 @@ type Status struct {
 	Cwd          string    `json:"cwd"`
 	StartedAt    time.Time `json:"started_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-	FinishedAt   time.Time `json:"finished_at,omitempty"`
+	FinishedAt   time.Time `json:"finished_at"`
 
 	// agent-mode fields. Empty / zero on legacy bg sessions.
 	WorktreePath string     `json:"worktree_path,omitempty"`
@@ -164,7 +164,7 @@ func Update(sessionID string, fn func(*Status) error) error {
 	// a bypassing Write can move the version under fn; fn re-runs on the fresh
 	// status instead of the caller silently losing its transition.
 	var err error
-	for attempt := 0; attempt < 3; attempt++ {
+	for range 3 {
 		if err = updateOnce(sessionID, fn); !errors.Is(err, ErrStaleUpdate) {
 			return err
 		}

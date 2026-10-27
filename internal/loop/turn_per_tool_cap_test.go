@@ -37,7 +37,7 @@ func TestEngineRun_PerToolFailureCapAtEight(t *testing.T) {
 		}
 	}
 	scripts := make([][]llm.Event, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		scripts[i] = mkScript(i)
 	}
 	p := &stubProvider{scripts: scripts}

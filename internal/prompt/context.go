@@ -3,6 +3,7 @@ package prompt
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/elhenro/bee/internal/types"
 )
@@ -77,13 +78,14 @@ func renderContextSection(files []ContextFile) string {
 	if len(files) == 0 {
 		return ""
 	}
-	s := "## Project Context\n"
+	var s strings.Builder
+	s.WriteString("## Project Context\n")
 	for _, f := range files {
 		body := f.Body
 		if len(body) > maxContextFileBytes {
 			body = types.CutBytes(body, maxContextFileBytes) + "\n…[truncated, use view to read full]"
 		}
-		s += "<context path=\"" + f.Path + "\">\n" + body + "\n</context>\n"
+		s.WriteString("<context path=\"" + f.Path + "\">\n" + body + "\n</context>\n")
 	}
-	return s
+	return s.String()
 }

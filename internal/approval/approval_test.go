@@ -37,7 +37,7 @@ func TestCache_SessionCachesAfterFirst(t *testing.T) {
 	rec := &recordingApprover{verdict: AllowSession}
 	c := NewCache(rec, nil, nil)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		d, _ := c.Request(context.Background(), "rm -rf x", "rm-recursive", "")
 		if d != AllowSession {
 			t.Fatalf("iter %d: got %v", i, d)
@@ -52,7 +52,7 @@ func TestCache_AllowOnceDoesNotCache(t *testing.T) {
 	rec := &recordingApprover{verdict: AllowOnce}
 	c := NewCache(rec, nil, nil)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		c.Request(context.Background(), "rm -rf x", "rm-recursive", "")
 	}
 	if rec.calls != 3 {

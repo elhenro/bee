@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/learn"
@@ -94,8 +95,8 @@ func GenerateRecap(ctx context.Context, p llm.Provider, model string, msgs []typ
 // the order and produced newest-first recap input.
 func extractRecapInput(msgs []types.Message) string {
 	start := 0
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == types.RoleUser {
+	for i, msg := range slices.Backward(msgs) {
+		if msg.Role == types.RoleUser {
 			start = i + 1
 			break
 		}

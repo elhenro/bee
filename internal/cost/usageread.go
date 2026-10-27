@@ -133,10 +133,7 @@ func bucketIndex(t time.Time, window time.Duration, now, start time.Time, bucket
 		return buckets - 1
 	}
 	age := now.Sub(t)
-	idx := buckets - 1 - int(float64(age)/float64(span)*float64(buckets))
-	if idx < 0 {
-		idx = 0
-	}
+	idx := max(buckets-1-int(float64(age)/float64(span)*float64(buckets)), 0)
 	if idx >= buckets {
 		idx = buckets - 1
 	}

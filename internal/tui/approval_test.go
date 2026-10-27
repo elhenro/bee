@@ -124,7 +124,7 @@ func TestApproval_LongCommandWrapsWithinTheTerminal(t *testing.T) {
 		m := NewApprovalModel(DefaultStyles(), DefaultKeyMap())
 		m.SetWidth(w)
 		m.Show(ApprovalRequest{ToolName: "bash", Action: cmd})
-		for _, ln := range strings.Split(stripANSI(m.View()), "\n") {
+		for ln := range strings.SplitSeq(stripANSI(m.View()), "\n") {
 			if got := lipgloss.Width(ln); got > w {
 				t.Fatalf("width %d: row is %d cells: %q", w, got, ln)
 			}
@@ -147,7 +147,7 @@ func TestWrapActionLines_KeepsTheTailOfALongCommand(t *testing.T) {
 
 func TestWrapActionLines_CapsRowsWithMoreNote(t *testing.T) {
 	var lines []string
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		lines = append(lines, "echo line")
 	}
 	rows := wrapActionLines(strings.Join(lines, "\n"), 40)

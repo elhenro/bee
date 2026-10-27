@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -62,11 +63,11 @@ func textOf(m types.Message) string {
 // the instruction to re-send on a stall/error resume. Ephemeral UI echoes
 // (queue/steer/auto-resume notices) are skipped. Empty when none.
 func lastUserText(msgs []types.Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role != types.RoleUser || msgs[i].Ephemeral {
+	for _, msg := range slices.Backward(msgs) {
+		if msg.Role != types.RoleUser || msg.Ephemeral {
 			continue
 		}
-		if s := textOf(msgs[i]); s != "" {
+		if s := textOf(msg); s != "" {
 			return s
 		}
 	}

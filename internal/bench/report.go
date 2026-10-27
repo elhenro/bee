@@ -34,10 +34,7 @@ func WriteJSON(res SuiteResult, dir string) (string, error) {
 // (max−min across runs) so a reader can see how noisy each score is. When a
 // held-out slice ran, it prints below the main suite as a separate section.
 func WriteTable(res SuiteResult, w io.Writer) {
-	runs := res.Runs
-	if runs < 1 {
-		runs = 1
-	}
+	runs := max(res.Runs, 1)
 	writeSection(w, res.Label, res.Aggregate, res.MeanSpread, res.DimMeans, res.Tasks, runs)
 	if len(res.HoldoutTasks) > 0 {
 		// held-out spread isn't aggregated separately; the slice exists to gate

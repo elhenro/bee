@@ -210,7 +210,7 @@ func setMerge(id string, ms bgreg.MergeState, msg string) {
 // for "CONFLICT (content): Merge conflict in <path>" lines.
 func parseConflictFiles(s string) []string {
 	var out []string
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "CONFLICT") {
 			continue

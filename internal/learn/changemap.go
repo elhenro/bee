@@ -92,7 +92,7 @@ func numstat(ctx context.Context, cwd string, paths []string) map[string]string 
 		return nil
 	}
 	stats := map[string]string{}
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		f := strings.Split(ln, "\t")
 		if len(f) == 3 && f[0] != "-" {
 			stats[f[2]] = "+" + f[0] + " −" + f[1]
@@ -114,7 +114,7 @@ func affectedTests(ctx context.Context, cwd string, paths []string) ([]string, b
 		return nil, false
 	}
 	var tests []string
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if ln = strings.TrimSpace(Clean(ln)); ln != "" {
 			tests = append(tests, ln)
 		}

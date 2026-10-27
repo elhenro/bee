@@ -33,10 +33,7 @@ func Summary(results []Result) string {
 			latest = r.Ended
 		}
 	}
-	wall := latest.Sub(earliest)
-	if wall < 0 {
-		wall = 0
-	}
+	wall := max(latest.Sub(earliest), 0)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "hive: %d ok, %d failed, %s wall\n", ok, fail, wall.Round(time.Millisecond))

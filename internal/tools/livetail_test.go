@@ -38,7 +38,7 @@ func TestTailWriter_ThrottlesAndSendsTrailing(t *testing.T) {
 	var log tailLog
 	w := NewTailWriter(log.add)
 	defer w.Close()
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		_, _ = w.Write([]byte("line\n"))
 	}
 	_, _ = w.Write([]byte("last\n"))

@@ -40,7 +40,7 @@ func TestCapsExceeded(t *testing.T) {
 	var s State
 	s.Set("x", 0, time.Now())
 	s.Caps = Caps{MaxTurns: 3}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		s.Tick()
 	}
 	exceeded, reason := s.CapsExceeded(0)

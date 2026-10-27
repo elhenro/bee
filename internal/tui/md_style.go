@@ -25,9 +25,14 @@ var mdLight = mdTheme{
 	comment: "#8B8996", op: "#65636F", tag: "#B02A45", del: "#C0203F", ins: "#0A7A4F",
 }
 
-func sp(s string) *string { return &s }
-func bp(b bool) *bool     { return &b }
-func up(u uint) *uint     { return &u }
+//go:fix inline
+func sp(s string) *string { return new(s) }
+
+//go:fix inline
+func bp(b bool) *bool { return new(b) }
+
+//go:fix inline
+func up(u uint) *uint { return new(u) }
 
 // glamour style: no hashes on headings, inline code as colored text (no
 // slab), bare code blocks, zero document margin so our gutter owns the edge
@@ -36,21 +41,21 @@ func markdownStyle(dark bool) ansi.StyleConfig {
 	if dark {
 		t = mdDark
 	}
-	prim := func(color string) ansi.StylePrimitive { return ansi.StylePrimitive{Color: sp(color)} }
+	prim := func(color string) ansi.StylePrimitive { return ansi.StylePrimitive{Color: new(color)} }
 	heading := func(color string) ansi.StyleBlock {
-		return ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(color), Bold: bp(true)}}
+		return ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: new(color), Bold: new(true)}}
 	}
 	return ansi.StyleConfig{
 		Document:  ansi.StyleBlock{StylePrimitive: prim(t.body)},
 		Paragraph: ansi.StyleBlock{},
 		BlockQuote: ansi.StyleBlock{
-			StylePrimitive: ansi.StylePrimitive{Color: sp(t.subtle), Italic: bp(true)},
+			StylePrimitive: ansi.StylePrimitive{Color: new(t.subtle), Italic: new(true)},
 			Indent:         up(1),
-			IndentToken:    sp("▎ "),
+			IndentToken:    new("▎ "),
 		},
 		List: ansi.StyleList{LevelIndent: 2},
 		Heading: ansi.StyleBlock{
-			StylePrimitive: ansi.StylePrimitive{BlockSuffix: "\n", Bold: bp(true)},
+			StylePrimitive: ansi.StylePrimitive{BlockSuffix: "\n", Bold: new(true)},
 		},
 		H1: heading(t.honey),
 		H2: heading(t.honey),
@@ -59,19 +64,19 @@ func markdownStyle(dark bool) ansi.StyleConfig {
 		H5: heading(t.subtle),
 		H6: heading(t.subtle),
 
-		Strikethrough:  ansi.StylePrimitive{CrossedOut: bp(true)},
-		Emph:           ansi.StylePrimitive{Italic: bp(true)},
-		Strong:         ansi.StylePrimitive{Bold: bp(true), Color: sp(t.bright)},
-		HorizontalRule: ansi.StylePrimitive{Color: sp(t.rule), Format: "\n──────────────\n"},
+		Strikethrough:  ansi.StylePrimitive{CrossedOut: new(true)},
+		Emph:           ansi.StylePrimitive{Italic: new(true)},
+		Strong:         ansi.StylePrimitive{Bold: new(true), Color: new(t.bright)},
+		HorizontalRule: ansi.StylePrimitive{Color: new(t.rule), Format: "\n──────────────\n"},
 
 		Item:        ansi.StylePrimitive{BlockPrefix: "• "},
-		Enumeration: ansi.StylePrimitive{BlockPrefix: ". ", Color: sp(t.subtle)},
+		Enumeration: ansi.StylePrimitive{BlockPrefix: ". ", Color: new(t.subtle)},
 		Task:        ansi.StyleTask{Ticked: "[✓] ", Unticked: "[ ] "},
 
-		Link:      ansi.StylePrimitive{Color: sp(t.subtle), Underline: bp(true)},
-		LinkText:  ansi.StylePrimitive{Color: sp(t.link), Underline: bp(true)},
-		Image:     ansi.StylePrimitive{Color: sp(t.subtle), Underline: bp(true)},
-		ImageText: ansi.StylePrimitive{Color: sp(t.subtle), Format: "image: {{.text}}"},
+		Link:      ansi.StylePrimitive{Color: new(t.subtle), Underline: new(true)},
+		LinkText:  ansi.StylePrimitive{Color: new(t.link), Underline: new(true)},
+		Image:     ansi.StylePrimitive{Color: new(t.subtle), Underline: new(true)},
+		ImageText: ansi.StylePrimitive{Color: new(t.subtle), Format: "image: {{.text}}"},
 
 		Code: ansi.StyleBlock{StylePrimitive: prim(t.code)},
 		CodeBlock: ansi.StyleCodeBlock{
@@ -80,7 +85,7 @@ func markdownStyle(dark bool) ansi.StyleConfig {
 				Margin:         up(2),
 			},
 			Chroma: &ansi.Chroma{
-				Comment:          ansi.StylePrimitive{Color: sp(t.comment), Italic: bp(true)},
+				Comment:          ansi.StylePrimitive{Color: new(t.comment), Italic: new(true)},
 				CommentPreproc:   prim(t.op),
 				Keyword:          prim(t.kw),
 				KeywordReserved:  prim(t.kw),
@@ -102,9 +107,9 @@ func markdownStyle(dark bool) ansi.StyleConfig {
 			},
 		},
 		Table: ansi.StyleTable{
-			CenterSeparator: sp("┼"),
-			ColumnSeparator: sp("│"),
-			RowSeparator:    sp("─"),
+			CenterSeparator: new("┼"),
+			ColumnSeparator: new("│"),
+			RowSeparator:    new("─"),
 		},
 		DefinitionDescription: ansi.StylePrimitive{BlockPrefix: "\n  "},
 	}

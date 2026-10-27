@@ -107,7 +107,7 @@ func TestRecapIdleTickDropsWhenDisabled(t *testing.T) {
 
 func repeat(s string, n int) string {
 	out := make([]byte, 0, len(s)*n)
-	for i := 0; i < n; i++ {
+	for range n {
 		out = append(out, s...)
 	}
 	return string(out)

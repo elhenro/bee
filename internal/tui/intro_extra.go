@@ -9,20 +9,20 @@ func rainFrames(cw, h, count int) []IntroFrame {
 	const drops = 7
 	cols := make([]int, drops)
 	offsets := make([]int, drops)
-	for j := 0; j < drops; j++ {
+	for j := range drops {
 		cols[j] = int(math.Mod(float64(j)*2.3998*float64(cw)/(2*math.Pi), float64(cw)))
 		if cols[j] < 0 {
 			cols[j] += cw
 		}
 		offsets[j] = (j * 5) % count
 	}
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
-		for j := 0; j < drops; j++ {
+		for j := range drops {
 			t := (i + offsets[j]) % count
 			y := int(float64(t) / float64(count) * float64(h+3))
 			x := cols[j]
-			for k := 0; k < 4; k++ {
+			for k := range 4 {
 				yy := y - k
 				c.SetPixel(x, yy, true)
 			}
@@ -41,9 +41,9 @@ func spiralFrames(cw, h, count int) []IntroFrame {
 	if ry := float64(h)/2 - 1; ry < maxR*0.4 {
 		maxR = ry / 0.4
 	}
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
-		for t := 0; t < 20; t++ {
+		for t := range 20 {
 			step := i - t
 			if step < 0 {
 				continue
@@ -65,11 +65,11 @@ func waveFrames(cw, h, count int) []IntroFrame {
 	out := make([]IntroFrame, 0, count)
 	cy := h / 2
 	amp := max(float64(h)/2-1, 2)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
 		phase := float64(i) * 0.35
 		crestX := int(float64(cw) * float64(i) / float64(count))
-		for x := 0; x < cw; x++ {
+		for x := range cw {
 			y := cy + int(amp*math.Sin(float64(x)*0.18-phase))
 			c.SetPixel(x, y, true)
 		}
@@ -91,7 +91,7 @@ func orbitFrames(cw, h, count int) []IntroFrame {
 	baseR := max(float64(cw)/6-1, 3)
 	radii := []float64{baseR, baseR * 1.8, baseR * 2.6}
 	speeds := []float64{0.42, 0.28, 0.18}
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
 		// center
 		c.SetPixel(cx, cy, true)

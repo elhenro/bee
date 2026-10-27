@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -82,10 +83,5 @@ func sameBinding(a, b key.Binding) bool {
 }
 
 func hasKey(b key.Binding, want string) bool {
-	for _, k := range b.Keys() {
-		if k == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(b.Keys(), want)
 }

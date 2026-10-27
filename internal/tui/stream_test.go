@@ -104,7 +104,7 @@ func TestParseLoaderStyle_UnknownFallsBackToDefault(t *testing.T) {
 func TestParseLoaderStyle_RandomInRange(t *testing.T) {
 	// random picks one of the named painters — must be a known style, not
 	// out-of-bounds.
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		s := ParseLoaderStyle("random")
 		if s < LoaderStylePulse || s > LoaderStyleWaggleRun {
 			t.Errorf("ParseLoaderStyle(random) out of named range: %v", s)
@@ -128,7 +128,7 @@ func TestRenderLoader_VariantsHaveDistinctOutput(t *testing.T) {
 	run := stripANSI(r.renderLoader(5))
 
 	out := []string{swarm, wave, comet, rain, run}
-	for i := 0; i < len(out); i++ {
+	for i := range out {
 		for j := i + 1; j < len(out); j++ {
 			if out[i] == out[j] {
 				t.Errorf("variants %d and %d produced identical output: %q", i, j, out[i])
@@ -256,7 +256,7 @@ func TestRenderMessage_ToolResultTruncates(t *testing.T) {
 	// build a result with previewDefault*3 lines to force the clamp
 	totalLines := previewDefault * 3
 	var b strings.Builder
-	for i := 0; i < totalLines; i++ {
+	for range totalLines {
 		b.WriteString("line\n")
 	}
 	m := types.Message{
@@ -339,7 +339,7 @@ func TestRenderToolResult_VerboseShowsAllLines(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	r.SetVerbose(true)
 	var b strings.Builder
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		b.WriteString("line\n")
 	}
 	m := types.Message{
@@ -760,7 +760,7 @@ func TestRenderToolUse_WriteListsContentLines(t *testing.T) {
 func TestRenderToolUse_EditCollapsesUnchangedToHunks(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	var oldB, newB strings.Builder
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		fmt.Fprintf(&oldB, "shared %d\n", i)
 		if i == 15 {
 			fmt.Fprintln(&newB, "MUTATED 15")
@@ -795,10 +795,10 @@ func TestRenderToolUse_EditCollapsesUnchangedToHunks(t *testing.T) {
 func TestRenderToolUse_EditCapBalancesAddsAndDels(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	var oldB, newB strings.Builder
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		fmt.Fprintf(&oldB, "old %d\n", i)
 	}
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		fmt.Fprintf(&newB, "new %d\n", i)
 	}
 	m := types.Message{
@@ -839,7 +839,7 @@ func TestRenderToolUse_EditExpandsTabs(t *testing.T) {
 func TestRenderToolUse_EditCompactCapsLongDiff(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	var b strings.Builder
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		b.WriteString("n\n")
 	}
 	m := types.Message{
@@ -862,7 +862,7 @@ func TestRenderLoader_CyclesAndDoesNotPanic(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	r.SetLoaderStyle(LoaderStyleSwarm)
 	seen := map[string]bool{}
-	for f := 0; f < 300; f++ {
+	for f := range 300 {
 		seen[stripANSI(r.RenderStreaming("", f))] = true
 	}
 	if len(seen) < 4 {
@@ -880,7 +880,7 @@ func TestRenderLoader_AllNamedPaintersAnimate(t *testing.T) {
 	for style := LoaderStylePulse; style <= LoaderStyleMarathon; style++ {
 		r.SetLoaderStyle(style)
 		seen := map[string]bool{}
-		for f := 0; f < 120; f++ {
+		for f := range 120 {
 			out := stripANSI(r.RenderStreaming("", f))
 			if !strings.HasPrefix(out, "\n") {
 				t.Errorf("style %d frame %d: missing leading newline above loader", style, f)
@@ -918,7 +918,7 @@ func TestRenderStreaming_PartialCaretAnimatesAcrossFrames(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	r.SetLoaderStyle(LoaderStyleSwarm)
 	seen := map[string]bool{}
-	for f := 0; f < 10; f++ {
+	for f := range 10 {
 		out := stripANSI(r.RenderStreaming("hello", f))
 		seen[out] = true
 	}
@@ -944,7 +944,7 @@ func TestRenderStreaming_DefaultLoaderTextIsFrameIndependent(t *testing.T) {
 func TestClipStreamingTail_KeepsTailWithHeader(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
 	var b strings.Builder
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		fmt.Fprintf(&b, "line %d\n", i)
 	}
 	rendered := r.RenderStreaming(b.String(), 0)
@@ -995,7 +995,7 @@ func TestRenderThinkingPartial_WrapsLongLines(t *testing.T) {
 	r.SetShowThoughts(true)
 	long := strings.Repeat("word ", 30) // ~150 chars on one logical line
 	got := stripANSI(r.RenderThinkingPartial(long, 0, true))
-	for _, ln := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
+	for ln := range strings.SplitSeq(strings.TrimRight(got, "\n"), "\n") {
 		if w := lipgloss.Width(ln); w > 40 {
 			t.Fatalf("thought row exceeds width 40: %d cols %q", w, ln)
 		}

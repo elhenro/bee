@@ -83,8 +83,8 @@ func (c *DrawilleCanvas) ToBraille() string {
 // DrawSprite paints a row-major binary sprite onto the canvas at (ox, oy).
 // Pixels outside the canvas are clipped. Non-zero sprite bytes light up.
 func (c *DrawilleCanvas) DrawSprite(sprite []byte, w, h, ox, oy int) {
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			if sprite[y*w+x] != 0 {
 				c.SetPixel(ox+x, oy+y, true)
 			}
@@ -104,12 +104,12 @@ func BrailleSparkline(vals []float64, cells int) string {
 	maxV := slices.Max(vals)
 	if maxV <= 0 {
 		// flat-zero series: render baseline so the bar still appears.
-		for x := 0; x < w; x++ {
+		for x := range w {
 			c.SetPixel(x, braillePxH-1, true)
 		}
 		return c.ToBraille()
 	}
-	for x := 0; x < w; x++ {
+	for x := range w {
 		// pick value index, allow downsampling/upsampling.
 		i := min(x*len(vals)/w, len(vals)-1)
 		hPx := min(max(int(vals[i]/maxV*float64(braillePxH)), 1), braillePxH)

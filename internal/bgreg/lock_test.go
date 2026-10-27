@@ -15,20 +15,18 @@ func TestSessionLock_MutualExclusion(t *testing.T) {
 	t.Setenv("BEE_HOME", t.TempDir())
 	const id = "lock-mutex"
 
-	var holders int32
+	var holders atomic.Int32
 	var maxHolders int32
 	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 2 {
+		wg.Go(func() {
 			l, err := acquireSessionLock(id)
 			if err != nil {
 				t.Errorf("acquire: %v", err)
 				return
 			}
 			defer l.release()
-			cur := atomic.AddInt32(&holders, 1)
+			cur := holders.Add(1)
 			for {
 				m := atomic.LoadInt32(&maxHolders)
 				if cur <= m || atomic.CompareAndSwapInt32(&maxHolders, m, cur) {
@@ -37,8 +35,8 @@ func TestSessionLock_MutualExclusion(t *testing.T) {
 			}
 			// hold briefly so the contender has to wait
 			time.Sleep(50 * time.Millisecond)
-			atomic.AddInt32(&holders, -1)
-		}()
+			holders.Add(-1)
+		})
 	}
 	wg.Wait()
 	if maxHolders != 1 {

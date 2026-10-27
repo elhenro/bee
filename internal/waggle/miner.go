@@ -170,11 +170,11 @@ func nonOverlapCount(starts []int, l int) int {
 func buildCandidate(windows [][]Call, l int) Candidate {
 	rep := windows[0]
 	steps := make([]Call, l)
-	for s := 0; s < l; s++ {
+	for s := range l {
 		steps[s] = cloneCall(rep[s])
 	}
 	var params []Param
-	for s := 0; s < l; s++ {
+	for s := range l {
 		for _, k := range sortedKeys(rep[s].Args) {
 			v0 := rep[s].Args[k]
 			for _, w := range windows[1:] {

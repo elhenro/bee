@@ -12,7 +12,7 @@ import "math"
 // they cross.
 func renderBrailleDNA(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
-	for x := 0; x < w; x++ {
+	for x := range w {
 		p := float64(x)*0.42 - float64(frame)*0.35
 		a := (math.Sin(p) + 1) * 0.5
 		b := (math.Sin(p+math.Pi) + 1) * 0.5
@@ -40,7 +40,7 @@ func renderBrailleMatrix(frame, cells int) string {
 		off := (x * 13) % period
 		head := ((frame*spd)/2 + off) % period
 		trail := 3
-		for k := 0; k < trail; k++ {
+		for k := range trail {
 			y := head - k
 			c.SetPixel(x, y, true)
 		}
@@ -57,7 +57,7 @@ func renderBrailleHeartbeat(frame, cells int) string {
 	period := 60
 	spike := frame % period
 	// baseline runs the full width.
-	for x := 0; x < w; x++ {
+	for x := range w {
 		c.SetPixel(x, baseY, true)
 	}
 	// spike head position scrolls left→right across cycle.
@@ -92,7 +92,7 @@ func renderBrailleLightning(frame, cells int) string {
 	baseX := (strikeID*97 + 13) % w
 	// trace bolt top→bottom with zig-zag offset per row.
 	x := baseX
-	for y := 0; y < braillePxH; y++ {
+	for y := range braillePxH {
 		// fade: in second quarter of visible phase, sparsen.
 		visible := t < period/4 || (y+t)%2 == 0
 		if visible && x >= 0 && x < w {
@@ -111,7 +111,7 @@ func renderBrailleLightning(frame, cells int) string {
 func renderBrailleSnake(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	bodyLen := max(w/2, 8)
-	for i := 0; i < bodyLen; i++ {
+	for i := range bodyLen {
 		t := float64(frame-i) * 0.18
 		x := int(math.Round((math.Sin(t)+1)*0.5*float64(w-1))) - 0
 		// path of head — phase shifts with i so segments lag behind.
@@ -135,7 +135,7 @@ func renderBrailleFireworks(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	bursts := 3
 	period := 30
-	for b := 0; b < bursts; b++ {
+	for b := range bursts {
 		// each burst phase-offset so they don't sync.
 		t := (frame + b*period/bursts) % period
 		// origin walks across canvas per burst id.
@@ -146,7 +146,7 @@ func renderBrailleFireworks(frame, cells int) string {
 		phase := float64(t) / float64(period)
 		r := phase * float64(w/4)
 		// 6 sparks radiating evenly.
-		for i := 0; i < 6; i++ {
+		for i := range 6 {
 			a := float64(i) * (2 * math.Pi / 6)
 			x := ox + int(math.Round(r*math.Cos(a)))
 			// gravity: y drifts down as phase progresses.

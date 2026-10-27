@@ -134,7 +134,7 @@ func TestIndexFiles_SkipsBuildAndVendorDirs(t *testing.T) {
 
 func TestIndexFilter_CaseInsensitiveAndCapped(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < fuzzyMax+10; i++ {
+	for i := range fuzzyMax + 10 {
 		os.WriteFile(filepath.Join(dir, fmt.Sprintf("File%03d.go", i)), nil, 0o644)
 	}
 	idx := indexFiles(dir)

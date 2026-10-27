@@ -111,7 +111,7 @@ func TestLedger_AppendsSurviveConcurrentCompact(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.jsonl")
 	keep := map[string]bool{"a": true}
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		wg.Add(2)
 		go func() { defer wg.Done(); _ = NewLedger(path).Append(LedgerEntry{Name: "a", Yield: 1}) }()
 		go func() { defer wg.Done(); _ = CompactLedger(path, keep) }()

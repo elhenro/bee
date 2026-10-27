@@ -122,7 +122,7 @@ func TestToolCard_RowsClippedToWidth(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 40)
 	r.RenderMessage(useMsg("u1", "bash", map[string]any{"command": "cat"}))
 	out := stripANSI(r.RenderMessage(resultMsg("u1", strings.Repeat("z", 200), false)))
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if w := len([]rune(ln)); w > 40 {
 			t.Fatalf("row %d cols exceeds terminal width: %q", w, ln)
 		}
@@ -174,7 +174,7 @@ func TestRenderPendingTools_SkipsEscalateAndCaps(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 100)
 	var uses []types.ToolUse
 	uses = append(uses, types.ToolUse{ID: "e", Name: "escalate", Input: map[string]any{"reason": "x"}})
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		uses = append(uses, types.ToolUse{ID: fmt.Sprint(i), Name: "read", Input: map[string]any{"path": fmt.Sprintf("f%d.go", i)}})
 	}
 	out := stripANSI(r.RenderPendingTools(uses, 0))
@@ -306,7 +306,7 @@ func TestCallRow_NeverWrapsOnANarrowTerminal(t *testing.T) {
 			"command": "gofmt -l . && go vet ./... && go build ./... && go test ./...",
 		}}
 		out := r.frame(strings.TrimRight(r.renderToolUse(use), "\n"), false, true)
-		for _, ln := range strings.Split(out, "\n") {
+		for ln := range strings.SplitSeq(out, "\n") {
 			if got := lipgloss.Width(ln); got > w {
 				t.Fatalf("width %d: call row is %d cells: %q", w, got, stripANSI(ln))
 			}

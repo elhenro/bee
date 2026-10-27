@@ -32,7 +32,7 @@ func TestRenderSpinner_ShowsVerbElapsedTokensAndHint(t *testing.T) {
 func TestRenderSpinner_DanceChangesWithFrame(t *testing.T) {
 	r := spinnerRenderer()
 	seen := map[string]bool{}
-	for f := 0; f < waggleCycle; f++ {
+	for f := range waggleCycle {
 		seen[stripANSI(r.RenderSpinner(f, 0))[1:5]] = true
 	}
 	if len(seen) != waggleCycle {
@@ -52,7 +52,7 @@ func TestRenderSpinner_StaticMarkWhenMotionOff(t *testing.T) {
 func TestRenderSpinner_VerbHoldsStillPerTurn(t *testing.T) {
 	r := spinnerRenderer()
 	v := r.spinnerVerb()
-	for f := 0; f < 20; f++ {
+	for f := range 20 {
 		if !strings.Contains(stripANSI(r.RenderSpinner(f, 0)), v) {
 			t.Fatalf("verb changed mid-turn at frame %d", f)
 		}

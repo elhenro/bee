@@ -50,11 +50,11 @@ func runInlineShell(ctx context.Context, registry *tools.Registry, cmd string) i
 // `!cmd`, 2 for `!!cmd`. The caller resolves silent vs forward using the
 // default behavior + bangCount (count=2 inverts the default).
 func parseInlinePrefix(text string) (cmd string, bangCount int, isInline bool) {
-	if strings.HasPrefix(text, "!!") {
-		return strings.TrimPrefix(text, "!!"), 2, true
+	if after, ok := strings.CutPrefix(text, "!!"); ok {
+		return after, 2, true
 	}
-	if strings.HasPrefix(text, "!") {
-		return strings.TrimPrefix(text, "!"), 1, true
+	if after, ok := strings.CutPrefix(text, "!"); ok {
+		return after, 1, true
 	}
 	return text, 0, false
 }

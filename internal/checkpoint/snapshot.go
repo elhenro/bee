@@ -65,7 +65,7 @@ func (s *Store) List() ([]Snapshot, error) {
 		return nil, err
 	}
 	var snaps []Snapshot
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		ln = strings.TrimSpace(ln)
 		if ln == "" {
 			continue

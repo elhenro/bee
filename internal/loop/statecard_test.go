@@ -41,7 +41,7 @@ func TestStateCard_ObserveAndRender(t *testing.T) {
 
 func TestStateCard_ActionsCapped(t *testing.T) {
 	c := newStateCard("g")
-	for i := 0; i < stateCardMaxActions+5; i++ {
+	for range stateCardMaxActions + 5 {
 		c.observe(
 			[]types.ToolUse{{Name: "bash", Input: map[string]any{"command": "x"}}},
 			[]types.ToolResult{{Content: "ok"}},

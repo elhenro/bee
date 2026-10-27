@@ -103,7 +103,7 @@ func unmergedFiles(dir string) []string {
 		return nil
 	}
 	var files []string
-	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for l := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if l != "" {
 			files = append(files, l)
 		}

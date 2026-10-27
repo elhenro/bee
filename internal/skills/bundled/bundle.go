@@ -46,7 +46,7 @@ func readSeeded(skillsDir string) map[string]bool {
 	if err != nil {
 		return seeded
 	}
-	for _, l := range strings.Split(string(data), "\n") {
+	for l := range strings.SplitSeq(string(data), "\n") {
 		if l = strings.TrimSpace(l); l != "" {
 			seeded[l] = true
 		}

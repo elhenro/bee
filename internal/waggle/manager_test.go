@@ -21,7 +21,7 @@ func countMD(t *testing.T, dir string) int {
 }
 
 func observeRoute(m *Manager, times int) {
-	for i := 0; i < times; i++ {
+	for range times {
 		m.Observe(Call{Tool: "ls", Args: map[string]string{"path": "/p"}})
 		m.Observe(Call{Tool: "read", Args: map[string]string{"path": "/p/a.go"}})
 	}

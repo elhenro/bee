@@ -85,9 +85,7 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 	var wg sync.WaitGroup
 
 	for i, w := range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			// honor cancellation before running: avoids starting late workers
 			// after the caller has already given up.
@@ -99,7 +97,7 @@ func (p *Pool) Run(ctx context.Context) <-chan Result {
 			defer release()
 
 			results <- runOne(ctx, w, i, ph)
-		}()
+		})
 	}
 
 	go func() {

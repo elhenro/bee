@@ -100,12 +100,12 @@ func TestVerifyThinkingSuppression_SilentWhenNotRequested(t *testing.T) {
 }
 
 // emptyProvider always streams a bare Done — no text, no tool, no reasoning.
-type emptyProvider struct{ calls int32 }
+type emptyProvider struct{ calls atomic.Int32 }
 
 func (p *emptyProvider) Name() string { return "empty" }
 
 func (p *emptyProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
-	atomic.AddInt32(&p.calls, 1)
+	p.calls.Add(1)
 	ch := make(chan llm.Event, 2)
 	go func() {
 		defer close(ch)
@@ -137,7 +137,7 @@ func TestRun_EmptyCompletionBails(t *testing.T) {
 	if !errors.Is(err, ErrEmptyCompletion) {
 		t.Fatalf("expected ErrEmptyCompletion, got %v", err)
 	}
-	if got := atomic.LoadInt32(&prov.calls); got != emptyCompletionBailAt {
+	if got := prov.calls.Load(); got != emptyCompletionBailAt {
 		t.Fatalf("expected %d calls before bail, got %d", emptyCompletionBailAt, got)
 	}
 }

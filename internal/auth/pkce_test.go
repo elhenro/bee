@@ -21,7 +21,7 @@ func TestGenerateVerifier_LengthAndCharset(t *testing.T) {
 
 func TestGenerateVerifier_Unique(t *testing.T) {
 	seen := map[string]bool{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		v, err := GenerateVerifier()
 		if err != nil {
 			t.Fatal(err)

@@ -163,7 +163,7 @@ func TestLS_SymlinkMarkedL(t *testing.T) {
 
 func TestLS_Truncated(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < 505; i++ {
+	for i := range 505 {
 		name := fmt.Sprintf("f%04d.txt", i)
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)

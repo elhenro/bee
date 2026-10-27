@@ -185,7 +185,7 @@ func gitBranchUncached(cwd string) string {
 		return ""
 	}
 	dir := cwd
-	for i := 0; i < 32; i++ {
+	for range 32 {
 		gitPath := filepath.Join(dir, ".git")
 		st, err := os.Stat(gitPath)
 		if err == nil {

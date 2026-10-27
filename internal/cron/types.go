@@ -94,7 +94,7 @@ func parseCronField(expr string, lo, hi int) (cronField, error) {
 	for v := lo; v <= hi; v++ {
 		full |= 1 << uint(v)
 	}
-	for _, part := range strings.Split(expr, ",") {
+	for part := range strings.SplitSeq(expr, ",") {
 		if part == "" {
 			return f, fmt.Errorf("empty list element")
 		}

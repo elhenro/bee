@@ -145,10 +145,7 @@ func compactPressure(sys string, msgs []types.Message, actualInputTokens, budget
 	// the reported count predates messages appended since that request (the
 	// assistant reply and fresh tool results), so never trust it below the
 	// estimate: one huge tool output would otherwise overflow the window.
-	total := prompt.EstimateTokens(sys) + estimateMessagesTokens(msgs)
-	if actualInputTokens > total {
-		total = actualInputTokens
-	}
+	total := max(actualInputTokens, prompt.EstimateTokens(sys)+estimateMessagesTokens(msgs))
 	return float64(total) / (float64(budget) * threshold)
 }
 

@@ -679,7 +679,7 @@ func TestModel_ProgressiveFlush_PushesHeadOnOverflow(t *testing.T) {
 	// paragraph break (\n\n) so glamour gets full paragraph context — line-by-
 	// line flushing strips holistic markdown styling.
 	var cmds []tea.Cmd
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		m2, cmd := m.Update(streamDeltaMsg{Delta: "line\n\n"})
 		m = m2.(Model)
 		if cmd != nil {
@@ -776,7 +776,7 @@ func TestModel_CompactDone_FlushesSummaryAfterShrink(t *testing.T) {
 	m.compacting = true
 	// long, fully-printed scrollback (10 msgs already flushed).
 	m.messages = nil
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		m.messages = append(m.messages, types.Message{
 			Role:    types.RoleUser,
 			Content: []types.ContentBlock{{Type: types.BlockText, Text: "old"}},
@@ -786,7 +786,7 @@ func TestModel_CompactDone_FlushesSummaryAfterShrink(t *testing.T) {
 
 	// engine compacted down to summary + tail (5 msgs).
 	var compacted []types.Message
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		compacted = append(compacted, types.Message{
 			Role:    types.RoleUser,
 			Content: []types.ContentBlock{{Type: types.BlockText, Text: "new"}},
@@ -820,7 +820,7 @@ func TestModel_CompactDone_QueuedSubmit_StillFlushesSummary(t *testing.T) {
 	m.compacting = true
 	m.queuedMidCompact = "continue"
 	m.messages = nil
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		m.messages = append(m.messages, types.Message{
 			Role:    types.RoleUser,
 			Content: []types.ContentBlock{{Type: types.BlockText, Text: "old"}},
@@ -829,7 +829,7 @@ func TestModel_CompactDone_QueuedSubmit_StillFlushesSummary(t *testing.T) {
 	m.printedCount = len(m.messages)
 
 	var compacted []types.Message
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		compacted = append(compacted, types.Message{
 			Role:    types.RoleUser,
 			Content: []types.ContentBlock{{Type: types.BlockText, Text: "new"}},
@@ -891,13 +891,13 @@ func TestModel_QueuedMidCompact_LiveViewAndNoScrollbackEcho(t *testing.T) {
 	// the input bar. The compacting animation is part of the same live
 	// region; both should appear in m.View() above the input. The bottom
 	// bar starts with the prompt; find the relative order via raw indices.
-	live := strings.Index(out, "queued: continue")
+	found := strings.Contains(out, "queued: continue")
 	// the input prompt is `> ` (or similar). We just need to confirm the
 	// queued line is somewhere in the rendered output above the input's
 	// own visible text — the input value here is empty, so the prompt
 	// still renders. The point is that the queued text is part of the
 	// live region, not pushed down to the bottom.
-	if live < 0 {
+	if !found {
 		t.Fatalf("queued text not found in view; got:\n%s", out)
 	}
 }
@@ -1064,7 +1064,7 @@ func TestModel_MultilineInput_RenderedAcrossRepeatedViewCalls(t *testing.T) {
 	}
 	// re-render twice without an intervening Update — pure View calls must
 	// be idempotent and never clip a line.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		out := stripANSI(m.View())
 		if !strings.Contains(out, "foo") {
 			t.Errorf("iter %d: missing first line; got:\n%s", i, out)

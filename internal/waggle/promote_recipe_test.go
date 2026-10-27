@@ -95,7 +95,7 @@ func TestManager_VerifiedMutatingRouteBecomesRecipeWaggle(t *testing.T) {
 	t.Setenv("BEE_HOME", t.TempDir())
 	store, _ := ProjectStore("/p")
 	m := NewManager(store, ManagerConfig{Scope: ScopeProject, MinePeriod: 100, Mine: MineConfig{Mutating: true}})
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		m.Observe(sh("go test ./...", false))
 		m.Observe(sh("git add -A", false))
 		m.Observe(rd("pad"))
@@ -128,7 +128,7 @@ func TestManager_DroppedOutcomeForgetsRoute(t *testing.T) {
 	t.Setenv("BEE_HOME", t.TempDir())
 	store, _ := ProjectStore("/p")
 	m := NewManager(store, ManagerConfig{Scope: ScopeProject, MinePeriod: 100, Mine: MineConfig{Mutating: true}})
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		m.Observe(sh("rm -rf build", false))
 		m.Observe(sh("make", false))
 		m.Observe(rd("pad"))

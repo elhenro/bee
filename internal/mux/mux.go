@@ -7,6 +7,7 @@ package mux
 import (
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -48,10 +49,8 @@ func EditorCommand(editor, file string, line int) string {
 // windowArgs returns the tmux subcommand args: select-window when a window
 // named name already exists (reuse), else new-window.
 func windowArgs(name, dir, cmd string, existing []string) []string {
-	for _, w := range existing {
-		if w == name {
-			return []string{"select-window", "-t", name}
-		}
+	if slices.Contains(existing, name) {
+		return []string{"select-window", "-t", name}
 	}
 	return []string{"new-window", "-n", name, "-c", dir, cmd}
 }
@@ -84,7 +83,7 @@ func listWindows() []string {
 		return nil
 	}
 	var names []string
-	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for l := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if l != "" {
 			names = append(names, l)
 		}

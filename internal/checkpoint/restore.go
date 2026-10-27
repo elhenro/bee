@@ -65,7 +65,7 @@ func (s *Store) Prune(keep int) error {
 	}
 	cutoff := time.Now().Add(-24 * time.Hour).UnixNano()
 	out, _ := s.git("for-each-ref", "--format=%(refname)", "refs/bee/undo/")
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		ln = strings.TrimSpace(ln)
 		if ln == "" {
 			continue

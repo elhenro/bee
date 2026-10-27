@@ -333,7 +333,7 @@ func TestRunMaxIterationsUnlimited(t *testing.T) {
 	})
 	// 60 tool-use rounds (past the old 100 cap) then a final text answer.
 	scripts := make([][]llm.Event, 0, 61)
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		scripts = append(scripts, []llm.Event{
 			{Type: llm.EventToolUse, ToolUse: &types.ToolUse{ID: "u", Name: "bash", Input: map[string]any{"command": "x"}}},
 			{Type: llm.EventDone, StopReason: "tool_use"},

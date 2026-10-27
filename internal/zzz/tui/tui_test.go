@@ -119,7 +119,7 @@ func TestModelViewRendersBee(t *testing.T) {
 	m.SetPhase("commit")
 	m.SetTokens(zzz.TokenStat{Input: 1234, Output: 567, USD: 0.0123})
 	// drain channel so live state syncs into the model fields
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case msg := <-m.box.C:
 			u, _ := m.Update(msg)
@@ -142,7 +142,7 @@ func TestCommitMarksRowCommitted(t *testing.T) {
 	m.SetIter(1, 5)
 	m.SetPhase("commit")
 	m.IncCommits()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		u, _ := m.Update(<-m.box.C)
 		m = u.(*Model)
 	}

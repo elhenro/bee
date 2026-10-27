@@ -201,7 +201,7 @@ func TestRollout_ConcurrentAppendClose(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			// errors after Close are expected; the race detector is the assertion.
 			_ = r.Append(ctx, mkMsg(uuid.NewString(), "", types.RoleUser, "x"))
 			_ = r.Flush()
@@ -226,7 +226,7 @@ func TestRollout_AppendDoesNotBlockOnSync(t *testing.T) {
 	defer r.Close()
 	ctx := context.Background()
 	start := time.Now()
-	for i := 0; i < 64; i++ {
+	for range 64 {
 		if err := r.Append(ctx, mkMsg(uuid.NewString(), "", types.RoleUser, "x")); err != nil {
 			t.Fatal(err)
 		}

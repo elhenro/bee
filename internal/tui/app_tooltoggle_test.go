@@ -37,7 +37,7 @@ func TestLastToolResultMessageNone(t *testing.T) {
 // tool result — the core of the ctrl+o toggle.
 func TestRenderMessageDetailCapping(t *testing.T) {
 	long := ""
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		long += "line\n"
 	}
 	msg := types.Message{Role: types.RoleTool, Content: []types.ContentBlock{

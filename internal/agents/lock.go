@@ -17,8 +17,7 @@ func AcquireLock() (l *pidlock.Lock, ok bool, err error) {
 		return nil, false, err
 	}
 	l, err = pidlock.Acquire(p, "merge")
-	var held *pidlock.HeldError
-	if errors.As(err, &held) {
+	if _, ok := errors.AsType[*pidlock.HeldError](err); ok {
 		return nil, false, nil
 	}
 	return l, err == nil, err

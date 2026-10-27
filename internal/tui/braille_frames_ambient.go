@@ -10,7 +10,7 @@ import "math"
 // faster one carries the rhythm; the slower one gives depth.
 func renderBrailleWave(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
-	for x := 0; x < w; x++ {
+	for x := range w {
 		// primary wave — full amplitude, slow phase.
 		p1 := float64(x)*0.55 - float64(frame)*0.42
 		y1 := int(math.Round((math.Sin(p1) + 1) * 0.5 * float64(braillePxH-1)))
@@ -35,7 +35,7 @@ func renderBrailleComet(frame, cells int) string {
 	head := frame % cycle
 	y := braillePxH / 2
 	tail := max(w/3, 6)
-	for i := 0; i < tail; i++ {
+	for i := range tail {
 		x := head - i
 		if x < 0 || x >= w {
 			continue
@@ -67,7 +67,7 @@ func renderBrailleHex(frame, cells int) string {
 	cx, cy := w/2, braillePxH/2
 	r := max(float64(w/2-1), 6)
 	rh := 1.5
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		theta := (float64(i)/6 + float64(frame)/72.0) * 2 * math.Pi
 		x := cx + int(math.Round(r*math.Cos(theta)))
 		y := cy + int(math.Round(rh*math.Sin(theta)))
@@ -82,14 +82,14 @@ func renderBrailleRipple(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	cx, cy := w/2, braillePxH/2
 	maxR := float64(w / 2)
-	for k := 0; k < 2; k++ {
+	for k := range 2 {
 		t := float64(frame)*0.35 + float64(k)*math.Pi
 		phase := math.Mod(t, 2*math.Pi) / (2 * math.Pi)
 		r := phase * maxR
 		// trace an ellipse — use enough samples to keep it solid even
 		// on very wide canvases.
 		samples := int(math.Max(24, r*4))
-		for s := 0; s < samples; s++ {
+		for s := range samples {
 			a := float64(s) / float64(samples) * 2 * math.Pi
 			x := cx + int(math.Round(r*math.Cos(a)))
 			y := cy + int(math.Round(r/maxR*1.5*math.Sin(a)))
@@ -127,7 +127,7 @@ func renderBrailleOrbit(frame, cells int) string {
 	rh := 1.5
 	n := min(3+cells/8, 8)
 	t := float64(frame) * 0.22
-	for i := 0; i < n; i++ {
+	for i := range n {
 		a := t + float64(i)*(2*math.Pi/float64(n))
 		x := cx + int(math.Round(r*math.Cos(a)))
 		y := cy + int(math.Round(rh*math.Sin(a)))
@@ -171,7 +171,7 @@ func renderBrailleStarfield(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	// scatter ~cells/2 stars; LCG-style hash for stable positions per index.
 	n := cells / 2
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// position drifts slowly rightward; wraps.
 		base := (i*73 + frame/3) % w
 		y := (i * 31) % braillePxH

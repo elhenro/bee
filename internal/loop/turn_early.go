@@ -56,12 +56,10 @@ func (e *Engine) earlyOffer(ctx context.Context, idx int, u types.ToolUse) {
 	}
 	c := &earlyCall{use: u, done: make(chan struct{})}
 	st.calls = append(st.calls, c)
-	st.wg.Add(1)
-	go func() {
-		defer st.wg.Done()
+	st.wg.Go(func() {
 		defer close(c.done)
 		c.res = e.runOneTrapped(st.ctx, u)
-	}()
+	})
 }
 
 // earlyTake returns the early run of call i when it is the same call dispatch

@@ -21,11 +21,11 @@ func TestLoaderReadout_OutTracksProgress(t *testing.T) {
 	}
 
 	out := stripANSI(m.View())
-	idx := strings.Index(out, "↓ ")
-	if idx < 0 {
+	_, after, ok := strings.Cut(out, "↓ ")
+	if !ok {
 		t.Fatalf("no ↓ figure in view: %q", out)
 	}
-	rest := out[idx+len("↓ "):]
+	rest := after
 	if strings.HasPrefix(rest, "0") {
 		t.Fatalf("↓ figure reads 0, view: %q", out)
 	}
@@ -45,11 +45,11 @@ func TestLoaderReadout_OutTracksStreamDeltas(t *testing.T) {
 	}
 
 	out := stripANSI(m.View())
-	idx := strings.Index(out, "↓ ")
-	if idx < 0 {
+	_, after, ok := strings.Cut(out, "↓ ")
+	if !ok {
 		t.Fatalf("no ↓ figure in view: %q", out)
 	}
-	rest := out[idx+len("↓ "):]
+	rest := after
 	if strings.HasPrefix(rest, "0") {
 		t.Fatalf("↓ figure reads 0, view: %q", out)
 	}

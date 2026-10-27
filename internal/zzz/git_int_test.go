@@ -47,7 +47,7 @@ func TestDiffAgainstTruncates(t *testing.T) {
 	repo := newRepo(t)
 	base, _ := HeadSHA(repo)
 	big := make([]byte, 0, 9000)
-	for i := 0; i < 9000; i++ {
+	for range 9000 {
 		big = append(big, 'a')
 	}
 	commitFile(t, repo, "big.txt", string(big), "big")

@@ -103,7 +103,7 @@ func TestScrollback_KeepsOrderAcrossUpdatesInARealProgram(t *testing.T) {
 	done := make(chan struct{})
 	go func() { _, _ = p.Run(); close(done) }()
 	time.Sleep(100 * time.Millisecond) // let the program start reading messages
-	for i := 0; i < n; i++ {
+	for i := range n {
 		p.Send(orderMsg(i))
 	}
 	last := fmt.Sprintf("line-%05d", n-1)

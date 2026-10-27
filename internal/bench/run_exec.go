@@ -98,9 +98,9 @@ func goalAchieved(stderr string) bool {
 // not count.
 func verdictLine(stderr, prefix string) (string, bool) {
 	rest, found := "", false
-	for _, line := range strings.Split(stderr, "\n") {
-		if strings.HasPrefix(line, prefix) {
-			rest, found = strings.TrimPrefix(line, prefix), true
+	for line := range strings.SplitSeq(stderr, "\n") {
+		if after, ok := strings.CutPrefix(line, prefix); ok {
+			rest, found = after, true
 		}
 	}
 	return rest, found

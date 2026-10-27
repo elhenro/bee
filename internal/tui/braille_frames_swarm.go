@@ -14,7 +14,7 @@ func renderBrailleSwarm(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	// scale particle count with width — roughly one bee per 4 cells.
 	n := max(cells/4, 3)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// phase per particle uses a coprime gap so they never sync up.
 		t := float64(frame)*0.28 + float64(i)*1.379
 		x := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(w-1)))
@@ -39,7 +39,7 @@ func renderBrailleCaretSwarm(frame int) string {
 	const cells = 3
 	w := cells * braillePxW
 	c := NewDrawilleCanvas(w, braillePxH)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		t := float64(frame)*0.32 + float64(i)*1.879
 		x := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(w-1)))
 		y := int(math.Round((math.Sin(t*0.7+float64(i)) + 1) * 0.5 * float64(braillePxH-1)))
@@ -61,7 +61,7 @@ func renderBrailleForage(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	n := max(cells/3, 4)
 	cycle := w + 16
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// stagger so bees emerge one after another, not in a wall.
 		off := (i * cycle) / n
 		x := (frame + off) % cycle
@@ -73,7 +73,7 @@ func renderBrailleForage(frame, cells int) string {
 		c.SetPixel(x-1, y, true)
 	}
 	// hive marker — solid block at left edge, always lit.
-	for y := 0; y < braillePxH; y++ {
+	for y := range braillePxH {
 		c.SetPixel(0, y, true)
 	}
 	return c.ToBraille()
@@ -89,7 +89,7 @@ func renderBrailleFigure8(frame, cells int) string {
 	rh := 1.5
 	n := 3
 	t := float64(frame) * 0.15
-	for i := 0; i < n; i++ {
+	for i := range n {
 		tp := t + float64(i)*(2*math.Pi/float64(n))
 		// lemniscate: x = r·sin(2t), y = rh·sin(t)·cos(t) (8x denser vertical).
 		x := cx + int(math.Round(r*math.Sin(2*tp)))
@@ -147,7 +147,7 @@ func renderBrailleGust(frame, cells int) string {
 	if g := frame % 40; g < 8 {
 		bias += math.Sin(float64(g)*math.Pi/8) * float64(w) * 0.25
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		t := float64(frame)*0.28 + float64(i)*1.379
 		base := (math.Sin(t) + 1) * 0.5 * float64(w-1)
 		x := int(math.Round(base + bias))
@@ -170,7 +170,7 @@ func renderBrailleScatter(frame, cells int) string {
 	// phase 0..1 — slow cosine cycle: 0 = grouped, 1 = fully scattered.
 	phase := (1 - math.Cos(float64(frame)*0.07)) / 2
 	r := phase * maxR
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// fixed angle per bee — they always scatter in their own direction.
 		a := float64(i) * (2 * math.Pi / float64(n))
 		x := cx + int(math.Round(r*math.Cos(a)))
@@ -187,12 +187,12 @@ func renderBrailleFlock(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	clusters := 3
 	perCluster := 3
-	for k := 0; k < clusters; k++ {
+	for k := range clusters {
 		// cluster center moves on its own sine, phase-offset per cluster.
 		t := float64(frame)*0.22 + float64(k)*2.094
 		cx := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(w-1)))
 		cy := (k * braillePxH) / clusters
-		for i := 0; i < perCluster; i++ {
+		for i := range perCluster {
 			// per-bee offset oscillates so the cluster doesn't look static.
 			ot := t*1.3 + float64(i)*1.7
 			dx := int(math.Round(math.Sin(ot) * 1.5))

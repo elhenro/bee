@@ -44,7 +44,7 @@ import (
 // splitCSV splits a comma list, trimming blanks and dropping empty items.
 func splitCSV(s string) []string {
 	var out []string
-	for _, p := range strings.Split(s, ",") {
+	for p := range strings.SplitSeq(s, ",") {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}

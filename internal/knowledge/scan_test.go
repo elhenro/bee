@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -74,7 +75,7 @@ func TestScanSortedByMtimeDesc(t *testing.T) {
 
 func TestScanCapsAtMaxEntries(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < MaxEntries+20; i++ {
+	for i := range MaxEntries + 20 {
 		p := filepath.Join(dir, "m"+itoa3(i)+".md")
 		body := "---\nname: m\ndescription: d\ntags: [misc]\npriority: 3\nexpires: never\n---\n"
 		os.WriteFile(p, []byte(body), 0o644)
@@ -202,10 +203,5 @@ func itoa3(n int) string {
 }
 
 func contains(xs []string, want string) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, want)
 }

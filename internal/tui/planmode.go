@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -135,9 +136,9 @@ func freshDisplay(plan string) string {
 // lastAssistantText returns the text of the last assistant message — the plan
 // the model just wrote. Empty when there's no assistant turn.
 func lastAssistantText(msgs []types.Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == types.RoleAssistant {
-			return textOf(msgs[i])
+	for _, msg := range slices.Backward(msgs) {
+		if msg.Role == types.RoleAssistant {
+			return textOf(msg)
 		}
 	}
 	return ""

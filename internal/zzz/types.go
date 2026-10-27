@@ -57,7 +57,7 @@ type Run struct {
 	Mode      string    `json:"mode"` // "branch" | "current" | "worktree"
 	RepoRoot  string    `json:"repo_root"`
 	StartedAt time.Time `json:"started_at"`
-	EndedAt   time.Time `json:"ended_at,omitempty"`
+	EndedAt   time.Time `json:"ended_at"`
 	Status    string    `json:"status"` // "running" | "completed" | "failed" | "aborted"
 	// PID of the driving bee process; refreshed on start and resume so gc can
 	// tell a crashed "running" run from a live one before reaping it.
@@ -97,7 +97,7 @@ type Event struct {
 	Iter     int       `json:"iter"`
 	Phase    string    `json:"phase"`
 	Time     time.Time `json:"time"`
-	Tokens   TokenStat `json:"tokens,omitempty"`
+	Tokens   TokenStat `json:"tokens"`
 	DiffStat string    `json:"diff_stat,omitempty"`
 	Commit   string    `json:"commit,omitempty"`
 	Err      string    `json:"err,omitempty"`

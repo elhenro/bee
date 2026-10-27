@@ -3,6 +3,7 @@ package wire
 import (
 	"bytes"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -149,8 +150,8 @@ func repairToolArgs(raw []byte, closeOpen bool) ([]byte, bool) {
 	if inStr {
 		s = append(s, '"')
 	}
-	for i := len(stack) - 1; i >= 0; i-- {
-		s = append(s, stack[i])
+	for _, s0 := range slices.Backward(stack) {
+		s = append(s, s0)
 	}
 	return s, true
 }

@@ -96,7 +96,7 @@ func TestTiers_CachesOneProviderPerTier(t *testing.T) {
 	tiers := NewTiers(parent)
 	small := config.ModelTier{Provider: "local", Model: "tiny"}
 	var provs []llm.Provider
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		eng, roll, _, err := tiers.Spawn("w", small)
 		if err != nil {
 			t.Fatal(err)

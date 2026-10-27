@@ -23,7 +23,7 @@ func narrowModel(t *testing.T, w int) Model {
 // nothing for us, so a wider row tears the redraw
 func assertFits(t *testing.T, name string, w int, view string) {
 	t.Helper()
-	for _, ln := range strings.Split(stripANSI(view), "\n") {
+	for ln := range strings.SplitSeq(stripANSI(view), "\n") {
 		if got := lipgloss.Width(ln); got > w {
 			t.Errorf("%s at width %d: row is %d cells: %q", name, w, got, ln)
 		}

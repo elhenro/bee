@@ -59,14 +59,14 @@ func TestPheromone_WideFanOutCapsRows(t *testing.T) {
 		plan[i] = SubTask{Task: fmt.Sprintf("task-%02d", i)}
 	}
 	ph.Reset("", plan)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		ph.Finish(i, Result{Report: Report{Status: ReportDone, Did: fmt.Sprintf("did-%02d", i)}})
 	}
 	ph.Start(30)
 
 	card := ph.Render(30)
 	rows := 0
-	for _, l := range strings.Split(card, "\n") {
+	for l := range strings.SplitSeq(card, "\n") {
 		if strings.Contains(l, " [") {
 			rows++
 		}
@@ -85,7 +85,7 @@ func TestPheromone_WideFanOutCapsRows(t *testing.T) {
 		t.Errorf("rest line wrong:\n%s", card)
 	}
 	// own row comes first.
-	first := strings.SplitN(strings.SplitN(card, "plan:\n", 2)[1], "\n", 2)[0]
+	first, _, _ := strings.Cut(strings.SplitN(card, "plan:\n", 2)[1], "\n")
 	if !strings.HasPrefix(first, "31. ") {
 		t.Errorf("first row = %q, want the reader's own", first)
 	}

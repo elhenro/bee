@@ -54,7 +54,7 @@ func TestExpandImports_Cycle(t *testing.T) {
 func TestExpandImports_DepthCap(t *testing.T) {
 	dir := t.TempDir()
 	// chain longer than maxImportDepth (5)
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		name := filepath.Join(dir, "f"+string(rune('0'+i))+".md")
 		body := "L" + string(rune('0'+i))
 		if i < 6 {

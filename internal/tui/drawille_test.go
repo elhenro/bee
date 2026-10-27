@@ -16,8 +16,8 @@ func TestDrawilleCanvas_EmptyIsAllSpaces(t *testing.T) {
 
 func TestDrawilleCanvas_AllOnIsFullDots(t *testing.T) {
 	c := NewDrawilleCanvas(2, 4)
-	for y := 0; y < 4; y++ {
-		for x := 0; x < 2; x++ {
+	for y := range 4 {
+		for x := range 2 {
 			c.SetPixel(x, y, true)
 		}
 	}
@@ -88,7 +88,7 @@ func TestBrailleLoaderPainters_AllRenderFixedWidth(t *testing.T) {
 	// across many frames and several widths.
 	for _, cells := range []int{8, 20, 40, 120} {
 		for _, p := range brailleNamedPainters {
-			for frame := 0; frame < 80; frame++ {
+			for frame := range 80 {
 				got := p.fn(frame, cells)
 				runes := []rune(got)
 				if len(runes) != cells {

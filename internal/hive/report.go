@@ -203,7 +203,7 @@ func firstNonEmpty(vals ...string) string {
 
 // oneLineOf keeps the first non-empty line of s.
 func oneLineOf(s string) string {
-	for _, l := range strings.Split(s, "\n") {
+	for l := range strings.SplitSeq(s, "\n") {
 		if t := strings.TrimSpace(l); t != "" {
 			return t
 		}

@@ -127,7 +127,7 @@ func TestCurate_DemotesLongLivedDivergerBeforePrune(t *testing.T) {
 		t.Fatal(err)
 	}
 	l := NewLedger(proj.LedgerPath())
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_ = l.Append(LedgerEntry{Name: "diverger", Fail: true})
 	}
 	if _, err := Curate(proj, user, 14*24*time.Hour, 3, time.Now()); err != nil {

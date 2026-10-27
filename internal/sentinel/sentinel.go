@@ -91,7 +91,7 @@ func stripFences(s string) string {
 	}
 	var out []string
 	fence := ""
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		t := strings.TrimSpace(line)
 		switch {
 		case fence != "":

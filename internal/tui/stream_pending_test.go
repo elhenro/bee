@@ -86,7 +86,7 @@ func TestRenderPendingTools_TailFitsNarrowTerminal(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), minRenderWidth)
 	r.SetLiveTail("u1", strings.Repeat("x", 200))
 	out := r.RenderPendingTools([]types.ToolUse{{ID: "u1", Name: "bash", Input: map[string]any{"command": "ls"}}}, 0)
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if w := lipglossWidth(ln); w > minRenderWidth {
 			t.Fatalf("row wider than terminal (%d): %q", w, ln)
 		}
@@ -121,7 +121,7 @@ func TestRenderPendingTools_EditHeadIsBuiltOnce(t *testing.T) {
 
 func TestPendingEditHead_MemoStaysBounded(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 100)
-	for i := 0; i < 3*maxEditHeads; i++ {
+	for i := range 3 * maxEditHeads {
 		u := types.ToolUse{ID: fmt.Sprintf("w%d", i), Name: "write", Input: map[string]any{"path": "a.txt", "content": "hi\n"}}
 		if _, ok := r.pendingEditHead(u); !ok {
 			t.Fatal("write is a file mutation")

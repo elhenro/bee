@@ -26,7 +26,7 @@ func TestLogPanel_ClipsAndSanitizesEngineLines(t *testing.T) {
 	}
 	out := m.View()
 	rows := 0
-	for _, ln := range strings.Split(m.logPanel(78), "\n") {
+	for ln := range strings.SplitSeq(m.logPanel(78), "\n") {
 		rows++
 		if w := lipgloss.Width(ln); w > 78 {
 			t.Fatalf("log row is %d cells: %q", w, ansi.Strip(ln))

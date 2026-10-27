@@ -50,7 +50,7 @@ func runZzzQueen(parentCtx context.Context, cancelAll context.CancelFunc, n int,
 		}
 	}()
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		run, unlock, err := startRun(zCfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[queen] bee %d setup failed: %v\n", i+1, err)

@@ -26,7 +26,7 @@ func TestLoaderPulsePeriod_NotFlashy(t *testing.T) {
 // edit dropping the period back to 6.
 func TestLoaderPulse_StaysBrightInitially(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 80)
-	for f := 0; f < 8; f++ {
+	for f := range 8 {
 		style := r.pulseStyle(f)
 		// role-bee style renders accentBee (#FFC857 dark). the dim style
 		// renders fgSquid (#858392 dark). they're distinct — assert the

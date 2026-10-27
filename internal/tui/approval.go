@@ -195,7 +195,7 @@ func (m ApprovalModel) View() string {
 // expand, so a row can neither outgrow w nor repaint over the panel.
 func wrapActionLines(action string, w int) []string {
 	var rows []string
-	for _, l := range strings.Split(action, "\n") {
+	for l := range strings.SplitSeq(action, "\n") {
 		rows = append(rows, wrapHanging(expandTabs(sanitizeControl(l)), w)...)
 	}
 	if len(rows) <= approvalActionLines {

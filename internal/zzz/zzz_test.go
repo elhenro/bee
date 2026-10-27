@@ -140,7 +140,7 @@ func TestCommitMessageFromShape(t *testing.T) {
 	}
 	for _, c := range cases {
 		msg := CommitMessageFrom(c.in, 5, 10, 20)
-		first := strings.SplitN(msg, "\n", 2)[0]
+		first, _, _ := strings.Cut(msg, "\n")
 		want := c.want
 		if c.in == "" {
 			want = "chore: zzz: iter 5"
@@ -237,7 +237,7 @@ func TestCommitMessageFromUnicodeSafeTruncation(t *testing.T) {
 	// 80 wide characters of a multi-byte rune. Byte slice would split mid-rune.
 	long := strings.Repeat("ü", 80)
 	msg := CommitMessageFrom(long, 1, 0, 0)
-	subject := strings.SplitN(msg, "\n", 2)[0]
+	subject, _, _ := strings.Cut(msg, "\n")
 	if !strings.HasPrefix(subject, "chore: ") {
 		t.Errorf("missing chore prefix: %q", subject)
 	}

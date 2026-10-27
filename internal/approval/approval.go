@@ -105,11 +105,9 @@ func (c *Cache) Request(ctx context.Context, cmd, key, desc string) (Decision, e
 	// persistFunc may block 50-200ms on disk IO; run async so the user gets
 	// the verdict immediately.
 	if pf := c.persistFunc; d == AllowAlways && pf != nil {
-		c.persistWG.Add(1)
-		go func() {
-			defer c.persistWG.Done()
+		c.persistWG.Go(func() {
 			c.persist(pf, key)
-		}()
+		})
 	}
 	return d, nil
 }

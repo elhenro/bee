@@ -17,7 +17,7 @@ type scriptedRunner struct {
 	mu       sync.Mutex
 	prompts  []string
 	outputs  []string
-	idx      int32
+	idx      atomic.Int32
 	errAfter int // if >0, return error on prompt index errAfter-1
 	name     string
 }
@@ -26,7 +26,7 @@ func (s *scriptedRunner) Run(_ context.Context, msg string) (loop.RunResult, err
 	s.mu.Lock()
 	s.prompts = append(s.prompts, msg)
 	s.mu.Unlock()
-	i := atomic.AddInt32(&s.idx, 1) - 1
+	i := s.idx.Add(1) - 1
 	if s.errAfter > 0 && int(i) == s.errAfter-1 {
 		return loop.RunResult{}, errors.New("scripted failure")
 	}

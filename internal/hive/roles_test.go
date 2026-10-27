@@ -1,6 +1,7 @@
 package hive
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -118,10 +119,5 @@ func TestAllowedToolsReturnsCopy(t *testing.T) {
 }
 
 func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }

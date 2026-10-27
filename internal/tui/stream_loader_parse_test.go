@@ -23,7 +23,7 @@ func TestParseLoaderStyle_PainterNames(t *testing.T) {
 // on the phased or strip pseudo-styles
 func TestParseLoaderStyle_RandomCoversPainters(t *testing.T) {
 	seen := map[LoaderStyle]bool{}
-	for i := 0; i < 3000; i++ {
+	for range 3000 {
 		s := ParseLoaderStyle("random")
 		if s == LoaderStylePhased || s == LoaderStyleStrip {
 			t.Fatalf("random picked pseudo-style %v", s)

@@ -35,7 +35,7 @@ func (r *StreamRenderer) callDetail(u types.ToolUse) string {
 	}
 	w := r.textWidth(resultIndent)
 	var rows []string
-	for _, ln := range strings.Split(cleanCallText(expandTabs(full), true), "\n") {
+	for ln := range strings.SplitSeq(cleanCallText(expandTabs(full), true), "\n") {
 		rows = append(rows, strings.Split(wrapText(ln, w), "\n")...)
 	}
 	if hidden := len(rows) - callDetailRows; !r.verbose && hidden > 0 {

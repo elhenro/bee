@@ -165,7 +165,7 @@ func trimQuery(s string) string {
 
 func parseTagLines(s string) []string {
 	var out []string
-	for _, raw := range strings.Split(s, "\n") {
+	for raw := range strings.SplitSeq(s, "\n") {
 		// strip common list prefixes models still emit
 		raw = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(raw), "- "), "* ")
 		raw = strings.ToLower(strings.Trim(raw, "`\""))

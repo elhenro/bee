@@ -15,9 +15,9 @@ import (
 
 func TestListModels_HTTPHappyPath(t *testing.T) {
 	ClearModelCache()
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hits, 1)
+		hits.Add(1)
 		if r.URL.Path != "/models" {
 			t.Errorf("path = %q, want /models", r.URL.Path)
 		}
@@ -53,12 +53,12 @@ func TestListModels_HTTPHappyPath(t *testing.T) {
 
 func TestListModels_CacheTTL(t *testing.T) {
 	ClearModelCache()
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// only count /models — /models/status is a separate probe by
 		// enrichContextLengths that's unrelated to cache behavior.
 		if r.URL.Path == "/models" {
-			atomic.AddInt32(&hits, 1)
+			hits.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{"data":[{"id":"m1","name":"M1"}]}`)
 			return
@@ -69,12 +69,12 @@ func TestListModels_CacheTTL(t *testing.T) {
 
 	cfg := config.ProviderConfig{BaseURL: srv.URL, WireAPI: "chat"}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if _, err := ListModels(context.Background(), "p", cfg); err != nil {
 			t.Fatalf("call %d: %v", i, err)
 		}
 	}
-	if n := atomic.LoadInt32(&hits); n != 1 {
+	if n := hits.Load(); n != 1 {
 		t.Fatalf("hits = %d, want 1 (cache should suppress)", n)
 	}
 
@@ -88,7 +88,7 @@ func TestListModels_CacheTTL(t *testing.T) {
 	if _, err := ListModels(context.Background(), "p", cfg); err != nil {
 		t.Fatal(err)
 	}
-	if n := atomic.LoadInt32(&hits); n != 2 {
+	if n := hits.Load(); n != 2 {
 		t.Fatalf("hits = %d, want 2 after ttl expiry", n)
 	}
 }

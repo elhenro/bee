@@ -120,8 +120,7 @@ func (e *Engine) dispatchTools(ctx context.Context, uses []types.ToolUse) ([]typ
 func (e *Engine) runOneTrapped(ctx context.Context, u types.ToolUse) types.ToolResult {
 	res, err := e.runOne(ctx, u)
 	if err != nil {
-		var esc *escalate.Error
-		if errors.As(err, &esc) {
+		if esc, ok := errors.AsType[*escalate.Error](err); ok {
 			// stash so dispatchTools can return ErrEscalate post-flush; also
 			// surface a synthetic tool_result so the transcript records why.
 			e.run.escalateErr = esc

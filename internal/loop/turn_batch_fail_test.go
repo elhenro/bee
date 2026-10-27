@@ -23,7 +23,7 @@ func TestEngineRun_ParallelBatchFailuresCountOnce(t *testing.T) {
 		},
 	})
 	var evs []llm.Event
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		evs = append(evs, llm.Event{Type: llm.EventToolUse, ToolUse: &types.ToolUse{
 			ID: fmt.Sprintf("u-%d", i), Name: "read", Input: map[string]any{"path": fmt.Sprintf("guess-%d.go", i)},
 		}})
@@ -44,7 +44,7 @@ func TestRepeatTrackerBatchCountsOncePerTool(t *testing.T) {
 	tr := newRepeatTracker()
 	tr.beginBatch()
 	var obs Observation
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		obs = tr.Observe(types.ToolUse{Name: "read", Input: map[string]any{"path": fmt.Sprint(i)}}, true)
 	}
 	tr.endBatch()

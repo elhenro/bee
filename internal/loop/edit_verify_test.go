@@ -39,7 +39,7 @@ func TestEditVerify_NudgeAfterThreshold(t *testing.T) {
 	path := "/x/foo.go"
 
 	// 1st + 2nd edit: no nudge yet.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		uses := []types.ToolUse{editUse("u", path)}
 		results := []types.ToolResult{editResult("u", false)}
 		blocks := observeEditNoVerify(e, uses, results, freshBlocks("u"))
@@ -60,7 +60,7 @@ func TestEditVerify_NudgeOnlyOncePerFile(t *testing.T) {
 	e := newVerifyEngine()
 	path := "/x/foo.go"
 	// push to threshold
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		uses := []types.ToolUse{editUse("u", path)}
 		results := []types.ToolResult{editResult("u", false)}
 		_ = observeEditNoVerify(e, uses, results, nil)
@@ -77,7 +77,7 @@ func TestEditVerify_NudgeOnlyOncePerFile(t *testing.T) {
 func TestEditVerify_BashVerifyResets(t *testing.T) {
 	e := newVerifyEngine()
 	path := "/x/foo.go"
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		uses := []types.ToolUse{editUse("u", path)}
 		_ = observeEditNoVerify(e, uses, []types.ToolResult{editResult("u", false)}, nil)
 	}
@@ -91,7 +91,7 @@ func TestEditVerify_BashVerifyResets(t *testing.T) {
 		t.Error("expected nudge flag reset")
 	}
 	// 3 more edits should trigger nudge again.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		uses := []types.ToolUse{editUse("u", path)}
 		_ = observeEditNoVerify(e, uses, []types.ToolResult{editResult("u", false)}, freshBlocks("u"))
 	}
@@ -106,7 +106,7 @@ func TestEditVerify_ReadResetsOnlyThatPath(t *testing.T) {
 	e := newVerifyEngine()
 	a := "/x/a.go"
 	b := "/x/b.go"
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		_ = observeEditNoVerify(e,
 			[]types.ToolUse{editUse("u", a), editUse("v", b)},
 			[]types.ToolResult{editResult("u", false), editResult("v", false)},
@@ -128,7 +128,7 @@ func TestEditVerify_ReadResetsOnlyThatPath(t *testing.T) {
 func TestEditVerify_FailedEditNotCounted(t *testing.T) {
 	e := newVerifyEngine()
 	path := "/x/foo.go"
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		uses := []types.ToolUse{editUse("u", path)}
 		results := []types.ToolResult{editResult("u", true)} // all fail
 		blocks := observeEditNoVerify(e, uses, results, nil)
@@ -145,7 +145,7 @@ func TestEditVerify_NonVerifyBashIgnored(t *testing.T) {
 	// `ls` is not a verify command; counter should keep climbing.
 	e := newVerifyEngine()
 	path := "/x/foo.go"
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		_ = observeEditNoVerify(e,
 			[]types.ToolUse{editUse("u", path)},
 			[]types.ToolResult{editResult("u", false)},

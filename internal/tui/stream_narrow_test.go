@@ -52,7 +52,7 @@ func TestTranscript_FitsNarrowTerminals(t *testing.T) {
 			r := NewStreamRenderer(DefaultStyles(), w)
 			r.SetCompact(compact)
 			for i, m := range narrowTranscript() {
-				for _, ln := range strings.Split(stripANSI(r.RenderMessage(m)), "\n") {
+				for ln := range strings.SplitSeq(stripANSI(r.RenderMessage(m)), "\n") {
 					if got := lipgloss.Width(ln); got > w {
 						t.Errorf("width %d compact=%v message %d: row is %d cells: %q", w, compact, i, got, ln)
 					}
@@ -115,7 +115,7 @@ func TestErrorBlock_WrapsToNarrowTerminal(t *testing.T) {
 	m := statusTestModel()
 	m.width = 24
 	out := stripANSI(m.renderErrorBlock("provider returned an error that runs on for quite a while"))
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if w := lipgloss.Width(ln); w > 24 {
 			t.Fatalf("row is %d cells: %q", w, ln)
 		}

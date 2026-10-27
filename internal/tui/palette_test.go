@@ -327,7 +327,7 @@ func TestPalette_View_SelectionScrollsWindow(t *testing.T) {
 	}
 	// move selection to the last entry
 	target := len(p.matches) - 1
-	for i := 0; i < target; i++ {
+	for range target {
 		p2, _ := p.Update(tea.KeyMsg{Type: tea.KeyDown})
 		p = p2
 	}

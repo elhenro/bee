@@ -16,7 +16,7 @@ func TestOnChangeMapRowsFitNarrowTerminal(t *testing.T) {
 		t.Fatal("want a print cmd")
 	}
 	for _, blk := range sb.queue {
-		for _, row := range strings.Split(blk, "\n") {
+		for row := range strings.SplitSeq(blk, "\n") {
 			if w := lipgloss.Width(row); w > 30 {
 				t.Fatalf("row %d cols wide: %q", w, row)
 			}

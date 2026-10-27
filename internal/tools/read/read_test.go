@@ -86,7 +86,7 @@ func TestListDirectoryCappedTiny(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "zsub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < dirEntriesTight+50; i++ {
+	for i := range dirEntriesTight + 50 {
 		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%04d.txt", i)), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -332,15 +332,15 @@ func TestRun_HashlineDefaultOff(t *testing.T) {
 	}
 	// no '#' should appear between line-number prefix and the separator.
 	// the trailing `(N lines total)` footer is metadata, skip it.
-	for _, l := range strings.Split(res.Content, "\n") {
+	for l := range strings.SplitSeq(res.Content, "\n") {
 		if strings.HasPrefix(l, "(") {
 			continue
 		}
-		sep := strings.Index(l, " │ ")
-		if sep < 0 {
+		before, _, ok := strings.Cut(l, " │ ")
+		if !ok {
 			t.Fatalf("missing separator in line: %q", l)
 		}
-		if strings.ContainsRune(l[:sep], '#') {
+		if strings.ContainsRune(before, '#') {
 			t.Fatalf("hashline anchor leaked when disabled: %q", l)
 		}
 	}
@@ -385,7 +385,7 @@ func TestRun_HashlineIgnoredForDir(t *testing.T) {
 		t.Fatalf("err: %s", res.Content)
 	}
 	// directory listings emit entries one per line — no '#' should appear
-	for _, l := range strings.Split(res.Content, "\n") {
+	for l := range strings.SplitSeq(res.Content, "\n") {
 		if strings.ContainsRune(l, '#') {
 			t.Fatalf("hashline tag leaked into dir listing: %q", l)
 		}

@@ -42,12 +42,10 @@ func TestRecorder_SnapshotIsCopy(t *testing.T) {
 func TestRecorder_ConcurrentRecord(t *testing.T) {
 	r := NewRecorder(1000)
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			r.Record(Call{Tool: "t"})
-		}()
+		})
 	}
 	wg.Wait()
 	if len(r.Calls()) != 50 {

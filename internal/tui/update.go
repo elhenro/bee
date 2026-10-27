@@ -118,7 +118,7 @@ func applyAndNotify(ctx context.Context, p *tea.Program, info update.Info) {
 // the chrome aside. Falls back to last non-empty line on no clear signal.
 func summarizeApplyOutput(out string) string {
 	last := ""
-	for _, l := range strings.Split(out, "\n") {
+	for l := range strings.SplitSeq(out, "\n") {
 		l = strings.TrimSpace(l)
 		if strings.HasPrefix(l, "bee-install: done") {
 			return l

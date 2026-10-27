@@ -93,7 +93,7 @@ func TestSchedulerSerializesSharedResource(t *testing.T) {
 	if n := sc.Tick(clk.Now()); n != 2 {
 		t.Fatalf("launched %d runs, want 2", n)
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):

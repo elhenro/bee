@@ -26,7 +26,7 @@ type Entry struct {
 	Description string    `json:"description"`
 	Tags        []string  `json:"tags,omitempty"`
 	Priority    int       `json:"priority"`
-	ExpiresAt   time.Time `json:"expires_at,omitempty"`
+	ExpiresAt   time.Time `json:"expires_at"`
 	Modified    time.Time `json:"modified"`
 }
 

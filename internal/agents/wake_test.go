@@ -85,16 +85,14 @@ func TestConcurrentWakesStartOneProcess(t *testing.T) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	woke := 0
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 4 {
+		wg.Go(func() {
 			if ok, _ := Wake(f.repo, st); ok {
 				mu.Lock()
 				woke++
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if woke != 1 || len(f.starts) != 1 {

@@ -61,14 +61,14 @@ func TestCallLabel_LongCommandWrapsAndFolds(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 40)
 	r.SetShowCallDetail(true)
 	var cmd strings.Builder
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		cmd.WriteString("echo line number " + strings.Repeat("x", i) + "\n")
 	}
 	got := renderCall(r, map[string]any{"command": cmd.String(), "description": "echoing lots"}, "ok", false)
 	if !strings.Contains(got, "lines") || !strings.Contains(got, "+") {
 		t.Fatalf("long detail should fold with a count: %q", got)
 	}
-	for _, ln := range strings.Split(got, "\n") {
+	for ln := range strings.SplitSeq(got, "\n") {
 		if w := lipgloss.Width(ln); w > 40 {
 			t.Fatalf("row %d cols exceeds 40: %q", w, ln)
 		}

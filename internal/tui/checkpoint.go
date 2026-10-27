@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,9 +42,9 @@ func (m Model) snapshotAfterTurn(msgs []types.Message) tea.Cmd {
 // lastPersistedID returns the id of the last non-ephemeral message (ephemeral
 // UI echoes are never written to the rollout, so Fork can't anchor on them).
 func lastPersistedID(msgs []types.Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if !msgs[i].Ephemeral && msgs[i].ID != "" {
-			return msgs[i].ID
+	for _, msg := range slices.Backward(msgs) {
+		if !msg.Ephemeral && msg.ID != "" {
+			return msg.ID
 		}
 	}
 	return ""
@@ -51,9 +52,9 @@ func lastPersistedID(msgs []types.Message) string {
 
 // turnLabel previews the user prompt that opened this turn, for the picker list.
 func turnLabel(msgs []types.Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == types.RoleUser {
-			return previewText(firstText(msgs[i]), 60)
+	for _, msg := range slices.Backward(msgs) {
+		if msg.Role == types.RoleUser {
+			return previewText(firstText(msg), 60)
 		}
 	}
 	return "snapshot"

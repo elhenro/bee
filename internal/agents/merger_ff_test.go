@@ -21,7 +21,7 @@ func TestPersistentFFFailureBlocksAfterHopBudget(t *testing.T) {
 	git(t, f.repo, "worktree", "add", "-q", filepath.Join(t.TempDir(), "mainwt"), "main")
 	counter := filepath.Join(t.TempDir(), "runs")
 	sw := config.SwarmConfig{Verify: []string{"echo x >> " + counter}}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		scan(context.Background(), f.repo, "", sw)
 	}
 	b, _ := os.ReadFile(counter)

@@ -63,7 +63,7 @@ func (r *StreamRenderer) tailRows() []string {
 	}
 	w := r.textWidth(resultIndent)
 	var rows []string
-	for _, ln := range strings.Split(expandTabs(ansi.Strip(r.tailText)), "\n") {
+	for ln := range strings.SplitSeq(expandTabs(ansi.Strip(r.tailText)), "\n") {
 		rows = append(rows, clipLine(r.styles.ToolPrev.Render(ln), w))
 	}
 	if len(rows) > tools.LiveTailLines {

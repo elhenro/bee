@@ -9,7 +9,7 @@ import (
 
 func TestVerbose_ShowsAllLines(t *testing.T) {
 	var lines []string
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		lines = append(lines, "line-")
 	}
 	content := strings.Join(lines, "\n")

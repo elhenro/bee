@@ -43,7 +43,7 @@ func renderBrailleJar(frame, cells int) string {
 		c.SetPixel(x, 0, true)
 		c.SetPixel(x, braillePxH-1, true)
 	}
-	for y := 0; y < braillePxH; y++ {
+	for y := range braillePxH {
 		c.SetPixel(0, y, true)
 		c.SetPixel(w-1, y, true)
 	}
@@ -76,7 +76,7 @@ func renderBrailleConga(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	n := max(cells/4, 4)
 	gap := 6
-	for i := 0; i < n; i++ {
+	for i := range n {
 		x := ((frame*2)+i*gap)%(w+gap) - gap/2
 		if x < 0 || x >= w {
 			continue
@@ -103,7 +103,7 @@ func renderBrailleQueen(frame, cells int) string {
 	// 4 attendants on rotating cardinal-points orbit.
 	r := max(float64(w/2-2), 4)
 	t := float64(frame) * 0.16
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		a := t + float64(i)*(math.Pi/2)
 		x := cx + int(math.Round(r*math.Cos(a)))
 		y := cy + int(math.Round(1.4*math.Sin(a)))

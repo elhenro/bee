@@ -61,7 +61,7 @@ func TestGoalStopsOnIdenticalReplies(t *testing.T) {
 	reply := types.Message{Role: types.RoleAssistant, Content: []types.ContentBlock{{Type: types.BlockText, Text: "still on it"}}}
 	m.messages = append(m.messages, reply)
 	notMet := goalEvalDoneMsg{gen: 1, v: goal.Verdict{Reason: "lint still failing"}}
-	for i := 0; i < goal.MaxIdenticalReplies-1; i++ {
+	for i := range goal.MaxIdenticalReplies - 1 {
 		out, _ := m.onGoalEvalDone(notMet)
 		m = out.(Model)
 		if !m.goal.Active {

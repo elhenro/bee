@@ -136,7 +136,7 @@ func (emptyStreamProvider) Stream(context.Context, llm.Request) (<-chan llm.Even
 
 func TestCompact_EmptySummaryIsAnError(t *testing.T) {
 	var msgs []types.Message
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		msgs = append(msgs, mkMsg(types.RoleUser, "m"))
 	}
 	out, _, err := Compact(context.Background(), emptyStreamProvider{}, "m", msgs)
@@ -150,7 +150,7 @@ func TestCompact_EmptySummaryIsAnError(t *testing.T) {
 
 func TestCompact_DropsEphemeralNotices(t *testing.T) {
 	var msgs []types.Message
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		msgs = append(msgs, mkMsg(types.RoleUser, "m"))
 	}
 	note := mkMsg(types.RoleAssistant, "(auto-compacted)")

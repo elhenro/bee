@@ -74,7 +74,7 @@ func TestRemove(t *testing.T) {
 func TestWriteBumpsVersion(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BEE_HOME", dir)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := Write(Status{SessionID: "v", State: StateActive}); err != nil {
 			t.Fatalf("write %d: %v", i, err)
 		}

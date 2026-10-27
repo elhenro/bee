@@ -20,7 +20,7 @@ func TestConsoleRing_DrainReturnsAndClears(t *testing.T) {
 
 func TestConsoleRing_CapsAtMax(t *testing.T) {
 	s := &Session{}
-	for i := 0; i < consoleRingMax+50; i++ {
+	for range consoleRingMax + 50 {
 		s.pushConsole("log", "x")
 	}
 	if got := len(s.drainConsole()); got != consoleRingMax {

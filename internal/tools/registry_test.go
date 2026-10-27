@@ -106,7 +106,7 @@ func TestRegistry_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// 10 goroutines register different tools
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -116,13 +116,11 @@ func TestRegistry_Concurrent(t *testing.T) {
 	}
 
 	// 10 goroutines read specs concurrently
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			_ = r.Specs()
 			_, _ = r.Get("tool_0")
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -10,8 +10,8 @@ import (
 func TestBoxRows_ClipsInsteadOfWrapping(t *testing.T) {
 	long := strings.Repeat("word ", 30)
 	out := boxRows("title\n"+long+"\nshort", 40)
-	rows := strings.Split(out, "\n")
-	for _, ln := range rows {
+	rows := strings.SplitSeq(out, "\n")
+	for ln := range rows {
 		if w := lipgloss.Width(ln); w != 40 {
 			t.Fatalf("row is %d cells in a 40 cell box: %q", w, stripANSI(ln))
 		}
@@ -28,7 +28,7 @@ func TestSettingsPane_RowsNeverWrap(t *testing.T) {
 		p := NewSettingsPane()
 		p.Show(SettingsSnapshot{})
 		out := stripANSI(p.View(w, 60))
-		for _, ln := range strings.Split(out, "\n") {
+		for ln := range strings.SplitSeq(out, "\n") {
 			body := strings.TrimSpace(strings.Trim(ln, "│╭╮╰╯─ "))
 			if body == "" || strings.HasPrefix(body, "⬢") || strings.HasPrefix(body, "›") ||
 				strings.HasPrefix(body, "type filter") {

@@ -56,10 +56,8 @@ func TestNeverTwoHolders(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "x.lock")
 	var holders, maxHolders atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 32 {
+		wg.Go(func() {
 			l, err := Acquire(p, "r")
 			if err != nil {
 				return
@@ -73,7 +71,7 @@ func TestNeverTwoHolders(t *testing.T) {
 			}
 			holders.Add(-1)
 			l.Release()
-		}()
+		})
 	}
 	wg.Wait()
 	if maxHolders.Load() > 1 {

@@ -8,9 +8,9 @@ import (
 )
 
 func TestFetchURL_ErrorStatusNotCached(t *testing.T) {
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if atomic.AddInt32(&hits, 1) == 1 {
+		if hits.Add(1) == 1 {
 			http.Error(w, "temporarily down", http.StatusServiceUnavailable)
 			return
 		}
@@ -33,19 +33,19 @@ func TestFetchURL_ErrorStatusNotCached(t *testing.T) {
 }
 
 func TestFetchURL_SuccessCached(t *testing.T) {
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hits, 1)
+		hits.Add(1)
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("ok"))
 	}))
 	defer srv.Close()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, err := FetchURL(srv.URL+"/stable", nil, false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if n := atomic.LoadInt32(&hits); n != 1 {
+	if n := hits.Load(); n != 1 {
 		t.Errorf("2xx not cached: server hit %d times", n)
 	}
 }

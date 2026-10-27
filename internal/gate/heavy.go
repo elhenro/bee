@@ -27,8 +27,7 @@ func lockHeavy(ctx context.Context) (func(), error) {
 	}
 	for {
 		l, err := pidlock.Acquire(p, "gate")
-		var held *pidlock.HeldError
-		if !errors.As(err, &held) {
+		if _, ok := errors.AsType[*pidlock.HeldError](err); !ok {
 			if err != nil {
 				return nil, err
 			}

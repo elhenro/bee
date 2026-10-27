@@ -65,7 +65,7 @@ func TestPool_RunAllResults(t *testing.T) {
 	withRunnerHook(t, func(w *Worker) Runner { return runners[w.ID] })
 
 	p := NewPool(3)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		id := fmt.Sprintf("w%d", i)
 		runners[id] = &stubRunner{
 			final:    fmt.Sprintf("final-%d", i),
@@ -102,7 +102,7 @@ func TestPool_RespectsMaxConcurrency(t *testing.T) {
 
 	const cap = 2
 	p := NewPool(cap)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		id := fmt.Sprintf("w%d", i)
 		runners[id] = &stubRunner{
 			final:    "x",
@@ -131,7 +131,7 @@ func TestPool_ContextCancellation(t *testing.T) {
 	withRunnerHook(t, func(w *Worker) Runner { return runners[w.ID] })
 
 	p := NewPool(2)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		id := fmt.Sprintf("w%d", i)
 		runners[id] = &stubRunner{
 			final:    "x",
@@ -177,12 +177,10 @@ func TestPool_ChannelCloses(t *testing.T) {
 
 	ch := p.Run(context.Background())
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range ch {
 		}
-	}()
+	})
 
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()

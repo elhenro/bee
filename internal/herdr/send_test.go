@@ -180,7 +180,7 @@ func TestWrappersPassThroughWhenOff(t *testing.T) {
 
 func TestOneLineTruncates(t *testing.T) {
 	long := ""
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		long += "é"
 	}
 	got := oneLine(long)

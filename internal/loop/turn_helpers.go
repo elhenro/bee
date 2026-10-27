@@ -93,11 +93,11 @@ func plainMessage(role types.Role, text string) types.Message {
 func lastID(ms []types.Message) string {
 	// skip trailing ephemeral notices (e.g. auto-compact cards) so persisted
 	// messages chain ParentID to the last real message, not a UI-only echo.
-	for i := len(ms) - 1; i >= 0; i-- {
-		if ms[i].Ephemeral {
+	for _, m := range slices.Backward(ms) {
+		if m.Ephemeral {
 			continue
 		}
-		return ms[i].ID
+		return m.ID
 	}
 	return ""
 }

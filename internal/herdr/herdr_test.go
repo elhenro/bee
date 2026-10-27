@@ -1,6 +1,7 @@
 package herdr
 
 import (
+	"maps"
 	"runtime"
 	"sync"
 	"testing"
@@ -172,7 +173,7 @@ func TestSessionChangeReportedWhileIdle(t *testing.T) {
 
 func TestSeqStrictlyIncreases(t *testing.T) {
 	r, f := newTest(time.Millisecond)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		end := r.Begin(Session{})
 		end()
 		time.Sleep(20 * time.Millisecond)
@@ -241,9 +242,7 @@ func TestFromEnvGating(t *testing.T) {
 	herdr := map[string]string{"HERDR_ENV": "1", "HERDR_SOCKET_PATH": "/x.sock", "HERDR_PANE_ID": "w1:p1"}
 	with := func(extra ...string) map[string]string {
 		m := map[string]string{}
-		for k, v := range herdr {
-			m[k] = v
-		}
+		maps.Copy(m, herdr)
 		for i := 0; i+1 < len(extra); i += 2 {
 			m[extra[i]] = extra[i+1]
 		}

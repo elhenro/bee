@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -60,11 +61,11 @@ func LoadHistory() []string {
 	// wins so autosuggestions surface the freshest match for any prefix.
 	out := make([]string, 0, len(lines))
 	seen := make(map[string]struct{}, len(lines))
-	for i := len(lines) - 1; i >= 0; i-- {
-		if lines[i] == "" {
+	for _, line := range slices.Backward(lines) {
+		if line == "" {
 			continue
 		}
-		l := decodeHistory(lines[i])
+		l := decodeHistory(line)
 		if _, ok := seen[l]; ok {
 			continue
 		}

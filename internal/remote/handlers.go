@@ -150,7 +150,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeSSE emits one event in `event: <type>\ndata: <json>\n\n` form.
-func writeSSE(w io.Writer, typ string, data interface{}) {
+func writeSSE(w io.Writer, typ string, data any) {
 	payload, err := json.Marshal(data)
 	if err != nil {
 		payload = []byte("null")

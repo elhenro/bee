@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -19,10 +20,8 @@ func stubClip(t *testing.T, goos string, installed []string, run map[string][]by
 	t.Cleanup(func() { clipGOOS, clipLookPath, clipRun = oldOS, oldLook, oldRun })
 	clipGOOS = goos
 	clipLookPath = func(n string) (string, error) {
-		for _, i := range installed {
-			if i == n {
-				return "/bin/" + n, nil
-			}
+		if slices.Contains(installed, n) {
+			return "/bin/" + n, nil
 		}
 		return "", errors.New("not found")
 	}

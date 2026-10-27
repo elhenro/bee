@@ -12,7 +12,7 @@ func renderBrailleWaggleRun(frame, cells int) string {
 	c, w := newLoaderCanvas(cells)
 	n := max(cells/4, 3)
 	cycle := w + 6 // gap past the right edge before re-entering left
-	for i := 0; i < n; i++ {
+	for i := range n {
 		x := (frame*3 + i*(cycle/n)) % cycle
 		if x >= w {
 			continue // in the wrap gap

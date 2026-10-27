@@ -76,13 +76,13 @@ func atPickAt(t *testing.T, value string, ups, lefts int) Model {
 		nm, _ := m.Update(k)
 		m = nm.(Model)
 	}
-	for i := 0; i < ups; i++ {
+	for range ups {
 		press(tea.KeyMsg{Type: tea.KeyUp})
 	}
 	if ups > 0 {
 		m.input.CursorEnd()
 	}
-	for i := 0; i < lefts; i++ {
+	for range lefts {
 		press(tea.KeyMsg{Type: tea.KeyLeft})
 	}
 	press(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("@")})

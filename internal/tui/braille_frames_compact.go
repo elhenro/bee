@@ -16,7 +16,7 @@ func renderBrailleCompactConverge(frame, cells int) string {
 	n := max(cells/3, 5)
 	// phase 0..1..0 — 0 = converged at center, 1 = back at edges.
 	phase := (1 - math.Cos(float64(frame)*0.06)) / 2
-	for i := 0; i < n; i++ {
+	for i := range n {
 		side := 1.0
 		if i%2 == 1 {
 			side = -1.0
@@ -58,7 +58,7 @@ func renderBrailleCompactVortex(frame, cells int) string {
 	n := max(cells/2, 6)
 	// radial breath: 1 = scattered to maxR, 0 = pinned at center.
 	phase := (1 - math.Cos(float64(frame)*0.05)) / 2
-	for i := 0; i < n; i++ {
+	for i := range n {
 		a := float64(frame)*0.20 + float64(i)*(2*math.Pi/float64(n))
 		// per-bee radius modulation so they don't look like one ring.
 		layer := 0.6 + 0.4*math.Sin(float64(i)*1.7)
@@ -95,7 +95,7 @@ func renderBrailleCompactFunnel(frame, cells int) string {
 	n := max(cells, 8)
 	// 0 = scattered across full width, 1 = collapsed onto center column.
 	phase := (1 - math.Cos(float64(frame)*0.045)) / 2
-	for i := 0; i < n; i++ {
+	for i := range n {
 		home := int(math.Round(float64(i) * float64(w-1) / float64(n-1)))
 		x := home + int(math.Round(phase*float64(cx-home)))
 		x = min(max(x, 0), w-1)
@@ -106,7 +106,7 @@ func renderBrailleCompactFunnel(frame, cells int) string {
 	// once collapsed past ~70%, paint accumulating column at center so
 	// the digest read is unambiguous.
 	if phase > 0.7 {
-		for y := 0; y < braillePxH; y++ {
+		for y := range braillePxH {
 			c.SetPixel(cx, y, true)
 		}
 	}

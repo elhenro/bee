@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -53,8 +54,8 @@ func isContinuation(s string) bool {
 // substantive user message) and progress (most recent assistant text). Progress
 // is capped so a long transcript tail can't dominate the worker prompt.
 func resolveTaskFromHistory(history []types.Message) (anchor, progress string) {
-	for i := len(history) - 1; i >= 0; i-- {
-		msg := history[i]
+	for _, msg := range slices.Backward(history) {
+
 		if msg.Ephemeral {
 			continue
 		}

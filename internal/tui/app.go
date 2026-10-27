@@ -70,7 +70,7 @@ func (m *Model) inputGrowForMutation() {
 func (m *Model) syncInputHeight() {
 	inner := max(m.input.Width(), 1)
 	n := 0
-	for _, line := range strings.Split(m.input.Value(), "\n") {
+	for line := range strings.SplitSeq(m.input.Value(), "\n") {
 		n += max(1, (uniseg.StringWidth(line)+inner-1)/inner)
 	}
 	n = min(n, inputHeightCap)

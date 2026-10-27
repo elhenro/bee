@@ -160,11 +160,11 @@ func TestConcurrentWritesAndScans(t *testing.T) {
 	const writers = 4
 	const reads = 8
 	var wg sync.WaitGroup
-	for i := 0; i < writers; i++ {
+	for i := range writers {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			for j := 0; j < 3; j++ {
+			for j := range 3 {
 				name := fmt.Sprintf("rec-%d-%d", idx, j)
 				_, err := WriteRecord(dir, Record{
 					Entry: Entry{Name: name, Description: "d", Tags: []string{"misc"}, Priority: 3},
@@ -176,14 +176,12 @@ func TestConcurrentWritesAndScans(t *testing.T) {
 			}
 		}(i)
 	}
-	for i := 0; i < reads; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range reads {
+		wg.Go(func() {
 			if _, err := ScanStore(context.Background(), dir); err != nil {
 				t.Errorf("scan: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

@@ -40,7 +40,7 @@ func TestWrapColumns_HangsDescriptionUnderItsColumn(t *testing.T) {
 func TestWrapColumns_NarrowStacksDescriptionUnderName(t *testing.T) {
 	in := "/settings  toggle verbosity and agent-thought visibility"
 	got := wrapColumns(in, 22)
-	for _, ln := range strings.Split(got, "\n") {
+	for ln := range strings.SplitSeq(got, "\n") {
 		if lipgloss.Width(ln) > 22 {
 			t.Fatalf("row %q wider than 22 in\n%s", ln, got)
 		}
@@ -53,7 +53,7 @@ func TestWrapColumns_NarrowStacksDescriptionUnderName(t *testing.T) {
 
 func TestWrapColumns_PlainRowHangsUnderItsIndent(t *testing.T) {
 	got := wrapColumns("  one two three four five", 12)
-	for _, ln := range strings.Split(got, "\n") {
+	for ln := range strings.SplitSeq(got, "\n") {
 		if !strings.HasPrefix(ln, "  ") || lipgloss.Width(ln) > 12 {
 			t.Fatalf("row %q should keep the 2-cell indent within 12 cells\n%s", ln, got)
 		}
@@ -74,7 +74,7 @@ func TestHang_IndentsContinuationOnly(t *testing.T) {
 
 func TestWrapText_BreaksOnWordsThenHard(t *testing.T) {
 	got := wrapText("one two three four", 9)
-	for _, ln := range strings.Split(got, "\n") {
+	for ln := range strings.SplitSeq(got, "\n") {
 		if lipgloss.Width(ln) > 9 {
 			t.Fatalf("row %q wider than 9", ln)
 		}
@@ -83,7 +83,7 @@ func TestWrapText_BreaksOnWordsThenHard(t *testing.T) {
 		t.Fatalf("expected word-boundary wrap, got %q", got)
 	}
 	long := wrapText(strings.Repeat("x", 25), 10)
-	for _, ln := range strings.Split(long, "\n") {
+	for ln := range strings.SplitSeq(long, "\n") {
 		if lipgloss.Width(ln) > 10 {
 			t.Fatalf("hard wrap left a %d-wide row: %q", lipgloss.Width(ln), ln)
 		}

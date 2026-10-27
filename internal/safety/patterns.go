@@ -1,5 +1,7 @@
 package safety
 
+import "slices"
+
 import "regexp"
 
 // DangerousPattern flags commands that should prompt the user before running.
@@ -90,11 +92,8 @@ func DetectAllDangerous(cmd string) []Danger {
 	forms := matchForms(cmd)
 	var out []Danger
 	for _, p := range dangerousPatterns {
-		for _, c := range forms {
-			if p.Re.MatchString(c) {
-				out = append(out, Danger{p.Key, p.Desc})
-				break
-			}
+		if slices.ContainsFunc(forms, p.Re.MatchString) {
+			out = append(out, Danger{p.Key, p.Desc})
 		}
 	}
 	return out

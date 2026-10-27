@@ -24,7 +24,7 @@ func TestObserveReasoningDup_FiresOnRepeatResetsOnDiverge(t *testing.T) {
 	}
 	// turns 1..3 repeat it. bail threshold is reasoningDupBailAt consecutive dups.
 	fired := false
-	for i := 0; i < reasoningDupBailAt; i++ {
+	for range reasoningDupBailAt {
 		if observeReasoningDup(e, thinkTurn(reason)) {
 			fired = true
 		}
@@ -44,7 +44,7 @@ func TestObserveReasoningDup_FiresOnRepeatResetsOnDiverge(t *testing.T) {
 
 func TestObserveReasoningDup_ThinTurnsDoNotTrip(t *testing.T) {
 	e := &Engine{run: &runState{}}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		if observeReasoningDup(e, thinkTurn("ok.")) {
 			t.Fatal("thin turns must never trip the loop guard")
 		}

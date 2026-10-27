@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -244,8 +245,8 @@ func buildRewindEntries(msgs []types.Message, store *checkpoint.Store) []RewindE
 		}
 	}
 	out := make([]RewindEntry, 0, len(turns))
-	for i := len(turns) - 1; i >= 0; i-- {
-		e := RewindEntry{MsgID: turns[i].key, Preview: turns[i].preview, Age: turns[i].age, HasCode: has[i]}
+	for i, turn := range slices.Backward(turns) {
+		e := RewindEntry{MsgID: turn.key, Preview: turn.preview, Age: turn.age, HasCode: has[i]}
 		if has[i] && store != nil {
 			from := ""
 			for j := i - 1; j >= 0; j-- {
@@ -266,7 +267,7 @@ func buildRewindEntries(msgs []types.Message, store *checkpoint.Store) []RewindE
 // compactStat shortens git's "N files changed, X insertions(+), Y deletions(-)".
 func compactStat(s string) string {
 	files, ins, del := 0, 0, 0
-	for _, part := range strings.Split(s, ",") {
+	for part := range strings.SplitSeq(s, ",") {
 		part = strings.TrimSpace(part)
 		switch {
 		case strings.Contains(part, "file"):

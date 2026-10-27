@@ -55,7 +55,7 @@ func TestTallPanes_FitHeightAndKeepSelectionVisible(t *testing.T) {
 		for _, pos := range []int{0, 17, 39} {
 			tp := NewToolsPane()
 			var rows []commands.ToolInfo
-			for i := 0; i < 40; i++ {
+			for i := range 40 {
 				rows = append(rows, commands.ToolInfo{Name: fmt.Sprintf("tool_%02d", i), Description: "desc"})
 			}
 			tp.Show(rows)
@@ -70,7 +70,7 @@ func TestTallPanes_FitHeightAndKeepSelectionVisible(t *testing.T) {
 			st := NewSessionTree()
 			// siblings under one root, so indentation stays shallow
 			var msgs []types.Message
-			for i := 0; i < 40; i++ {
+			for i := range 40 {
 				parent := "m00"
 				if i == 0 {
 					parent = ""

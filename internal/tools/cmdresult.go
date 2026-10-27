@@ -35,8 +35,7 @@ func CommandResult(ctx, runCtx context.Context, err error, output string, timeou
 		// (cancel → killProcessGroup → cmd.Wait() tries another kill).
 		return timedOut(), nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return Result{Content: fmt.Sprintf("exit %d\n%s", exitErr.ExitCode(), output), IsError: true}, nil
 	}
 	return Result{Content: fmt.Sprintf("exec error: %v\n%s", err, output), IsError: true}, nil

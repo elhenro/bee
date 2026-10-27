@@ -1,5 +1,7 @@
 package loop
 
+import "slices"
+
 import "strings"
 
 // doneSignalToken is the exact sentinel the model may emit to declare an
@@ -35,7 +37,7 @@ func detectDoneSignal(s string) bool {
 func stripFencedCode(s string) string {
 	var b strings.Builder
 	inFence := false
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {
 			inFence = !inFence
 			continue
@@ -51,9 +53,9 @@ func stripFencedCode(s string) string {
 // lastNonEmptyLine returns the final line with non-whitespace content.
 func lastNonEmptyLine(s string) string {
 	lines := strings.Split(s, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(lines[i]) != "" {
-			return lines[i]
+	for _, line := range slices.Backward(lines) {
+		if strings.TrimSpace(line) != "" {
+			return line
 		}
 	}
 	return ""

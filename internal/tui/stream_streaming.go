@@ -139,7 +139,7 @@ func (r *StreamRenderer) RenderStreamingChunk(chunk string, styleMarkdown bool) 
 // fence marker when its first non-whitespace token starts with ```.
 func fenceTransitionsAfter(chunk string, startOpen bool) bool {
 	open := startOpen
-	for _, line := range strings.Split(chunk, "\n") {
+	for line := range strings.SplitSeq(chunk, "\n") {
 		if isFenceLine(line) {
 			open = !open
 		}

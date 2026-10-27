@@ -158,7 +158,7 @@ func renderFindings(findings []Finding) string {
 // reviewer's free-text output.
 func parseFindings(text string) []string {
 	var out []string
-	for _, ln := range strings.Split(text, "\n") {
+	for ln := range strings.SplitSeq(text, "\n") {
 		ln = strings.TrimSpace(ln)
 		if rest, ok := cutPrefixFold(ln, "FINDING:"); ok {
 			if rest = strings.TrimSpace(rest); rest != "" {
@@ -173,7 +173,7 @@ func parseFindings(text string) []string {
 // REFUTED verdict; CONFIRMED and anything ambiguous keep it, so a borderline
 // real issue surfaces rather than vanishing.
 func parseVerdict(text string) (bool, string) {
-	for _, ln := range strings.Split(text, "\n") {
+	for ln := range strings.SplitSeq(text, "\n") {
 		ln = strings.TrimSpace(ln)
 		if rest, ok := cutPrefixFold(ln, "REFUTED"); ok {
 			return false, trimVerdictReason(rest)

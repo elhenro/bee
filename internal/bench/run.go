@@ -64,7 +64,7 @@ type SuiteResult struct {
 	DimMeans         Dims         `json:"dim_means"`
 	Tasks            []TaskResult `json:"tasks"`
 	HoldoutAggregate float64      `json:"holdout_aggregate,omitempty"`
-	HoldoutDimMeans  Dims         `json:"holdout_dim_means,omitempty"`
+	HoldoutDimMeans  Dims         `json:"holdout_dim_means"`
 	HoldoutTasks     []TaskResult `json:"holdout_tasks,omitempty"`
 }
 

@@ -73,7 +73,7 @@ func TestRenderText_WideTableStillWrapsInsideTheTerminal(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), 60)
 	long := strings.Repeat("word ", 20)
 	out := ansi.Strip(r.renderText("| a | b |\n|---|---|\n| " + long + " | " + long + " |"))
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if w := ansi.StringWidth(ln); w > 60 {
 			t.Fatalf("row is %d cells in a 60 cell terminal: %q", w, ln)
 		}

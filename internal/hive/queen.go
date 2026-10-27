@@ -198,9 +198,7 @@ func (q *Queen) fanOut(ctx context.Context, plan []SubTask, parallel int, run fu
 	sem := make(chan struct{}, parallel)
 	var wg sync.WaitGroup
 	for i, sub := range plan {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			release, err := q.Throttle.acquire(ctx, sem, &q.running)
 			if err != nil {
 				results[i] = subResult(i, sub)
@@ -209,7 +207,7 @@ func (q *Queen) fanOut(ctx context.Context, plan []SubTask, parallel int, run fu
 			}
 			defer release()
 			results[i] = run(i, sub)
-		}()
+		})
 	}
 	wg.Wait()
 	return results, ctx.Err()

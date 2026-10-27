@@ -82,12 +82,10 @@ func (s *Scheduler) Start(parent context.Context) {
 	ctx, done := s.ctx, s.done
 	s.mu.Unlock()
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		defer close(done)
 		s.loop(ctx)
-	}()
+	})
 }
 
 // Tick evaluates every job at time now, launching the ones that are due and
@@ -130,9 +128,7 @@ func (s *Scheduler) Tick(now time.Time) int {
 // launchLocked starts one job run. The caller holds s.mu.
 func (s *Scheduler) launchLocked(j *Job) {
 	ctx := s.ctx
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		release, err := s.queue.Acquire(ctx, j.ResourceKey)
 		if err != nil {
 			s.finish(j, err)
@@ -140,7 +136,7 @@ func (s *Scheduler) launchLocked(j *Job) {
 		}
 		defer release()
 		s.finish(j, runJob(ctx, s.runner, j))
-	}()
+	})
 }
 
 func (s *Scheduler) finish(j *Job, err error) {

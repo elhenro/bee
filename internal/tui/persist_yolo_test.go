@@ -21,7 +21,7 @@ func TestAltY_PersistsBoolSoConfigStillLoads(t *testing.T) {
 	t.Setenv("BEE_HOME", t.TempDir())
 	t.Setenv("OPENROUTER_API_KEY", "x")
 	m := NewModel(nil, "/tmp/work", "m", "workspace-write", caveman.Default)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		nm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y"), Alt: true})
 		m = nm.(Model)
 		if _, err := config.Load(); err != nil {

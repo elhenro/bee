@@ -88,10 +88,8 @@ func TestHeavyLockSerializes(t *testing.T) {
 	unixOnly(t)
 	var inside, maxInside int32
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 3 {
+		wg.Go(func() {
 			unlock, err := lockHeavy(context.Background())
 			if err != nil {
 				t.Error(err)
@@ -107,7 +105,7 @@ func TestHeavyLockSerializes(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 			atomic.AddInt32(&inside, -1)
 			unlock()
-		}()
+		})
 	}
 	wg.Wait()
 	if maxInside != 1 {
@@ -175,7 +173,7 @@ func TestRunKeepsOnlyOutputTail(t *testing.T) {
 
 func TestTailBufferBounded(t *testing.T) {
 	b := &tailBuffer{max: 10}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		_, _ = b.Write([]byte("0123456789"))
 		if len(b.b) > 30 {
 			t.Fatalf("buffer grew to %d", len(b.b))

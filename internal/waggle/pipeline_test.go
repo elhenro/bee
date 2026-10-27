@@ -23,7 +23,7 @@ func TestPipeline_RecordMinePromoteRun(t *testing.T) {
 		{Tool: "ls", Args: map[string]string{"path": dir}},
 		{Tool: "read", Args: map[string]string{"path": filepath.Join(dir, "a.txt")}},
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		rec.Record(cloneCall(route[0]))
 		rec.Record(cloneCall(route[1]))
 	}

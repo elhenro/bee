@@ -117,7 +117,7 @@ func TestPrepareResume_CompactsOversizedSeed(t *testing.T) {
 	// big history: ~40k estimated tokens (len/4) clears the scaled threshold on
 	// the 32k local-provider budget floor.
 	big := make([]types.Message, 0, 10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		big = append(big, idMsg(uuid.NewString(), types.RoleUser, string(make([]byte, 16000))))
 	}
 	e := &Engine{

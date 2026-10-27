@@ -89,7 +89,7 @@ func TestSummary_TruncatesLongFinal(t *testing.T) {
 	long := strings.Repeat("x", 300)
 	got := Summary([]Result{{Name: "n", Final: long}})
 	// one of the lines should be truncated to <=120 chars after the prefix.
-	for _, line := range strings.Split(got, "\n") {
+	for line := range strings.SplitSeq(got, "\n") {
 		if strings.HasPrefix(line, "[ok] n") && len(line) > 200 {
 			t.Errorf("line not truncated: len=%d", len(line))
 		}

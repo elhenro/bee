@@ -92,7 +92,7 @@ func checkedOutAt(dir, branch string) string {
 		return ""
 	}
 	var path string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
 			path = strings.TrimPrefix(line, "worktree ")

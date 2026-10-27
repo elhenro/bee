@@ -2,6 +2,7 @@ package learn
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/elhenro/bee/internal/types"
@@ -50,9 +51,9 @@ func text(m types.Message) string {
 }
 
 func lastAssistantText(msgs []types.Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == types.RoleAssistant {
-			if t := text(msgs[i]); t != "" {
+	for _, msg := range slices.Backward(msgs) {
+		if msg.Role == types.RoleAssistant {
+			if t := text(msg); t != "" {
 				return t
 			}
 		}

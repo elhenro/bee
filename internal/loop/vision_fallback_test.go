@@ -80,9 +80,9 @@ func TestApplyVisionFallback_InheritsProviderEndpoint(t *testing.T) {
 
 // non-vision model with fallback: image described and cached (one HTTP call).
 func TestApplyVisionFallback_DescribesAndCaches(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{"message": map[string]string{"content": "a bee logo"}}},
 		})
@@ -103,7 +103,7 @@ func TestApplyVisionFallback_DescribesAndCaches(t *testing.T) {
 	}
 	// second pass on the same image hits the cache, no new HTTP call.
 	_ = e.applyVisionFallback(context.Background(), imgMsg())
-	if n := atomic.LoadInt32(&calls); n != 1 {
+	if n := calls.Load(); n != 1 {
 		t.Errorf("describe called %d times, want 1 (cached)", n)
 	}
 }

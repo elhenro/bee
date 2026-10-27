@@ -32,7 +32,7 @@ func TestRenderLive_PreTokenShowsOnlyBusyRow(t *testing.T) {
 		t.Fatalf("busy row missing: %q", out)
 	}
 	var rows int
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if strings.TrimSpace(ln) != "" {
 			rows++
 		}
@@ -176,7 +176,7 @@ func TestRenderLive_LongReasoningStaysInsideBudget(t *testing.T) {
 	m := streamingModel(t)
 	m.showThoughts = true
 	var b strings.Builder
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		b.WriteString("thinking about the next step\n")
 	}
 	m.thinkPartial = b.String()

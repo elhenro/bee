@@ -183,7 +183,7 @@ func resolveWorkload(mode, task string, count int, positional []string) ([]worke
 			return nil, fmt.Errorf("--per=count needs --count > 0")
 		}
 		out := make([]workerSpec, count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			out[i] = workerSpec{
 				name: fmt.Sprintf("bee-%d", i+1),
 				task: fmt.Sprintf("%s [#%d]", task, i+1),

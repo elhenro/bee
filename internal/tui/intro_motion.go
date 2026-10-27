@@ -11,10 +11,10 @@ func danceFrames(cw, h, count int) []IntroFrame {
 	ry := float64(h)/2 - 1
 	rx = max(rx, 6)
 	ry = max(ry, 2)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
 		// trail: last ~12 positions
-		for t := 0; t < 12; t++ {
+		for t := range 12 {
 			step := float64(i-t) * 0.35
 			x := cx + int(rx*math.Sin(step))
 			y := cy + int(ry*math.Sin(step*2)*0.5)
@@ -38,7 +38,7 @@ func dripFrames(cw, h, count int) []IntroFrame {
 	out := make([]IntroFrame, 0, count)
 	cx := cw / 2
 	fall := count / 2
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
 		if i < fall {
 			// falling drop: teardrop at growing y
@@ -54,7 +54,7 @@ func dripFrames(cw, h, count int) []IntroFrame {
 			t := float64(i-fall) / float64(count-fall)
 			gy := h - 2
 			rad := max(int(t*float64(cw/4)), 1)
-			for a := 0; a < 20; a++ {
+			for a := range 20 {
 				ang := float64(a) / 20.0 * 2 * math.Pi
 				x := cx + int(float64(rad)*math.Cos(ang))
 				y := gy + int(float64(rad)*math.Sin(ang)*0.4)
@@ -72,9 +72,9 @@ func dripFrames(cw, h, count int) []IntroFrame {
 
 func swarmFrames(cw, h, count int) []IntroFrame {
 	out := make([]IntroFrame, 0, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
-		for j := 0; j < 4; j++ {
+		for j := range 4 {
 			t := float64(i)*0.3 + float64(j)*1.379
 			x := int(math.Round((math.Sin(t) + 1) * 0.5 * float64(cw-1)))
 			y := j % braillePxH
@@ -87,11 +87,11 @@ func swarmFrames(cw, h, count int) []IntroFrame {
 
 func hexFrames(cw, h, count int) []IntroFrame {
 	out := make([]IntroFrame, 0, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
 		cx, cy := cw/2, h/2
 		r := max(float64(cw/2-1), 6)
-		for j := 0; j < 6; j++ {
+		for j := range 6 {
 			theta := (float64(j)/6 + float64(i)/72.0) * 2 * math.Pi
 			x := cx + int(math.Round(r*math.Cos(theta)))
 			y := cy + int(math.Round(1.5*math.Sin(theta)))

@@ -36,7 +36,7 @@ type Options struct {
 // sseEvent is one server-sent event queued for subscribers.
 type sseEvent struct {
 	typ  string
-	data interface{}
+	data any
 }
 
 // Server is a local web relay that drives a single bee session over LAN.
@@ -102,7 +102,7 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func (s *Server) logf(format string, args ...interface{}) {
+func (s *Server) logf(format string, args ...any) {
 	fmt.Fprintf(s.log, "remote: "+format+"\n", args...)
 }
 

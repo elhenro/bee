@@ -64,8 +64,8 @@ func recapWorthwhile(msgs []types.Message, dur time.Duration) bool {
 		return true
 	}
 	var textLen int
-	for i := len(msgs) - 1; i >= 0; i-- {
-		m := msgs[i]
+	for _, m := range slices.Backward(msgs) {
+
 		if m.Role == types.RoleUser {
 			break
 		}

@@ -29,7 +29,7 @@ func RenderQR(s string) (string, error) {
 	var b strings.Builder
 	// two vertical modules per text row via half-block runes
 	for y := 0; y < dim; y += 2 {
-		for x := 0; x < dim; x++ {
+		for x := range dim {
 			top := dark(x, y)
 			bot := y+1 < dim && dark(x, y+1)
 			switch {

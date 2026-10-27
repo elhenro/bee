@@ -207,7 +207,7 @@ func TestPicker_LateFetchAfterEscStillSettles(t *testing.T) {
 // a selection made in one provider's model list must not carry into another's.
 func TestPicker_ModelSelResetsWhenSwitchingProvider(t *testing.T) {
 	var many []llm.Model
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		many = append(many, llm.Model{ID: fmt.Sprintf("a%02d", i)})
 	}
 	p := NewPicker(testCfg())
@@ -222,7 +222,7 @@ func TestPicker_ModelSelResetsWhenSwitchingProvider(t *testing.T) {
 	key(tea.KeyEsc)
 	key(tea.KeyUp) // alpha
 	key(tea.KeyEnter)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		key(tea.KeyDown)
 	}
 	key(tea.KeyEsc)

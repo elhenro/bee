@@ -174,13 +174,11 @@ func TestPersistSetting_ConcurrentWritersKeepAllKeys(t *testing.T) {
 	const n = 16
 	var wg sync.WaitGroup
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := PersistSetting(path, fmt.Sprintf("k%02d", i), i); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	got := readCfg(t, path)

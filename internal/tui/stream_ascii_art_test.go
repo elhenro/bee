@@ -13,7 +13,7 @@ func artOutput() string {
 	var b strings.Builder
 	for _, name := range []string{"a.jpeg", "b.jpeg"} {
 		fmt.Fprintf(&b, "== public/images/%s\n", name)
-		for i := 0; i < 12; i++ {
+		for i := range 12 {
 			switch {
 			case name == "b.jpeg" && i == 5:
 				b.WriteString(strings.Repeat(" ", 40) + "\n")
@@ -49,7 +49,7 @@ func TestToolCard_AsciiArtVerboseKeepsShape(t *testing.T) {
 	r.RenderMessage(useMsg("u1", "bash", map[string]any{"command": "python render.py"}))
 	full := stripANSI(r.RenderMessageDetail(resultMsg("u1", artOutput(), false), true))
 	rows := 0
-	for _, l := range strings.Split(full, "\n") {
+	for l := range strings.SplitSeq(full, "\n") {
 		if strings.Contains(l, "RRRR") {
 			rows++
 		}

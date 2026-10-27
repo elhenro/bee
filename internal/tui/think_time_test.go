@@ -95,7 +95,7 @@ func TestRenderLive_ClockFreezesWhenAnswerStarts(t *testing.T) {
 func TestThinkingLabel_FitsNarrowTerminal(t *testing.T) {
 	r := NewStreamRenderer(DefaultStyles(), minRenderWidth)
 	r.SetShowThoughts(false)
-	for _, ln := range strings.Split(stripANSI(r.RenderMessage(thoughtMsg("x", 125_000))), "\n") {
+	for ln := range strings.SplitSeq(stripANSI(r.RenderMessage(thoughtMsg("x", 125_000))), "\n") {
 		if w := lipgloss.Width(ln); w > minRenderWidth {
 			t.Fatalf("row %d cols exceeds %d: %q", w, minRenderWidth, ln)
 		}

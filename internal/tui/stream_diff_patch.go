@@ -21,7 +21,7 @@ var hunkHead = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 // taken for a `--- file` header
 func parsePatch(patch string) []patchFile {
 	var p patchParser
-	for _, l := range strings.Split(strings.TrimRight(patch, "\n"), "\n") {
+	for l := range strings.SplitSeq(strings.TrimRight(patch, "\n"), "\n") {
 		p.line(l)
 	}
 	return p.files

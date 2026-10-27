@@ -133,7 +133,7 @@ func TestDegenerateLowVocabTail_DetectsNoisyPhraseLoop(t *testing.T) {
 	phrases := []string{"Writing the game file... ", "Building the game file... "}
 	var b strings.Builder
 	b.WriteString("Here is my detailed plan for building the terrain system with chunked noise sampling and object placement before anything else.\n")
-	for i := 0; i < 80; i++ {
+	for i := range 80 {
 		// thue-morse parity: aperiodic order, so the tail is never byte-periodic.
 		parity := 0
 		for v := i; v > 0; v >>= 1 {
@@ -165,7 +165,7 @@ func TestDegenerateLowVocabTail_IgnoresVariedProse(t *testing.T) {
 		// a real numbered list — distinct tokens per line.
 		func() string {
 			var b strings.Builder
-			for i := 0; i < 90; i++ {
+			for i := range 90 {
 				fmt.Fprintf(&b, "item number %d here\n", i)
 			}
 			return b.String()

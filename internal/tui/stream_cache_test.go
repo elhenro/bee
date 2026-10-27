@@ -9,7 +9,7 @@ import (
 // rows built from a growing buffer, delta by delta, equal rows built in one go
 func TestThoughtRows_IncrementalMatchesFreshRender(t *testing.T) {
 	var sb strings.Builder
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		fmt.Fprintf(&sb, "step %d: %s\n\n", i, strings.Repeat("reasoning about the handler ", 1+i%4))
 	}
 	sb.WriteString("tail without newline\ttab")

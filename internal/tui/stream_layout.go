@@ -60,7 +60,7 @@ func clampRows(s string, w int) string {
 // hangs under its own indent
 func wrapColumns(s string, w int) string {
 	var out []string
-	for _, ln := range strings.Split(s, "\n") {
+	for ln := range strings.SplitSeq(s, "\n") {
 		out = append(out, wrapRow(ln, w)...)
 	}
 	return strings.Join(out, "\n")

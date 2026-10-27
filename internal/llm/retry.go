@@ -101,7 +101,7 @@ func postWithRetry(ctx context.Context, client *http.Client, name string, build 
 	var lastErr error
 	lastWasRate := false
 	var hint time.Duration
-	for attempt := 0; attempt < maxRetryAttemptsRate; attempt++ {
+	for attempt := range maxRetryAttemptsRate {
 		if attempt >= maxRetryAttempts && !lastWasRate {
 			break
 		}

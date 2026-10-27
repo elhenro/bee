@@ -47,7 +47,7 @@ func TestUpdatePrompt_TabCyclesFocus(t *testing.T) {
 	if p.focus != 1 { // default = "update now"
 		t.Fatalf("initial focus = %d, want 1", p.focus)
 	}
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		p, _ = p.Update(tea.KeyMsg{Type: tea.KeyTab})
 	}
 	if p.focus != 1 {

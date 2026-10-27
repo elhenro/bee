@@ -15,7 +15,7 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 	type pt struct{ x, y float64 }
 	targets := make([]pt, n)
 	origins := make([]pt, n)
-	for j := 0; j < n; j++ {
+	for j := range n {
 		ang := float64(j)/float64(n)*2*math.Pi - math.Pi/2
 		// hex-flavored radius modulation: 6-fold corner accent
 		mod := 1.0 + 0.18*math.Cos(ang*3)
@@ -33,14 +33,14 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 	gather := count * 38 / 100
 	settle := count * 18 / 100
 	pulse := count * 32 / 100
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
 		switch {
 		case i < gather:
 			t := float64(i) / float64(gather)
 			t = 1 - math.Pow(1-t, 3) // ease-out cubic
 			// stagger particles in waves of 3 so they don't all arrive together
-			for j := 0; j < n; j++ {
+			for j := range n {
 				wave := float64((j % 3)) * 0.18
 				tt := math.Max(0, math.Min(1, (t-wave)/(1-wave)))
 				if tt <= 0 {
@@ -86,10 +86,10 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 			// stays visually round on the terminal aspect.
 			tp := float64(i-gather-settle) / float64(pulse)
 			ringMax := math.Min(float64(cw)/2-1, ry*4)
-			for ring := 0; ring < 2; ring++ {
+			for ring := range 2 {
 				rpx := rx + 2 + tp*ringMax + float64(ring)*3
 				rpy := ry + 1 + tp*(ringMax*ry/rx) + float64(ring)*1.5
-				for a := 0; a < 36; a++ {
+				for a := range 36 {
 					if (a+i+ring*5)%4 != 0 {
 						continue
 					}
@@ -104,7 +104,7 @@ func bloomFrames(cw, h, count int) []IntroFrame {
 			rem := count - gather - settle - pulse
 			t := float64(i-gather-settle-pulse) / float64(rem)
 			t = math.Pow(t, 2)
-			for j := 0; j < n; j++ {
+			for j := range n {
 				if (j+i)%2 == 0 {
 					continue
 				}
@@ -144,7 +144,7 @@ func hexRadii(cw, h int) (rx, ry float64) {
 // vertex pairs. Vertical squash via ry mirrors terminal cell aspect.
 func drawHexPerimeter(c *DrawilleCanvas, cx, cy int, rx, ry float64) {
 	verts := make([][2]float64, 6)
-	for k := 0; k < 6; k++ {
+	for k := range 6 {
 		ang := float64(k)/6*2*math.Pi - math.Pi/2
 		verts[k] = [2]float64{
 			float64(cx) + rx*math.Cos(ang),
@@ -152,7 +152,7 @@ func drawHexPerimeter(c *DrawilleCanvas, cx, cy int, rx, ry float64) {
 		}
 	}
 	const steps = 14
-	for k := 0; k < 6; k++ {
+	for k := range 6 {
 		a := verts[k]
 		b := verts[(k+1)%6]
 		for s := 0; s <= steps; s++ {
@@ -173,7 +173,7 @@ func constellFrames(cw, h, count int) []IntroFrame {
 	// deterministic star positions via golden-angle
 	type pt struct{ x, y int }
 	stars := make([]pt, n)
-	for j := 0; j < n; j++ {
+	for j := range n {
 		a := float64(j) * 2.3998
 		stars[j] = pt{
 			(int(math.Round((math.Sin(a*1.3)+1)*0.5*float64(cw-2))) + 1) % cw,
@@ -188,7 +188,7 @@ func constellFrames(cw, h, count int) []IntroFrame {
 	}
 	mid := count / 2
 	band := count / 6
-	for i := 0; i < count; i++ {
+	for i := range count {
 		c := NewDrawilleCanvas(cw, h)
 		// twinkle: each star on/off via phase
 		for j, s := range stars {

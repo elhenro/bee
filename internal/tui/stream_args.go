@@ -147,17 +147,18 @@ func shortenPathsInline(s string) string {
 // such as root-new keeps its name.
 func replaceRoot(s, root, repl string) string {
 	parts := strings.Split(s, root)
-	out := parts[0]
+	var out strings.Builder
+	out.WriteString(parts[0])
 	for _, p := range parts[1:] {
 		r, _ := utf8.DecodeRuneInString(p)
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
-			out += root
+			out.WriteString(root)
 		} else {
-			out += repl
+			out.WriteString(repl)
 		}
-		out += p
+		out.WriteString(p)
 	}
-	return out
+	return out.String()
 }
 
 // humanBytes formats n as a short decimal-prefixed size ("812 B", "2.4 KB",

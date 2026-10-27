@@ -109,7 +109,7 @@ func TestLayoutRows_GapComesFromLineNumbers(t *testing.T) {
 
 func TestLayoutRows_UnnumberedKeepsCollapserMarkers(t *testing.T) {
 	var a, b []string
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		a = append(a, fmt.Sprint("line", i))
 		b = append(b, fmt.Sprint("line", i))
 	}
@@ -163,10 +163,10 @@ func TestPairedEdit_NumbersRowsFromTheEcho(t *testing.T) {
 
 func TestTrimRows_CutMarkerSitsWhereTheCutIs(t *testing.T) {
 	var rows []diffRow
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		rows = append(rows, diffRow{kind: '-', text: "o"})
 	}
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		rows = append(rows, diffRow{kind: '+', text: "n"})
 	}
 	got := trimRows(rows, 14)
@@ -215,7 +215,7 @@ func TestDiffCard_RowsNeverExceedWidth(t *testing.T) {
 	for _, w := range []int{40, 60, 100} {
 		r := NewStreamRenderer(DefaultStyles(), w)
 		out := r.renderToolUse(types.ToolUse{Name: "apply_patch", Input: map[string]any{"patch": patch}})
-		for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		for ln := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
 			if got := lipgloss.Width(ln); got > w {
 				t.Fatalf("width %d: row is %d cells: %q", w, got, stripANSI(ln))
 			}

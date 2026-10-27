@@ -36,7 +36,7 @@ func TestRenderTokenStreamSpikeClamped(t *testing.T) {
 		t.Errorf("EMA after 1 spike: got %.1f, want ≤ 61 (3-tick rise time)", got)
 	}
 	// three more ticks of 200 chars to confirm it climbs but never overshoots.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		prev = got
 		got = smoothLoaderRate(prev, 200)
 	}
@@ -49,14 +49,14 @@ func TestSmoothLoaderRateIdleDecays(t *testing.T) {
 	// a steady stream followed by silence must decay back toward 0 — the
 	// loader should ease off when the model pauses mid-turn.
 	prev := 0.0
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		prev = smoothLoaderRate(prev, 50)
 	}
 	if prev < 40 {
 		t.Errorf("after 10 ticks of 50: got %.1f, want ≥ 40 (near steady state)", prev)
 	}
 	// model goes quiet — symmetric to the 3-tick rise time.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		prev = smoothLoaderRate(prev, 0)
 	}
 	if prev > 5 {
@@ -96,7 +96,7 @@ func TestRenderTokenStreamSeedVaries(t *testing.T) {
 	// across a window of frames at least one differs between seeds — guards
 	// against a seed that has no visible effect.
 	diff := false
-	for f := 0; f < 12; f++ {
+	for f := range 12 {
 		if renderTokenStream(LoaderStats{Seed: 1, Rate: 20}, f, 30) !=
 			renderTokenStream(LoaderStats{Seed: 999, Rate: 20}, f, 30) {
 			diff = true

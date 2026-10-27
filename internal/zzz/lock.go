@@ -61,8 +61,7 @@ func AcquireLock(workdir, runID string) (func(), error) {
 	path := filepath.Join(dir, key+".lock")
 	info := fmt.Sprintf("%s\n%s\n%s\n", runID, workdir, time.Now().UTC().Format(time.RFC3339))
 	l, err := pidlock.Acquire(path, info)
-	var held *pidlock.HeldError
-	if errors.As(err, &held) {
+	if held, ok := errors.AsType[*pidlock.HeldError](err); ok {
 		// record: pid line, run id line, then the rest
 		rec := append(strings.SplitN(held.Info, "\n", 3), "", "")
 		pid, _ := strconv.Atoi(strings.TrimSpace(rec[0]))

@@ -18,14 +18,14 @@ import (
 // flakyProvider fails the first N stream calls with an SSE-scan-style error
 // before emitting any content, then succeeds. Exercises pre-content retry.
 type flakyProvider struct {
-	failures int32 // atomic — remaining failures before success
-	calls    int32 // atomic — total Stream invocations
+	failures int32        // atomic — remaining failures before success
+	calls    atomic.Int32 // atomic — total Stream invocations
 }
 
 func (p *flakyProvider) Name() string { return "flaky" }
 
 func (p *flakyProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
-	atomic.AddInt32(&p.calls, 1)
+	p.calls.Add(1)
 	ch := make(chan llm.Event, 2)
 	if atomic.LoadInt32(&p.failures) > 0 {
 		atomic.AddInt32(&p.failures, -1)
@@ -74,7 +74,7 @@ func TestStreamOnce_RetriesPreContentError(t *testing.T) {
 	if !strings.Contains(res.FinalText, "ok") {
 		t.Fatalf("expected text 'ok' after retry, got %q", res.FinalText)
 	}
-	if got := atomic.LoadInt32(&prov.calls); got != 2 {
+	if got := prov.calls.Load(); got != 2 {
 		t.Fatalf("provider should be called twice (fail then succeed), got %d", got)
 	}
 	select {
@@ -116,7 +116,7 @@ func TestStreamOnce_NoReplayAfterContent(t *testing.T) {
 	if !errors.Is(err, ErrTruncatedStream) {
 		t.Fatalf("expected ErrTruncatedStream after persistent mid-stream drops, got %v", err)
 	}
-	if got := atomic.LoadInt32(&prov.calls); got != truncCutBailAt {
+	if got := prov.calls.Load(); got != truncCutBailAt {
 		t.Fatalf("expected %d re-streams before bail, got calls=%d", truncCutBailAt, got)
 	}
 }
@@ -151,16 +151,16 @@ func TestStreamOnce_RecoversAfterMidStreamDrop(t *testing.T) {
 	if !strings.Contains(res.FinalText, "the answer") {
 		t.Fatalf("expected the post-recovery answer, got %q", res.FinalText)
 	}
-	if got := atomic.LoadInt32(&prov.calls); got != 2 {
+	if got := prov.calls.Load(); got != 2 {
 		t.Fatalf("expected drop then success (2 calls), got %d", got)
 	}
 }
 
-type midStreamErrProvider struct{ calls int32 }
+type midStreamErrProvider struct{ calls atomic.Int32 }
 
 func (p *midStreamErrProvider) Name() string { return "mid-err" }
 func (p *midStreamErrProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
-	atomic.AddInt32(&p.calls, 1)
+	p.calls.Add(1)
 	ch := make(chan llm.Event, 2)
 	go func() {
 		defer close(ch)
@@ -172,11 +172,11 @@ func (p *midStreamErrProvider) Stream(_ context.Context, _ llm.Request) (<-chan 
 
 // dropThenSucceedProvider drops mid-output on the first call, then completes
 // cleanly — models a flaky local server that recovers on reconnect.
-type dropThenSucceedProvider struct{ calls int32 }
+type dropThenSucceedProvider struct{ calls atomic.Int32 }
 
 func (p *dropThenSucceedProvider) Name() string { return "drop-then-ok" }
 func (p *dropThenSucceedProvider) Stream(_ context.Context, _ llm.Request) (<-chan llm.Event, error) {
-	n := atomic.AddInt32(&p.calls, 1)
+	n := p.calls.Add(1)
 	ch := make(chan llm.Event, 3)
 	go func() {
 		defer close(ch)

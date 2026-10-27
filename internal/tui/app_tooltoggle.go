@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/elhenro/bee/internal/types"
 )
@@ -27,10 +29,10 @@ func (m Model) toggleLastToolOutput() (tea.Model, tea.Cmd) {
 // tool-result block. Edit/write/escalate results render empty, but those are
 // rare as the final tool of a turn; callers tolerate an empty render.
 func lastToolResultMessage(msgs []types.Message) (types.Message, bool) {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		for _, b := range msgs[i].Content {
+	for _, msg := range slices.Backward(msgs) {
+		for _, b := range msg.Content {
 			if b.Type == types.BlockToolResult && b.Result != nil {
-				return msgs[i], true
+				return msg, true
 			}
 		}
 	}

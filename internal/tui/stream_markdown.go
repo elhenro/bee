@@ -68,7 +68,7 @@ func needsMarkdown(s string) bool {
 			return true
 		}
 	}
-	for _, ln := range strings.Split(s, "\n") {
+	for ln := range strings.SplitSeq(s, "\n") {
 		t := strings.TrimLeft(ln, " \t")
 		if t == "" {
 			continue

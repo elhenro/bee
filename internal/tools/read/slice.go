@@ -71,7 +71,7 @@ func readTail(f *os.File, path string, tail int, hashline bool) (string, error) 
 		start = total % tail
 	}
 	var b strings.Builder
-	for i := 0; i < count; i++ {
+	for i := range count {
 		writeLine(&b, ring[(start+i)%tail], first+i, hashline)
 	}
 	fmt.Fprintf(&b, "(showing last %d of %d lines; end of file)\n", count, total)

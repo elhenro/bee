@@ -43,7 +43,7 @@ func TestRunOne_CrystallizesRepeatedRoute(t *testing.T) {
 		Waggle: waggle.NewManager(store, waggle.ManagerConfig{Scope: waggle.ScopeProject, MinePeriod: 4}),
 	}
 	ctx := context.Background()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		_, _ = e.dispatchTools(ctx, []types.ToolUse{
 			{ID: "1", Name: "ls", Input: map[string]any{"path": "/p"}},
 			{ID: "2", Name: "read", Input: map[string]any{"path": "/p/a.go"}},

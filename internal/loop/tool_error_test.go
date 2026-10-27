@@ -42,9 +42,8 @@ func TestClassifyToolError_InvalidArg(t *testing.T) {
 }
 
 func TestClassifyToolError_ParseError(t *testing.T) {
-	var jse *json.SyntaxError
 	if err := json.Unmarshal([]byte("{"), &struct{}{}); err != nil {
-		if !errors.As(err, &jse) {
+		if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
 			t.Fatalf("expected json.SyntaxError, got %T", err)
 		}
 		if got := classifyToolError(err); got != toolErrParseError {
